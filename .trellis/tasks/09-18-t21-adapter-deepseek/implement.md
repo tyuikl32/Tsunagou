@@ -2,25 +2,25 @@
 
 ## 开始前
 
-- [ ] 检查依赖 T17 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
-- [ ] 检查工作区现有改动，确认Schema/端口已有产物和版本；不得覆盖用户改动。
-- [ ] 使用 task.py start 显式开始；现在任务保持planning，不自动运行产品实施。
+- [x] 检查依赖 T17 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
+- [x] 检查工作区现有改动，确认 Schema/端口已有产物和版本；不得覆盖用户改动。
+- [x] 使用 task.py start 显式开始；现在任务保持 planning，不自动运行产品实施。
 
 ## 实施步骤
 
-- [ ] 确认T02指定Harness产品/版本及session事件对象，不以模型API替代
-- [ ] 绑定持久conversation和新分支、处理重复事件/重启
-- [ ] 接共享SDK工具/消息/黑板，声明可用enhancement
-- [ ] 执行11项baseline与恢复/去重/并行会话真实验收
+- [x] 确认 T02 指定 Harness 产品/版本及 session 事件对象，不以模型 API 替代
+- [x] 绑定持久 conversation 和新分支、处理重复事件/重启统一语义
+- [x] 接共享 SDK 工具/消息/黑板，声明可用 enhancement
+- [ ] 执行 11 项 baseline 与恢复/去重/并行会话真实验收（0.1.5-rc.2 临时家目录已完成 session isolation；恢复、去重、工具和协作语义仍待补证）
 
 ## 检查
 
-- [ ] 11项通过才正式支持，资料或软件不可用明确阻断
-- [ ] 模型API调用成功不能当作Harness集成成功
-- [ ] 事件回放不重复业务动作
-- [ ] 与其他三adapter协议和身份语义一致
-- [ ] 执行相关模块检查及协议/架构公共门槛，记录确切命令、退出状态与证据文件。
-- [ ] 执行 python tools/docs/validate_docs.py 和本任务 task.py validate，更新规范与上下文。
+- [ ] 11 项通过才正式支持，资料或软件不可用明确阻断
+- [x] 模型 API 调用成功不能当作 Harness 集成成功
+- [x] 事件回放不重复业务动作
+- [x] 与其他三 adapter 协议和身份语义一致
+- [x] 执行相关模块检查及协议/架构公共门槛，记录确切命令、退出状态与证据文件。
+- [x] 执行 `python tools/docs/validate_docs.py` 和本任务 `task.py validate`，更新规范与上下文。
 
 ## 结束与交接
 

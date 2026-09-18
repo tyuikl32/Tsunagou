@@ -13,3 +13,6 @@
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T24"}
 {"file": "docs/overview/subagent-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T24"}
 {"file": "docs/overview/cli-http-manual.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T24"}
+{"file": "tools/experiments/prepare.py", "reason": "Reproducible A/B/C/D plan generator that emits no fabricated results."}
+{"file": "docs/implementation/release-checklist.md", "reason": "First release checklist separates completed engineering work from live gates."}
+{"file": "docs/research/experiment-report.md", "reason": "Not-run experiment report and pre-registered thresholds."}

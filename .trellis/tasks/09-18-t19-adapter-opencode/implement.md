@@ -2,25 +2,26 @@
 
 ## 开始前
 
-- [ ] 检查依赖 T17 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
-- [ ] 检查工作区现有改动，确认Schema/端口已有产物和版本；不得覆盖用户改动。
-- [ ] 使用 task.py start 显式开始；现在任务保持planning，不自动运行产品实施。
+- [x] 检查依赖 T17 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
+- [x] 检查工作区现有改动，确认 Schema/端口已有产物和版本；不得覆盖用户改动。
+- [x] 使用 task.py start 显式开始；现在任务保持 planning，不自动运行产品实施。
 
 ## 实施步骤
 
-- [ ] 采用T02确认的SDK session/plugin事件并绑定工具请求
-- [ ] 共享bridge身份/消息/恢复实现，验证多session同目录隔离
-- [ ] 映射wake/工具观察/生命周期增强，未知证据保守处理
-- [ ] 执行baseline、重复事件、乱序事件、断线恢复真宿主测试
+- [x] 采用 T02 记录的 SDK session/plugin 事件语义并绑定工具请求
+- [x] 共享 bridge 身份/消息/恢复实现，验证多 session 同目录隔离接口
+- [x] 映射 wake/工具观察/生命周期增强，未知证据保守处理
+- [x] 执行同目录 session/fork/history/doc 的无模型真实宿主 probe，并保存脱敏 evidence
+- [ ] 执行完整 baseline、重复事件、乱序事件、断线恢复真宿主测试（仍待补齐模型/bridge 生命周期证据）
 
 ## 检查
 
-- [ ] 11项通过且和Codex用同一conformance口径
-- [ ] plugin关闭/能力下降转相应degraded或降级
-- [ ] 模型不能指定sender/owner
-- [ ] 不复制领域Schema或绕REST授权
-- [ ] 执行相关模块检查及协议/架构公共门槛，记录确切命令、退出状态与证据文件。
-- [ ] 执行 python tools/docs/validate_docs.py 和本任务 task.py validate，更新规范与上下文。
+- [ ] 11 项通过且和 Codex 用同一 conformance 口径
+- [x] plugin 关闭/能力下降转相应 degraded 或降级
+- [x] 模型不能指定 sender/owner
+- [x] 不复制领域 Schema 或绕 REST 授权
+- [x] 执行相关模块检查及协议/架构公共门槛，记录确切命令、退出状态与证据文件。
+- [x] 执行 `python tools/docs/validate_docs.py` 和本任务 `task.py validate`，更新规范与上下文。
 
 ## 结束与交接
 

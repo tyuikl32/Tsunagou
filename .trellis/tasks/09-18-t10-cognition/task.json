@@ -3,7 +3,7 @@
   "name": "t10-cognition",
   "title": "T10 认知报告、分歧、契约和风险",
   "description": "Report/Discrepancy/Contract/Risk实体与端口；确定性规则registry；契约hash与proxy测试",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "cognition",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -34,7 +34,7 @@
       "T08"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

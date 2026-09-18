@@ -3,7 +3,7 @@
   "name": "t15-lifecycles",
   "title": "T15 重大决定、完成、继任与Lineage转换",
   "description": "UserDecision/Completion/Archive/Reactivate workflows；AuthorityTransition/AgentSuccession；ReplicaActivate/LineageReset/OperationResolution",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "lifecycles",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -38,7 +38,7 @@
       "T14"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

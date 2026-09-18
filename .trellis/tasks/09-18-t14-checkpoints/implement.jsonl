@@ -10,3 +10,4 @@
 {"file": "docs/implementation/build-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T14"}
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T14"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T14"}
+{"file": "src/tsunagou/platform/checkpoints.py", "reason": "确定性checkpoint、Git anchor、lineage merge和备份"}

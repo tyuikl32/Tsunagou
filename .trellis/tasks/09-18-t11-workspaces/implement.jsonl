@@ -10,3 +10,4 @@
 {"file": "docs/implementation/build-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T11"}
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T11"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T11"}
+{"file": "src/tsunagou/modules/workspaces.py", "reason": "隔离决策、只读Git核验、baseline/result和cleanup"}

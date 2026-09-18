@@ -1,6 +1,6 @@
 # CLI 与 HTTP API 简明说明书
 
-这是**计划交付的使用手册**。目前产品CLI/HTTP尚未实现，示例用于T16与后续Agent按统一契约开发，不能作为已经运行成功的证明。现阶段能执行的Trellis命令见[路线图](../implementation/roadmap.md)。
+这是首发 CLI/HTTP 使用手册。当前已实现基础 CLI 外壳、HTTP health/command dispatcher、协议生成物和诊断入口；表中尚未接入的领域命令仍是规范示例，不能据此报告完整产品流程已经运行。现阶段的真实状态和门禁见[路线图](../implementation/roadmap.md)。
 
 ## 两个入口怎样分工
 

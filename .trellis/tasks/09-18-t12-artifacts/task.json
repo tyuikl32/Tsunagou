@@ -3,7 +3,7 @@
   "name": "t12-artifacts",
   "title": "T12 领域授权附件与内容寻址存储",
   "description": "upload intent/bytes/finalize与blob目录；各模块ArtifactRef授权接口；promote与共享导出规则",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "artifacts",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -35,7 +35,7 @@
       "T04"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

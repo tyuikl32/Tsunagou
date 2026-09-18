@@ -10,3 +10,4 @@
 {"file": "docs/implementation/build-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T09"}
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T09"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T09"}
+{"file": "src/tsunagou/modules/resources.py", "reason": "资源冲突矩阵、全量Lease与过期观察"}

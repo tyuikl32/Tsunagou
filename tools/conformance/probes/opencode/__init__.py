@@ -1,0 +1,1 @@
+"""OpenCode host probe."""

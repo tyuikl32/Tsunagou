@@ -11,3 +11,6 @@
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T18"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T18"}
 {"file": "docs/overview/subagent-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T18"}
+{"file": "packages/adapter-codex/src/index.ts", "reason": "Codex host-neutral adapter with digest identity, lifecycle observation, evidence conformance and reversible non-secret profile plans."}
+{"file": "docs/implementation/adapter-codex.md", "reason": "Codex version window, install/uninstall, diagnostic-only evidence and real-host gate."}
+{"file": "packages/adapter-codex/tests/adapter.test.ts", "reason": "Codex identity, unknown baseline and secret-free profile plan tests."}

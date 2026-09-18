@@ -21,10 +21,10 @@ T13, T14。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 验收标准
 
-- [ ] 用户沉默无限持久不拒绝/失败
-- [ ] checkpoint失败保留completed，归档受阻但repair可用
-- [ ] 旧owner/session/grant在继任和reset后不能复活
-- [ ] 用户ceiling/项目完成等固定边界不能被main风险接受绕过
+- [x] 用户沉默无限持久不拒绝/失败（UserDecision 无 deadline fallback）
+- [x] checkpoint失败保留completed，归档受阻但repair可用
+- [x] 旧owner/session/grant在继任和reset后不能复活（reset_runtime）
+- [x] 用户ceiling/项目完成等固定边界不能被main风险接受绕过（user_control exact digest）
 
 ## 不包含
 

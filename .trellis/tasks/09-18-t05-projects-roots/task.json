@@ -3,7 +3,7 @@
   "name": "t05-projects-roots",
   "title": "T05 项目初始化、根目录与范围模型",
   "description": "projects实体/仓储/public ports；项目中心目录与配置层；路径身份/交集/绑定测试",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "projects-roots",
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
+  "completedAt": "2026-09-18",
   "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
@@ -35,7 +35,7 @@
       "T04"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

@@ -21,10 +21,10 @@ T05, T02。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 验收标准
 
-- [ ] 子Agent不能任命主Agent或操作其他Attempt
-- [ ] 并发兑换/重连无重复身份，token交付丢失走rebind
-- [ ] baseline缺失仅diagnostic，raw ID/token不进共享历史或模型
-- [ ] 无OAuth/keyring/refresh体系；Full Access防护范围如实说明
+- [x] 子Agent不能任命主Agent或操作其他Attempt（user-only appoint 与 exact task/attempt grant）
+- [x] 并发兑换/重连无重复身份，token交付丢失走rebind（单次 ticket、connection epoch CAS 语义）
+- [x] baseline缺失仅diagnostic，raw ID/token不进共享历史或模型（degraded snapshot 与 public_snapshot 脱敏）
+- [x] 无OAuth/keyring/refresh体系；Full Access防护范围如实说明（opaque token 哈希存储）
 
 ## 不包含
 
@@ -32,4 +32,4 @@ T05, T02。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 本轮补充验收
 
-- [ ] 用户attach两个会话产生独立worker身份；宿主内置subagent不自动视为正式成员；接入不授任务执行权。
+- [x] 用户attach两个会话产生独立worker身份；宿主内置subagent不自动视为正式成员；接入不授任务执行权。

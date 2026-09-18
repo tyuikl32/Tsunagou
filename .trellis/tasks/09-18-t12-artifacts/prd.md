@@ -21,10 +21,10 @@ T06, T04。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 验收标准
 
-- [ ] 仅知hash不能读取，私信附件不因main身份自动提升
-- [ ] 截断/篡改/重复上传结果正确
-- [ ] no-auto-GC和checkpoint export白名单可验证
-- [ ] 文件I/O不在SQLite写事务中
+- [x] 仅知hash不能读取，私信附件不因main身份自动提升（必须持有 ArtifactRef、recipient 和领域授权）
+- [x] 截断/篡改/重复上传结果正确（size limit、SHA-256 finalize 和内容寻址去重）
+- [x] no-auto-GC和checkpoint export白名单可验证
+- [x] 文件I/O不在SQLite写事务中（上传/rename 使用独立文件流程）
 
 ## 不包含
 

@@ -1,6 +1,6 @@
 # 实施路线图与 Trellis 操作
 
-Trellis 0.6.17 已初始化：开发者 **tyuikl32**，平台 **Codex**。24 个实施子任务属于一个首发总任务，当前均为 planning，未运行产品实现；文档初始化任务单独完成归档。
+Trellis 0.6.17 已初始化：开发者 **tyuikl32**，平台 **Codex**。24 个实施子任务属于一个首发总任务。T01–T17 和 T22 已有实现与测试证据；T18–T21 已有 diagnostic adapter 实现，T23–T24 已有集成门禁、实验准备和演示材料。四宿主真实 baseline 与 A/B/C/D 实测仍由发布门禁阻断，不能把当前状态写成正式支持或研究效果。
 
 机器可读定义：[task-plan.json](task-plan.json)。任务元数据的 `meta.depends_on` 保存稳定 T 编号；这是项目约定，Trellis 的 parent/children 只分组，不自动调度依赖。开始任务前必须核对依赖产物和验收证据。
 
@@ -71,7 +71,7 @@ python .trellis/scripts/task.py start .trellis/tasks/09-18-t01-foundation
 python tools/docs/validate_docs.py
 ```
 
-`start`是将来开始实施时执行，本轮未自动启动。它依赖当前Codex会话身份；若宿主未注入，先读Trellis报出的身份提示，用当前可信会话标识配置 `TRELLIS_CONTEXT_ID`，不要所有并发会话共用同一个固定ID。没有hooks也可显式读取任务/context/spec，不缺规划内容。
+`start`用于将任务置为实施中并写入当前 Trellis 上下文；本轮已对实施任务显式执行。它依赖当前 Codex 会话身份；若宿主未注入，先读 Trellis 提示，用当前可信会话标识配置 `TRELLIS_CONTEXT_ID`，不要所有并发会话共用同一个固定 ID。没有 hooks 也可显式读取任务/context/spec。
 
 完成后先检查PRD和验证证据，再用`task.py finish`清除当前指针、`task.py archive <task>`归档。归档会改变路径，需同步task-plan.json/roadmap直接链接；稳定T编号和depends_on不变。用`add_session.py --title ... --commit - --summary ... --no-commit`记录未提交工作；实际提交后用真实commit OID。
 

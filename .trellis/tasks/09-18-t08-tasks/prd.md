@@ -21,10 +21,10 @@ T06。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] 并发claim一个owner；主权限不替代Attempt owner
-- [ ] resume到claimed，start才running；关闭Attempt不复活
-- [ ] 父终态不级联，孩子状态不自动挡父提交
-- [ ] review exact result/round，返工新Attempt，batch全成或全败
+- [x] 并发claim一个owner；主权限不替代Attempt owner（`TaskService` 锁内 claim 与 owner 校验）
+- [x] resume到claimed，start才running；关闭Attempt不复活
+- [x] 父终态不级联，孩子状态不自动挡父提交
+- [x] review exact result/round，返工新Attempt，batch全成或全败
 
 ## 不包含
 

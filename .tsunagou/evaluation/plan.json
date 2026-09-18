@@ -1,0 +1,159 @@
+{
+  "definition": {
+    "arms": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "digest": "sha256:21b5201cf59ef40e3f32675f43e585adf1905d774d930c158f2db6767622e54a",
+    "metrics": [
+      "correctness",
+      "hard_discrepancy_detection",
+      "false_blocking",
+      "interventions",
+      "rework",
+      "wall_time",
+      "tokens"
+    ],
+    "name": "tsunagou-coordination-effect",
+    "random_seed": 20260918,
+    "success_criteria": {
+      "c_vs_b_comparable_token_increase_max": 0.25,
+      "c_vs_b_intervention_reduction": 0.3,
+      "c_vs_b_wall_time_increase_max": 0.1,
+      "correctness": 1.0,
+      "false_blocking_max": 0.05,
+      "hard_discrepancy_detection": 0.95
+    },
+    "version": "1"
+  },
+  "limitations": [
+    "no host/model versions locked",
+    "no measured results",
+    "no effect claim"
+  ],
+  "runs": [
+    {
+      "arm": "A",
+      "replicate": 0,
+      "run_id": "f4a6c8a7-cd9f-44e7-9e38-0d89a6f517b0",
+      "status": "planned"
+    },
+    {
+      "arm": "A",
+      "replicate": 1,
+      "run_id": "3403e5f7-0e55-4155-aeb1-78a21cb4e165",
+      "status": "planned"
+    },
+    {
+      "arm": "A",
+      "replicate": 2,
+      "run_id": "b3f4794d-0630-4486-b38c-ae538574d28c",
+      "status": "planned"
+    },
+    {
+      "arm": "A",
+      "replicate": 3,
+      "run_id": "4b055678-85b3-49d7-baa1-869e6e7bc559",
+      "status": "planned"
+    },
+    {
+      "arm": "A",
+      "replicate": 4,
+      "run_id": "45befd3f-028f-44b8-ae7e-c43fa01bbc69",
+      "status": "planned"
+    },
+    {
+      "arm": "B",
+      "replicate": 0,
+      "run_id": "8ba03053-0099-405a-a3aa-6009b814a787",
+      "status": "planned"
+    },
+    {
+      "arm": "B",
+      "replicate": 1,
+      "run_id": "ccd3391a-ea64-4622-89e1-a3d7eadc7c46",
+      "status": "planned"
+    },
+    {
+      "arm": "B",
+      "replicate": 2,
+      "run_id": "cf0faffe-df8a-403f-a6cc-bcd50a888395",
+      "status": "planned"
+    },
+    {
+      "arm": "B",
+      "replicate": 3,
+      "run_id": "51b53b34-47b3-45c1-bdbc-8bc3e8bbbbb6",
+      "status": "planned"
+    },
+    {
+      "arm": "B",
+      "replicate": 4,
+      "run_id": "23c9a2e9-a4f2-4b16-94da-fdc25b3039a7",
+      "status": "planned"
+    },
+    {
+      "arm": "C",
+      "replicate": 0,
+      "run_id": "3d8d8e37-78d4-4be3-b75a-5bfe8b9053df",
+      "status": "planned"
+    },
+    {
+      "arm": "C",
+      "replicate": 1,
+      "run_id": "1a7cf462-7fe9-470b-b39b-5e8462808882",
+      "status": "planned"
+    },
+    {
+      "arm": "C",
+      "replicate": 2,
+      "run_id": "62468d5c-c218-4bec-955f-a7c951061c57",
+      "status": "planned"
+    },
+    {
+      "arm": "C",
+      "replicate": 3,
+      "run_id": "70d0dba9-d03a-4a7c-891f-7e02d02f9e4a",
+      "status": "planned"
+    },
+    {
+      "arm": "C",
+      "replicate": 4,
+      "run_id": "455b6023-3d53-4f5f-ac0c-e00a9265d069",
+      "status": "planned"
+    },
+    {
+      "arm": "D",
+      "replicate": 0,
+      "run_id": "c0ab34eb-15fc-4820-9fb9-63f74d52c8ac",
+      "status": "planned"
+    },
+    {
+      "arm": "D",
+      "replicate": 1,
+      "run_id": "c5192aaf-4d81-4e34-841b-91b2332d5cf4",
+      "status": "planned"
+    },
+    {
+      "arm": "D",
+      "replicate": 2,
+      "run_id": "e7658b7c-bd90-4523-bb3c-0970c3c73fe5",
+      "status": "planned"
+    },
+    {
+      "arm": "D",
+      "replicate": 3,
+      "run_id": "d857c6a3-8b1c-4899-a02e-5f619592d58b",
+      "status": "planned"
+    },
+    {
+      "arm": "D",
+      "replicate": 4,
+      "run_id": "6506398e-2020-4210-b099-daddce98ebe7",
+      "status": "planned"
+    }
+  ],
+  "status": "planned_no_results"
+}

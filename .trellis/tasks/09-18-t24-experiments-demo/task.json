@@ -3,7 +3,7 @@
   "name": "t24-experiments-demo",
   "title": "T24 四宿主演示、对照实验与首发交付",
   "description": "用户使用与十分钟演示runbook；A/B/C/D实验报告和脱敏原始结果；首发支持矩阵、升级恢复指南、交付清单",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "validation",
   "scope": "experiments-demo",
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
   "completedAt": null,
-  "branch": null,
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -30,7 +30,7 @@
     "docs/overview/subagent-guide.md",
     "docs/overview/cli-http-manual.md"
   ],
-  "notes": "",
+  "notes": "Demo, release checklist, experiment plan generator and not_run report implemented. Real host demonstration and A/B/C/D measurements remain pending behind T18-T23 gates.",
   "meta": {
     "plan_id": "T24",
     "depends_on": [
@@ -41,7 +41,7 @@
       "T23"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "implementation_partial_live_gate_pending",
+    "product_implemented": true
   }
 }

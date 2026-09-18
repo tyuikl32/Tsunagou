@@ -3,7 +3,7 @@
   "name": "t16-interfaces",
   "title": "T16 HTTP、MCP、CLI、黑板与运行提示",
   "description": "FastAPI routers、共享MCP、Typer CLI；一致读Blackboard与版本化提示资产；OpenAPI artifact、用户操作runbook",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "interfaces",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -40,7 +40,7 @@
       "T07"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

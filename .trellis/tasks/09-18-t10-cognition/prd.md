@@ -21,10 +21,10 @@ T08。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] 无语义模型/文本相似度硬判定
-- [ ] 参与者或内容变化需新proposal及新接受
-- [ ] proxy保留真实actor，policy不允许则拒绝
-- [ ] 风险接受不能越ceiling或把unknown判成功
+- [x] 无语义模型/文本相似度硬判定（仅显式 Claim 结构和固定 rule registry）
+- [x] 参与者或内容变化需新proposal及新接受（immutable digest/supersede）
+- [x] proxy保留真实actor，policy不允许则拒绝
+- [x] 风险接受不能越ceiling或把unknown判成功
 
 ## 不包含
 

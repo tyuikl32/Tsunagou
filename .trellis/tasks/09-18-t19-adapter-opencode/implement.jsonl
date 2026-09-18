@@ -11,3 +11,6 @@
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T19"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T19"}
 {"file": "docs/overview/subagent-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T19"}
+{"file": "packages/adapter-opencode/src/index.ts", "reason": "OpenCode shared adapter translation, lifecycle and evidence boundary."}
+{"file": "docs/implementation/adapter-opencode.md", "reason": "OpenCode install, diagnostic and real-host evidence limits."}
+{"file": "tools/conformance/probes/opencode/probe.py", "reason": "Implemented a real OpenCode headless REST/session/fork/history/doc probe with unknown baseline gating."}

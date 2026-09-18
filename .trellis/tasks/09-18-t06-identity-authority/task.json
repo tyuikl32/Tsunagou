@@ -3,7 +3,7 @@
   "name": "t06-identity-authority",
   "title": "T06 会话身份、最小认证、Grant与主权限",
   "description": "agents接入/认证/public ports；五类Grant与CommandPolicy执行器；最小control/session私有凭据存储",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "identity-authority",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -39,7 +39,7 @@
       "T02"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

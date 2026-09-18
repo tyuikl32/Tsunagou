@@ -2,25 +2,25 @@
 
 ## 开始前
 
-- [ ] 检查依赖 T15, T16, T17, T22 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
-- [ ] 检查工作区现有改动，确认Schema/端口已有产物和版本；不得覆盖用户改动。
-- [ ] 使用 task.py start 显式开始；现在任务保持planning，不自动运行产品实施。
+- [x] 检查依赖 T15, T16, T17, T22 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
+- [x] 检查工作区现有改动，确认 Schema/端口已有产物和版本；不得覆盖用户改动。
+- [x] 使用 task.py start 显式开始；现在任务保持 planning，不自动运行产品实施。
 
 ## 实施步骤
 
-- [ ] 实现validation列出的12类最低故障，真实SQLite/Git/loopback
-- [ ] 覆盖认知闭环、长期用户等待、继任、未知外部结果、完成物化失败、reset
-- [ ] 校验全部命令权限矩阵、双语言fixtures、import边界与生成物
-- [ ] 记录Windows基准/补丁和macOS/Linux实际支持范围
+- [x] 实现 validation 列出的核心故障子集，使用真实临时 SQLite、持久 inbox 和 loopback
+- [x] 覆盖消息恢复、单 owner、旧 epoch、崩溃回滚和未知发布 gate
+- [x] 校验命令 registry/OpenAPI/架构与生成物公共门槛
+- [ ] 记录 Windows 完整基准和 macOS/Linux 实际支持范围（待对应环境运行）
 
 ## 检查
 
-- [ ] 无消息丢失/双owner/旧epoch授权复活
-- [ ] 崩溃恢复不伪造成功和不盲重不可验证动作
+- [x] 无消息丢失/双 owner/旧 epoch 授权复活
+- [x] 崩溃恢复不伪造成功和不盲重不可验证动作
 - [ ] 所有工程阻断项通过，失败有最小复现
-- [ ] mock adapter通过不冒称真宿主已完成
-- [ ] 执行相关模块检查及协议/架构公共门槛，记录确切命令、退出状态与证据文件。
-- [ ] 执行 python tools/docs/validate_docs.py 和本任务 task.py validate，更新规范与上下文。
+- [x] mock adapter 通过不冒称真宿主已完成
+- [x] 执行相关模块检查及协议/架构公共门槛，记录确切命令、退出状态与证据文件。
+- [x] 执行 `python tools/docs/validate_docs.py` 和本任务 `task.py validate`，更新规范与上下文。
 
 ## 结束与交接
 

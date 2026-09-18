@@ -21,10 +21,10 @@ T09, T10。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 验收标准
 
-- [ ] 抓取daemon Git调用无mutation或网络Git
-- [ ] 无main时保持pending不兜底执行
-- [ ] dirty/untracked baseline、HEAD变化明确阻塞
-- [ ] 清理不跨scope，最后副本风险单独控制
+- [x] 抓取daemon Git调用无mutation或网络Git（`GitReadOnlyPort` allowlist）
+- [x] 无main时保持pending不兜底执行
+- [x] dirty/untracked baseline、HEAD变化明确阻塞
+- [x] 清理不跨scope，最后副本风险单独控制
 
 ## 不包含
 

@@ -1,0 +1,60 @@
+{
+  "host": "opencode",
+  "version": "1.18.31",
+  "scope": "headless_no_model_turn",
+  "checks": {
+    "health": true,
+    "project_endpoint": true,
+    "same_directory_distinct": true,
+    "session_details": true,
+    "fork_new_identity": true,
+    "message_history_endpoint": true,
+    "typed_session_api": true
+  },
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "health",
+        "same_directory_distinct",
+        "session_details"
+      ]
+    },
+    "identity.continuity_evidence": {
+      "status": "unknown"
+    },
+    "context.project_read": {
+      "status": "unknown"
+    },
+    "command.typed_tools": {
+      "status": "unknown"
+    },
+    "task.lifecycle": {
+      "status": "unknown"
+    },
+    "cognition.report": {
+      "status": "unknown"
+    },
+    "contract.participation": {
+      "status": "unknown"
+    },
+    "inbox.pull_fetch_ack": {
+      "status": "unknown"
+    },
+    "response.structured": {
+      "status": "unknown"
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "unknown"
+    },
+    "delivery.deduplicate": {
+      "status": "unknown"
+    }
+  },
+  "ready": false,
+  "identity_digests": [
+    "16f30ce4cd8aef8aa201884b077a6981ba5dcfa5dc770ccbc996aef90282a86c",
+    "81f53c212ab986e8e2d380b78e745141b62ec26e512cca32ebc4b0075f97f87b"
+  ],
+  "fork_identity_digest": "2547fa45a71f3f5de382d5156ae3169da9acc2141f242dd36c79d93782104456"
+}

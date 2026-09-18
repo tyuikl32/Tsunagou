@@ -3,7 +3,7 @@
   "name": "t08-tasks",
   "title": "T08 任务、Attempt、委派与验收状态机",
   "description": "tasks表/domain/public ports；Task/Attempt/Result/Review状态机；原子claim与DAG测试",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "tasks",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -35,7 +35,7 @@
       "T06"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

@@ -39,3 +39,5 @@ Full Access 宿主中的文件和命令行为，可能只能通过自然语言�
 用户通过adapter把多个会话接入同一project；worker票据和独立session由系统/bridge管理，不需要把秘密粘贴给模型。ready代表可以协调，claim代表领到任务，start才代表可以在当前范围执行。用户任命main后，普通委派和协商尽量由main与子Agent自行完成。
 
 具体接入步骤、主子职责与恢复情形见[子Agent指南](subagent-guide.md)，操作命令见[简明手册](cli-http-manual.md)。
+
+十分钟演示路径、当前宿主 gate 和实验限制见[本机演示](demo.md)。

@@ -9,3 +9,5 @@
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T24"}
 {"file": "docs/overview/subagent-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T24"}
 {"file": "docs/overview/cli-http-manual.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T24"}
+{"file": "docs/research/experiment-report.md", "reason": "Experiment report explicitly not_run."}
+{"file": "docs/implementation/release-checklist.md", "reason": "Release checklist records completed engineering gates and remaining live host/experiment blockers."}

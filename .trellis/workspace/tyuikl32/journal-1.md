@@ -114,3 +114,214 @@
 ### Next Steps
 
 - 继续 T05 及后续模块专项实现；跨进程 crash 注入、迁移备份和双 writer 压测按台账作为专项验收。
+
+
+## Session 4: T05-T12 domain modules and acceptance
+<!-- trellis-session: v=2 fp=fabc7119243d9e8e -->
+
+**Date**: 2026-09-18
+**Task**: T05-T12 domain modules and acceptance
+**Branch**: `main`
+
+### Summary
+
+完成项目、身份、消息、任务、资源、认知、工作空间和附件八个领域任务，并通过统一质量门槛。
+
+### Main Changes
+
+- 新增八个 Python 领域模块及 8 组单元验收。
+- 补充 T05-T12 PRD/implement/task 状态、上下文和验收台账。
+- 补充 connection nonce/epoch fencing、资源等待 aging 与主 Agent Git 请求边界。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] uv run pytest（44 passed）
+- [OK] uv run ruff check src tools tests；uv run mypy src
+- [OK] uv run python tools/dev/check_architecture.py；uv run python tools/codegen/validate_protocol.py
+- [OK] corepack pnpm -r run check；python tools/docs/validate_docs.py
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续 T13-T24：任务编排、checkpoint/lifecycle、HTTP/MCP/CLI、bridge/adapters、observability 与集成发布门槛。
+
+
+## Session 5: T05-T12 audit closure
+<!-- trellis-session: v=2 fp=0253bdd0a627086e -->
+
+**Date**: 2026-09-18
+**Task**: T05-T12 audit closure
+**Branch**: `main`
+
+### Summary
+
+补齐接入 nonce/epoch fencing、资源等待 aging 与全部实现检查项，重新完成文档校验。
+
+### Main Changes
+
+- Authority rebind 使用 reconnect nonce，authorize 校验 runtime/authority/execution epoch。
+- ResourceService 提供 deterministic waiting aging；T05-T12 implement checks 全部勾选。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] python tools/docs/validate_docs.py（181 Markdown / 655 contexts）
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 按依赖继续 T13-T24。
+
+
+## Session 6: T17 bridge SDK implementation
+<!-- trellis-session: v=2 fp=0a944ca4c46f5cc8 -->
+
+**Date**: 2026-09-18
+**Task**: T17 bridge SDK implementation
+**Branch**: `main`
+
+### Summary
+
+Completed the host-neutral bridge SDK and conformance harness.
+
+### Main Changes
+
+- Added session-scoped credentials, command retry/deduplication, epoch recovery, inbox ACK, Lease renewal, context rendering, MCP/stdio forwarding, and ticket boundary types.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] corepack pnpm --filter @tsunagou/bridge-sdk run check
+- [OK] corepack pnpm --filter @tsunagou/bridge-sdk test
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Start T18 Codex adapter with real-host evidence gating.
+
+
+## Session 7: T18-T24 implementation and live gates
+<!-- trellis-session: v=2 fp=dc4b9a90773bc1c4 -->
+
+**Date**: 2026-09-18
+**Task**: T18-T24 implementation and live gates
+**Branch**: `main`
+
+### Summary
+
+Implemented adapter boundaries, evaluation, integration gates, and demo/experiment artifacts; live host and research gates remain explicit blockers.
+
+### Main Changes
+
+- Added four host-neutral adapter implementations and diagnostics with shared baseline conformance and secret-free installation plans.
+- Added evaluation ledger, release gate tooling, integration recovery tests, experiment plan generator, demo runbook and release checklist.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] corepack pnpm -r run check
+- [OK] corepack pnpm exec vitest run packages/adapter-codex/tests packages/adapter-opencode/tests packages/adapter-zcode/tests packages/adapter-deepseek/tests
+- [OK] uv run pytest tests/unit/test_evaluation.py tests/integration -q
+- [OK] python tools/docs/validate_docs.py
+- [OK] uv run python tools/dev/release_check.py (expected nonzero: four live_baseline_missing)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Obtain and run real host probes for OpenCode, ZCode, DeepSeek Harness and complete Codex 11-item evidence; then rerun T23/T24 gates.
+
+
+## Session 8: CLI contract alignment and final regression
+<!-- trellis-session: v=2 fp=29f025a3b8aa479f -->
+
+**Date**: 2026-09-18
+**Task**: CLI contract alignment and final regression
+**Branch**: `main`
+
+### Summary
+
+Aligned CLI examples with implemented flags and reran the full local quality suite.
+
+### Main Changes
+
+- project init now uses --coordination-root; decision resolve accepts choice, expected revision, digest and reason.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] uv run tsunagou --json doctor
+- [OK] uv run tsunagou agent enroll --adapter codex --mode attach
+- [OK] uv run tsunagou decision resolve decision-1 --choice approve --expected-revision 3 --digest sha256:test --reason ok
+- [OK] 59 pytest, 19 Vitest, Ruff, mypy src, architecture, protocol and docs validation passed
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Install/activate target hosts and collect real baseline evidence before closing T18-T21 and T23-T24.
+
+
+## Session 9: OpenCode 与 DeepSeek 真宿主探针及证据脱敏
+<!-- trellis-session: v=2 fp=deepseek-opencode-live-20260918 -->
+
+**Date**: 2026-09-18
+**Task**: T19/T21 live probe progress
+**Branch**: `main`
+
+### Summary
+
+完成 OpenCode 1.18.31 与官方 DeepSeek Harness 0.1.5-rc.2 的无模型真实探针补充。DeepSeek 探针强制只接受外部服务 URL 与 token，证据使用 keyed identity digest；临时 `DSH_HOME`/`DSH_AGENTS_HOME` 已清理，不触碰用户持久会话。
+
+### Main Changes
+
+- `tools/conformance/probes/opencode/probe.py` 与 `docs/research/evidence/opencode-2026-09-18.json` 保留 session/fork/history 的部分证据。
+- `tools/conformance/probes/deepseek/probe.py` 与 `docs/research/evidence/deepseek-2026-09-18.json` 记录官方 Web token-cookie、session/create 和 session/list 的部分证据。
+- `tools/conformance/probes/zcode/probe.py` 与 `docs/research/evidence/zcode-2026-09-18.json` 显式记录官方宿主不可用时的 11 项 unknown；没有用非官方 npm 客户端替代。
+- T19/T21 文档明确真实版本、认证边界和剩余 unknown；四宿主 release gate 仍不会误报 ready。
+- T21 DeepSeek 文档补充了临时 `DSH_HOME`/`DSH_AGENTS_HOME` 的可复现步骤和清理要求，避免后续探针误触用户持久会话。
+- 收尾审计发现早期手工试验曾在用户 `.dsh` 创建临时 web profile 与两个空 session；已按创建时间和精确路径清理，其他已有 profile、凭据和会话未改动。
+- T23 发布检查增加 `missing_capabilities` 诊断，逐宿主列出具体缺失 baseline；严格四宿主 gate 和退出码保持不变。
+
+### Testing
+
+- [OK] OpenCode 1.18.31 disposable headless probe
+- [OK] DeepSeek Harness 0.1.5-rc.2 temporary-home probe
+- [OK] DeepSeek/OpenCode probe unit tests
+
+### Status
+
+[OK] **Partial evidence recorded; full 11-item baseline remains open**
+
+### Next Steps
+
+- Rerun full pytest, pnpm, Ruff, mypy, architecture, protocol, docs and task validation; keep T18-T21/T23-T24 in progress until all real gates are satisfied.

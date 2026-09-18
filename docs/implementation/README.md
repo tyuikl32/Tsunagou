@@ -1,6 +1,6 @@
 # 实施指导总入口
 
-本组文件是首发实现的规范基线。现在只有规划和 Trellis 配置，没有产品代码；文中源代码路径是待建立的目录。接口/行为设计已足够开始工程工作，宿主 SDK 与精确依赖版本仍须通过 T01/T02 的可执行核验。
+本组文件是首发实现的规范基线。T01–T17、T22 已有产品代码和测试；T18–T21 为 diagnostic adapter，T23–T24 为集成/演示与实验准备。文中仍标为“待实测”的宿主能力必须由真实证据补齐，不能由 simulator 通过替代。
 
 ## 必读顺序
 
@@ -18,6 +18,13 @@
 | 三个Agent实际怎样接入、协商、挂起与恢复 | [逐步协作事实轨迹](coordination-walkthrough.md) |
 | CLI参数如何映射已有权限和HTTP | [CLI外壳契约](cli-contract.md) |
 | 哪些官方资料支持我们的实现选择 | [外部知识索引](references.md) |
+| Codex 适配器如何安装、诊断和验收 | [Codex 适配器实施与诊断](adapter-codex.md) |
+| OpenCode 适配器如何安装、诊断和验收 | [OpenCode 适配器实施与诊断](adapter-opencode.md) |
+| ZCode 适配器如何安装、诊断和验收 | [ZCode 适配器实施与诊断](adapter-zcode.md) |
+| DeepSeek Harness 适配器如何安装、诊断和验收 | [DeepSeek Harness 适配器实施与诊断](adapter-deepseek.md) |
+| 观测、实验和报告如何固定口径 | [评估模块运行约定](evaluation-runbook.md) |
+| 集成测试和发布门禁如何判定 | [集成与发布门禁](release-gates.md) |
+| 首发前逐项检查什么 | [首发交付清单](release-checklist.md) |
 | 向用户解释如何操作 | [CLI/HTTP简明手册](../overview/cli-http-manual.md)、[子Agent指南](../overview/subagent-guide.md) |
 
 上述指南的新增文件名/CLI外壳参数是工程细化，不新增领域动作或用户权限；目录树明确区分待建源码与当前已有文档。示例中的身份别名、版本占位值不能直接作为生产请求。

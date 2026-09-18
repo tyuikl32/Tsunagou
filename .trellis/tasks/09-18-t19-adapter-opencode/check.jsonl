@@ -8,3 +8,6 @@
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T19"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T19"}
 {"file": "docs/overview/subagent-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T19"}
+{"file": "docs/implementation/adapter-opencode.md", "reason": "OpenCode diagnostic-only state and real-host gate."}
+{"file": "tools/conformance/probes/opencode/probe.py", "reason": "Probe execution evidence and cleanup behavior."}
+{"file": "docs/research/evidence/opencode-2026-09-18.json", "reason": "Real opencode-ai 1.18.31 no-model probe evidence; only session isolation/fork observed, ready false."}

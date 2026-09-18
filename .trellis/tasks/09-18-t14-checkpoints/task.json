@@ -3,7 +3,7 @@
   "name": "t14-checkpoints",
   "title": "T14 Checkpoint、Git锚点与共享状态恢复",
   "description": "模块export/import profile与checkpoint format；物化barrier/只读anchor discovery；clone/divergence恢复测试",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "checkpoints",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -38,7 +38,7 @@
       "T12"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

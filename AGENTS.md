@@ -22,7 +22,7 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 ## Tsunagou 项目约定
 
-- 当前仓库先完成设计与任务初始化，产品代码尚未实现。入口是 [实施基线](docs/implementation/README.md) 与 [用户说明](docs/overview/product.md)。
+- 当前仓库已经完成基础产品实现和任务初始化；T01–T17、T22 有代码/测试证据，T18–T21、T23–T24 的真实宿主与实验门禁仍待补证。入口是 [实施基线](docs/implementation/README.md) 与 [用户说明](docs/overview/product.md)。
 - 规范优先级和历史追溯见 [文档目录](docs/README.md)。`docs/history/2026-09-18-source/` 是原始记录，不修改；新实现以当前 implementation、已确认 decisions 为准。
 - 开发前读相应 `.trellis/spec`、当前任务 PRD/design/implement 与上下文。任务依赖以 [task-plan.json](docs/implementation/task-plan.json) 和 `meta.depends_on` 为准；Trellis 父子关系不是依赖调度器。
 - 已确认的问题不要重新逐项询问用户。普通实现选择自行完成并留档；用户目标、重大设计和固定用户权限边界的实质变化才升级。

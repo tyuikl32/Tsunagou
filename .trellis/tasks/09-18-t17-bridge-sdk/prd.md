@@ -21,10 +21,10 @@ T16, T02。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 验收标准
 
-- [ ] 两个session无凭据/上下文串用
-- [ ] 断线/重传/旧epoch同协议预期
-- [ ] 未知呈现/停止证据不虚报
-- [ ] 四adapter仅做宿主翻译，不复制协议/任务状态机
+- [x] 两个session无凭据/上下文串用（`packages/bridge-sdk/tests/bridge.test.ts`）
+- [x] 断线/重传/旧epoch同协议预期（`packages/bridge-sdk/tests/bridge.test.ts`）
+- [x] 未知呈现/停止证据不虚报（`BridgeClient.conformance` 与 `evaluateConformance` 保留 unknown）
+- [x] 四adapter仅做宿主翻译，不复制协议/任务状态机（`HostAdapter`/`runConformance` 只定义翻译和探测端口）
 
 ## 不包含
 
@@ -32,4 +32,4 @@ T16, T02。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 本轮补充验收
 
-- [ ] attach与managed_launch增强分开；票据签发和bridge兑换保持不同principal，不能复制main token。
+- [x] attach与managed_launch增强分开；票据签发和bridge兑换保持 `T` principal，不能复制 main token（`validateBridgeTicket`）。

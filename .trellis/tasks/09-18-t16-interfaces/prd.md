@@ -21,10 +21,10 @@ T15, T07。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 验收标准
 
-- [ ] REST/MCP相同命令hash、权限和错误，user-only不出现在Agent tools
-- [ ] CLI可以初始化、接入、任命、查看/解决决定、恢复与查询Operation
-- [ ] 黑板不引入业务表，截断不漏身份/权限/阻塞
-- [ ] 生成OpenAPI零diff，命令目录覆盖率100%
+- [x] REST/MCP相同命令hash、权限和错误，user-only不出现在Agent tools（`CommandDispatcher` 与 FastAPI/MCP projection）
+- [x] CLI可以初始化、接入、任命、查看/解决决定、恢复与查询Operation
+- [x] 黑板不引入业务表，截断不漏身份/权限/阻塞
+- [x] 生成OpenAPI零diff，命令目录覆盖率100%（`tools/codegen/generate_openapi.py`）
 
 ## 不包含
 
@@ -32,4 +32,4 @@ T15, T07。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 
 ## 本轮补充验收
 
-- [ ] CLI契约逐项映射已有U handler，Agent-only保留动作不出现在用户可执行help中；秘密不进入模型或CLI参数。
+- [x] CLI契约逐项映射已有U handler，Agent-only保留动作不出现在用户可执行help中；秘密不进入模型或CLI参数。

@@ -3,7 +3,7 @@
   "name": "t21-adapter-deepseek",
   "title": "T21 DeepSeek Harness正式共同基线适配",
   "description": "packages/adapter-deepseek；Harness具体版本与接入runbook；真宿主conformance证据",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "adapter",
   "scope": "adapter-deepseek",
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
   "completedAt": null,
-  "branch": null,
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -28,14 +28,14 @@
     "docs/implementation/references.md",
     "docs/overview/subagent-guide.md"
   ],
-  "notes": "",
+  "notes": "Diagnostic adapter and tests implemented. Official @deepseek-ai/dsh 0.1.5-rc.2 was probed with temporary DSH_HOME/DSH_AGENTS_HOME: token-cookie auth, session/create and session/list succeeded; identity.session_isolation is supported, remaining 10 baseline rows stay unknown. Full live gate remains pending.",
   "meta": {
     "plan_id": "T21",
     "depends_on": [
       "T17"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "implementation_partial_live_gate_pending",
+    "product_implemented": true
   }
 }

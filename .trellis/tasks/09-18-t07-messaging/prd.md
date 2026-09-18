@@ -21,10 +21,10 @@ T06。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] 重传不重复消息/回应，主Agent不能读取他人inbox
-- [ ] 无push仍能完整pull恢复
-- [ ] 无presented证据不标已呈现，无retry次数自动deadletter
-- [ ] payload/summary/batch限制与过期租约行为跨语言一致
+- [x] 重传不重复消息/回应，主Agent不能读取他人inbox（command_id 去重、recipient-scoped fetch/ack）
+- [x] 无push仍能完整pull恢复（`sync` 与过期 delivery lease）
+- [x] 无presented证据不标已呈现，无retry次数自动deadletter（ACK 与 present 分离、无隐式 deadletter）
+- [x] payload/summary/batch限制与过期租约行为跨语言一致（固定上限与 30 秒 delivery lease）
 
 ## 不包含
 

@@ -11,3 +11,9 @@
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T21"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T21"}
 {"file": "docs/overview/subagent-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T21"}
+{"file": "packages/adapter-deepseek/src/index.ts", "reason": "DeepSeek Harness-only adapter translation, excluding model API evidence."}
+{"file": "docs/implementation/adapter-deepseek.md", "reason": "DeepSeek Harness installation and diagnostic constraints."}
+{"file": "tools/conformance/probes/deepseek/probe.py", "reason": "Real official DeepSeek Harness token-cookie and session RPC probe with temporary home isolation."}
+{"file": "tests/unit/test_deepseek_probe.py", "reason": "Preserve explicit unknown baseline semantics for the DeepSeek probe."}
+{"file": "docs/research/evidence/deepseek-2026-09-18.json", "reason": "Redacted real official @deepseek-ai/dsh 0.1.5-rc.2 evidence."}
+{"file": "docs/research/host-matrix.md", "reason": "Record official DeepSeek version, temporary-home probe and supported identity isolation."}

@@ -1,6 +1,6 @@
 # CLI 外壳与已有领域命令的精确映射
 
-本文件细化T16的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。`tsunagou`尚未实现；这里是应实现的帮助、参数和映射。HTTP和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
+本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init、agent enroll/appoint、decision、operation 和 recover 外壳；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
 
 ## 1. 适用范围
 

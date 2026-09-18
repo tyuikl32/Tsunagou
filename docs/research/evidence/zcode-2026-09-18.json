@@ -1,0 +1,43 @@
+{
+  "host": "zcode",
+  "version": "unknown",
+  "scope": "no_live_host",
+  "checks": {},
+  "reason": "executable_not_found",
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "unknown"
+    },
+    "identity.continuity_evidence": {
+      "status": "unknown"
+    },
+    "context.project_read": {
+      "status": "unknown"
+    },
+    "command.typed_tools": {
+      "status": "unknown"
+    },
+    "task.lifecycle": {
+      "status": "unknown"
+    },
+    "cognition.report": {
+      "status": "unknown"
+    },
+    "contract.participation": {
+      "status": "unknown"
+    },
+    "inbox.pull_fetch_ack": {
+      "status": "unknown"
+    },
+    "response.structured": {
+      "status": "unknown"
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "unknown"
+    },
+    "delivery.deduplicate": {
+      "status": "unknown"
+    }
+  },
+  "ready": false
+}

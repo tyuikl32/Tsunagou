@@ -21,10 +21,10 @@ T07, T09, T10, T11, T12。父任务只分组；meta.depends_on 是项目约定�
 
 ## 验收标准
 
-- [ ] 任何输入变更使旧preflight失效，无半启动
-- [ ] blocked仍可报告/协商但不能执行
-- [ ] 用户无响应不timeout，resume不自动start
-- [ ] 流程层无自有领域表且仅用public端口
+- [x] 任何输入变更使旧preflight失效，无半启动（PreflightResult digest 复核）
+- [x] blocked仍可报告/协商但不能执行
+- [x] 用户无响应不timeout，resume不自动start
+- [x] 流程层无自有领域表且仅用public端口
 
 ## 不包含
 
@@ -32,4 +32,4 @@ T07, T09, T10, T11, T12。父任务只分组；meta.depends_on 是项目约定�
 
 ## 本轮补充验收
 
-- [ ] coordination-walkthrough中的main+A+B事实轨迹通过，claim/resume只准备，start才执行。
+- [x] coordination-walkthrough中的main+A+B事实轨迹通过，claim/resume只准备，start才执行（`tests/unit/test_task_execution.py`）。

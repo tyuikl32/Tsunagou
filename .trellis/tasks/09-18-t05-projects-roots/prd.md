@@ -21,10 +21,10 @@ T04。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] 多文件夹跨仓库可登记且共享文件不泄露绝对路径
-- [ ] 别名/嵌套root/Windows junction不能扩大权限
-- [ ] 单root故障不阻塞无关动作
-- [ ] unanchored允许普通协作，init从第一步有持久化
+- [x] 多文件夹跨仓库可登记且共享文件不泄露绝对路径（`ProjectRegistry.shared_export` 与 root/repository 注册）
+- [x] 别名/嵌套root/Windows junction不能扩大权限（resolve 后 segment-aware containment 与 physical identity）
+- [x] 单root故障不阻塞无关动作（`diagnose` 按 root 返回 unbound/identity 状态）
+- [x] unanchored允许普通协作，init从第一步有持久化（协调仓库 `.tsunagou/project.json`，不要求已有 commit）
 
 ## 不包含
 

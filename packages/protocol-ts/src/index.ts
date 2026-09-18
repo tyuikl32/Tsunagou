@@ -8,3 +8,5 @@ export interface CommandEnvelope<TPayload = Record<string, unknown>> {
   schema_bundle_digest: Digest;
   payload: TPayload;
 }
+
+export type { CommandKind } from "./generated/commands.js";

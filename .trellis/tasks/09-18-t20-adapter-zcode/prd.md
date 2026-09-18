@@ -21,10 +21,10 @@ T17。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] 11项通过且ID连续性有证据
-- [ ] hook缺失不能假ready/enforced
-- [ ] Full Access仍遵守API角色边界
-- [ ] 安装/卸载可复现，敏感输出脱敏
+- [ ] 11 项通过且 ID 连续性有证据（ZCode 未安装，保留 unknown）
+- [x] hook 缺失不能假 ready/enforced
+- [x] Full Access 仍遵守 API 角色边界
+- [x] 安装/卸载可复现，敏感输出脱敏
 
 ## 不包含
 

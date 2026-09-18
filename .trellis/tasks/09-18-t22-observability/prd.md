@@ -21,10 +21,10 @@ T04, T07, T08, T10。父任务只分组；meta.depends_on 是项目约定，Trel
 
 ## 验收标准
 
-- [ ] secret哨兵不会经日志/error/export/telemetry泄漏
-- [ ] 无usage标unavailable不是0
-- [ ] 审计不能修改业务真相
-- [ ] 统计对相同输入可复现，样本/限制公开
+- [x] secret 哨兵不会经日志/error/export/telemetry 泄漏（`SecretRedactor` 与 `test_secret_redaction_applies_to_exports`）
+- [x] 无 usage 标 `unavailable` 不是 0（`token_sample`）
+- [x] 审计不能修改业务真相（`AuditProjector` 只读投影测试）
+- [x] 统计对相同输入可复现，样本/限制公开（`ExperimentDefinition` digest 与 `EvaluationLedger.report`）
 
 ## 不包含
 

@@ -21,10 +21,10 @@ T08。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] 交叠prefix冲突正确，普通read不假装快照
-- [ ] 旧session/execution epoch不能续租
-- [ ] blocked无execution Lease，wait不自动start
-- [ ] 物理Agent仍跑时保留残余风险，不声明强制停止
+- [x] 交叠prefix冲突正确，普通read不假装快照（canonical ResourceKey 与冲突矩阵）
+- [x] 旧session/execution epoch不能续租（renew 精确校验 epoch/scope）
+- [x] blocked无execution Lease，wait不自动start
+- [x] 物理Agent仍跑时保留残余风险，不声明强制停止（external observation 仅记录证据）
 
 ## 不包含
 

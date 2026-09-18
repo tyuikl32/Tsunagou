@@ -21,10 +21,10 @@ T07, T08, T10, T11, T12。父任务只分组；meta.depends_on 是项目约定�
 
 ## 验收标准
 
-- [ ] Windows rename/崩溃各窗口可恢复且hash稳定
-- [ ] SQLite事实不被物化失败回滚
-- [ ] 同实体冲突不自动合并，sealed不混合
-- [ ] 本机anchor和main_reported远端证据明确不同
+- [x] Windows rename/崩溃各窗口可恢复且hash稳定（同卷 staging、逐文件 replace、manifest digest 验证）
+- [x] SQLite事实不被物化失败回滚（checkpoint 物化独立于 SQLite 写事务）
+- [x] 同实体冲突不自动合并，sealed不混合（`merge_lineage`）
+- [x] 本机anchor和main_reported远端证据明确不同（`GitAnchor.status` 保持 local_verified）
 
 ## 不包含
 

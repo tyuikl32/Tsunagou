@@ -21,10 +21,10 @@ T17。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] 11项全部通过才ready/正式支持
-- [ ] 无可靠ID就diagnostic，不用猜测
-- [ ] 增强矩阵与实际启用配置一致
-- [ ] 安装可逆且不把token写prompt/env/MCP args
+- [ ] 11项全部通过才 ready/正式支持（当前真实证据仍不足，`tools/dev/release_check.py` 保持 gate 失败）
+- [x] 无可靠 ID 就 diagnostic，不用猜测（`CodexAdapter.getIdentity`）
+- [x] 增强矩阵与实际启用配置一致（无证据保留 unknown）
+- [x] 安装可逆且不把 token 写 prompt/env/MCP args（installation plan 与测试）
 
 ## 不包含
 

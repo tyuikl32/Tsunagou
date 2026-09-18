@@ -3,7 +3,7 @@
   "name": "t11-workspaces",
   "title": "T11 隔离驱动、工作空间与Git请求",
   "description": "shared/worktree/external drivers；IsolationDecision/Baseline/Result/GitActionRequest；Git只读allowlist与manifest核验",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "workspaces",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -35,7 +35,7 @@
       "T10"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

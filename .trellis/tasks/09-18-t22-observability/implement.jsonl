@@ -10,3 +10,6 @@
 {"file": "docs/implementation/build-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T22"}
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T22"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T22"}
+{"file": "src/tsunagou/modules/evaluation.py", "reason": "Evaluation ledger, audit projection, secret redaction, unavailable metrics and deterministic reports."}
+{"file": "tests/unit/test_evaluation.py", "reason": "Evaluation privacy, digest determinism and unavailable usage tests."}
+{"file": "docs/implementation/evaluation-runbook.md", "reason": "Evaluation privacy, metric and report operating rules."}
