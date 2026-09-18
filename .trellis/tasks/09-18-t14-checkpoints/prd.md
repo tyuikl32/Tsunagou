@@ -1,0 +1,31 @@
+# T14 Checkpoint、Git锚点与共享状态恢复
+
+状态：已规划，未实施。负责人：tyuikl32；开发平台：Codex。
+
+## 目标与交付
+
+- 模块export/import profile与checkpoint format
+- 物化barrier/只读anchor discovery
+- clone/divergence恢复测试
+
+## 前置依赖
+
+T12, T05。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动调度。开始前检查依赖产物与验收证据。
+
+## 范围
+
+- 实现排序NDJSON/manifest/parent digest、staging/flush/replace与watermark
+- 实现heads/tags可达commit字节核验，排除remote/reflog/unreachable
+- 实现各模块共享白名单导出，不含token/Grant/Lease/job claim/私信
+- 实现同lineage三方消歧、未来format只读、备份与迁移核验
+
+## 验收标准
+
+- [ ] Windows rename/崩溃各窗口可恢复且hash稳定
+- [ ] SQLite事实不被物化失败回滚
+- [ ] 同实体冲突不自动合并，sealed不混合
+- [ ] 本机anchor和main_reported远端证据明确不同
+
+## 不包含
+
+不增加 Web UI、远程认证、隐含认知推断或 daemon Git 写操作；不改变用户已确认权限边界。其他模块只能经 public ports 接入。涉及宿主的真实能力不以模拟通过代替。

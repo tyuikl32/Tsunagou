@@ -1,0 +1,40 @@
+{
+  "id": "t22-observability",
+  "name": "t22-observability",
+  "title": "T22 脱敏审计、指标与实验运行框架",
+  "description": "evaluation模块、structlog与可选OTel；ExperimentDefinition/Run/Result/Report；A/B/C/D数据集和指标采集框架",
+  "status": "planning",
+  "dev_type": "validation",
+  "scope": "observability",
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/modules/08-evaluation.md",
+    "docs/implementation/validation.md"
+  ],
+  "notes": "",
+  "meta": {
+    "plan_id": "T22",
+    "depends_on": [
+      "T04",
+      "T07",
+      "T08",
+      "T10"
+    ],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false
+  }
+}

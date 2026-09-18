@@ -1,0 +1,757 @@
+{
+  "format_version": 1,
+  "created_at": "2026-09-18",
+  "status": "planned_not_implemented",
+  "developer": "tyuikl32",
+  "platform": "codex",
+  "dependency_semantics": "meta.depends_on is a project convention; Trellis hierarchy is not a dependency scheduler. Verify completion evidence before starting.",
+  "tasks": [
+    {
+      "id": "T01",
+      "slug": "foundation",
+      "title": "工程骨架与可复现工具链",
+      "depends_on": [],
+      "specs": [
+        "docs/implementation/architecture.md",
+        "docs/overview/technology.md"
+      ],
+      "deliverables": [
+        "pyproject.toml、uv.lock、src/tsunagou骨架",
+        "package.json、pnpm-workspace.yaml、pnpm-lock.yaml",
+        "Windows开发引导与静态检查脚本"
+      ],
+      "steps": [
+        "核验Python/Node/pnpm/TS版本窗口和注册表可用性，保存实际输出；冲突记录兼容矩阵",
+        "建立单Python distribution和六TS工作区包，生成目录标只读",
+        "安装并锁定FastAPI/数据库/CLI/Schema/测试依赖，MCP SDK精确版本接T02结论",
+        "加入Ruff/mypy/pytest/Vitest和import边界检查入口，制定源码运行命令"
+      ],
+      "acceptance": [
+        "Windows干净环境可按锁文件安装和导入空应用",
+        "Python域层不依赖框架，TS内部包使用workspace:*和strict/NodeNext",
+        "重装不改变锁文件；不把未实现产品演示写成已可运行",
+        "版本冲突有证据，无静默扩大已定窗口"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t01-foundation"
+    },
+    {
+      "id": "T02",
+      "slug": "host-probes",
+      "title": "四宿主与MCP可行性探针",
+      "depends_on": [],
+      "specs": [
+        "docs/implementation/adapters.md",
+        "docs/implementation/protocol.md"
+      ],
+      "deliverables": [
+        "docs/research/host-matrix.md",
+        "tools/conformance/probes/<host>/",
+        "脱敏身份生命周期与MCP验证记录"
+      ],
+      "steps": [
+        "核对四宿主官方资料、已安装或可获取版本，确认目标Harness而非模型API",
+        "逐宿主验证同目录双session、resume、compact、new、clear、fork和安装profile标识",
+        "验证typed tools、共享项目MCP鉴权、stdio转发、token私有交付；锁定Python/TS官方SDK兼容API",
+        "记录wake/gate/presented/launch/stop增强实测值，给出正式支持版本窗或明确阻断原因"
+      ],
+      "acceptance": [
+        "11项共同基线逐项有证据状态，未知不填supported",
+        "身份连续性无法证明则不ready，不用cwd/PID/LLM自报替代",
+        "两个宿主连接共享服务但不能共享principal",
+        "所有probe日志无token/raw conversation ID/私有transcript；失败不被隐藏"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t02-host-probes"
+    },
+    {
+      "id": "T03",
+      "slug": "protocol",
+      "title": "统一Schema、DTO与命令策略目录",
+      "depends_on": [
+        "T01"
+      ],
+      "specs": [
+        "docs/implementation/protocol.md",
+        "docs/implementation/data-model.md",
+        "docs/implementation/command-catalog.md"
+      ],
+      "deliverables": [
+        "protocol/schemas/与fixtures/",
+        "Python/TS生成器和确定性产物",
+        "CommandPolicy/错误/版本注册表"
+      ],
+      "steps": [
+        "逐项落实命令目录为完整输入输出Schema，展开user命令变体和查询，不保留模糊自由JSON",
+        "实现UUIDv7/UTC/safe-int/PathRule/Scope/EntityRef/JCS公共profile及正反例",
+        "登记每命令唯一principal/grant/capability/predicates/blocker action，bootstrap/system_job独立",
+        "生成Pydantic、TS DTO和后续OpenAPI客户端入口；协商N/N-1与bundle digest"
+      ],
+      "acceptance": [
+        "Python/TS对fixtures接受拒绝一致，JCS哈希一致",
+        "每命令都有Schema和policy，无未注册handler，user-only不暴露MCP",
+        "同输入两次生成字节一致，提交生成物无时间戳",
+        "runtime_epoch是UUID，其他epoch是安全整数；null和省略语义明确"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t03-protocol"
+    },
+    {
+      "id": "T04",
+      "slug": "storage-runtime",
+      "title": "SQLite事务、事件与持久Operation运行时",
+      "depends_on": [
+        "T03"
+      ],
+      "specs": [
+        "docs/implementation/architecture.md",
+        "docs/implementation/modules/07-durability.md"
+      ],
+      "deliverables": [
+        "platform/db和durability核心",
+        "UoW、Alembic、events/commands/outbox/operations/jobs",
+        "真实SQLite并发与故障测试"
+      ],
+      "steps": [
+        "建立每项目单writer队列、OS lock、WAL/FULL/FK和一致读snapshot",
+        "实现事务内授权回调、幂等hash/result、event_seq与outbox原子写",
+        "实现Operation/Job/JobAttempt、worker lease、timeout/backoff、effect分类和unknown处理",
+        "启动恢复登记项目未完成工作；迁移前备份，失败只读诊断"
+      ],
+      "acceptance": [
+        "commit前后崩溃不丢状态或重复动作",
+        "同command_id不同hash冲突，旧epoch不能借重放绕权限",
+        "外部效果未知不盲目重试，Resolution只追加",
+        "两个本机writer互斥；Job超时不解释用户沉默"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t04-storage-runtime"
+    },
+    {
+      "id": "T05",
+      "slug": "projects-roots",
+      "title": "项目初始化、根目录与范围模型",
+      "depends_on": [
+        "T04"
+      ],
+      "specs": [
+        "docs/implementation/modules/01-projects.md",
+        "docs/implementation/architecture.md",
+        "docs/implementation/lifecycle.md"
+      ],
+      "deliverables": [
+        "projects实体/仓储/public ports",
+        "项目中心目录与配置层",
+        "路径身份/交集/绑定测试"
+      ],
+      "steps": [
+        "初始化已有Git协调仓库，创建project/lineage/replica和genesis计划，未commit可active",
+        "实现named roots/repositories、本机binding、physical identity、case/link规则",
+        "实现PathRule交并、user ceiling、config provenance和scoped conditions/blockers",
+        "实现项目注册/惰性加载与只读诊断，禁止全局目录成为唯一协作存储"
+      ],
+      "acceptance": [
+        "多文件夹跨仓库可登记且共享文件不泄露绝对路径",
+        "别名/嵌套root/Windows junction不能扩大权限",
+        "单root故障不阻塞无关动作",
+        "unanchored允许普通协作，init从第一步有持久化"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t05-projects-roots"
+    },
+    {
+      "id": "T06",
+      "slug": "identity-authority",
+      "title": "会话身份、最小认证、Grant与主权限",
+      "depends_on": [
+        "T05",
+        "T02"
+      ],
+      "specs": [
+        "docs/implementation/modules/02-agents.md",
+        "docs/implementation/modules/01-projects.md",
+        "docs/implementation/adapters.md"
+      ],
+      "deliverables": [
+        "agents接入/认证/public ports",
+        "五类Grant与CommandPolicy执行器",
+        "最小control/session私有凭据存储"
+      ],
+      "steps": [
+        "实现installation+conversation keyed digest、ticket原子兑换、degraded/ready与probe快照",
+        "实现32字节opaque token哈希存储、私有交付、rebind和secret脱敏",
+        "实现Connection nonce CAS及commit前epoch fencing、单Agent单非终态Session",
+        "实现user-only任命撤销、main-authority、五Grant typed scope与权限矩阵"
+      ],
+      "acceptance": [
+        "子Agent不能任命主Agent或操作其他Attempt",
+        "并发兑换/重连无重复身份，token交付丢失走rebind",
+        "baseline缺失仅diagnostic，raw ID/token不进共享历史或模型",
+        "无OAuth/keyring/refresh体系；Full Access防护范围如实说明"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t06-identity-authority"
+    },
+    {
+      "id": "T07",
+      "slug": "messaging",
+      "title": "持久消息、收件箱与回应义务",
+      "depends_on": [
+        "T06"
+      ],
+      "specs": [
+        "docs/implementation/modules/02-agents.md",
+        "docs/implementation/protocol.md"
+      ],
+      "deliverables": [
+        "Message/RoutingSnapshot/Delivery/ResponseObligation",
+        "pull/fetch/ACK/response端口",
+        "SSE高水位与outbox投递"
+      ],
+      "steps": [
+        "固化sender/recipient/response contract和payload限制，正文领域授权",
+        "实现投递租约、批量限制、优先级aging、fetch后去重、defer和ACK",
+        "实现response/waive/supersede义务与发送同UoW；ACK不满足义务",
+        "实现push失败抑制和SSE提示，重连REST sync，无replay真相表"
+      ],
+      "acceptance": [
+        "重传不重复消息/回应，主Agent不能读取他人inbox",
+        "无push仍能完整pull恢复",
+        "无presented证据不标已呈现，无retry次数自动deadletter",
+        "payload/summary/batch限制与过期租约行为跨语言一致"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t07-messaging"
+    },
+    {
+      "id": "T08",
+      "slug": "tasks",
+      "title": "任务、Attempt、委派与验收状态机",
+      "depends_on": [
+        "T06"
+      ],
+      "specs": [
+        "docs/implementation/modules/03-tasks.md",
+        "docs/implementation/data-model.md"
+      ],
+      "deliverables": [
+        "tasks表/domain/public ports",
+        "Task/Attempt/Result/Review状态机",
+        "原子claim与DAG测试"
+      ],
+      "steps": [
+        "实现create/ready/publish/claim与单owner current Attempt约束",
+        "实现block/resume准备态、submit/review/self/automated、cancel/orphan/recover",
+        "实现parent导航与blocks DAG独立，completed follow-up，精确子ResultRef",
+        "实现scope request/批准后撤Grant阻塞与批量restore_open端口"
+      ],
+      "acceptance": [
+        "并发claim一个owner；主权限不替代Attempt owner",
+        "resume到claimed，start才running；关闭Attempt不复活",
+        "父终态不级联，孩子状态不自动挡父提交",
+        "review exact result/round，返工新Attempt，batch全成或全败"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t08-tasks"
+    },
+    {
+      "id": "T09",
+      "slug": "resources",
+      "title": "资源冲突、等待与Lease",
+      "depends_on": [
+        "T08"
+      ],
+      "specs": [
+        "docs/implementation/modules/05-resources.md",
+        "docs/implementation/modules/01-projects.md"
+      ],
+      "deliverables": [
+        "ResourceIntent/LeaseSet/WaitQueue",
+        "Lease时钟/续租/到期流程",
+        "scope和冲突属性测试"
+      ],
+      "steps": [
+        "实现规范path/named资源key及physical alias归一",
+        "实现read/consistent_read/exclusive_write/exclusive_use冲突矩阵与all-or-none获取",
+        "实现TTL120/renew30、FIFO+aging、无抢占，claimed预留",
+        "到期/离开running时同UoW撤许可并释放，外部观察仅证据"
+      ],
+      "acceptance": [
+        "交叠prefix冲突正确，普通read不假装快照",
+        "旧session/execution epoch不能续租",
+        "blocked无execution Lease，wait不自动start",
+        "物理Agent仍跑时保留残余风险，不声明强制停止"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t09-resources"
+    },
+    {
+      "id": "T10",
+      "slug": "cognition",
+      "title": "认知报告、分歧、契约和风险",
+      "depends_on": [
+        "T08"
+      ],
+      "specs": [
+        "docs/implementation/modules/04-cognition.md",
+        "docs/implementation/runtime-prompts.md"
+      ],
+      "deliverables": [
+        "Report/Discrepancy/Contract/Risk实体与端口",
+        "确定性规则registry",
+        "契约hash与proxy测试"
+      ],
+      "steps": [
+        "实现版本化认知报告和显式claims/uncertainties，报告边界校验",
+        "实现显式分歧和固定类型/字面/hash/resource规则及去重",
+        "实现proposal不可变payload/participants、全required exact digest接受和获准proxy",
+        "实现main风险请求/建议、120秒fallback、input digest风险接受有效性"
+      ],
+      "acceptance": [
+        "无语义模型/文本相似度硬判定",
+        "参与者或内容变化需新proposal及新接受",
+        "proxy保留真实actor，policy不允许则拒绝",
+        "风险接受不能越ceiling或把unknown判成功"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t10-cognition"
+    },
+    {
+      "id": "T11",
+      "slug": "workspaces",
+      "title": "隔离驱动、工作空间与Git请求",
+      "depends_on": [
+        "T09",
+        "T10"
+      ],
+      "specs": [
+        "docs/implementation/modules/06-workspaces.md",
+        "docs/implementation/modules/07-durability.md"
+      ],
+      "deliverables": [
+        "shared/worktree/external drivers",
+        "IsolationDecision/Baseline/Result/GitActionRequest",
+        "Git只读allowlist与manifest核验"
+      ],
+      "steps": [
+        "实现driver候选与hard constraints校验，不规定单一默认隔离",
+        "把worktree创建/移除及所有Git写操作转为main请求，daemon仅核验",
+        "实现baseline/result、单repo worktree、未提交patch引用和多repo部分结果",
+        "实现integration/cleanup计划与terminal+checkpoint屏障，dirty强制user-only"
+      ],
+      "acceptance": [
+        "抓取daemon Git调用无mutation或网络Git",
+        "无main时保持pending不兜底执行",
+        "dirty/untracked baseline、HEAD变化明确阻塞",
+        "清理不跨scope，最后副本风险单独控制"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t11-workspaces"
+    },
+    {
+      "id": "T12",
+      "slug": "artifacts",
+      "title": "领域授权附件与内容寻址存储",
+      "depends_on": [
+        "T06",
+        "T04"
+      ],
+      "specs": [
+        "docs/implementation/modules/07-durability.md",
+        "docs/implementation/protocol.md"
+      ],
+      "deliverables": [
+        "upload intent/bytes/finalize与blob目录",
+        "各模块ArtifactRef授权接口",
+        "promote与共享导出规则"
+      ],
+      "steps": [
+        "实现大小受限流式上传、临时文件与SHA256/length finalize",
+        "引用归领域拥有，read始终检查domain ref和recipient",
+        "实现默认local及main/user显式project_shared promote",
+        "实现临时上传清理，禁止已final blob自动GC，错误路径脱敏"
+      ],
+      "acceptance": [
+        "仅知hash不能读取，私信附件不因main身份自动提升",
+        "截断/篡改/重复上传结果正确",
+        "no-auto-GC和checkpoint export白名单可验证",
+        "文件I/O不在SQLite写事务中"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t12-artifacts"
+    },
+    {
+      "id": "T13",
+      "slug": "task-orchestration",
+      "title": "跨模块Preflight与认知协作闭环",
+      "depends_on": [
+        "T07",
+        "T09",
+        "T10",
+        "T11",
+        "T12"
+      ],
+      "specs": [
+        "docs/implementation/lifecycle.md",
+        "docs/implementation/modules/03-tasks.md",
+        "docs/implementation/modules/04-cognition.md"
+      ],
+      "deliverables": [
+        "application/workflows/task_execution",
+        "scope/report/contract/resource/workspace组合preflight",
+        "首个模拟多Agent认知协作场景"
+      ],
+      "steps": [
+        "将所有模块证据组成带revisions/digest的PreflightResult",
+        "实现claimed/start原子核验及Grant签发、submit撤权/Lease和review",
+        "实现block保存快照、resume重新准备，相关scope blocker与无关工作继续",
+        "完成两Agent显式分歧→契约→任务结果的持久端到端场景"
+      ],
+      "acceptance": [
+        "任何输入变更使旧preflight失效，无半启动",
+        "blocked仍可报告/协商但不能执行",
+        "用户无响应不timeout，resume不自动start",
+        "流程层无自有领域表且仅用public端口"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t13-task-orchestration"
+    },
+    {
+      "id": "T14",
+      "slug": "checkpoints",
+      "title": "Checkpoint、Git锚点与共享状态恢复",
+      "depends_on": [
+        "T12",
+        "T05"
+      ],
+      "specs": [
+        "docs/implementation/modules/07-durability.md",
+        "docs/implementation/lifecycle.md"
+      ],
+      "deliverables": [
+        "模块export/import profile与checkpoint format",
+        "物化barrier/只读anchor discovery",
+        "clone/divergence恢复测试"
+      ],
+      "steps": [
+        "实现排序NDJSON/manifest/parent digest、staging/flush/replace与watermark",
+        "实现heads/tags可达commit字节核验，排除remote/reflog/unreachable",
+        "实现各模块共享白名单导出，不含token/Grant/Lease/job claim/私信",
+        "实现同lineage三方消歧、未来format只读、备份与迁移核验"
+      ],
+      "acceptance": [
+        "Windows rename/崩溃各窗口可恢复且hash稳定",
+        "SQLite事实不被物化失败回滚",
+        "同实体冲突不自动合并，sealed不混合",
+        "本机anchor和main_reported远端证据明确不同"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t14-checkpoints"
+    },
+    {
+      "id": "T15",
+      "slug": "lifecycles",
+      "title": "重大决定、完成、继任与Lineage转换",
+      "depends_on": [
+        "T13",
+        "T14"
+      ],
+      "specs": [
+        "docs/implementation/lifecycle.md",
+        "docs/implementation/modules/01-projects.md",
+        "docs/implementation/modules/02-agents.md",
+        "docs/implementation/modules/07-durability.md"
+      ],
+      "deliverables": [
+        "UserDecision/Completion/Archive/Reactivate workflows",
+        "AuthorityTransition/AgentSuccession",
+        "ReplicaActivate/LineageReset/OperationResolution"
+      ],
+      "steps": [
+        "实现精确revision/digest用户控制决定，不从宿主对话伪造批准",
+        "实现completion当前Attempt收敛，completed立即事务生效，checkpoint异步屏障",
+        "实现handoff/succession冻结/收敛、义务替换、新契约与残余风险",
+        "实现新lineage unassigned/新runtime无旧授权、显式恢复任务；unknown追加Resolution"
+      ],
+      "acceptance": [
+        "用户沉默无限持久不拒绝/失败",
+        "checkpoint失败保留completed，归档受阻但repair可用",
+        "旧owner/session/grant在继任和reset后不能复活",
+        "用户ceiling/项目完成等固定边界不能被main风险接受绕过"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t15-lifecycles"
+    },
+    {
+      "id": "T16",
+      "slug": "interfaces",
+      "title": "HTTP、MCP、CLI、黑板与运行提示",
+      "depends_on": [
+        "T15",
+        "T07"
+      ],
+      "specs": [
+        "docs/implementation/command-catalog.md",
+        "docs/implementation/protocol.md",
+        "docs/implementation/runtime-prompts.md"
+      ],
+      "deliverables": [
+        "FastAPI routers、共享MCP、Typer CLI",
+        "一致读Blackboard与版本化提示资产",
+        "OpenAPI artifact、用户操作runbook"
+      ],
+      "steps": [
+        "逐条暴露同一CommandPolicy/handler，落实REST headers/ETag/problem和MCP工具投影",
+        "实现user CLI控制入口与--json/退出码、config provenance/doctor",
+        "实现黑板single read snapshot、bounded sections、敏感过滤和详情入口",
+        "实现核心prompt fragments/version/digest与attach/resume/task边界最小注入"
+      ],
+      "acceptance": [
+        "REST/MCP相同命令hash、权限和错误，user-only不出现在Agent tools",
+        "CLI可以初始化、接入、任命、查看/解决决定、恢复与查询Operation",
+        "黑板不引入业务表，截断不漏身份/权限/阻塞",
+        "生成OpenAPI零diff，命令目录覆盖率100%"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t16-interfaces"
+    },
+    {
+      "id": "T17",
+      "slug": "bridge-sdk",
+      "title": "共享Bridge SDK与适配器一致性测试框架",
+      "depends_on": [
+        "T16",
+        "T02"
+      ],
+      "specs": [
+        "docs/implementation/adapters.md",
+        "docs/implementation/protocol.md",
+        "docs/implementation/runtime-prompts.md"
+      ],
+      "deliverables": [
+        "packages/bridge-sdk",
+        "host-neutral Adapter接口和simulator",
+        "统一conformance harness"
+      ],
+      "steps": [
+        "实现身份/私有凭据/connection、typed client和重试去重",
+        "实现共享MCP和逐session stdio转发，模型看不到token",
+        "实现inbox调度/提示裁剪/后台Lease renew与诊断",
+        "实现全部baseline与增强降级的统一mock-host验收"
+      ],
+      "acceptance": [
+        "两个session无凭据/上下文串用",
+        "断线/重传/旧epoch同协议预期",
+        "未知呈现/停止证据不虚报",
+        "四adapter仅做宿主翻译，不复制协议/任务状态机"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t17-bridge-sdk"
+    },
+    {
+      "id": "T18",
+      "slug": "adapter-codex",
+      "title": "Codex正式共同基线适配",
+      "depends_on": [
+        "T17"
+      ],
+      "specs": [
+        "docs/implementation/adapters.md",
+        "docs/implementation/runtime-prompts.md"
+      ],
+      "deliverables": [
+        "packages/adapter-codex",
+        "Codex安装/卸载/诊断指南",
+        "真实版本窗与conformance证据"
+      ],
+      "steps": [
+        "采用T02已验证的Codex官方会话/工具接口，绑定installation和conversation",
+        "连接共享SDK，处理resume/compact/new/clear/fork事件与工具调用上下文",
+        "映射实际可用hook/wake/gate，不修改用户全局Full Access设定",
+        "执行11项baseline与跨同目录会话、重启、故障真宿主验收"
+      ],
+      "acceptance": [
+        "11项全部通过才ready/正式支持",
+        "无可靠ID就diagnostic，不用猜测",
+        "增强矩阵与实际启用配置一致",
+        "安装可逆且不把token写prompt/env/MCP args"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t18-adapter-codex"
+    },
+    {
+      "id": "T19",
+      "slug": "adapter-opencode",
+      "title": "OpenCode正式共同基线适配",
+      "depends_on": [
+        "T17"
+      ],
+      "specs": [
+        "docs/implementation/adapters.md",
+        "docs/implementation/runtime-prompts.md"
+      ],
+      "deliverables": [
+        "packages/adapter-opencode",
+        "OpenCode安装与probe说明",
+        "版本化真宿主证据"
+      ],
+      "steps": [
+        "采用T02确认的SDK session/plugin事件并绑定工具请求",
+        "共享bridge身份/消息/恢复实现，验证多session同目录隔离",
+        "映射wake/工具观察/生命周期增强，未知证据保守处理",
+        "执行baseline、重复事件、乱序事件、断线恢复真宿主测试"
+      ],
+      "acceptance": [
+        "11项通过且和Codex用同一conformance口径",
+        "plugin关闭/能力下降转相应degraded或降级",
+        "模型不能指定sender/owner",
+        "不复制领域Schema或绕REST授权"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t19-adapter-opencode"
+    },
+    {
+      "id": "T20",
+      "slug": "adapter-zcode",
+      "title": "ZCode正式共同基线适配",
+      "depends_on": [
+        "T17"
+      ],
+      "specs": [
+        "docs/implementation/adapters.md",
+        "docs/implementation/runtime-prompts.md"
+      ],
+      "deliverables": [
+        "packages/adapter-zcode",
+        "ZCode Hook/MCP安装与诊断",
+        "版本/能力/生命周期实测记录"
+      ],
+      "steps": [
+        "采用T02确认的SessionStart/session_id和工具入口",
+        "验证hook实际启用、clear/fork与resume语义，不仅检测配置文件存在",
+        "接共享SDK和最小提示，对gate/wake准确声明强度",
+        "执行baseline与hook缺失/重复通知/重启真宿主测试"
+      ],
+      "acceptance": [
+        "11项通过且ID连续性有证据",
+        "hook缺失不能假ready/enforced",
+        "Full Access仍遵守API角色边界",
+        "安装/卸载可复现，敏感输出脱敏"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t20-adapter-zcode"
+    },
+    {
+      "id": "T21",
+      "slug": "adapter-deepseek",
+      "title": "DeepSeek Harness正式共同基线适配",
+      "depends_on": [
+        "T17"
+      ],
+      "specs": [
+        "docs/implementation/adapters.md",
+        "docs/implementation/runtime-prompts.md"
+      ],
+      "deliverables": [
+        "packages/adapter-deepseek",
+        "Harness具体版本与接入runbook",
+        "真宿主conformance证据"
+      ],
+      "steps": [
+        "确认T02指定Harness产品/版本及session事件对象，不以模型API替代",
+        "绑定持久conversation和新分支、处理重复事件/重启",
+        "接共享SDK工具/消息/黑板，声明可用enhancement",
+        "执行11项baseline与恢复/去重/并行会话真实验收"
+      ],
+      "acceptance": [
+        "11项通过才正式支持，资料或软件不可用明确阻断",
+        "模型API调用成功不能当作Harness集成成功",
+        "事件回放不重复业务动作",
+        "与其他三adapter协议和身份语义一致"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t21-adapter-deepseek"
+    },
+    {
+      "id": "T22",
+      "slug": "observability",
+      "title": "脱敏审计、指标与实验运行框架",
+      "depends_on": [
+        "T04",
+        "T07",
+        "T08",
+        "T10"
+      ],
+      "specs": [
+        "docs/implementation/modules/08-evaluation.md",
+        "docs/implementation/validation.md"
+      ],
+      "deliverables": [
+        "evaluation模块、structlog与可选OTel",
+        "ExperimentDefinition/Run/Result/Report",
+        "A/B/C/D数据集和指标采集框架"
+      ],
+      "steps": [
+        "实现脱敏事件投影/只读审计，权限过滤不可被main绕过",
+        "实现intervention/rework/latency/token来源与availability口径",
+        "实现固定实验定义digest、随机种子、预算/版本记录和原始结果引用",
+        "实现报告Job及统计，不删除失败样本；OTLP默认关闭"
+      ],
+      "acceptance": [
+        "secret哨兵不会经日志/error/export/telemetry泄漏",
+        "无usage标unavailable不是0",
+        "审计不能修改业务真相",
+        "统计对相同输入可复现，样本/限制公开"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t22-observability"
+    },
+    {
+      "id": "T23",
+      "slug": "integration-release-gates",
+      "title": "端到端与故障恢复发布门槛",
+      "depends_on": [
+        "T15",
+        "T16",
+        "T17",
+        "T22"
+      ],
+      "specs": [
+        "docs/implementation/validation.md",
+        "docs/implementation/lifecycle.md",
+        "docs/implementation/modules/07-durability.md"
+      ],
+      "deliverables": [
+        "tests/integration与fault_injection",
+        "Windows CI/本机发布检查",
+        "端到端操作证据与缺陷清单"
+      ],
+      "steps": [
+        "实现validation列出的12类最低故障，真实SQLite/Git/loopback",
+        "覆盖认知闭环、长期用户等待、继任、未知外部结果、完成物化失败、reset",
+        "校验全部命令权限矩阵、双语言fixtures、import边界与生成物",
+        "记录Windows基准/补丁和macOS/Linux实际支持范围"
+      ],
+      "acceptance": [
+        "无消息丢失/双owner/旧epoch授权复活",
+        "崩溃恢复不伪造成功和不盲重不可验证动作",
+        "所有工程阻断项通过，失败有最小复现",
+        "mock adapter通过不冒称真宿主已完成"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t23-integration-release-gates"
+    },
+    {
+      "id": "T24",
+      "slug": "experiments-demo",
+      "title": "四宿主演示、对照实验与首发交付",
+      "depends_on": [
+        "T18",
+        "T19",
+        "T20",
+        "T21",
+        "T23"
+      ],
+      "specs": [
+        "docs/overview/demo.md",
+        "docs/implementation/modules/08-evaluation.md",
+        "docs/implementation/validation.md"
+      ],
+      "deliverables": [
+        "用户使用与十分钟演示runbook",
+        "A/B/C/D实验报告和脱敏原始结果",
+        "首发支持矩阵、升级恢复指南、交付清单"
+      ],
+      "steps": [
+        "按统一任务预算随机运行A/B/C/D各至少5次，正式多Agent至少3个",
+        "另一个宿主复验，统计正确性、检出误报、干预/返工/耗时/token",
+        "执行四宿主安装到完成/恢复演示，确认用户控制入口清晰",
+        "同步overview的实际状态与限制，准备源码发布材料而不擅自发布"
+      ],
+      "acceptance": [
+        "工程发布门槛全过，四宿主各自有真实baseline证据",
+        "研究指标如实判定，未达目标不宣称达成",
+        "用户能按指南理解并演示认知闭环、身份边界和恢复",
+        "锁文件/Schema/OpenAPI/迁移/报告齐全，发布另按授权执行"
+      ],
+      "trellis_path": ".trellis/tasks/09-18-t24-experiments-demo"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "t17-bridge-sdk",
+  "name": "t17-bridge-sdk",
+  "title": "T17 共享Bridge SDK与适配器一致性测试框架",
+  "description": "packages/bridge-sdk；host-neutral Adapter接口和simulator；统一conformance harness",
+  "status": "planning",
+  "dev_type": "adapter",
+  "scope": "bridge-sdk",
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/adapters.md",
+    "docs/implementation/protocol.md",
+    "docs/implementation/runtime-prompts.md"
+  ],
+  "notes": "",
+  "meta": {
+    "plan_id": "T17",
+    "depends_on": [
+      "T16",
+      "T02"
+    ],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false
+  }
+}

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "验收、权限与边界审查；T09"}
+{"file": "docs/implementation/validation.md", "reason": "验收、权限与边界审查；T09"}
+{"file": "docs/implementation/modules/05-resources.md", "reason": "验收、权限与边界审查；T09"}
+{"file": "docs/implementation/modules/01-projects.md", "reason": "验收、权限与边界审查；T09"}
+{"file": "docs/implementation/command-catalog.md", "reason": "验收、权限与边界审查；T09"}
+{"file": "docs/decisions/2026-09-18-boundary-decisions.md", "reason": "验收、权限与边界审查；T09"}

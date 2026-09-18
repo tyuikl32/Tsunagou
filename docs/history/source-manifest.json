@@ -1,0 +1,290 @@
+[
+  {
+    "original_path": "adapter_capability_negotiation.md",
+    "archive_path": "docs/history/2026-09-18-source/adapter_capability_negotiation.md",
+    "sha256": "613badc49d104aa615d7eee23bf503cd05d9d3051f2ce4700da021e974684c20",
+    "bytes": 16191
+  },
+  {
+    "original_path": "adapter_research.md",
+    "archive_path": "docs/history/2026-09-18-source/adapter_research.md",
+    "sha256": "32e77ac3ca5ddd759c3388bd5b67e516cf1bcbde86e47c1eef9ec61c9a38e608",
+    "bytes": 9543
+  },
+  {
+    "original_path": "agent_autonomy_blackboard_resume_protocol.md",
+    "archive_path": "docs/history/2026-09-18-source/agent_autonomy_blackboard_resume_protocol.md",
+    "sha256": "302a13947b3efe04dadd7b2e3b20e4799e6de9123025cc42777e9267b45eb4a3",
+    "bytes": 15067
+  },
+  {
+    "original_path": "agent_enrollment_protocol.md",
+    "archive_path": "docs/history/2026-09-18-source/agent_enrollment_protocol.md",
+    "sha256": "622da0f4e418ed82f20eac6a859d12a6dc864e4075af151e2dcdff908f0befd6",
+    "bytes": 6278
+  },
+  {
+    "original_path": "agent_host_session_lifecycle.md",
+    "archive_path": "docs/history/2026-09-18-source/agent_host_session_lifecycle.md",
+    "sha256": "30514e7220c98f7dab8383feac655af04167bdb9dbeafd7661a096b766a46cde",
+    "bytes": 12460
+  },
+  {
+    "original_path": "agent_succession_protocol.md",
+    "archive_path": "docs/history/2026-09-18-source/agent_succession_protocol.md",
+    "sha256": "7b6da4ac074e13ba8b41969fcdfacc95ff02954c8d69275dc930380e61992f6f",
+    "bytes": 26019
+  },
+  {
+    "original_path": "agent_to_agent_deep_research.md",
+    "archive_path": "docs/history/2026-09-18-source/agent_to_agent_deep_research.md",
+    "sha256": "551eb774f21277be7fd220093933394e452b31c49745d8d82cfd4e028c396c59",
+    "bytes": 28614
+  },
+  {
+    "original_path": "api_command_transport.md",
+    "archive_path": "docs/history/2026-09-18-source/api_command_transport.md",
+    "sha256": "a59f5d699d3ba6e01844d4a453c50cfa5ce8196bbacf01db8f8db330fccaf261",
+    "bytes": 6492
+  },
+  {
+    "original_path": "authority_handoff_grants.md",
+    "archive_path": "docs/history/2026-09-18-source/authority_handoff_grants.md",
+    "sha256": "5c26e44285c58cc697c43275a86cc7cf0e2ed2974a1e13afb694e92c6eb26743",
+    "bytes": 8181
+  },
+  {
+    "original_path": "authorization_grant_model.md",
+    "archive_path": "docs/history/2026-09-18-source/authorization_grant_model.md",
+    "sha256": "094907b3e9efaf27e4429f977c7027b77c87c199df972e718aa249211193348c",
+    "bytes": 7268
+  },
+  {
+    "original_path": "capability_registry.md",
+    "archive_path": "docs/history/2026-09-18-source/capability_registry.md",
+    "sha256": "1ce97862dbfb3becceb854f265085cc66b9a107da0dac571b913df67cfdfc10b",
+    "bytes": 8837
+  },
+  {
+    "original_path": "cli_framework_research.md",
+    "archive_path": "docs/history/2026-09-18-source/cli_framework_research.md",
+    "sha256": "dfe1e49d910ff80d2ee3bfd8c368e9dfcb7db3bf4fdc77ab95e397125f379cb6",
+    "bytes": 4636
+  },
+  {
+    "original_path": "code_generation_pipeline.md",
+    "archive_path": "docs/history/2026-09-18-source/code_generation_pipeline.md",
+    "sha256": "4605c59f8765efbfd6b26660975d61a30e69761d5ee55e1fbcfd81d411e978c1",
+    "bytes": 8411
+  },
+  {
+    "original_path": "command_authorization_matrix.md",
+    "archive_path": "docs/history/2026-09-18-source/command_authorization_matrix.md",
+    "sha256": "022c23c0b7fe88db505df11579f065c716f07ef6f539df1a28adeef3fd106bbd",
+    "bytes": 5385
+  },
+  {
+    "original_path": "configuration_model.md",
+    "archive_path": "docs/history/2026-09-18-source/configuration_model.md",
+    "sha256": "f07c93b2318c31a81ef7cec09ff217a8a259adeda41652ba6992828db9d77280",
+    "bytes": 7142
+  },
+  {
+    "original_path": "design_and_runtime_principles.md",
+    "archive_path": "docs/history/2026-09-18-source/design_and_runtime_principles.md",
+    "sha256": "98f580785d740e2af823076143e74e2cf8818b3823fb4a1068639779a88e0f35",
+    "bytes": 23532
+  },
+  {
+    "original_path": "durable_operations_research.md",
+    "archive_path": "docs/history/2026-09-18-source/durable_operations_research.md",
+    "sha256": "b57d5cc8da5bdf5ae7ad154c159064e26056c639dfc5d2d0528fa27d2137da58",
+    "bytes": 9048
+  },
+  {
+    "original_path": "git_durability_scope.md",
+    "archive_path": "docs/history/2026-09-18-source/git_durability_scope.md",
+    "sha256": "c957603366e57db9d929ce587b648e4da4e83d8d14a5b1cbf66b492e62a4a219",
+    "bytes": 6217
+  },
+  {
+    "original_path": "grant_scope_model.md",
+    "archive_path": "docs/history/2026-09-18-source/grant_scope_model.md",
+    "sha256": "a4115c0fbc0a4384a1f36945952db32bf3ca142021efcefcc39d5cb5afaaab84",
+    "bytes": 11271
+  },
+  {
+    "original_path": "implementation_decisions.md",
+    "archive_path": "docs/history/2026-09-18-source/implementation_decisions.md",
+    "sha256": "67b21523c9ad6ba9bb135d275f4f5d727d8bf361362b6d450fa7e35ed2855922",
+    "bytes": 31650
+  },
+  {
+    "original_path": "implementation_decisions_round2.md",
+    "archive_path": "docs/history/2026-09-18-source/implementation_decisions_round2.md",
+    "sha256": "d43cb52857c60f014b275126188f8048f0915d297853e5e471ded31282305a13",
+    "bytes": 114783
+  },
+  {
+    "original_path": "local_anchor_discovery.md",
+    "archive_path": "docs/history/2026-09-18-source/local_anchor_discovery.md",
+    "sha256": "04d529e3310d038cd0d609966d7676107c89b58541a0b03d5fdb9731da049503",
+    "bytes": 6403
+  },
+  {
+    "original_path": "local_authentication_boundary.md",
+    "archive_path": "docs/history/2026-09-18-source/local_authentication_boundary.md",
+    "sha256": "adf83478d0f8a7b922bfb20f3dab9b3eca80797c22e6b5540a12ec2d9ab96771",
+    "bytes": 8784
+  },
+  {
+    "original_path": "main_agent_git_control.md",
+    "archive_path": "docs/history/2026-09-18-source/main_agent_git_control.md",
+    "sha256": "bbaa5cbb38f9174e2deba36d4a6e0797cea15e5bf4ff68d34c00aefc7520defc",
+    "bytes": 8148
+  },
+  {
+    "original_path": "main_agent_role_acceptance.md",
+    "archive_path": "docs/history/2026-09-18-source/main_agent_role_acceptance.md",
+    "sha256": "393b12d2c899542df3742edc028fc8d0df38832f64d0620fde0e8360fcf2edff",
+    "bytes": 6670
+  },
+  {
+    "original_path": "messaging_protocol.md",
+    "archive_path": "docs/history/2026-09-18-source/messaging_protocol.md",
+    "sha256": "b695f361c6b23b07cb2029ab13df033d0c014dbeb4016f18be5b1ecc6e1d0a92",
+    "bytes": 13154
+  },
+  {
+    "original_path": "multi_agent_collaboration_current_design.md",
+    "archive_path": "docs/history/2026-09-18-source/multi_agent_collaboration_current_design.md",
+    "sha256": "e319bc72115ea5bbe19e9fbbf02c9785f592a187d6e3b65e6e39cb11fb95db75",
+    "bytes": 11470
+  },
+  {
+    "original_path": "multi_repository_git_consistency.md",
+    "archive_path": "docs/history/2026-09-18-source/multi_repository_git_consistency.md",
+    "sha256": "0bc3d68601610e832c5bfafd38bd9afcf2bf61a020654880baca253a005d96bf",
+    "bytes": 7663
+  },
+  {
+    "original_path": "pagination_protocol.md",
+    "archive_path": "docs/history/2026-09-18-source/pagination_protocol.md",
+    "sha256": "d62fc84417773a31b57456f17f8bf0bf5e4dd3f928ec4a32fb607903d6284c80",
+    "bytes": 5896
+  },
+  {
+    "original_path": "path_identity_and_overlapping_roots.md",
+    "archive_path": "docs/history/2026-09-18-source/path_identity_and_overlapping_roots.md",
+    "sha256": "f8c3d23a91550a56f71196ac2a703c40b87c55151cdcc1412eb4b00b697509e5",
+    "bytes": 8361
+  },
+  {
+    "original_path": "planning_consensus.md",
+    "archive_path": "docs/history/2026-09-18-source/planning_consensus.md",
+    "sha256": "b63202b26c5c6379012c860e3b0083582859ef4deede7b03931b32ade48373da",
+    "bytes": 15217
+  },
+  {
+    "original_path": "project_bootstrap_activation.md",
+    "archive_path": "docs/history/2026-09-18-source/project_bootstrap_activation.md",
+    "sha256": "003998a4a29be9cadcd24221f0914c6cfdc6bc734ff3462b473b98605267c87a",
+    "bytes": 8521
+  },
+  {
+    "original_path": "project_completion_protocol.md",
+    "archive_path": "docs/history/2026-09-18-source/project_completion_protocol.md",
+    "sha256": "989182efaa07ed14a600f19a90bd7e7632abe096fba8185593e8df87b38649e9",
+    "bytes": 11360
+  },
+  {
+    "original_path": "project_identity_lifecycle.md",
+    "archive_path": "docs/history/2026-09-18-source/project_identity_lifecycle.md",
+    "sha256": "2fc3e1fedeab8cc18a2d6b31e9605cb39dfbb4f6d998152bba7dc29b5e40c61a",
+    "bytes": 6879
+  },
+  {
+    "original_path": "project_identity_replica_model.md",
+    "archive_path": "docs/history/2026-09-18-source/project_identity_replica_model.md",
+    "sha256": "820acdc75b3dbd940d4632ca29eca0fca1e8712d2797bae675beea41e048128a",
+    "bytes": 7333
+  },
+  {
+    "original_path": "project_main_agent_bootstrap.md",
+    "archive_path": "docs/history/2026-09-18-source/project_main_agent_bootstrap.md",
+    "sha256": "37a4ee6e13611c4532312d04a42e4721b1e0c2eb76cd1b6a4561fd2f33cb92d4",
+    "bytes": 6702
+  },
+  {
+    "original_path": "project_root_repository_registry.md",
+    "archive_path": "docs/history/2026-09-18-source/project_root_repository_registry.md",
+    "sha256": "cd78e9315bcc89e2e903eb7df3ba31cf03cbd21e805a5b73d89ebd8a79d21104",
+    "bytes": 8035
+  },
+  {
+    "original_path": "project_state_model.md",
+    "archive_path": "docs/history/2026-09-18-source/project_state_model.md",
+    "sha256": "20f7e02a9dbb97ed491652a5c1b2a6cedb209f42e0569796848c938f137ecb64",
+    "bytes": 10169
+  },
+  {
+    "original_path": "protocol_transport_research.md",
+    "archive_path": "docs/history/2026-09-18-source/protocol_transport_research.md",
+    "sha256": "2396c485a23d5325eb45c91f1d1183121b7f9759f9a2450849826120fd66c29b",
+    "bytes": 3928
+  },
+  {
+    "original_path": "python_dependency_window.md",
+    "archive_path": "docs/history/2026-09-18-source/python_dependency_window.md",
+    "sha256": "0f15fe101bce5907c23ddfa84cbc1e287583617cdeef4ecb97f34c909762d96e",
+    "bytes": 6411
+  },
+  {
+    "original_path": "remote_publication_verification.md",
+    "archive_path": "docs/history/2026-09-18-source/remote_publication_verification.md",
+    "sha256": "d7d20d85380e148ea3d234c0d6e3e3719c3727c0d3b83caac609b45bc77c1848",
+    "bytes": 8252
+  },
+  {
+    "original_path": "repository_module_structure.md",
+    "archive_path": "docs/history/2026-09-18-source/repository_module_structure.md",
+    "sha256": "f07c5be5d8d17b6735461f5df7bf46fbbf852fc696aa1f8c4a9defe4f11b0f17",
+    "bytes": 9063
+  },
+  {
+    "original_path": "risk_assessment_protocol.md",
+    "archive_path": "docs/history/2026-09-18-source/risk_assessment_protocol.md",
+    "sha256": "8c50336476102c58a1f2ad95a29bec8c068eab1e4ee5b0fc0793327b3dac1879",
+    "bytes": 8177
+  },
+  {
+    "original_path": "root_scope_authority.md",
+    "archive_path": "docs/history/2026-09-18-source/root_scope_authority.md",
+    "sha256": "6efcdae7095dd953800649d1c7e0ae309944de5a13638c77fa8ffa4791af11db",
+    "bytes": 7264
+  },
+  {
+    "original_path": "task_delegation_model.md",
+    "archive_path": "docs/history/2026-09-18-source/task_delegation_model.md",
+    "sha256": "f98fc50e90b292f2d1ece95b1579624211e9adb77dd0d454a2757ebf59db708d",
+    "bytes": 17666
+  },
+  {
+    "original_path": "technology_stack_research.md",
+    "archive_path": "docs/history/2026-09-18-source/technology_stack_research.md",
+    "sha256": "095adcbf5433c8160d1856874809ad6542b7ae6c0b613341288673f19175d076",
+    "bytes": 5596
+  },
+  {
+    "original_path": "versioning_compatibility.md",
+    "archive_path": "docs/history/2026-09-18-source/versioning_compatibility.md",
+    "sha256": "9790d98a57e9b83d6f7d3db575a3a7a35b7f747fa694440018fecb81c020146b",
+    "bytes": 7399
+  },
+  {
+    "original_path": "wire_format_conventions.md",
+    "archive_path": "docs/history/2026-09-18-source/wire_format_conventions.md",
+    "sha256": "ebe3143f0da63bea5398f20d2ea6e5811528fd78480ea888ab3bf5a1bf9c29f8",
+    "bytes": 5981
+  }
+]

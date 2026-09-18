@@ -1,0 +1,37 @@
+{
+  "id": "t09-resources",
+  "name": "t09-resources",
+  "title": "T09 资源冲突、等待与Lease",
+  "description": "ResourceIntent/LeaseSet/WaitQueue；Lease时钟/续租/到期流程；scope和冲突属性测试",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "resources",
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/modules/05-resources.md",
+    "docs/implementation/modules/01-projects.md"
+  ],
+  "notes": "",
+  "meta": {
+    "plan_id": "T09",
+    "depends_on": [
+      "T08"
+    ],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "id": "t03-protocol",
+  "name": "t03-protocol",
+  "title": "T03 统一Schema、DTO与命令策略目录",
+  "description": "protocol/schemas/与fixtures/；Python/TS生成器和确定性产物；CommandPolicy/错误/版本注册表",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "protocol",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/protocol.md",
+    "docs/implementation/data-model.md",
+    "docs/implementation/command-catalog.md"
+  ],
+  "notes": "",
+  "meta": {
+    "plan_id": "T03",
+    "depends_on": [
+      "T01"
+    ],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false
+  }
+}

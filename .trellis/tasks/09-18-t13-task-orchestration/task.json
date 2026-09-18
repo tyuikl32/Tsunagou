@@ -1,0 +1,42 @@
+{
+  "id": "t13-task-orchestration",
+  "name": "t13-task-orchestration",
+  "title": "T13 跨模块Preflight与认知协作闭环",
+  "description": "application/workflows/task_execution；scope/report/contract/resource/workspace组合preflight；首个模拟多Agent认知协作场景",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "task-orchestration",
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/lifecycle.md",
+    "docs/implementation/modules/03-tasks.md",
+    "docs/implementation/modules/04-cognition.md"
+  ],
+  "notes": "",
+  "meta": {
+    "plan_id": "T13",
+    "depends_on": [
+      "T07",
+      "T09",
+      "T10",
+      "T11",
+      "T12"
+    ],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false
+  }
+}
