@@ -7,7 +7,7 @@
 | 主题 | 已保存材料 |
 |---|---|
 | 原题全文、附录与跨网站研究 | [Agent-to-Agent 深度研究](../history/2026-09-18-source/agent_to_agent_deep_research.md) |
-| 四宿主与会话能力 | [adapter 调研](../history/2026-09-18-source/adapter_research.md)、[能力协商](../history/2026-09-18-source/adapter_capability_negotiation.md) |
+| 四宿主与会话能力（ZCode首发后置） | [adapter 调研](../history/2026-09-18-source/adapter_research.md)、[能力协商](../history/2026-09-18-source/adapter_capability_negotiation.md) |
 | 协议与消息传输 | [传输研究](../history/2026-09-18-source/protocol_transport_research.md)、[消息协议](../history/2026-09-18-source/messaging_protocol.md) |
 | 技术与版本窗口 | [技术栈研究](../history/2026-09-18-source/technology_stack_research.md)、[Python依赖窗口](../history/2026-09-18-source/python_dependency_window.md)、[CLI选型](../history/2026-09-18-source/cli_framework_research.md) |
 | 持久恢复 | [Operation研究](../history/2026-09-18-source/durable_operations_research.md)、[Git范围](../history/2026-09-18-source/git_durability_scope.md) |
@@ -25,7 +25,7 @@ hooks 文件存在不代表 Codex 已启用或信任。初始化器提示需要�
 ## 实施前要消除的可行性不确定
 
 - T01：真实注册表与 Windows 环境是否满足选定版本窗口；精确版本和 peer dependencies 由锁文件证明。
-- T02：四宿主的 conversation identity、会话隔离、MCP传输和secret交付；官方 Python/TS MCP SDK 的具体版本与ASGI/stdio接口。
+- T02：四宿主的 conversation identity、会话隔离、MCP传输和secret交付；首发门禁只消费 Codex、OpenCode、DeepSeek Harness，ZCode证据保留为首发后研究；官方 Python/TS MCP SDK 的具体版本与ASGI/stdio接口。
 - T18–T21：每个正式版本的11项共同基线真宿主测试；增强能力逐项注明证据。
 - T24：对照实验是否达到效果门槛。当前没有数据，不能提前宣传提效百分比。
 

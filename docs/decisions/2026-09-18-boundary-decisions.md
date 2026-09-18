@@ -27,6 +27,7 @@
 | D179 | 对话呈现，CMD/HTTP Control 提交 | 用户希望保留三种接触面，经澄清最终：主 Agent 对话展示选项/记录偏好，user-only 状态转换由 CMD/CLI 或独立 control HTTP 提交，绑定相同 decision revision/digest。Agent 不能代持 control token 或代签。 |
 | D180 | 首版不接受宿主 user-role 授权证据 | 宿主可证明用户来源的专用确认通道也延后；对话中的“是”本身不会使 API 权限升级。 |
 | D181 | 决策提醒通过主 Agent与查询接口 | UserDecision 路由给 current main 在会话呈现，CLI list/show 与 HTTP query 可查；首版无系统通知。 |
+| D182 | ZCode 首发验收后置 | 首发发布门禁只要求 Codex、OpenCode、DeepSeek Harness 三宿主完成 11 项共同基线。ZCode 适配器、探针和研究证据保留，但正式基线、宿主演示和发布验收延后，不计入 `release_check.py` 首发失败条件。 |
 
 ## 不再向用户逐项询问的工程细节
 

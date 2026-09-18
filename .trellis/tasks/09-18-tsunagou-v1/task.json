@@ -2,7 +2,7 @@
   "id": "tsunagou-v1",
   "name": "tsunagou-v1",
   "title": "Tsunagou 首发实施计划",
-  "description": "按统一文档交付八大模块、四宿主共同基线、CLI/MCP与恢复和对照实验，当前仅建立规划任务。",
+  "description": "按统一文档交付八大模块、三个首发宿主共同基线、CLI/MCP与恢复和对照实验；ZCode适配器及正式基线延后，当前保留规划任务。",
   "status": "planning",
   "dev_type": "planning",
   "scope": "v1",

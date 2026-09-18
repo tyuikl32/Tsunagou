@@ -1,5 +1,7 @@
 # 四宿主适配与共同 bridge-sdk
 
+首发发布门禁覆盖 Codex、OpenCode、DeepSeek Harness 三个宿主。ZCode 适配器仍保留在共享 SDK、目录和研究矩阵中，但正式共同基线与首发验收后置；unknown 不得写成 supported。
+
 `packages/bridge-sdk` 拥有协议客户端、私有凭据注入、command_id/重试、连接 epoch、probe 报告、inbox 拉取去重、MCP 传输、提示渲染、后台 Lease 续租和诊断。四 adapter 只负责宿主生命周期、可信 conversation ID、工具/上下文入口和增强能力，不重定义领域协议。
 
 daemon 的共享项目 MCP 服务由官方 Python SDK 接入 FastAPI/ASGI；官方 TS SDK 仅用于 bridge 所需传输/stdio 转发。每连接独立 HostSession，不共用全项目 token。SDK 具体 API 和版本由 T02 实测，不臆造厂商方法。

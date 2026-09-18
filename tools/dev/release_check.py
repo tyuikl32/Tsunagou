@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from tsunagou.application.release_gates import (
+    REQUIRED_HOSTS,
     evaluate_host_matrix,
     evaluate_static_release,
     load_host_evidence,
@@ -17,7 +18,7 @@ def main() -> int:
     matrix = load_host_evidence(root)
     missing = {
         host: missing_baseline_capabilities(matrix.get(host, {}))
-        for host in ("codex", "opencode", "zcode", "deepseek")
+        for host in REQUIRED_HOSTS
         if missing_baseline_capabilities(matrix.get(host, {}))
     }
     if evaluate_host_matrix(matrix).failures != tuple(report.failures):

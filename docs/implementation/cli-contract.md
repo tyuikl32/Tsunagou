@@ -44,7 +44,7 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 | `doctor` | GET /api/v1/doctor | 诊断，不自动repair或扩大权限 |
 | `experiment run <id> --request-file <json>` / `report <id> --request-file <json>` | 已定U实验入口 | Operation |
 
-`adapter kind`固定为codex/opencode/zcode/deepseek；CLI显示DeepSeek Harness避免与模型API混淆。profile用于选择本机安装档案，不作为HostSession身份。attach的目标对话由adapter可信宿主接口/会话选择器绑定，CLI不得接受`--actor`或用显示名猜conversation。
+`adapter kind`固定为codex/opencode/zcode/deepseek；CLI显示DeepSeek Harness避免与模型API混淆。首发 release gate 只要求 codex/opencode/deepseek，zcode 保留为 post-release diagnostic adapter。profile用于选择本机安装档案，不作为HostSession身份。attach的目标对话由adapter可信宿主接口/会话选择器绑定，CLI不得接受`--actor`或用显示名猜conversation。
 
 旧概览列出的`agent reprobe/retire`、`authority handoff`、`task publish/recover`、`operation cancel`仅有D/M主体handler，**首发用户CLI不注册同名可执行子命令**。对应行为由自身bridge/current main typed tool完成；在确有用户入口的领域设计确认前，不加`*.user`来凑齐旧命令树。`agent show`/doctor给诊断及正确处理者。main离线时用户可用已有appoint/revoke恢复统筹。
 

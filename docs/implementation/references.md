@@ -1,6 +1,6 @@
 # 关键外部知识与项目采用边界
 
-核验日期：2026-09-18。下面全部是官方规范、官方文档或官方SDK仓库。通过直接HTTPS核对链接并读取相关主题；[核验记录](../research/reference-checks-2026-09-18.json)保存URL、响应、页面标题和检查范围。链接可访问不代表项目依赖或四宿主已集成通过。
+核验日期：2026-09-18。下面全部是官方规范、官方文档或官方SDK仓库。通过直接HTTPS核对链接并读取相关主题；[核验记录](../research/reference-checks-2026-09-18.json)保存URL、响应、页面标题和检查范围。链接可访问不代表项目依赖或任何宿主已集成通过；首发门禁只消费三个首发宿主，ZCode后置。
 
 优先级仍为用户决定→当前项目规范；外部框架示例不会自动成为本项目架构。实施时使用T01/T02锁定版本对应文档，尤其不要把SDK main分支README当作已安装稳定版本API。
 
@@ -51,7 +51,7 @@
 
 MCP传输认证规则必须随选定版本核验。Tsunagou自己的业务SSE高水位与MCP Streamable HTTP内部可能使用的SSE不是同一协议或同一endpoint；不能把`P/events:stream`直接当MCP传输。
 
-四宿主官网/仓库和历史调查入口见[adapter研究](../history/2026-09-18-source/adapter_research.md)与[当前适配规范](adapters.md)。T02要逐宿主核验原生ID/生命周期/工具入口及官方URL，不用模型API文档替代Harness文档。宿主具体API未实测前保留unknown，不在本页给出猜测方法名。
+四宿主官网/仓库和历史调查入口见[adapter研究](../history/2026-09-18-source/adapter_research.md)与[当前适配规范](adapters.md)。T02要逐宿主核验原生ID/生命周期/工具入口及官方URL，不用模型API文档替代Harness文档。首发门禁只消费 Codex、OpenCode、DeepSeek Harness；ZCode 的宿主/API研究保留为 post-release 工作。宿主具体API未实测前保留unknown，不在本页给出猜测方法名。
 
 ## Git、测试与恢复证据
 

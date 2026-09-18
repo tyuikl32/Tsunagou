@@ -11,3 +11,4 @@
 {"file": "docs/overview/cli-http-manual.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T24"}
 {"file": "docs/research/experiment-report.md", "reason": "Experiment report explicitly not_run."}
 {"file": "docs/implementation/release-checklist.md", "reason": "Release checklist records completed engineering gates and remaining live host/experiment blockers."}
+{"file": "docs/decisions/2026-09-18-boundary-decisions.md", "reason": "D182 is traced to T24; ZCode is excluded from first-release demonstration and gate completion."}

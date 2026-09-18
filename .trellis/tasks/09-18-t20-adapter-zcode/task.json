@@ -1,7 +1,7 @@
 {
   "id": "t20-adapter-zcode",
   "name": "t20-adapter-zcode",
-  "title": "T20 ZCode正式共同基线适配",
+  "title": "T20 ZCode正式共同基线适配（首发后）",
   "description": "packages/adapter-zcode；ZCode Hook/MCP安装与诊断；版本/能力/生命周期实测记录",
   "status": "in_progress",
   "dev_type": "adapter",
@@ -28,7 +28,7 @@
     "docs/implementation/references.md",
     "docs/overview/subagent-guide.md"
   ],
-  "notes": "Diagnostic adapter and tests implemented. ZCode remains uninstalled; npm/GitHub research found only explicitly unofficial clients or community bridges, so no official CLI/API version can be locked. Hook activation and all 11 baseline rows remain unknown.",
+  "notes": "Diagnostic adapter and tests implemented. ZCode formal baseline is deferred from the first release. ZCode remains uninstalled; npm/GitHub research found only explicitly unofficial clients or community bridges, so no official CLI/API version can be locked. Hook activation and all 11 baseline rows remain unknown.",
   "meta": {
     "plan_id": "T20",
     "depends_on": [

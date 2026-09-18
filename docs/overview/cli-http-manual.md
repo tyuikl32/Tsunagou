@@ -43,7 +43,7 @@ root-request使用已定RootRegistration输入（name、kind、repository_id?、
 
 ## 2. 接入主 Agent 和两个子 Agent
 
-先按对应adapter指南启用工具入口，并打开三个独立宿主对话。可以都使用Codex，也可以混合已验证宿主。
+先按对应adapter指南启用工具入口，并打开三个独立宿主对话。首发验收使用 Codex、OpenCode、DeepSeek Harness；ZCode 接入命令保留在适配器文档中，但不参与首发发布门禁。
 
 ```powershell
 tsunagou --project PROJECT_ID agent enroll --adapter codex --mode attach
@@ -51,7 +51,7 @@ tsunagou --project PROJECT_ID agent list
 tsunagou --project PROJECT_ID authority show
 tsunagou --project PROJECT_ID authority appoint MAIN_AGENT_ID --request-file ".\main-appointment.json" --expected-revision 1
 tsunagou --project PROJECT_ID agent enroll --adapter opencode --mode attach
-tsunagou --project PROJECT_ID agent enroll --adapter zcode --mode attach
+tsunagou --project PROJECT_ID agent enroll --adapter deepseek --mode attach
 tsunagou --project PROJECT_ID agent list
 ```
 

@@ -7,7 +7,7 @@
 ## 首次交付
 
 - 个人在同一台机器上使用，多项目由一个本机 daemon 托管；Windows 为首要验收平台，接口与路径模型兼顾 macOS/Linux。
-- 完整 Python 后端、HTTP API、CLI、共享 MCP 服务、持久化和四种桥接：Codex、OpenCode、ZCode、DeepSeek Harness。四者都必须满足正式共同基线；主动唤醒、工具门禁和进程托管依真实宿主能力增强。
+- 完整 Python 后端、HTTP API、CLI、共享 MCP 服务、持久化和四种桥接代码：Codex、OpenCode、ZCode、DeepSeek Harness。首发正式验收覆盖 Codex、OpenCode、DeepSeek Harness；ZCode 适配器保留但正式共同基线和发布验收延后。主动唤醒、工具门禁和进程托管依真实宿主能力增强。
 - 项目可包含多个文件夹、多个 Git 仓库。用户选定一个已存在的 Git 仓库作为协调仓库，`.tsunagou/` 是项目协调数据的中心位置。
 - 八大模块处理项目与权限、Agent 接入、任务、认知协商、资源、工作空间、持久化、观测与评估。
 - 后续 Web 工作台可接入同一公共 API；本次不开发 Web UI。

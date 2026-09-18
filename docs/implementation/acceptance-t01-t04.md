@@ -7,7 +7,7 @@
 | 任务 | 状态 | 证据与剩余工作 |
 |---|---|---|
 | T01 工程骨架 | 已完成 | 锁文件、版本窗口、Python/TS骨架、架构检查和静态检查已通过 |
-| T02 宿主探针 | 已完成 | 四宿主均有探针与状态矩阵；Codex 有一次真实 app-server 证据，其他未知能力保持 unknown |
+| T02 宿主探针 | 已完成 | 四宿主均有探针与状态矩阵；首发门禁消费 Codex/OpenCode/DeepSeek Harness，ZCode evidence 保持 unknown 并后置 |
 | T03 机器协议 | 已完成 | 106 条命令策略、111 个 Schema、Python/TS 生成物和确定性摘要已通过 |
 | T04 持久运行时 | 已完成（基础底座） | SQLite 事务、OS lock、WAL/FULL/FK、幂等、event/outbox、Job lease、重试/unknown、epoch fence 已通过单机验收；跨进程故障注入和迁移备份留给后续专项验收 |
 

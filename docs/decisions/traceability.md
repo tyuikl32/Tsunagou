@@ -25,7 +25,8 @@
 | D179 对话呈现、CLI/HTTP control提交 | runtime-walkthrough、command-catalog | T15、T16 |
 | D180 无宿主user-role授权增强 | adapters、projects | T06、T16 |
 | D181 main呈现与CLI查询，无系统通知 | runtime-prompts、command-catalog | T07、T16 |
+| D182 ZCode首发验收后置 | release-gates、roadmap、host-matrix、首发验收执行单 | T20、T23、T24 |
 
-重要的早期边界也已贯穿规范：本机首发与Python后端；四宿主正式共同基线；所有Git写操作归main；初始化即项目内持久化；主子身份/Attempt所有权分离；用户不答不超时；父子任务不隐式门禁/级联；机械代码不作复杂业务语义裁决；减少强制用户决策；Web和远程认证延后。
+重要的早期边界也已贯穿规范：本机首发与Python后端；三个首发宿主正式共同基线，ZCode后置；所有Git写操作归main；初始化即项目内持久化；主子身份/Attempt所有权分离；用户不答不超时；父子任务不隐式门禁/级联；机械代码不作复杂业务语义裁决；减少强制用户决策；Web和远程认证延后。
 
 本轮新增的实现默认与消歧详见 [E01–E27](engineering-resolutions.md)，不得把这些工程推导表述为新的用户选择。完整当前入口：[实施指导](../implementation/README.md)。

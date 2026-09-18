@@ -122,9 +122,9 @@ workspace先driver候选与IsolationDecision，再baseline/result和main Git请�
 
 阶段出口：OpenAPI可重复生成；同命令REST/MCP一致；CLI示例全部由contract fixture驱动，无未注册user权限。依据：[FastAPI多文件应用](https://fastapi.tiangolo.com/tutorial/bigger-applications/)、[Typer教程](https://typer.tiangolo.com/tutorial/)。
 
-## 11. 四宿主与最终证据（T18–T24）
+## 11. 首发宿主与最终证据（T18–T24）
 
-四adapter各自接T02验证的官方面、复用SDK，分别跑11项真机baseline和增强降级。T22观测可在核心事件具备后提前进行，不必等待全部adapter。T23使用真SQLite/Git/loopback与故障点，T24再运行统一A/B/C/D实验和用户演示。
+Codex、OpenCode、DeepSeek Harness 接T02验证的官方面、复用SDK并分别跑11项真机baseline；ZCode适配器保留实现和诊断，但正式基线延后，不阻塞首发。T22观测可在核心事件具备后提前进行，不必等待全部adapter。T23使用真SQLite/Git/loopback与故障点，T24再运行统一A/B/C/D实验和三个首发宿主演示。
 
 最终交付应提供：锁文件、Schema/OpenAPI、真实支持矩阵、安装与用户手册、恢复指南、故障记录、实验原始结果及限制。没有观察到的token指标标unavailable。研究指标未达成就如实写未达成，不能靠删失败run“通过”。
 

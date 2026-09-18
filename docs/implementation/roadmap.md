@@ -1,6 +1,6 @@
 # 实施路线图与 Trellis 操作
 
-Trellis 0.6.17 已初始化：开发者 **tyuikl32**，平台 **Codex**。24 个实施子任务属于一个首发总任务。T01–T17 和 T22 已有实现与测试证据；T18–T21 已有 diagnostic adapter 实现，T23–T24 已有集成门禁、实验准备和演示材料。四宿主真实 baseline 与 A/B/C/D 实测仍由发布门禁阻断，不能把当前状态写成正式支持或研究效果。
+Trellis 0.6.17 已初始化：开发者 **tyuikl32**，平台 **Codex**。24 个实施子任务属于一个首发总任务。T01–T17 和 T22 已有实现与测试证据；T18–T21 已有 diagnostic adapter 实现，T23–T24 已有集成门禁、实验准备和演示材料。首发只要求 Codex、OpenCode、DeepSeek Harness 三宿主真实 baseline；ZCode 的 T20 正式基线延后，不进入首发门禁。A/B/C/D 实测仍由发布门禁阻断，不能把当前状态写成正式支持或研究效果。
 
 机器可读定义：[task-plan.json](task-plan.json)。任务元数据的 `meta.depends_on` 保存稳定 T 编号；这是项目约定，Trellis 的 parent/children 只分组，不自动调度依赖。开始任务前必须核对依赖产物和验收证据。
 
@@ -9,7 +9,7 @@ Trellis 0.6.17 已初始化：开发者 **tyuikl32**，平台 **Codex**。24 个
 1. T01 工程骨架与 T02 宿主研究是起点；研究可独立推进。
 2. T03–T12 建立协议、存储、身份、任务、认知、资源、工作空间与附件。
 3. T13–T16 整合闭环、checkpoint、重大生命周期、HTTP/MCP/CLI与黑板。
-4. T17–T21 建共享SDK并交付四个宿主；各宿主都需自己的真实证据。
+4. T17–T21 建共享SDK并交付四个宿主；首发验证 Codex、OpenCode、DeepSeek Harness，ZCode保留为首发后适配任务。
 5. T22 可在核心事件可用后开始观测框架；T23 工程验收；T24 对照实验、演示与首发材料。
 
 逐阶段的前置条件、文件创建顺序、验证和交接格式见[搭建指南](build-guide.md)，目标文件树见[目录方案](directory-layout.md)。涉及真实协作可按[三Agent轨迹](coordination-walkthrough.md)构造场景；T16按[CLI契约](cli-contract.md)和[用户手册](../overview/cli-http-manual.md)逐项核验入口。上述资料已加入相关任务上下文。
@@ -43,7 +43,7 @@ Trellis 0.6.17 已初始化：开发者 **tyuikl32**，平台 **Codex**。24 个
 | [T21](../../.trellis/tasks/09-18-t21-adapter-deepseek/prd.md) | DeepSeek Harness正式共同基线适配 | T17 |
 | [T22](../../.trellis/tasks/09-18-t22-observability/prd.md) | 脱敏审计、指标与实验运行框架 | T04, T07, T08, T10 |
 | [T23](../../.trellis/tasks/09-18-t23-integration-release-gates/prd.md) | 端到端与故障恢复发布门槛 | T15, T16, T17, T22 |
-| [T24](../../.trellis/tasks/09-18-t24-experiments-demo/prd.md) | 四宿主演示、对照实验与首发交付 | T18, T19, T20, T21, T23 |
+| [T24](../../.trellis/tasks/09-18-t24-experiments-demo/prd.md) | 三宿主演示、对照实验与首发交付 | T18, T19, T21, T23 |
 
 ## 八模块覆盖
 
@@ -79,4 +79,4 @@ session_auto_commit已关闭。本轮不创建提交或发布。Codex hooks资�
 
 ## 开工就绪判断
 
-产品边界和跨模块契约足够开始T01/T02/T03，不必再做一轮无边界问答。精确依赖和宿主API的可行性通过T01/T02消除，不能跳过后宣称四宿主已经兼容。若证据推翻用户已定支持范围，才带具体失败与替代方案交还用户；一般内部工程取舍由实施Agent决策留档。
+产品边界和跨模块契约足够开始T01/T02/T03，不必再做一轮无边界问答。精确依赖和宿主API的可行性通过T01/T02消除，不能跳过后宣称三个首发宿主已经兼容；ZCode 仍按后置任务管理。若证据推翻用户已定支持范围，才带具体失败与替代方案交还用户；一般内部工程取舍由实施Agent决策留档。

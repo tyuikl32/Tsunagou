@@ -23,7 +23,7 @@ T15, T16, T17, T22。父任务只分组；meta.depends_on 是项目约定，Trel
 
 - [x] 无消息丢失/双 owner/旧 epoch 授权复活（`tests/integration/test_coordination_recovery.py`）
 - [x] 崩溃恢复不伪造成功和不盲重不可验证动作（SQLite rollback 与 release gate）
-- [ ] 所有工程阻断项通过，失败有最小复现（四宿主 live baseline gate 仍失败并输出最小原因）
+- [ ] 所有工程阻断项通过，失败有最小复现（三个首发宿主 live baseline gate 仍失败并输出最小原因；ZCode 不阻塞首发）
 - [x] mock adapter 通过不冒称真宿主已完成（`release_check.py`）
 
 ## 不包含

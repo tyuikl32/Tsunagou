@@ -16,3 +16,4 @@
 {"file": "tools/experiments/prepare.py", "reason": "Reproducible A/B/C/D plan generator that emits no fabricated results."}
 {"file": "docs/implementation/release-checklist.md", "reason": "First release checklist separates completed engineering work from live gates."}
 {"file": "docs/research/experiment-report.md", "reason": "Not-run experiment report and pre-registered thresholds."}
+{"file": "docs/decisions/2026-09-18-boundary-decisions.md", "reason": "D182 changes the first-release demonstration and dependency set to three required hosts; ZCode remains post-release."}

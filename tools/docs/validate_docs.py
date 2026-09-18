@@ -109,7 +109,7 @@ def main() -> int:
                 errors.append(f"Invalid JSONL: {path.relative_to(ROOT)}:{number}: {exc}")
 
     decisions = (ROOT / "docs/decisions/2026-09-18-boundary-decisions.md").read_text(encoding="utf-8")
-    for number in range(161, 182):
+    for number in range(161, 183):
         if not re.search(rf"\bD{number}\b", decisions):
             errors.append(f"Missing persisted decision D{number}")
 
@@ -120,7 +120,7 @@ def main() -> int:
         return 1
     print(f"PASS: {len(manifest)} unchanged archived sources; {len(markdown)} Markdown files; "
           f"{checked_links} local links; {len(tasks)} implementation tasks; "
-          f"{context_count} context entries; acyclic dependencies; D161-D181 present.")
+          f"{context_count} context entries; acyclic dependencies; D161-D182 present.")
     return 0
 
 

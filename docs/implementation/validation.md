@@ -8,7 +8,7 @@
 | 状态机 | Task/Attempt/review、contract、Project、Operation转换 | 阻止发布 |
 | 存储 | 真SQLite WAL、迁移备份、双writer、outbox/checkpoint崩溃恢复 | Windows阻断 |
 | 路径/Git | drive/UNC/junction/symlink/case/重叠roots、只读Git、heads/tags锚点 | 对应平台/功能阻断 |
-| 桥接 | 同一simulator+四宿主真机11项baseline | 无实测不宣称正式支持 |
+| 桥接 | 同一simulator+三个首发宿主真机11项baseline；ZCode延后 | 无实测不宣称正式支持 |
 | 端到端 | 认知→契约→任务、等待、继任、完成checkpoint失败、回退 | 阻止工程交付 |
 | 实验 | A/B/C/D各≥5次、另一宿主复验、统一预算/质量 | 未达标不能宣称研究效果 |
 
@@ -31,7 +31,7 @@
 
 ## 发布与研究
 
-首发从源码 checkout 运行，交付两套锁文件、版本矩阵、Schema/OpenAPI、生成客户端、迁移、四 adapter 安装说明、CLI runbook、故障与实验报告。Windows 固定基准与允许补丁回归必须通过；macOS/Linux 只测 smoke 就如实标 smoke。
+首发从源码 checkout 运行，交付两套锁文件、版本矩阵、Schema/OpenAPI、生成客户端、迁移、三个首发 adapter 安装说明、CLI runbook、故障与实验报告。ZCode 适配器代码和诊断说明保留，但不进入首发支持声明。Windows 固定基准与允许补丁回归必须通过；macOS/Linux 只测 smoke 就如实标 smoke。
 
 工程交付和研究效果分别判断。A 单 Agent、B 多 Agent+Worktree、C 完整、D 无认知；每组≥5次，多 Agent≥3个，随机顺序、同预算/任务，再另一宿主复验。正确性100%，注入硬分歧检出≥95%、误阻塞≤5%；C对B干预/返工中位数改善≥30%、耗时≤+10%、可比token≤+25%。没有token观测标unavailable；未达标报告限制，不美化数据。
 

@@ -27,7 +27,7 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - 开发前读相应 `.trellis/spec`、当前任务 PRD/design/implement 与上下文。任务依赖以 [task-plan.json](docs/implementation/task-plan.json) 和 `meta.depends_on` 为准；Trellis 父子关系不是依赖调度器。
 - 已确认的问题不要重新逐项询问用户。普通实现选择自行完成并留档；用户目标、重大设计和固定用户权限边界的实质变化才升级。
 - 系统代码维护身份、范围、版本、状态等机械不变量；业务语义交给运行时主 Agent。八模块以公开端口协作，workflows/blackboard 不新增领域真相。
-- 四宿主都需正式共同基线真机证据；不得把未知能力写成 supported，模拟器通过不代表真实宿主通过。
+- 首发必需的 Codex、OpenCode、DeepSeek Harness 都需正式共同基线真机证据；ZCode 适配器保留但正式基线延后，不得把未知能力写成 supported，模拟器通过不代表真实宿主通过。
 - 项目说明中的运行命令是待实现规范，不能据此报告已运行成功。每项验收以实际测试/版本/证据为准。
 - 文档校验：`python tools/docs/validate_docs.py`。修改公共语义时同步 Schema、命令目录、fixtures、任务和用户文档。
 - 实施步骤和文件位置见 [搭建指南](docs/implementation/build-guide.md)、[预期目录](docs/implementation/directory-layout.md)；用户子Agent接入与CLI/HTTP示例分别见 [接入指南](docs/overview/subagent-guide.md)、[操作手册](docs/overview/cli-http-manual.md)。示例不能创造未注册的U权限或把宿主临时subagent视为已认证项目成员。

@@ -5,7 +5,8 @@
   "current_state": {
     "completed_tasks": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T22"],
     "implementation_partial_tasks": ["T18", "T19", "T20", "T21", "T23", "T24"],
-    "live_gate_blockers": ["four hosts lack complete real 11-capability baseline evidence", "A/B/C/D real experiment has not run"],
+    "live_gate_blockers": ["three first-release hosts lack complete real 11-capability baseline evidence", "A/B/C/D real experiment has not run"],
+    "deferred_first_release_scope": ["T20 ZCode formal baseline is deferred; retain diagnostic adapter and research evidence"],
     "evidence_command": "uv run python tools/dev/release_check.py"
   },
   "developer": "tyuikl32",
@@ -686,7 +687,7 @@
     {
       "id": "T20",
       "slug": "adapter-zcode",
-      "title": "ZCode正式共同基线适配",
+      "title": "ZCode正式共同基线适配（首发后）",
       "depends_on": [
         "T17"
       ],
@@ -830,11 +831,10 @@
     {
       "id": "T24",
       "slug": "experiments-demo",
-      "title": "四宿主演示、对照实验与首发交付",
+      "title": "三宿主演示、对照实验与首发交付",
       "depends_on": [
         "T18",
         "T19",
-        "T20",
         "T21",
         "T23"
       ],
@@ -856,11 +856,11 @@
       "steps": [
         "按统一任务预算随机运行A/B/C/D各至少5次，正式多Agent至少3个",
         "另一个宿主复验，统计正确性、检出误报、干预/返工/耗时/token",
-        "执行四宿主安装到完成/恢复演示，确认用户控制入口清晰",
+        "执行三个首发宿主安装到完成/恢复演示，确认用户控制入口清晰；ZCode留作首发后诊断任务",
         "同步overview的实际状态与限制，准备源码发布材料而不擅自发布"
       ],
       "acceptance": [
-        "工程发布门槛全过，四宿主各自有真实baseline证据",
+        "工程发布门槛全过，三个首发宿主各自有真实baseline证据；ZCode不阻塞首发",
         "研究指标如实判定，未达目标不宣称达成",
         "用户能按指南理解并演示认知闭环、身份边界和恢复",
         "锁文件/Schema/OpenAPI/迁移/报告齐全，发布另按授权执行",

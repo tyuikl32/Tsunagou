@@ -14,7 +14,11 @@ BASELINE_CAPABILITIES = (
     "inbox.pull_fetch_ack", "response.structured", "recovery.idempotent_reconnect",
     "delivery.deduplicate",
 )
-REQUIRED_HOSTS = ("codex", "opencode", "zcode", "deepseek")
+# ZCode remains an implemented/diagnostic adapter, but is deferred from the
+# first release gate until an official host and a reproducible baseline exist.
+REQUIRED_HOSTS = ("codex", "opencode", "deepseek")
+OPTIONAL_HOSTS = ("zcode",)
+KNOWN_HOSTS = REQUIRED_HOSTS + OPTIONAL_HOSTS
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +58,8 @@ def evaluate_host_matrix(matrix: Mapping[str, Mapping[str, Any]]) -> GateReport:
 def load_host_evidence(root: Path) -> dict[str, Mapping[str, Any]]:
     evidence_dir = root / "docs" / "research" / "evidence"
     result: dict[str, Mapping[str, Any]] = {}
+    # Optional hosts are intentionally not loaded by the first-release gate;
+    # malformed or missing post-release evidence must not block required hosts.
     for host in REQUIRED_HOSTS:
         candidates = sorted(evidence_dir.glob(f"{host}-*.json"))
         if candidates:

@@ -16,10 +16,16 @@ def complete_host() -> dict[str, object]:
     return {"baseline": baseline}
 
 
-def test_live_host_gate_requires_all_four_hosts() -> None:
+def test_live_host_gate_requires_all_three_first_release_hosts() -> None:
     report = evaluate_host_matrix({"codex": complete_host()})
     assert report.passed is False
     assert "opencode:live_baseline_missing" in report.failures
+
+
+def test_zcode_is_optional_for_first_release_gate() -> None:
+    matrix = {host: complete_host() for host in ("codex", "opencode", "deepseek")}
+    matrix["zcode"] = {}
+    assert evaluate_host_matrix(matrix).passed is True
 
 
 def test_static_gate_does_not_promote_current_unknown_matrix() -> None:

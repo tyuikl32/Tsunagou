@@ -10,7 +10,7 @@
 | pnpm | >=12,<13 | 本机 shim 11.19.0；corepack 下载并执行 pnpm 12.4.2 | 项目命令使用 corepack pnpm 12.4.2 |
 | TypeScript | >=7.0,<7.1 | npm registry 提供 7.0.2；workspace check 通过 | 符合 |
 | Codex | T02 研究对象 | codex-cli 0.154.0-alpha.6.2 | 已生成脱敏探针证据 |
-| OpenCode/ZCode/DeepSeek Harness | T02 研究对象 | OpenCode 1.18.31、DeepSeek Harness 0.1.5-rc.2 可由 npm 临时运行；ZCode 当前无官方可锁定安装 | OpenCode/DeepSeek 只有部分无模型证据，ZCode unknown，均不能称 supported |
+| OpenCode/ZCode/DeepSeek Harness | T02 研究对象 | OpenCode 1.18.31、DeepSeek Harness 0.1.5-rc.2 可由 npm 临时运行；ZCode 当前无官方可锁定安装 | OpenCode/DeepSeek 只有部分无模型证据，ZCode unknown；ZCode不阻塞首发，但均不能称 supported |
 
 已执行命令及结果：
 

@@ -31,7 +31,7 @@
     "docs/overview/cli-http-manual.md",
     ".trellis/spec/backend/entrypoint-contracts.md"
   ],
-  "notes": "Integration recovery tests and release gate implemented. Gate intentionally fails until four live host baseline evidence sets and platform coverage are available; release_check now reports the exact missing baseline rows for each host.",
+  "notes": "Integration recovery tests and release gate implemented. Gate intentionally fails until the three first-release host baseline evidence sets and platform coverage are available; ZCode remains optional post-release. release_check now reports the exact missing baseline rows for each required host.",
   "meta": {
     "plan_id": "T23",
     "depends_on": [

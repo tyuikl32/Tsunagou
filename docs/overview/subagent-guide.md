@@ -1,6 +1,6 @@
 # 子 Agent 怎样加入项目并协作
 
-子 Agent 是拥有独立宿主对话、身份和任务责任的项目成员。它可以来自与主 Agent相同或不同的宿主，例如主 Agent用Codex，两个子Agent分别用OpenCode与ZCode。它不是共享主Agent凭据的另一个窗口。
+子 Agent 是拥有独立宿主对话、身份和任务责任的项目成员。首发验收可使用 Codex、OpenCode 或 DeepSeek Harness，例如主 Agent 用 Codex、两个子 Agent 分别用 OpenCode 与 DeepSeek Harness。ZCode 适配器暂不进入首发验收，但仍保留后续接入方向。它不是共享主Agent凭据的另一个窗口。
 
 Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任务、报告理解、参与契约、提交结果。主Agent统筹任务和Git，用户指导重大方向。宿主自带的临时subagent不会仅因它是“子Agent”自动加入Tsunagou；正式成员仍需adapter提供独立、可恢复的会话身份并通过接入检查。
 

@@ -14,7 +14,7 @@
 {"file": "docs/implementation/coordination-walkthrough.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T23"}
 {"file": "docs/overview/cli-http-manual.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T23"}
 {"file": ".trellis/spec/backend/entrypoint-contracts.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T23"}
-{"file": "src/tsunagou/application/release_gates.py", "reason": "Static and live host release gates require four real baseline evidence sets."}
+{"file": "src/tsunagou/application/release_gates.py", "reason": "首发静态与实时门禁要求 Codex/OpenCode/DeepSeek Harness 三个真实基线证据集，ZCode 延后且不阻塞发布。"}
 {"file": "tests/integration/test_coordination_recovery.py", "reason": "Integration evidence for inbox recovery, single owner, SQLite rollback and epoch fencing."}
 {"file": "tests/integration/test_release_gates.py", "reason": "Release gate tests prove missing host evidence blocks release."}
 {"file": "docs/implementation/release-gates.md", "reason": "Integration and release gate runbook with explicit current blockers."}

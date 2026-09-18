@@ -1,6 +1,6 @@
 # 十分钟本机演示
 
-这是首发的演示路径，不代表四个宿主已经完成正式共同基线。演示重点是认知协作闭环、子 Agent 独立加入、权限边界和恢复事实。
+这是首发的演示路径，不代表三个首发宿主已经完成正式共同基线。演示重点是认知协作闭环、子 Agent 独立加入、权限边界和恢复事实；ZCode 暂不进入首发演示门禁。
 
 ## 0–2 分钟：初始化协调仓库
 
@@ -41,6 +41,6 @@ tsunagou recover
 
 ## 9–10 分钟：说明验收状态
 
-运行 `uv run python tools/dev/release_check.py` 查看真实宿主 gate。当前 T02 证据不足时，命令会明确列出 `live_baseline_missing`；这是预期的保护性结果。只有四个宿主各自 11 项 baseline 有脱敏 evidence refs 后，才可将它们写成正式支持。
+运行 `uv run python tools/dev/release_check.py` 查看真实宿主 gate。当前 T02 证据不足时，命令会明确列出 `live_baseline_missing`；这是预期的保护性结果。只有 Codex、OpenCode、DeepSeek Harness 三个首发宿主各自 11 项 baseline 有脱敏 evidence refs 后，才可将它们写成正式支持。ZCode 的 evidence 不参与首发 gate。
 
 研究效果也单独运行 `tools/experiments/prepare.py` 和固定定义的真实 runs。准备器只生成 A/B/C/D 计划，不生成结果、不填充 token 0、不宣称改善。真实结果必须保留失败样本和 limitations。
