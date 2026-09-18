@@ -1,0 +1,32 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/root.register",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "binding_request": {},
+    "kind": {},
+    "name": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "repository_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "required": {}
+  },
+  "required": [
+    "binding_request",
+    "kind",
+    "name",
+    "reason",
+    "repository_id",
+    "required"
+  ],
+  "title": "RootRegisterPayload",
+  "type": "object"
+}

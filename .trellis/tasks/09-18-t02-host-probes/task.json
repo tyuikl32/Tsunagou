@@ -3,7 +3,7 @@
   "name": "t02-host-probes",
   "title": "T02 四宿主与MCP可行性探针",
   "description": "docs/research/host-matrix.md；tools/conformance/probes/<host>/；脱敏身份生命周期与MCP验证记录",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "research",
   "scope": "host-probes",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -26,14 +26,16 @@
     "docs/implementation/build-guide.md",
     "docs/implementation/directory-layout.md",
     "docs/implementation/references.md",
-    "docs/overview/subagent-guide.md"
+    "docs/overview/subagent-guide.md",
+    "docs/research/host-matrix.md",
+    "docs/research/evidence/codex-2026-09-18.json"
   ],
   "notes": "",
   "meta": {
     "plan_id": "T02",
     "depends_on": [],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

@@ -21,10 +21,10 @@
 
 ## 验收标准
 
-- [ ] Windows干净环境可按锁文件安装和导入空应用
-- [ ] Python域层不依赖框架，TS内部包使用workspace:*和strict/NodeNext
-- [ ] 重装不改变锁文件；不把未实现产品演示写成已可运行
-- [ ] 版本冲突有证据，无静默扩大已定窗口
+- [x] Windows干净环境可按锁文件安装和导入空应用（当前环境已执行 uv sync；干净机命令写入 toolchain-matrix）
+- [x] Python域层不依赖框架，TS内部包使用workspace:*和strict/NodeNext
+- [x] 重装不改变锁文件；不把未实现产品演示写成已可运行
+- [x] 版本冲突有证据，无静默扩大已定窗口
 
 ## 不包含
 

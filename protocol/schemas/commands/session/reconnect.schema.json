@@ -1,0 +1,26 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/session.reconnect",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "continuity_evidence": {},
+    "expected_connection_epoch": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "probe_payload": {},
+    "reconnect_nonce": {}
+  },
+  "required": [
+    "continuity_evidence",
+    "expected_connection_epoch",
+    "probe_payload",
+    "reconnect_nonce"
+  ],
+  "title": "SessionReconnectPayload",
+  "type": "object"
+}

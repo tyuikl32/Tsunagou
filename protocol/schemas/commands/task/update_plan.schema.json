@@ -1,0 +1,30 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.update_plan",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_policy": {},
+    "execution_scope": {},
+    "objective": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "acceptance_policy",
+    "execution_scope",
+    "objective",
+    "reason",
+    "title"
+  ],
+  "title": "TaskUpdate_PlanPayload",
+  "type": "object"
+}

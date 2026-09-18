@@ -10,3 +10,5 @@
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T02"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T02"}
 {"file": "docs/overview/subagent-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T02"}
+{"file": "docs/research/host-matrix.md", "reason": "T02四宿主状态、共同基线和unknown边界"}
+{"file": "docs/research/evidence/codex-2026-09-18.json", "reason": "Codex disposable app-server脱敏探针结果"}

@@ -1,0 +1,29 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/user_decision.resolve",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "choice": {},
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "proposal_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "choice",
+    "expected_revisions",
+    "proposal_digest",
+    "reason"
+  ],
+  "title": "User_DecisionResolvePayload",
+  "type": "object"
+}

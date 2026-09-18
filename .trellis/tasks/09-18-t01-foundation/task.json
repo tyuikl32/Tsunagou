@@ -3,7 +3,7 @@
   "name": "t01-foundation",
   "title": "T01 工程骨架与可复现工具链",
   "description": "pyproject.toml、uv.lock、src/tsunagou骨架；package.json、pnpm-workspace.yaml、pnpm-lock.yaml；Windows开发引导与静态检查脚本",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "foundation",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -25,14 +25,15 @@
     "docs/overview/technology.md",
     "docs/implementation/build-guide.md",
     "docs/implementation/directory-layout.md",
-    "docs/implementation/references.md"
+    "docs/implementation/references.md",
+    "docs/research/toolchain-matrix.md"
   ],
   "notes": "",
   "meta": {
     "plan_id": "T01",
     "depends_on": [],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

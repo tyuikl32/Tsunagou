@@ -1,0 +1,31 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.completion.confirm",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expected_project_revision": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "proposal_digest": {}
+  },
+  "required": [
+    "expected_project_revision",
+    "expected_revisions",
+    "proposal_digest"
+  ],
+  "title": "ProjectCompletionConfirmPayload",
+  "type": "object"
+}

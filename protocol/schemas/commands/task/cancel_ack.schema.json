@@ -1,0 +1,23 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.cancel_ack",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "stop_evidence": {}
+  },
+  "required": [
+    "attempt_id",
+    "reason",
+    "stop_evidence"
+  ],
+  "title": "TaskCancel_AckPayload",
+  "type": "object"
+}

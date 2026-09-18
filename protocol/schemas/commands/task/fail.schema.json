@@ -1,0 +1,25 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.fail",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "evidence_refs": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "stop_evidence": {}
+  },
+  "required": [
+    "attempt_id",
+    "evidence_refs",
+    "reason",
+    "stop_evidence"
+  ],
+  "title": "TaskFailPayload",
+  "type": "object"
+}

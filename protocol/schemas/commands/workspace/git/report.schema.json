@@ -1,0 +1,19 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/workspace.git.report",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "exact_input_digest": {},
+    "outcome": {},
+    "result_manifest": {}
+  },
+  "required": [
+    "evidence_refs",
+    "exact_input_digest",
+    "outcome",
+    "result_manifest"
+  ],
+  "title": "WorkspaceGitReportPayload",
+  "type": "object"
+}

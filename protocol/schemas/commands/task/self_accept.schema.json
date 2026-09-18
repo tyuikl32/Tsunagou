@@ -1,0 +1,20 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.self_accept",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "result_digest": {}
+  },
+  "required": [
+    "evidence_refs",
+    "reason",
+    "result_digest"
+  ],
+  "title": "TaskSelf_AcceptPayload",
+  "type": "object"
+}

@@ -11,3 +11,6 @@
 {"file": "docs/implementation/cli-contract.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T03"}
 {"file": "docs/overview/cli-http-manual.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T03"}
 {"file": ".trellis/spec/backend/entrypoint-contracts.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T03"}
+{"file": "protocol/registry/commands.json", "reason": "生成的命令策略注册表"}
+{"file": "tools/codegen/generate_protocol.py", "reason": "确定性Schema与DTO生成器"}
+{"file": "tools/codegen/validate_protocol.py", "reason": "协议Schema与策略校验器"}

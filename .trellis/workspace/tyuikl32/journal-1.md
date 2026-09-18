@@ -76,3 +76,41 @@
 ### Next Steps
 
 - 从T01工程骨架与T02宿主探针开始首发实施。
+
+
+## Session 3: T01-T04 foundation implementation and acceptance
+<!-- trellis-session: v=2 fp=af8f3aeef44fd606 -->
+
+**Date**: 2026-09-18
+**Task**: T01-T04 foundation implementation and acceptance
+**Branch**: `main`
+
+### Summary
+
+完成工程骨架、宿主探针、统一协议生成与SQLite持久运行时基础底座。
+
+### Main Changes
+
+- T01: Python/TS可复现工具链、应用骨架和架构检查。
+- T02: 四宿主探针、脱敏证据与Codex真实app-server记录。
+- T03: 106条命令策略、111个Schema、Python/TS生成物和确定性bundle digest。
+- T04: SQLite事务、OS lock、WAL/FULL/FK、幂等、event/outbox、Job lease、重试/unknown与epoch fence。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] uv run pytest（18 passed）
+- [OK] uv run ruff check src tools tests；uv run mypy src
+- [OK] uv run python tools/dev/check_architecture.py；uv run python tools/codegen/validate_protocol.py
+- [OK] corepack pnpm -r run check；python tools/docs/validate_docs.py
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续 T05 及后续模块专项实现；跨进程 crash 注入、迁移备份和双 writer 压测按台账作为专项验收。

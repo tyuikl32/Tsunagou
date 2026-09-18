@@ -1,0 +1,7 @@
+{
+  "command_id": "018f2e4e-7b6a-7abc-8def-0123456789ab",
+  "protocol_version": "1.0",
+  "schema_bundle_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "payload": {},
+  "actor_id": "model-supplied"
+}

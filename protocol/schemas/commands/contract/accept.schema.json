@@ -1,0 +1,15 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/contract.accept",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "proposal_digest": {}
+  },
+  "required": [
+    "evidence_refs",
+    "proposal_digest"
+  ],
+  "title": "ContractAcceptPayload",
+  "type": "object"
+}

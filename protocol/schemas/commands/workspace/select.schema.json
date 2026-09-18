@@ -1,0 +1,26 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/workspace.select",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "driver_kind": {},
+    "evidence_refs": {},
+    "hard_constraints": {},
+    "input_digest": {},
+    "risk_submission_ref": {}
+  },
+  "required": [
+    "attempt_id",
+    "driver_kind",
+    "evidence_refs",
+    "hard_constraints",
+    "input_digest",
+    "risk_submission_ref"
+  ],
+  "title": "WorkspaceSelectPayload",
+  "type": "object"
+}

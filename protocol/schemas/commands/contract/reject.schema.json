@@ -1,0 +1,20 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/contract.reject",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "proposal_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "evidence_refs",
+    "proposal_digest",
+    "reason"
+  ],
+  "title": "ContractRejectPayload",
+  "type": "object"
+}

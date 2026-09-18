@@ -1,0 +1,27 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/root.bind",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "absolute_path": {},
+    "expected_physical_identity": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "absolute_path",
+    "expected_physical_identity",
+    "reason"
+  ],
+  "title": "RootBindPayload",
+  "type": "object"
+}

@@ -1,0 +1,25 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.initialize",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "coordination_root": {},
+    "initial_policy": {},
+    "name": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "objective": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "coordination_root",
+    "initial_policy",
+    "name",
+    "objective"
+  ],
+  "title": "ProjectInitializePayload",
+  "type": "object"
+}

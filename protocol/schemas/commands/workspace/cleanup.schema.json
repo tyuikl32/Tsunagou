@@ -1,0 +1,20 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/workspace.cleanup",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "input_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "required_checkpoint_ref": {}
+  },
+  "required": [
+    "input_digest",
+    "reason",
+    "required_checkpoint_ref"
+  ],
+  "title": "WorkspaceCleanupPayload",
+  "type": "object"
+}

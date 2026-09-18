@@ -1,0 +1,25 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/resource.intent",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "resources": {},
+    "scope_digest": {}
+  },
+  "required": [
+    "attempt_id",
+    "reason",
+    "resources",
+    "scope_digest"
+  ],
+  "title": "ResourceIntentPayload",
+  "type": "object"
+}

@@ -1,0 +1,1099 @@
+{
+  "commands": {
+    "agent.enroll": {
+      "payload_fields": [
+        "client_nonce",
+        "conversation_evidence",
+        "descriptor_ref",
+        "installation_id",
+        "negotiation",
+        "probe_payload"
+      ],
+      "principal": "T",
+      "schema": "commands/agent/enroll.schema.json",
+      "uri": "/sessions:enroll"
+    },
+    "agent.retire": {
+      "payload_fields": [
+        "expected_revisions",
+        "reason",
+        "stop_evidence"
+      ],
+      "principal": "M",
+      "schema": "commands/agent/retire.schema.json",
+      "uri": "/agents/{id}:retire"
+    },
+    "agent.succession": {
+      "payload_fields": [
+        "attempt_plan",
+        "expected_revisions",
+        "obligation_plan",
+        "reason",
+        "residual_risk_refs",
+        "successor_agent_id"
+      ],
+      "principal": "M",
+      "schema": "commands/agent/succession.schema.json",
+      "uri": "/agents/{id}:succeed"
+    },
+    "agent.ticket.create": {
+      "payload_fields": [
+        "kind"
+      ],
+      "principal": "M",
+      "schema": "commands/agent/ticket/create.schema.json",
+      "uri": "/enrollment-tickets"
+    },
+    "agent.ticket.create.user": {
+      "payload_fields": [
+        "kind"
+      ],
+      "principal": "U",
+      "schema": "commands/agent/ticket/create/user.schema.json",
+      "uri": "/control/enrollment-tickets"
+    },
+    "artifact.promote": {
+      "payload_fields": [
+        "domain_ref",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/artifact/promote.schema.json",
+      "uri": "/artifacts/{digest}:promote"
+    },
+    "artifact.promote.user": {
+      "payload_fields": [
+        "domain_ref",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/artifact/promote/user.schema.json",
+      "uri": "/control/artifacts/{digest}:promote"
+    },
+    "artifact.upload.create": {
+      "payload_fields": [
+        "domain_ref",
+        "visibility"
+      ],
+      "principal": "B",
+      "schema": "commands/artifact/upload/create.schema.json",
+      "uri": "/artifact-uploads"
+    },
+    "artifact.upload.finalize": {
+      "payload_fields": [
+        "digest",
+        "size_bytes"
+      ],
+      "principal": "B",
+      "schema": "commands/artifact/upload/finalize.schema.json",
+      "uri": "/artifact-uploads/{id}:finalize"
+    },
+    "authority.appoint": {
+      "payload_fields": [
+        "agent_id",
+        "ceiling_template",
+        "expected_authority_epoch",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/authority/appoint.schema.json",
+      "uri": "/control/authority:appoint"
+    },
+    "authority.handoff": {
+      "payload_fields": [
+        "adoption_plan",
+        "expected_authority_epoch",
+        "reason",
+        "target_agent_id"
+      ],
+      "principal": "M",
+      "schema": "commands/authority/handoff.schema.json",
+      "uri": "/authority:handoff"
+    },
+    "authority.revoke": {
+      "payload_fields": [
+        "expected_authority_epoch",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/authority/revoke.schema.json",
+      "uri": "/control/authority:revoke"
+    },
+    "authority.transition.adopt": {
+      "payload_fields": [
+        "adopted_refs",
+        "expected_revisions",
+        "reason"
+      ],
+      "principal": "H",
+      "schema": "commands/authority/transition/adopt.schema.json",
+      "uri": "/authority-transitions/{id}:adopt"
+    },
+    "authority.transition.report": {
+      "payload_fields": [
+        "evidence_refs",
+        "stopped_refs"
+      ],
+      "principal": "H",
+      "schema": "commands/authority/transition/report.schema.json",
+      "uri": "/authority-transitions/{id}:report"
+    },
+    "ceiling.set": {
+      "payload_fields": [
+        "ceiling",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/ceiling/set.schema.json",
+      "uri": "/control/ceiling:set"
+    },
+    "checkpoint.create": {
+      "payload_fields": [
+        "minimum_event_seq",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/checkpoint/create.schema.json",
+      "uri": "/checkpoints"
+    },
+    "checkpoint.create.user": {
+      "payload_fields": [],
+      "principal": "U",
+      "schema": "commands/checkpoint/create/user.schema.json",
+      "uri": "/control/checkpoints"
+    },
+    "cognition.report": {
+      "payload_fields": [
+        "assumptions",
+        "attempt_id",
+        "boundary",
+        "claims",
+        "confidence",
+        "confidence_reason",
+        "evidence_refs",
+        "input_revisions",
+        "supersedes_id",
+        "task_id",
+        "uncertainties",
+        "understanding"
+      ],
+      "principal": "B",
+      "schema": "commands/cognition/report.schema.json",
+      "uri": "/reports"
+    },
+    "contract.accept": {
+      "payload_fields": [
+        "evidence_refs",
+        "proposal_digest"
+      ],
+      "principal": "B",
+      "schema": "commands/contract/accept.schema.json",
+      "uri": "/contract-proposals/{id}:accept"
+    },
+    "contract.accept_proxy": {
+      "payload_fields": [
+        "evidence_refs",
+        "participant_slot_id",
+        "proposal_digest",
+        "proxy_policy_ref",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/contract/accept_proxy.schema.json",
+      "uri": "/contract-proposals/{id}:accept-proxy"
+    },
+    "contract.propose": {
+      "payload_fields": [
+        "contract_id",
+        "contract_kind",
+        "input_refs",
+        "participants_optional",
+        "participants_required",
+        "payload",
+        "subject_ref",
+        "supersedes_id"
+      ],
+      "principal": "B",
+      "schema": "commands/contract/propose.schema.json",
+      "uri": "/contracts:propose"
+    },
+    "contract.reject": {
+      "payload_fields": [
+        "evidence_refs",
+        "proposal_digest",
+        "reason"
+      ],
+      "principal": "B",
+      "schema": "commands/contract/reject.schema.json",
+      "uri": "/contract-proposals/{id}:reject"
+    },
+    "contract.withdraw": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "B",
+      "schema": "commands/contract/withdraw.schema.json",
+      "uri": "/contract-proposals/{id}:withdraw"
+    },
+    "discrepancy.advance": {
+      "payload_fields": [
+        "status"
+      ],
+      "principal": "B",
+      "schema": "commands/discrepancy/advance.schema.json",
+      "uri": "/discrepancies/{id}:advance"
+    },
+    "discrepancy.create": {
+      "payload_fields": [
+        "affected_actions",
+        "participants",
+        "report_refs",
+        "severity",
+        "subject_ref",
+        "summary"
+      ],
+      "principal": "B",
+      "schema": "commands/discrepancy/create.schema.json",
+      "uri": "/discrepancies"
+    },
+    "discrepancy.resolve": {
+      "payload_fields": [
+        "kind"
+      ],
+      "principal": "M",
+      "schema": "commands/discrepancy/resolve.schema.json",
+      "uri": "/discrepancies/{id}:resolve"
+    },
+    "durability.reconcile": {
+      "payload_fields": [
+        "reason",
+        "scope_refs"
+      ],
+      "principal": "M",
+      "schema": "commands/durability/reconcile.schema.json",
+      "uri": "/durability:reconcile"
+    },
+    "inbox.ack": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "B",
+      "schema": "commands/inbox/ack.schema.json",
+      "uri": "/deliveries/{id}:ack"
+    },
+    "inbox.claim": {
+      "payload_fields": [
+        "limit",
+        "max_bytes"
+      ],
+      "principal": "B",
+      "schema": "commands/inbox/claim.schema.json",
+      "uri": "/inbox:claim"
+    },
+    "inbox.defer": {
+      "payload_fields": [
+        "defer_until",
+        "reason"
+      ],
+      "principal": "B",
+      "schema": "commands/inbox/defer.schema.json",
+      "uri": "/deliveries/{id}:defer"
+    },
+    "inbox.fetch": {
+      "payload_fields": [
+        "delivery_lease_id"
+      ],
+      "principal": "B",
+      "schema": "commands/inbox/fetch.schema.json",
+      "uri": "/deliveries/{id}:fetch"
+    },
+    "inbox.presented": {
+      "payload_fields": [
+        "evidence_digest",
+        "evidence_kind"
+      ],
+      "principal": "B",
+      "schema": "commands/inbox/presented.schema.json",
+      "uri": "/deliveries/{id}:presented"
+    },
+    "inbox.renew": {
+      "payload_fields": [
+        "delivery_lease_id"
+      ],
+      "principal": "B",
+      "schema": "commands/inbox/renew.schema.json",
+      "uri": "/deliveries/{id}:renew"
+    },
+    "message.respond": {
+      "payload_fields": [
+        "evidence_refs",
+        "obligation_id",
+        "response_payload",
+        "summary"
+      ],
+      "principal": "B",
+      "schema": "commands/message/respond.schema.json",
+      "uri": "/messages/{id}:respond"
+    },
+    "message.send": {
+      "payload_fields": [
+        "kind"
+      ],
+      "principal": "B",
+      "schema": "commands/message/send.schema.json",
+      "uri": "/messages"
+    },
+    "message.waive_response": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "B",
+      "schema": "commands/message/waive_response.schema.json",
+      "uri": "/response-obligations/{id}:waive"
+    },
+    "operation.cancel": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/operation/cancel.schema.json",
+      "uri": "/operations/{id}:cancel"
+    },
+    "operation.resolve": {
+      "payload_fields": [
+        "conclusion",
+        "evidence_refs",
+        "followup_plan",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/operation/resolve.schema.json",
+      "uri": "/operations/{id}:resolve"
+    },
+    "operation.resolve.user": {
+      "payload_fields": [],
+      "principal": "U",
+      "schema": "commands/operation/resolve/user.schema.json",
+      "uri": "/control/operations/{id}:resolve"
+    },
+    "project.archive": {
+      "payload_fields": [
+        "expected_checkpoint_digest",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/project/archive.schema.json",
+      "uri": ":archive"
+    },
+    "project.completion.confirm": {
+      "payload_fields": [
+        "expected_project_revision",
+        "expected_revisions",
+        "proposal_digest"
+      ],
+      "principal": "U",
+      "schema": "commands/project/completion/confirm.schema.json",
+      "uri": "/control/completion-proposals/{id}:confirm"
+    },
+    "project.completion.propose.main": {
+      "payload_fields": [
+        "evidence_refs",
+        "expected_project_revision",
+        "objective_ref",
+        "outstanding_summary"
+      ],
+      "principal": "M",
+      "schema": "commands/project/completion/propose/main.schema.json",
+      "uri": "/completion-proposals"
+    },
+    "project.completion.propose.owner": {
+      "payload_fields": [
+        "evidence_refs",
+        "expected_project_revision",
+        "objective_ref",
+        "outstanding_summary"
+      ],
+      "principal": "X",
+      "schema": "commands/project/completion/propose/owner.schema.json",
+      "uri": "/completion-proposals:from-owner"
+    },
+    "project.configure": {
+      "payload_fields": [
+        "policy_patch",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/project/configure.schema.json",
+      "uri": ":configure"
+    },
+    "project.initialize": {
+      "payload_fields": [
+        "coordination_root",
+        "initial_policy",
+        "name",
+        "objective"
+      ],
+      "principal": "U",
+      "schema": "commands/project/initialize.schema.json",
+      "uri": "/api/v1/projects（全路径）"
+    },
+    "project.lineage.reset": {
+      "payload_fields": [
+        "target"
+      ],
+      "principal": "U",
+      "schema": "commands/project/lineage/reset.schema.json",
+      "uri": "/control/lineage:reset"
+    },
+    "project.local_copy.delete": {
+      "payload_fields": [
+        "data_loss_acceptance",
+        "exact_paths_digest",
+        "reason",
+        "recovery_evidence_refs"
+      ],
+      "principal": "U",
+      "schema": "commands/project/local_copy/delete.schema.json",
+      "uri": "/control:delete-local-copy"
+    },
+    "project.reactivate.main": {
+      "payload_fields": [
+        "expected_runtime_epoch",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/project/reactivate/main.schema.json",
+      "uri": ":reactivate"
+    },
+    "project.reactivate.user": {
+      "payload_fields": [
+        "expected_runtime_epoch",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/project/reactivate/user.schema.json",
+      "uri": "/control:reactivate"
+    },
+    "project.reconcile": {
+      "payload_fields": [
+        "reason",
+        "scope_refs"
+      ],
+      "principal": "M",
+      "schema": "commands/project/reconcile.schema.json",
+      "uri": ":reconcile"
+    },
+    "project.replica.activate": {
+      "payload_fields": [
+        "mode"
+      ],
+      "principal": "U",
+      "schema": "commands/project/replica/activate.schema.json",
+      "uri": "/control/replicas/{id}:activate"
+    },
+    "project.tasks.restore_open": {
+      "payload_fields": [
+        "expected_revisions",
+        "plan_digest",
+        "reason",
+        "task_ids"
+      ],
+      "principal": "M",
+      "schema": "commands/project/tasks/restore_open.schema.json",
+      "uri": "/tasks:restore-open"
+    },
+    "project.trust_change": {
+      "payload_fields": [
+        "change_kind",
+        "expected_revisions",
+        "proposal_digest",
+        "proposal_ref",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/project/trust_change.schema.json",
+      "uri": "/control/trust:change"
+    },
+    "project.unregister": {
+      "payload_fields": [
+        "expected_runtime_epoch",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/project/unregister.schema.json",
+      "uri": "/control:unregister"
+    },
+    "publication.report": {
+      "payload_fields": [
+        "checkpoint_digest",
+        "commit_oid",
+        "evidence_refs",
+        "ref_name",
+        "remote_name",
+        "reported_at",
+        "repository_id"
+      ],
+      "principal": "M",
+      "schema": "commands/publication/report.schema.json",
+      "uri": "/publication-reports"
+    },
+    "repository.register": {
+      "payload_fields": [
+        "name",
+        "required",
+        "root_id"
+      ],
+      "principal": "M",
+      "schema": "commands/repository/register.schema.json",
+      "uri": "/repositories"
+    },
+    "resource.acquire": {
+      "payload_fields": [
+        "attempt_id",
+        "intent_id",
+        "intent_revision",
+        "scope_digest"
+      ],
+      "principal": "B",
+      "schema": "commands/resource/acquire.schema.json",
+      "uri": "/lease-sets:acquire"
+    },
+    "resource.intent": {
+      "payload_fields": [
+        "attempt_id",
+        "reason",
+        "resources",
+        "scope_digest"
+      ],
+      "principal": "B",
+      "schema": "commands/resource/intent.schema.json",
+      "uri": "/resource-intents"
+    },
+    "resource.release": {
+      "payload_fields": [
+        "attempt_id",
+        "reason"
+      ],
+      "principal": "B",
+      "schema": "commands/resource/release.schema.json",
+      "uri": "/lease-sets/{id}:release"
+    },
+    "resource.renew": {
+      "payload_fields": [
+        "scope_digest"
+      ],
+      "principal": "X",
+      "schema": "commands/resource/renew.schema.json",
+      "uri": "/lease-sets/{id}:renew"
+    },
+    "resource.wait.cancel": {
+      "payload_fields": [
+        "attempt_id",
+        "reason"
+      ],
+      "principal": "B",
+      "schema": "commands/resource/wait/cancel.schema.json",
+      "uri": "/resource-waits/{id}:cancel"
+    },
+    "risk.accept": {
+      "payload_fields": [
+        "accepted_risks",
+        "input_digest",
+        "reason",
+        "subject_ref"
+      ],
+      "principal": "M",
+      "schema": "commands/risk/accept.schema.json",
+      "uri": "/risk-acceptances"
+    },
+    "risk.request": {
+      "payload_fields": [
+        "attempt_id",
+        "candidates",
+        "input_digest",
+        "input_snapshot"
+      ],
+      "principal": "B",
+      "schema": "commands/risk/request.schema.json",
+      "uri": "/risk-assessments"
+    },
+    "risk.revoke": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/risk/revoke.schema.json",
+      "uri": "/risk-acceptances/{id}:revoke"
+    },
+    "risk.submit": {
+      "payload_fields": [
+        "conditions",
+        "evidence_refs",
+        "input_digest",
+        "reason",
+        "recommended_driver",
+        "risk_level",
+        "scope"
+      ],
+      "principal": "M",
+      "schema": "commands/risk/submit.schema.json",
+      "uri": "/risk-assessments/{id}:submit"
+    },
+    "root.bind": {
+      "payload_fields": [
+        "absolute_path",
+        "expected_physical_identity",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/root/bind.schema.json",
+      "uri": "/roots/{id}:bind"
+    },
+    "root.register": {
+      "payload_fields": [
+        "binding_request",
+        "kind",
+        "name",
+        "reason",
+        "repository_id",
+        "required"
+      ],
+      "principal": "M",
+      "schema": "commands/root/register.schema.json",
+      "uri": "/roots"
+    },
+    "session.end": {
+      "payload_fields": [
+        "reason",
+        "stop_evidence"
+      ],
+      "principal": "D",
+      "schema": "commands/session/end.schema.json",
+      "uri": "/sessions/{id}:end"
+    },
+    "session.rebind": {
+      "payload_fields": [
+        "client_nonce",
+        "conversation_evidence",
+        "installation_id",
+        "probe_payload",
+        "target_agent_id"
+      ],
+      "principal": "T",
+      "schema": "commands/session/rebind.schema.json",
+      "uri": "/sessions:rebind"
+    },
+    "session.reconnect": {
+      "payload_fields": [
+        "continuity_evidence",
+        "expected_connection_epoch",
+        "probe_payload",
+        "reconnect_nonce"
+      ],
+      "principal": "D",
+      "schema": "commands/session/reconnect.schema.json",
+      "uri": "/sessions/{id}:reconnect"
+    },
+    "session.reprobe": {
+      "payload_fields": [
+        "descriptor_ref",
+        "probe_payload",
+        "reason"
+      ],
+      "principal": "D",
+      "schema": "commands/session/reprobe.schema.json",
+      "uri": "/sessions/{id}:reprobe"
+    },
+    "shared.reconcile": {
+      "payload_fields": [
+        "ancestor_digest",
+        "expected_revisions",
+        "left_digest",
+        "plan_digest",
+        "resolution_plan",
+        "right_digest"
+      ],
+      "principal": "M",
+      "schema": "commands/shared/reconcile.schema.json",
+      "uri": "/shared-state:reconcile"
+    },
+    "task.block": {
+      "payload_fields": [
+        "attempt_id",
+        "checkpoint_summary",
+        "dependency_refs",
+        "evidence_refs",
+        "reason_code"
+      ],
+      "principal": "B",
+      "schema": "commands/task/block.schema.json",
+      "uri": "/tasks/{id}:block"
+    },
+    "task.cancel_ack": {
+      "payload_fields": [
+        "attempt_id",
+        "reason",
+        "stop_evidence"
+      ],
+      "principal": "B",
+      "schema": "commands/task/cancel_ack.schema.json",
+      "uri": "/tasks/{id}:ack-cancel"
+    },
+    "task.cancel_request": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/task/cancel_request.schema.json",
+      "uri": "/tasks/{id}:request-cancel"
+    },
+    "task.claim": {
+      "payload_fields": [
+        "capability_snapshot_id"
+      ],
+      "principal": "B",
+      "schema": "commands/task/claim.schema.json",
+      "uri": "/tasks/{id}:claim"
+    },
+    "task.create": {
+      "payload_fields": [
+        "acceptance_policy",
+        "execution_scope",
+        "followup_of",
+        "objective",
+        "parent_task_id",
+        "prerequisites",
+        "required_capabilities",
+        "title"
+      ],
+      "principal": "M",
+      "schema": "commands/task/create.schema.json",
+      "uri": "/tasks"
+    },
+    "task.create.user": {
+      "payload_fields": [],
+      "principal": "U",
+      "schema": "commands/task/create/user.schema.json",
+      "uri": "/control/tasks"
+    },
+    "task.edge.add": {
+      "payload_fields": [
+        "expected_revisions",
+        "kind",
+        "source_task_id",
+        "target_task_id"
+      ],
+      "principal": "M",
+      "schema": "commands/task/edge/add.schema.json",
+      "uri": "/task-edges"
+    },
+    "task.edge.remove": {
+      "payload_fields": [
+        "expected_revisions",
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/task/edge/remove.schema.json",
+      "uri": "/task-edges/{id}:remove"
+    },
+    "task.fail": {
+      "payload_fields": [
+        "attempt_id",
+        "evidence_refs",
+        "reason",
+        "stop_evidence"
+      ],
+      "principal": "B",
+      "schema": "commands/task/fail.schema.json",
+      "uri": "/tasks/{id}:fail"
+    },
+    "task.preflight": {
+      "payload_fields": [
+        "attempt_id",
+        "evidence_refs",
+        "expected_revisions"
+      ],
+      "principal": "B",
+      "schema": "commands/task/preflight.schema.json",
+      "uri": "/tasks/{id}:preflight"
+    },
+    "task.progress": {
+      "payload_fields": [
+        "evidence_refs",
+        "summary"
+      ],
+      "principal": "X",
+      "schema": "commands/task/progress.schema.json",
+      "uri": "/tasks/{id}:progress"
+    },
+    "task.publish": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/task/publish.schema.json",
+      "uri": "/tasks/{id}:publish"
+    },
+    "task.ready": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/task/ready.schema.json",
+      "uri": "/tasks/{id}:ready"
+    },
+    "task.recover": {
+      "payload_fields": [
+        "disposition",
+        "expected_attempt_id"
+      ],
+      "principal": "M",
+      "schema": "commands/task/recover.schema.json",
+      "uri": "/tasks/{id}:recover"
+    },
+    "task.resume": {
+      "payload_fields": [
+        "attempt_id",
+        "evidence_refs",
+        "expected_execution_epoch",
+        "expected_revisions",
+        "input_digest"
+      ],
+      "principal": "B",
+      "schema": "commands/task/resume.schema.json",
+      "uri": "/tasks/{id}:resume"
+    },
+    "task.review.accept": {
+      "payload_fields": [
+        "evidence_refs",
+        "reason",
+        "result_digest",
+        "slot_id"
+      ],
+      "principal": "R",
+      "schema": "commands/task/review/accept.schema.json",
+      "uri": "/reviews/{id}:accept"
+    },
+    "task.review.request_changes": {
+      "payload_fields": [
+        "evidence_refs",
+        "reason",
+        "result_digest",
+        "slot_id"
+      ],
+      "principal": "R",
+      "schema": "commands/task/review/request_changes.schema.json",
+      "uri": "/reviews/{id}:request-changes"
+    },
+    "task.scope.request": {
+      "payload_fields": [
+        "attempt_id",
+        "expected_revisions",
+        "reason",
+        "requested_scope"
+      ],
+      "principal": "B",
+      "schema": "commands/task/scope/request.schema.json",
+      "uri": "/tasks/{id}/scope-requests"
+    },
+    "task.scope.resolve": {
+      "payload_fields": [
+        "choice"
+      ],
+      "principal": "M",
+      "schema": "commands/task/scope/resolve.schema.json",
+      "uri": "/scope-requests/{id}:resolve"
+    },
+    "task.self_accept": {
+      "payload_fields": [
+        "evidence_refs",
+        "reason",
+        "result_digest"
+      ],
+      "principal": "B",
+      "schema": "commands/task/self_accept.schema.json",
+      "uri": "/reviews/{id}:self-accept"
+    },
+    "task.start": {
+      "payload_fields": [
+        "attempt_id",
+        "expected_execution_epoch",
+        "input_digest",
+        "preflight_id"
+      ],
+      "principal": "B",
+      "schema": "commands/task/start.schema.json",
+      "uri": "/tasks/{id}:start"
+    },
+    "task.submit": {
+      "payload_fields": [
+        "artifact_refs",
+        "evidence_refs",
+        "summary",
+        "workspace_result_ref"
+      ],
+      "principal": "X",
+      "schema": "commands/task/submit.schema.json",
+      "uri": "/tasks/{id}:submit"
+    },
+    "task.update_plan": {
+      "payload_fields": [
+        "acceptance_policy",
+        "execution_scope",
+        "objective",
+        "reason",
+        "title"
+      ],
+      "principal": "M",
+      "schema": "commands/task/update_plan.schema.json",
+      "uri": "/tasks/{id}:update-plan"
+    },
+    "user_decision.cancel": {
+      "payload_fields": [
+        "reason"
+      ],
+      "principal": "M",
+      "schema": "commands/user_decision/cancel.schema.json",
+      "uri": "/decisions/{id}:cancel"
+    },
+    "user_decision.propose": {
+      "payload_fields": [
+        "choices",
+        "expected_revisions",
+        "kind",
+        "proposal_digest",
+        "proposal_ref",
+        "summary"
+      ],
+      "principal": "M",
+      "schema": "commands/user_decision/propose.schema.json",
+      "uri": "/decisions"
+    },
+    "user_decision.resolve": {
+      "payload_fields": [
+        "choice",
+        "expected_revisions",
+        "proposal_digest",
+        "reason"
+      ],
+      "principal": "U",
+      "schema": "commands/user_decision/resolve.schema.json",
+      "uri": "/control/decisions/{id}:resolve"
+    },
+    "workspace.attach_external": {
+      "payload_fields": [
+        "attempt_id",
+        "decision_id",
+        "evidence_refs",
+        "external_locator",
+        "root_binding_refs"
+      ],
+      "principal": "M",
+      "schema": "commands/workspace/attach_external.schema.json",
+      "uri": "/workspaces:attach-external"
+    },
+    "workspace.cleanup": {
+      "payload_fields": [
+        "input_digest",
+        "reason",
+        "required_checkpoint_ref"
+      ],
+      "principal": "M",
+      "schema": "commands/workspace/cleanup.schema.json",
+      "uri": "/workspaces/{id}:cleanup"
+    },
+    "workspace.cleanup_force": {
+      "payload_fields": [
+        "data_loss_acceptance",
+        "exact_paths_digest",
+        "input_digest",
+        "reason",
+        "required_checkpoint_ref"
+      ],
+      "principal": "U",
+      "schema": "commands/workspace/cleanup_force.schema.json",
+      "uri": "/control/workspaces/{id}:cleanup-force"
+    },
+    "workspace.git.report": {
+      "payload_fields": [
+        "evidence_refs",
+        "exact_input_digest",
+        "outcome",
+        "result_manifest"
+      ],
+      "principal": "M",
+      "schema": "commands/workspace/git/report.schema.json",
+      "uri": "/git-requests/{id}:report"
+    },
+    "workspace.integrate": {
+      "payload_fields": [
+        "plan_digest",
+        "reason",
+        "source_result_ref",
+        "target_baseline_digest",
+        "target_repository_id"
+      ],
+      "principal": "M",
+      "schema": "commands/workspace/integrate.schema.json",
+      "uri": "/integrations"
+    },
+    "workspace.prepare": {
+      "payload_fields": [
+        "attempt_id",
+        "decision_id",
+        "input_digest"
+      ],
+      "principal": "B",
+      "schema": "commands/workspace/prepare.schema.json",
+      "uri": "/workspaces"
+    },
+    "workspace.result": {
+      "payload_fields": [
+        "baseline_digest",
+        "changed_paths",
+        "commit_refs",
+        "patch_artifact_ref",
+        "untracked_summary",
+        "validation_refs"
+      ],
+      "principal": "X",
+      "schema": "commands/workspace/result.schema.json",
+      "uri": "/workspaces/{id}:record-result"
+    },
+    "workspace.select": {
+      "payload_fields": [
+        "attempt_id",
+        "driver_kind",
+        "evidence_refs",
+        "hard_constraints",
+        "input_digest",
+        "risk_submission_ref"
+      ],
+      "principal": "M",
+      "schema": "commands/workspace/select.schema.json",
+      "uri": "/workspace-decisions"
+    }
+  },
+  "protocol_version": "1.0",
+  "queries": [
+    "project.list",
+    "project.show",
+    "root.list",
+    "agent.list",
+    "agent.show",
+    "authority.show",
+    "task.list",
+    "task.show",
+    "decision.list",
+    "decision.show",
+    "operation.list",
+    "operation.show",
+    "checkpoint.list",
+    "checkpoint.show",
+    "config.show",
+    "config.validate",
+    "doctor"
+  ],
+  "schema_bundle_digest": "sha256:dfda63da8594b8a2e02d080ef33dd17a8259b74900cc69e3b605b5068e95b122",
+  "supported_previous_version": "0.9"
+}

@@ -1,0 +1,44 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/cognition.report",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assumptions": {},
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "boundary": {},
+    "claims": {},
+    "confidence": {},
+    "confidence_reason": {},
+    "evidence_refs": {},
+    "input_revisions": {},
+    "supersedes_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "uncertainties": {},
+    "understanding": {}
+  },
+  "required": [
+    "assumptions",
+    "attempt_id",
+    "boundary",
+    "claims",
+    "confidence",
+    "confidence_reason",
+    "evidence_refs",
+    "input_revisions",
+    "supersedes_id",
+    "task_id",
+    "uncertainties",
+    "understanding"
+  ],
+  "title": "CognitionReportPayload",
+  "type": "object"
+}

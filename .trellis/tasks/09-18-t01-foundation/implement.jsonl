@@ -9,3 +9,4 @@
 {"file": "docs/implementation/build-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T01"}
 {"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T01"}
 {"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T01"}
+{"file": "docs/research/toolchain-matrix.md", "reason": "T01实际版本输出、锁文件安装与检查证据"}

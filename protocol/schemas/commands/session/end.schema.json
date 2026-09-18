@@ -1,0 +1,18 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/session.end",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "stop_evidence": {}
+  },
+  "required": [
+    "reason",
+    "stop_evidence"
+  ],
+  "title": "SessionEndPayload",
+  "type": "object"
+}

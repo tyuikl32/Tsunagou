@@ -1,0 +1,37 @@
+{
+  "host": "codex",
+  "version": "codex-cli 0.154.0-alpha.6.2",
+  "scope": "disposable_no_model_turn",
+  "checks": {
+    "initialize": true,
+    "same_directory_distinct": true,
+    "resume": {
+      "status": "failed",
+      "code": -32600,
+      "reason": "empty_thread_not_persisted_or_api_precondition"
+    },
+    "fork": {
+      "status": "failed",
+      "code": -32600,
+      "reason": "empty_thread_not_persisted_or_api_precondition"
+    },
+    "compact": {
+      "status": "unknown",
+      "reason": "requires_model_history_and_authenticated_model_call"
+    },
+    "clear": {
+      "status": "unknown",
+      "reason": "no_verified_native_clear_surface"
+    },
+    "installation_profile": {
+      "status": "unknown",
+      "reason": "adapter_installation_identity_not_implemented"
+    }
+  },
+  "ready": false,
+  "identity_digests": [
+    "17afa2c2b260f2e0aa1697d14ce7d06efa1b9ddc4770ce33f7442ccd95bf057a",
+    "633479c0233fc91ab07462727ebcc47218fa0f5c8f532485d33c2e83d7e518bd"
+  ],
+  "stderr_lines_discarded": 3
+}

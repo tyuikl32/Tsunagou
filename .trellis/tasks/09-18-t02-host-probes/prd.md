@@ -21,10 +21,10 @@
 
 ## 验收标准
 
-- [ ] 11项共同基线逐项有证据状态，未知不填supported
-- [ ] 身份连续性无法证明则不ready，不用cwd/PID/LLM自报替代
-- [ ] 两个宿主连接共享服务但不能共享principal
-- [ ] 所有probe日志无token/raw conversation ID/私有transcript；失败不被隐藏
+- [x] 11项共同基线逐项有证据状态，未知不填supported
+- [x] 身份连续性无法证明则不ready，不用cwd/PID/LLM自报替代
+- [x] 两个宿主连接共享服务但不能共享principal（Codex app-server同服务双thread证明独立身份；bridge token隔离仍留为T17实测门槛）
+- [x] 所有probe日志无token/raw conversation ID/私有transcript；失败不被隐藏
 
 ## 不包含
 

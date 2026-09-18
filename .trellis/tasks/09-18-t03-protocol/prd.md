@@ -21,10 +21,10 @@ T01。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] Python/TS对fixtures接受拒绝一致，JCS哈希一致
-- [ ] 每命令都有Schema和policy，无未注册handler，user-only不暴露MCP
-- [ ] 同输入两次生成字节一致，提交生成物无时间戳
-- [ ] runtime_epoch是UUID，其他epoch是安全整数；null和省略语义明确
+- [x] Python/TS对fixtures接受拒绝一致，JCS哈希一致（`tests/protocol/test_protocol_codegen.py`；`uv run python tools/codegen/validate_protocol.py`）
+- [x] 每命令都有Schema和policy，无未注册handler，user-only不暴露MCP（106条注册命令、111个Schema通过校验）
+- [x] 同输入两次生成字节一致，提交生成物无时间戳（重复运行生成器后registry SHA-256不变）
+- [x] runtime_epoch是UUID，其他epoch是安全整数；null和省略语义明确（公共Schema与实现基线已登记）
 
 ## 不包含
 
@@ -32,4 +32,4 @@ T01。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 本轮补充验收
 
-- [ ] 手册请求示例替换明确占位值后通过生成Schema；header/body与Attempt上下文不产生第二种解释。
+- [x] 手册请求示例替换明确占位值后通过生成Schema；header/body与Attempt上下文不产生第二种解释（命令目录生成器与公共信封Schema验收通过）。

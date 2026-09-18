@@ -1,0 +1,20 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/session.reprobe",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "descriptor_ref": {},
+    "probe_payload": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "descriptor_ref",
+    "probe_payload",
+    "reason"
+  ],
+  "title": "SessionReprobePayload",
+  "type": "object"
+}

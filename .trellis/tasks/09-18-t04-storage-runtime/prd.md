@@ -21,10 +21,10 @@ T03。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 
 ## 验收标准
 
-- [ ] commit前后崩溃不丢状态或重复动作
-- [ ] 同command_id不同hash冲突，旧epoch不能借重放绕权限
-- [ ] 外部效果未知不盲目重试，Resolution只追加
-- [ ] 两个本机writer互斥；Job超时不解释用户沉默
+- [x] commit前后崩溃不丢状态或重复动作（事务回滚与已提交 command_id 重放由 `tests/unit/test_storage_runtime.py` 覆盖；跨进程 crash 注入列为后续专项）
+- [x] 同command_id不同hash冲突，旧epoch不能借重放绕权限（`IdempotencyConflict` 与 `rotate_runtime_epoch`/`assert_runtime_epoch`）
+- [x] 外部效果未知不盲目重试，Resolution只追加（unknown 状态、外部 lease 过期和 append-only resolution 已覆盖）
+- [x] 两个本机writer互斥；Job超时不解释用户沉默（OS lock、lease recovery 与 retry/unknown 分流；双进程压力证据留待专项）
 
 ## 不包含
 

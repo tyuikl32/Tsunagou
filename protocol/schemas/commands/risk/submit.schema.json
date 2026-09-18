@@ -1,0 +1,28 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/risk.submit",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "conditions": {},
+    "evidence_refs": {},
+    "input_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "recommended_driver": {},
+    "risk_level": {},
+    "scope": {}
+  },
+  "required": [
+    "conditions",
+    "evidence_refs",
+    "input_digest",
+    "reason",
+    "recommended_driver",
+    "risk_level",
+    "scope"
+  ],
+  "title": "RiskSubmitPayload",
+  "type": "object"
+}

@@ -3,7 +3,7 @@
   "name": "t04-storage-runtime",
   "title": "T04 SQLite事务、事件与持久Operation运行时",
   "description": "platform/db和durability核心；UoW、Alembic、events/commands/outbox/operations/jobs；真实SQLite并发与故障测试",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "storage-runtime",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-18",
+  "branch": "main",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -34,7 +34,7 @@
       "T03"
     ],
     "dependency_semantics": "project convention; check completion evidence before start",
-    "planning_status": "ready_for_implementation",
-    "product_implemented": false
+    "planning_status": "completed",
+    "product_implemented": true
   }
 }

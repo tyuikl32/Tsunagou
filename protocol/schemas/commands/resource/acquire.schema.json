@@ -1,0 +1,32 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/resource.acquire",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "intent_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "intent_revision": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "scope_digest": {}
+  },
+  "required": [
+    "attempt_id",
+    "intent_id",
+    "intent_revision",
+    "scope_digest"
+  ],
+  "title": "ResourceAcquirePayload",
+  "type": "object"
+}

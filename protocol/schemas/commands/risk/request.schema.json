@@ -1,0 +1,22 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/risk.request",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "candidates": {},
+    "input_digest": {},
+    "input_snapshot": {}
+  },
+  "required": [
+    "attempt_id",
+    "candidates",
+    "input_digest",
+    "input_snapshot"
+  ],
+  "title": "RiskRequestPayload",
+  "type": "object"
+}
