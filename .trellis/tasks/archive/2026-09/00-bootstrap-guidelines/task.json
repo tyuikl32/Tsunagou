@@ -1,9 +1,9 @@
 {
   "id": "00-bootstrap-guidelines",
   "name": "00-bootstrap-guidelines",
-  "title": "Bootstrap Guidelines",
-  "description": "Fill in project development guidelines for AI agents",
-  "status": "in_progress",
+  "title": "整理规划文档与初始化Trellis",
+  "description": "归档48份原稿，保存本轮决定，建立双读者文档、八模块实施规范和24项实施任务。",
+  "status": "completed",
   "dev_type": "docs",
   "scope": null,
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-18",
-  "completedAt": null,
+  "completedAt": "2026-09-18",
   "branch": null,
   "base_branch": null,
   "worktree_path": null,
@@ -21,8 +21,11 @@
   "children": [],
   "parent": null,
   "relatedFiles": [
-    ".trellis/spec/backend/",
-    ".trellis/spec/frontend/"
+    "docs/README.md",
+    "docs/implementation/README.md",
+    "docs/implementation/roadmap.md",
+    ".trellis/spec/backend/index.md",
+    ".trellis/spec/adapters/index.md"
   ],
   "notes": "First-time setup task created by trellis init (fullstack project)",
   "meta": {}

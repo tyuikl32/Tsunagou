@@ -10,7 +10,7 @@
 
 ## 认证与入口
 
-- HTTP 地址仅 loopback；公共业务前缀 `/api/v1/projects/{project_id}`（下文 P）。daemon `/api/v1/health` 只返回存活/版本，不暴露项目列表。
+- HTTP 地址为 `127.0.0.1` 随机端口；endpoint manifest 保存 instance ID、PID、port、启动时间，不含token。首发关闭CORS、无Cookie，不监听LAN或`0.0.0.0`。公共业务前缀 `/api/v1/projects/{project_id}`（下文 P）。daemon `/api/v1/health` 只返回存活/版本，不暴露项目列表。
 - Bearer session token 识别 agent_session；另一个独立 control token 识别 user_control。不得通过请求体、query、MCP 参数或环境变量提交 actor/token。TLS/OAuth/浏览器登录不在首发。
 - header：`Tsunagou-Protocol-Version`、`Tsunagou-Schema-Digest`、Agent 的 `Tsunagou-Session-Id`、`Tsunagou-Connection-Epoch`、`Tsunagou-Runtime-Epoch`。服务端验证 header 与 token 绑定，不信 header 自报身份。
 - 主权限写入附 `expected_authority_epoch`；Attempt 执行附 `attempt_id,expected_execution_epoch`。权威对象不能靠路由 ID 绕过 lineage/runtime 校验。

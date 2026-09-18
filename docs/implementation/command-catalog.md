@@ -46,7 +46,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | project.unregister | `/control:unregister` | U / — | expected_runtime_epoch,reason | RegistrationResult；不等同删除文件 |
 | project.local_copy.delete | `/control:delete-local-copy` | U / — | exact_paths_digest,recovery_evidence_refs,data_loss_acceptance?,reason | Operation；最后副本专门审批 |
 
-普通管理动作需要用户直接操作时，首发只提供以下独立user命令：`project.configure.user`、`root.register.user`、`root.bind.user`、`repository.register.user`、`project.reconcile.user`、`project.archive.user`、`project.tasks.restore_open.user`。URI为相应URI的P后插入`/control`（项目冒号动作如`P/control:configure`）；payload/result不变，principal固定U、无capability、仍验证结构/revision/范围。不得把User token映射为虚假main Grant。T03逐项注册而非运行时通配生成授权。
+普通管理动作需要用户直接操作时，首发只提供以下独立user命令：`project.configure.user`、`root.register.user`、`root.bind.user`、`repository.register.user`、`project.reconcile.user`、`project.archive.user`、`project.tasks.restore_open.user`、`user_decision.propose.user`。URI为相应URI的P后插入`/control`（项目冒号动作如`P/control:configure`）；payload/result不变，principal固定U、无capability、仍验证结构/revision/范围。不得把User token映射为虚假main Grant。T03逐项注册而非运行时通配生成授权。
 
 ## Agent、会话与 Authority
 

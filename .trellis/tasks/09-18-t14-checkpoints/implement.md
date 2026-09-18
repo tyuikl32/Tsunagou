@@ -2,7 +2,7 @@
 
 ## 开始前
 
-- [ ] 检查依赖 T12, T05 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
+- [ ] 检查依赖 T07, T08, T10, T11, T12 的完成证据，读取本任务 PRD/design/上下文与对应 Trellis spec。
 - [ ] 检查工作区现有改动，确认Schema/端口已有产物和版本；不得覆盖用户改动。
 - [ ] 使用 task.py start 显式开始；现在任务保持planning，不自动运行产品实施。
 

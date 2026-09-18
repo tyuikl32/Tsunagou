@@ -408,8 +408,11 @@
       "slug": "checkpoints",
       "title": "Checkpoint、Git锚点与共享状态恢复",
       "depends_on": [
-        "T12",
-        "T05"
+        "T07",
+        "T08",
+        "T10",
+        "T11",
+        "T12"
       ],
       "specs": [
         "docs/implementation/modules/07-durability.md",

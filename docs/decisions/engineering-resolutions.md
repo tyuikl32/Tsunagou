@@ -26,6 +26,11 @@
 | E20 | 文件物化永久失败与用户完成结论 | 项目事实不回滚；completion checkpoint失败只阻塞完成归档/发布/迁移等需要证据的动作。outbox高水位达到硬阈值才挡新增领域写，读取/修复/撤权始终可用。 |
 | E21 | capability零散新增 | 以当前 command catalog 的唯一 capability列为准；五 grant kinds保留；user-only无可下发的 admin capability。 |
 | E22 | 恢复旧任务自动复活权限 | 目标 checkpoint中终态保留；非终态恢复为 blocked/recovery_review，无current Attempt和运行权限。main显式选择转 open；已completed只可follow-up。 |
+| E23 | 无execution Grant时如何start/resume | claimed/blocked的owner使用agent_base+task.coordinate_self协调；resume只blocked→claimed，start完整核验后才running并发执行Grant。旧task.start必须先持task_attempt的循环依赖不采用。 |
+| E24 | 凭据首次交付丢失与普通幂等结果 | 服务端只持久secret hash；幂等重放返回非秘密receipt。bridge未保存token须专用rebind，不为此新增加密token缓存或密钥生命周期。 |
+| E25 | 共享MCP服务部署位置 | Python官方SDK在daemon承载项目MCP；TS官方SDK只承担必要bridge/stdio传输。具体SDK API与版本由T02验证，不能从语言选型猜已兼容。 |
+| E26 | 用户直接管理与Agent管理入口 | 需要user直接操作的普通管理动作注册独立user command，无Grant；不能让user token伪装main，也不创建通配admin动作。明确目录见command-catalog。 |
+| E27 | 尚未逐题决定的限额与私有结构 | 当前规范中的表名前缀、Job实现端口、64MiB附件默认、JSON/批次/路径限额、outbox高水位和黑板截断值是有标注的工程默认；不是伪造用户选项。Schema/配置一致可调整，不改变产品权限和认知边界。 |
 
 ## 阅读优先级
 

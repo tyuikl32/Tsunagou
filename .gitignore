@@ -1,0 +1,23 @@
+# Development environments and build output
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+build/
+*.egg-info/
+
+# Local secrets and product runtime; shared checkpoint data stays trackable
+.env
+.env.*
+!.env.example
+.tsunagou/local/
+
+# Local editor state
+.idea/
+.vscode/

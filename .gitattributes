@@ -7,3 +7,11 @@
 # picking either side (task state lives in task.json, not index.md). See
 # .trellis/spec/cli/backend/directory-structure.md for details.
 .trellis/workspace/*/journal-*.md merge=union
+
+# Current documents and task contracts use deterministic LF endings.
+*.md text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+
+# Preserve the exact historical bytes recorded in source-manifest.json.
+docs/history/2026-09-18-source/** -text
