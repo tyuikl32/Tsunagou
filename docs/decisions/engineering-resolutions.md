@@ -31,6 +31,9 @@
 | E25 | 共享MCP服务部署位置 | Python官方SDK在daemon承载项目MCP；TS官方SDK只承担必要bridge/stdio传输。具体SDK API与版本由T02验证，不能从语言选型猜已兼容。 |
 | E26 | 用户直接管理与Agent管理入口 | 需要user直接操作的普通管理动作注册独立user command，无Grant；不能让user token伪装main，也不创建通配admin动作。明确目录见command-catalog。 |
 | E27 | 尚未逐题决定的限额与私有结构 | 当前规范中的表名前缀、Job实现端口、64MiB附件默认、JSON/批次/路径限额、outbox高水位和黑板截断值是有标注的工程默认；不是伪造用户选项。Schema/配置一致可调整，不改变产品权限和认知边界。 |
+| E28 | CLI概览列了尚无U授权的Agent动作 | command-catalog的逐命令权限优先于旧CLI概览。agent reprobe/retire、authority handoff、task publish/recover、operation cancel保持原D/M主体，通过正确bridge/main工具调用；用户CLI不冒用Agent身份，也不为了补help表私加user handler。cli-contract明确可执行子命令。 |
+| E29 | 操作示例需要CLI参数但不能发明新业务协议 | --project、--request-file、--expected-revision、--command-id等是既有动作的CLI外壳；enroll组合U发票据与目标bridge兑换，仍分身份/事务。attach是基线，launch仅增强。宿主内置subagent不自动成为正式成员。参数集中定义，后续示例不得各自发明。 |
+| E30 | Header/body及Attempt上下文重复表示 | protocol version/bundle的header和body必须一致；X执行上下文在envelope，B协调命令按目录明确字段放payload。T03固定Schema与映射，重复冲突拒绝；REST/MCP共用dispatcher，业务SSE与MCP传输分开。 |
 
 ## 阅读优先级
 

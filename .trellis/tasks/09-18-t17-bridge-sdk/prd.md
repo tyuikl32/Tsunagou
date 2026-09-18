@@ -29,3 +29,7 @@ T16, T02。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 ## 不包含
 
 不增加 Web UI、远程认证、隐含认知推断或 daemon Git 写操作；不改变用户已确认权限边界。其他模块只能经 public ports 接入。涉及宿主的真实能力不以模拟通过代替。
+
+## 本轮补充验收
+
+- [ ] attach与managed_launch增强分开；票据签发和bridge兑换保持不同principal，不能复制main token。

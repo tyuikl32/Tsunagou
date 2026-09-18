@@ -13,14 +13,14 @@
 | projects / Project | name, objective, lifecycle, coordination_repository_id, current_lineage_id, current_replica_id, runtime_epoch, policy_revision | project ID 唯一；active lineage 必须 open |
 | lineages / Lineage | status, parent_lineage_id?, base_checkpoint_digest?, sealed_checkpoint_digest?, transition_reason | 历史祖先引用不可改；同项目一个当前 open |
 | replicas / Replica | role, registration_digest, last_checkpoint_digest?, last_runtime_epoch | 本机 registry 对 `(project,lineage)` 最多一个 active_writer；不声称跨机器强锁 |
-| roots / RootRegistration | name, root_kind:directory|repository, repository_id?, required, descriptor_digest | name 项目内唯一；共享行无绝对路径 |
-| bindings / RootBinding | root_id, absolute_path, physical_identity, case_mode, link_policy, status:bound|unbound|identity_changed, binding_revision | 本机私有；同实体 alias 归一；索引 physical_identity |
+| roots / RootRegistration | name, root_kind:directory\|repository, repository_id?, required, descriptor_digest | name 项目内唯一；共享行无绝对路径 |
+| bindings / RootBinding | root_id, absolute_path, physical_identity, case_mode, link_policy, status:bound\|unbound\|identity_changed, binding_revision | 本机私有；同实体 alias 归一；索引 physical_identity |
 | repositories / RepositoryRegistration | name, root_id, git_common_dir_identity, baseline_ref?, required | 本机绑定与共享逻辑描述分离；同 common-dir 不重复登记仓库身份 |
 | policies / ProjectPolicy | version, canonical_payload, digest, actor, reason | 不可变版本；current 指针带 revision；只允许注册字段 |
 | ceilings / UserCeiling | subject_template, path_rules, capability_ids, full_access_allowed, reserved_decisions, digest | 本机 user-only 写；Grant 必须子集 |
 | grants / Grant | kind, principal_id, session_id, runtime_epoch, authority_epoch?, task_id?, attempt_id?, execution_epoch?, scope_version, scope_json, scope_digest, capabilities, status, replaces_id? | 五 kind；外键列对应 JSON；`(session_id,status)`、`(attempt_id,status)` 索引 |
 | decisions / UserDecision | kind, proposal_ref, proposal_digest, expected_revisions, choices, status, decision, reason?, decided_at? | 提交决定必须 user_control；pending 无 deadline |
-| completion_proposals | objective_ref, project_revision, evidence_refs, outstanding_summary, digest, status:proposed|confirmed|superseded|rejected | 用户确认冻结 exact digest；不能随最新证据自动变更 |
+| completion_proposals | objective_ref, project_revision, evidence_refs, outstanding_summary, digest, status:proposed\|confirmed\|superseded\|rejected | 用户确认冻结 exact digest；不能随最新证据自动变更 |
 | conditions / blockers | 见数据模型完整 DTO | `(type,scope)` / `(code,source_ref,scope)` current 唯一；变化另记 event |
 
 ## 根目录、路径和 scope

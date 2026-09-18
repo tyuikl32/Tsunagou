@@ -13,6 +13,9 @@ Read [implementation index](../../../docs/implementation/README.md), the active 
 | [Errors](error-handling.md) | Wire errors, unknown outcomes, retry |
 | [Logging](logging-guidelines.md) | Secrets and visibility |
 | [Quality](quality-guidelines.md) | Tests, protocol and release checks |
+| [Entrypoints](entrypoint-contracts.md) | CLI/HTTP/MCP identity, enrollment, examples and errors |
+
+For build order and file placement, read [build guide](../../../docs/implementation/build-guide.md) and [planned directory layout](../../../docs/implementation/directory-layout.md). Official knowledge and adoption limits are indexed in [references](../../../docs/implementation/references.md).
 
 ## Quality Check
 

@@ -23,7 +23,10 @@
   "relatedFiles": [
     "docs/implementation/modules/01-projects.md",
     "docs/implementation/architecture.md",
-    "docs/implementation/lifecycle.md"
+    "docs/implementation/lifecycle.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md"
   ],
   "notes": "",
   "meta": {

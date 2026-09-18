@@ -17,7 +17,7 @@
 | drivers | 静态 registry：kind,version,capabilities,required_evidence,supported_platforms；不接受运行时任意代码插件 |
 | decisions | task_id,attempt_id,risk_submission_ref?,driver_kind,input_digest,hard_constraints,evidence_refs,decided_by,decision_digest |
 | instances | attempt_id,decision_id,driver_kind,status,root_binding_refs,repository_id?,external_locator?,baseline_manifest_id?,result_manifest_id?,revision |
-| git_requests | workspace_id?,repository_id,action:worktree_create|worktree_remove|commit|integrate|publish|repair,requested_main_id,exact_input_digest,parameters,operation_id,status:pending|reported|verified|rejected|unknown |
+| git_requests | workspace_id?,repository_id,action:worktree_create\|worktree_remove\|commit\|integrate\|publish\|repair,requested_main_id,exact_input_digest,parameters,operation_id,status:pending\|reported\|verified\|rejected\|unknown |
 | baselines | workspace_id,root/repo identities,head_commit?,branch?,index_digest,tracked_state_digest,untracked_summary,captured_at,digest |
 | results | workspace_id,attempt_id,baseline_digest,commit_refs[],patch_artifact_ref?,changed_paths,untracked_summary,validation_refs,digest |
 | integrations | source_result_ref,target_repository_id,target_baseline_digest,plan_digest,operation_id,status,evidence_refs |

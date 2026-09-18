@@ -35,3 +35,14 @@
 ## 允许的工程选择
 
 可自行选择私有类/函数和测试夹具拆分，记录实际命令与版本。改变公开语义先同步Schema/规范/fixtures；若推翻已确认目标或固定用户边界，提供证据交还用户。实现后的design必须反映最终实现，不能保留已放弃方案作为执行步骤。
+
+## 文档细化补充（2026-09-18）
+
+- [docs/implementation/build-guide.md](../../../docs/implementation/build-guide.md)
+- [docs/implementation/directory-layout.md](../../../docs/implementation/directory-layout.md)
+- [docs/implementation/references.md](../../../docs/implementation/references.md)
+- [docs/implementation/cli-contract.md](../../../docs/implementation/cli-contract.md)
+- [docs/overview/cli-http-manual.md](../../../docs/overview/cli-http-manual.md)
+- [.trellis/spec/backend/entrypoint-contracts.md](../../../.trellis/spec/backend/entrypoint-contracts.md)
+
+目录中的源码路径是待建目标；搭建指南提供顺序，不覆盖本任务依赖。公开接口与权限仍以command-catalog/protocol为准。

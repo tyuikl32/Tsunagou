@@ -27,3 +27,7 @@
 - [ ] PRD逐项标记并附证据；没有产品实现前不得填写已通过。
 - [ ] 在Trellis journal记录结果、限制、依赖影响与下一任务。
 - [ ] 检查通过后完成/归档，更新任务依赖引用；发布、push、用户重大决定按已有授权处理。
+
+## 本轮补充验收
+
+- [ ] attach与managed_launch增强分开；票据签发和bridge兑换保持不同principal，不能复制main token。

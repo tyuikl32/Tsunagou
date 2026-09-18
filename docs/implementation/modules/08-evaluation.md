@@ -9,7 +9,7 @@
 | 表（`evaluation_`） | 字段 |
 |---|---|
 | audit_views | source_event_id/seq,actor_ref,action,subject_ref,outcome,reason_code,evidence_refs,projection_version；可重建 |
-| metric_samples | name,unit,value?,availability:observed|estimated|unavailable,labels,source_ref,observed_at；禁止无数据填0 |
+| metric_samples | name,unit,value?,availability:observed\|estimated\|unavailable,labels,source_ref,observed_at；禁止无数据填0 |
 | experiment_definitions | name,version,task_set_digest,arms,budget_policy,host_model_matrix,random_seed,metrics,success_criteria,digest |
 | experiment_runs | definition_id,arm,replicate,host/adapter/model versions,protocol_digest,config_digest,started_at,finished_at?,status,result_refs |
 | experiment_results | run_id,correctness,interventions,rework,wall_time,token_metrics,failures,evidence_refs,digest |

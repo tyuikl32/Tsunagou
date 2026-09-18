@@ -23,7 +23,13 @@
   "relatedFiles": [
     "docs/implementation/validation.md",
     "docs/implementation/lifecycle.md",
-    "docs/implementation/modules/07-durability.md"
+    "docs/implementation/modules/07-durability.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/coordination-walkthrough.md",
+    "docs/overview/cli-http-manual.md",
+    ".trellis/spec/backend/entrypoint-contracts.md"
   ],
   "notes": "",
   "meta": {

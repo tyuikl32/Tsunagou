@@ -7,6 +7,7 @@
 | 场景 | 展示内容 | 可核验结果 |
 |---|---|---|
 | 初始化与身份 | 一个协调仓库、额外根目录、主 Agent 和两个子 Agent | 独立 HostSession；子 Agent 任命主权限请求被拒绝 |
+| 用户接入子Agent | 用户打开两个宿主对话，分别enroll attach，查看ready与agent_id | 同目录也不同身份；未ready不能claim，票据不进入模型 |
 | 并行任务 | API 与调用方任务、依赖关系、claim | 同任务并发 claim 只有一个 owner |
 | 显式理解差异 | 两份报告针对同字段作不同声明 | Discrepancy 与参与者都可查询 |
 | 契约协商 | 所有人接受同一 schema proposal | 相同 digest；旧版本接受不生效 |
@@ -15,6 +16,8 @@
 | 完成 | 用户确认项目完成，展示 checkpoint 状态 | completed 与 durability pending/failed 分开可见 |
 
 四个 adapter 各有共同基线真宿主记录。可以在主线使用其中两个，但不能借此宣称其余两个已实测。
+
+演示时让观众分别看到两个子Agent的黑板、理解报告和结果提交；不要只展示main的总结。可增加一个短场景：用户暂不回答，相关worker保存快照挂起，另一worker继续无关工作，然后原worker恢复。操作提词见[CLI/HTTP手册](cli-http-manual.md)。
 
 ## 两种验收
 

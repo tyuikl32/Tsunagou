@@ -22,7 +22,10 @@
   "parent": "09-18-tsunagou-v1",
   "relatedFiles": [
     "docs/implementation/modules/04-cognition.md",
-    "docs/implementation/runtime-prompts.md"
+    "docs/implementation/runtime-prompts.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md"
   ],
   "notes": "",
   "meta": {

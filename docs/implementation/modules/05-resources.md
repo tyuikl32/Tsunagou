@@ -7,10 +7,10 @@ ResourceIntent 表示“准备使用什么”，Lease 表示“协调中心当�
 | 表（`resources_`） | 字段与约束 |
 |---|---|
 | intents | task_id,attempt_id,owner_agent_id,scope_digest,resources[],reason,revision；resources 每项 ResourceKey+mode |
-| acquisition_requests | attempt_id,intent_id,intent_revision,request_digest,status:waiting|granted|cancelled,base_priority,enqueued_at,lease_set_id? |
+| acquisition_requests | attempt_id,intent_id,intent_revision,request_digest,status:waiting\|granted\|cancelled,base_priority,enqueued_at,lease_set_id? |
 | lease_sets | attempt_id,execution_epoch,scope_digest,request_digest,status,expires_at,last_renewed_at |
-| leases | lease_set_id,resource_key,physical_identity?,mode:read|consistent_read|exclusive_write|exclusive_use,status |
-| observations | resource_key,source,evidence_digest,observed_at,kind:external_write|identity_changed|unexpected_owner；只记录观察 |
+| leases | lease_set_id,resource_key,physical_identity?,mode:read\|consistent_read\|exclusive_write\|exclusive_use,status |
+| observations | resource_key,source,evidence_digest,observed_at,kind:external_write\|identity_changed\|unexpected_owner；只记录观察 |
 
 索引 active lease resource canonical key/prefix、lease_set attempt/status/expiry；意图必须在 EffectiveAttemptScope 内。同一 acquisition request 原子获取整组，不能先给一半再等另一半。服务端按规范资源 key 排序检查，避免请求顺序导致差异。
 

@@ -12,6 +12,8 @@ Trellis 0.6.17 已初始化：开发者 **tyuikl32**，平台 **Codex**。24 个
 4. T17–T21 建共享SDK并交付四个宿主；各宿主都需自己的真实证据。
 5. T22 可在核心事件可用后开始观测框架；T23 工程验收；T24 对照实验、演示与首发材料。
 
+逐阶段的前置条件、文件创建顺序、验证和交接格式见[搭建指南](build-guide.md)，目标文件树见[目录方案](directory-layout.md)。涉及真实协作可按[三Agent轨迹](coordination-walkthrough.md)构造场景；T16按[CLI契约](cli-contract.md)和[用户手册](../overview/cli-http-manual.md)逐项核验入口。上述资料已加入相关任务上下文。
+
 ## 任务目录
 
 每个任务目录都有 task.json、prd.md、design.md、implement.md、implement.jsonl、check.jsonl。PRD包含具体产物和可判定验收；设计引用唯一协议并规定事务/权限边界；implement是实际执行和交接清单。

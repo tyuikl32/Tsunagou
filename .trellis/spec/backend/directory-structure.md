@@ -2,6 +2,8 @@
 
 Source: [architecture](../../../docs/implementation/architecture.md).
 
+Concrete planned files and data directories are in [directory layout](../../../docs/implementation/directory-layout.md), with task-by-task setup in [build guide](../../../docs/implementation/build-guide.md). Those paths are targets, not a claim that source files already exist. Keep development `.trellis/`, product project `.tsunagou/`, and user-private adapter credentials separate.
+
 One Python distribution under src/tsunagou. Eight modules: projects, agents, tasks, cognition, resources, workspaces, durability, evaluation. Each owns its domain/application/public/infrastructure/api as needed; do not create empty layers for appearance.
 
 Domain imports only stdlib and stable shared_kernel values. Cross-module calls use modules.<name>.public. Routers translate protocol and identity, never query another module's ORM. Infrastructure implements ports. bootstrap is the only composition root.

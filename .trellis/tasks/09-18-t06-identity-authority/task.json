@@ -23,7 +23,13 @@
   "relatedFiles": [
     "docs/implementation/modules/02-agents.md",
     "docs/implementation/modules/01-projects.md",
-    "docs/implementation/adapters.md"
+    "docs/implementation/adapters.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/coordination-walkthrough.md",
+    "docs/overview/subagent-guide.md",
+    ".trellis/spec/backend/entrypoint-contracts.md"
   ],
   "notes": "",
   "meta": {

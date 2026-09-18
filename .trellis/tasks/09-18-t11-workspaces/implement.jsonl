@@ -7,3 +7,6 @@
 {"file": "docs/implementation/protocol.md", "reason": "实施规范与公共语义；T11"}
 {"file": "docs/implementation/command-catalog.md", "reason": "实施规范与公共语义；T11"}
 {"file": "docs/decisions/engineering-resolutions.md", "reason": "实施规范与公共语义；T11"}
+{"file": "docs/implementation/build-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T11"}
+{"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T11"}
+{"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T11"}

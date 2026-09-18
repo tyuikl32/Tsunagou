@@ -5,9 +5,10 @@
 ```mermaid
 flowchart TB
   U[用户：CLI / 后续 Web] --> API[公共 HTTP API]
-  H[Codex / OpenCode / ZCode / DeepSeek Harness] --> B[会话隔离的 Bridge]
-  B --> MCP[共享项目 MCP / HTTP]
-  MCP --> API
+  H[主Agent与多个子Agent的独立宿主对话] --> B[每会话独立身份的 Bridge]
+  B --> MCP[共享项目 MCP]
+  B --> API
+  MCP --> APP
   API --> APP[认证与授权 / 无状态流程编排 / 黑板查询]
   APP --> P[项目与权限]
   APP --> A[Agent 接入与收件箱]
@@ -33,3 +34,5 @@ flowchart TB
 | 08 evaluation | 查看审计、性能与真实协作效果 | 只读观测；不能成为业务写入口 |
 
 黑板是八模块的一致读视图；跨模块流程层共享一个事务；两者均不另建业务真相。每个模块详细实施方案见[实施总入口](../implementation/README.md)。
+
+子Agent通过自己的bridge使用同一八模块内核。身份隔离确保它不能接管main或其他worker的Attempt；黑板让它知道目标、依赖和当前阻塞；认知模块让它参与协商；持久收件箱和恢复协议让它不依赖main转述全部历史。用户如何接入这些独立会话见[子Agent指南](subagent-guide.md)。

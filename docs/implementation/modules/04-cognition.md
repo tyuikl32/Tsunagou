@@ -8,15 +8,15 @@
 
 | 表（`cognition_`） | 字段与规则 |
 |---|---|
-| reports | author_agent_id,task_id,attempt_id?,boundary:pre_start|scope_change|contract_change|pre_submit|manual,understanding,assumptions[],uncertainties[],claims[],confidence:unknown|low|medium|high,confidence_reason,evidence_refs,input_revisions,supersedes_id?,digest |
-| discrepancies | subject_ref,source_report_refs,rule_id?,severity:info|soft|hard,status,participants[],summary,affected_actions,resolution_ref?,revision |
-| discrepancy_resolutions | discrepancy_id,actor,kind:consensus|dismissal|override,reason,evidence_refs,accepted_by[],input_digest；override 不伪装 consensus |
-| contracts | subject_ref,contract_kind:api_interface|data_schema|behavioral|integration,current_proposal_id,revision |
+| reports | author_agent_id,task_id,attempt_id?,boundary:pre_start\|scope_change\|contract_change\|pre_submit\|manual,understanding,assumptions[],uncertainties[],claims[],confidence:unknown\|low\|medium\|high,confidence_reason,evidence_refs,input_revisions,supersedes_id?,digest |
+| discrepancies | subject_ref,source_report_refs,rule_id?,severity:info\|soft\|hard,status,participants[],summary,affected_actions,resolution_ref?,revision |
+| discrepancy_resolutions | discrepancy_id,actor,kind:consensus\|dismissal\|override,reason,evidence_refs,accepted_by[],input_digest；override 不伪装 consensus |
+| contracts | subject_ref,contract_kind:api_interface\|data_schema\|behavioral\|integration,current_proposal_id,revision |
 | proposals | contract_id,version,payload,participants_required[],participants_optional[],input_refs[],digest,status,supersedes_id?；参与者集合属于 digest |
-| acceptances | proposal_id,participant_slot_id,actor_agent_id,mode:direct|proxy,proposal_digest,proxy_policy_ref?,reason?,evidence_refs；同 slot/proposal 唯一 |
-| risk_requests | attempt_id,input_snapshot,input_digest,candidates[],requested_from_main_id,status:pending|answered|fallback_used|superseded,deadline_at |
-| risk_submissions | request_id,assessor_id,risk_level:low|medium|high|unknown,reason,recommended_driver,scope,conditions[],evidence_refs,input_digest |
-| risk_acceptances | subject_ref,actor_main_id,reason,accepted_risks[],input_digest,valid_until_task_terminal,status:active|superseded|revoked |
+| acceptances | proposal_id,participant_slot_id,actor_agent_id,mode:direct\|proxy,proposal_digest,proxy_policy_ref?,reason?,evidence_refs；同 slot/proposal 唯一 |
+| risk_requests | attempt_id,input_snapshot,input_digest,candidates[],requested_from_main_id,status:pending\|answered\|fallback_used\|superseded,deadline_at |
+| risk_submissions | request_id,assessor_id,risk_level:low\|medium\|high\|unknown,reason,recommended_driver,scope,conditions[],evidence_refs,input_digest |
+| risk_acceptances | subject_ref,actor_main_id,reason,accepted_risks[],input_digest,valid_until_task_terminal,status:active\|superseded\|revoked |
 
 不可变报告/提案保存新版本而非 PATCH 内容。索引 `(task_id,created_at)`、discrepancy `(status,severity)`、acceptance `(proposal_id,participant_slot_id)`。认知正文默认项目共享；敏感材料通过有领域权限的 ArtifactRef，不能混入公开事件摘要。
 

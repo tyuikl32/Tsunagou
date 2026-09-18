@@ -2,6 +2,8 @@
 
 研究用于支撑设计，不把外部软件文档当作当前宿主已经可用的证明。下列原稿保留原始日期、引文和当时结论；当前采用边界由 implementation/decisions 决定。
 
+2026-09-18文档细化补充：[24项官方知识索引与采用边界](../implementation/references.md)、[URL与内容核验记录](reference-checks-2026-09-18.json)。核验链接和主题内容不等于依赖兼容或真实宿主测试；MCP SDK必须使用T02锁定版本对应文档。
+
 | 主题 | 已保存材料 |
 |---|---|
 | 原题全文、附录与跨网站研究 | [Agent-to-Agent 深度研究](../history/2026-09-18-source/agent_to_agent_deep_research.md) |

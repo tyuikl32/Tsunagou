@@ -17,9 +17,13 @@
 - MCP 入口 `P/mcp`，一个项目共享服务；每连接单独鉴权、绑定 HostSession/connection epoch。HTTP 的 MCP session ID 是传输句柄，不替代业务身份。stdio-only 宿主用逐会话薄转发器。
 - 控制端点只给 CLI/外部本机控制客户端，不在 Agent MCP tools 中发布。工具名把点转双下划线，如 `task__claim`；与领域命令一对一，查询工具使用 `query__*`。
 
+HTTP与MCP在传输适配后进入同一command dispatcher；共享语义不要求MCP handler经网络回调本机HTTP。`P/events:stream`是业务高水位提示，与MCP传输内部SSE分开。MCP协议规范版本、Tsunagou协议版本与baseline profile也分别协商/记录。
+
 ## Mutation envelope
 
 REST body：`{command_id,protocol_version,schema_bundle_digest,expected_authority_epoch?,attempt_id?,expected_execution_epoch?,payload}`。路径中的主 aggregate revision 以 `If-Match: "rev-7"` 提交；MCP 使用 `expected_revision:7`。转换后内部 TypedCommand 一致。create 没有主对象 revision；多对象写在 payload 放精确 `expected_revisions`（id→revision）。无条件更新已有 aggregate 返回 428。
+
+header与body都声明protocol_version/schema_bundle_digest时必须一致，否则400 malformed_request。其他epoch/attempt字段按该命令Schema固定唯一位置：X执行上下文位于envelope，B协调命令中catalog明确列入payload的attempt/expected_execution_epoch仍在payload，不同时填两份。T03通过规范化映射得到同一内部上下文；相互冲突的重复字段直接拒绝，不能按某一来源静默覆盖。
 
 响应：`{command_id,result:{...},revisions:{id:revision},event_seq,operation_id?,materialization:{status:pending|caught_up|failed,through_event_seq},replayed:boolean}`。普通变更 200，创建 201，有外部未完成 Operation 返回 202；每项在命令目录按 result 类型确定。幂等重放保持第一次业务 result，replayed=true；读取 Operation 获得后续进度，不在重放响应中伪造新结果。
 

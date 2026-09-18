@@ -6,6 +6,8 @@ Status: approved design, no adapter implementation yet. Sources: [adapter plan](
 
 Read the T02 verified host/version matrix before coding a host adapter. Require reliable host_conversation_id across resume/compact and distinct IDs on new/clear/fork. Unknown identity cannot become ready. Read the active task and shared bridge contract.
 
+Read the [subagent onboarding guide](../../../docs/overview/subagent-guide.md) and [coordination trace](../../../docs/implementation/coordination-walkthrough.md). Host-native subagents do not automatically become Tsunagou members; enrollment must prove a distinct conversation and session. CLI issues tickets as user_control, while the selected bridge redeems them through the ticket bootstrap path.
+
 ## Implementation rules
 
 Use strict TypeScript, ESM/NodeNext and workspace:* dependencies. bridge-sdk owns auth injection, command IDs/retry/dedup, typed clients, inbox, epoch recovery and prompt rendering. Host adapters translate official lifecycle/tool surfaces; no duplicate task state machines or private DTO forks.

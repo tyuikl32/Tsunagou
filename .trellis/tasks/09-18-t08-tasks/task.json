@@ -22,7 +22,11 @@
   "parent": "09-18-tsunagou-v1",
   "relatedFiles": [
     "docs/implementation/modules/03-tasks.md",
-    "docs/implementation/data-model.md"
+    "docs/implementation/data-model.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/coordination-walkthrough.md"
   ],
   "notes": "",
   "meta": {

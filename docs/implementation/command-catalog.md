@@ -41,8 +41,8 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | project.reactivate.main | `:reactivate` | M / project.configure | reason,expected_runtime_epoch | Project+Operation；policy预授权，无ceiling扩大 |
 | project.reactivate.user | `/control:reactivate` | U / — | reason,expected_runtime_epoch | Project+Operation；新runtime，旧执行权不恢复 |
 | project.tasks.restore_open | `/tasks:restore-open` | M / task.coordinate | task_ids,expected_revisions,plan_digest,reason | Task[]；全批次原子，无completed |
-| project.replica.activate | `/control/replicas/{id}:activate` | U / — | mode:normal|takeover,checkpoint_digest,recovery_evidence_refs,reason | Operation；恢复门槛与单writer |
-| project.lineage.reset | `/control/lineage:reset` | U / — | target:checkpoint|empty,checkpoint_digest?,reason | Operation；旧sealed，新unassigned |
+| project.replica.activate | `/control/replicas/{id}:activate` | U / — | mode:normal\|takeover,checkpoint_digest,recovery_evidence_refs,reason | Operation；恢复门槛与单writer |
+| project.lineage.reset | `/control/lineage:reset` | U / — | target:checkpoint\|empty,checkpoint_digest?,reason | Operation；旧sealed，新unassigned |
 | project.unregister | `/control:unregister` | U / — | expected_runtime_epoch,reason | RegistrationResult；不等同删除文件 |
 | project.local_copy.delete | `/control:delete-local-copy` | U / — | exact_paths_digest,recovery_evidence_refs,data_loss_acceptance?,reason | Operation；最后副本专门审批 |
 
@@ -52,8 +52,8 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| agent.ticket.create | `/enrollment-tickets` | M / agent.enroll | kind:worker|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id? | TicketReceipt；secret仅私有交付 |
-| agent.ticket.create.user | `/control/enrollment-tickets` | U / — | kind:worker|main|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id?,expected_authority_epoch? | main票据须authority代次 |
+| agent.ticket.create | `/enrollment-tickets` | M / agent.enroll | kind:worker\|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id? | TicketReceipt；secret仅私有交付 |
+| agent.ticket.create.user | `/control/enrollment-tickets` | U / — | kind:worker\|main\|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id?,expected_authority_epoch? | main票据须authority代次 |
 | agent.enroll | `/sessions:enroll` | T / — | installation_id,conversation_evidence,descriptor_ref,probe_payload,client_nonce,negotiation | EnrollmentResult；secret走专用header/安全通道 |
 | session.rebind | `/sessions:rebind` | T / — | target_agent_id,installation_id,conversation_evidence,probe_payload,client_nonce | replacement HostSession；旧token和Grant撤销 |
 | session.reconnect | `/sessions/{id}:reconnect` | D / — | expected_connection_epoch,reconnect_nonce,continuity_evidence,probe_payload | ConnectionResult；token认证+nonce CAS |
@@ -91,9 +91,9 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | task.cancel_request | `/tasks/{id}:request-cancel` | M / task.coordinate | reason | Task cancel_requested或无owner时cancelled |
 | task.cancel_ack | `/tasks/{id}:ack-cancel` | B / task.coordinate_self | attempt_id,stop_evidence,reason | Task cancelled；owner，仅收敛 |
 | task.fail | `/tasks/{id}:fail` | B / task.coordinate_self | attempt_id,reason,evidence_refs,stop_evidence? | Task failed；owner，无成功伪装 |
-| task.recover | `/tasks/{id}:recover` | M / task.coordinate | expected_attempt_id,disposition:reopen|cancel|fail,residual_risk_refs,reason | Task；关闭旧Attempt再reopen |
+| task.recover | `/tasks/{id}:recover` | M / task.coordinate | expected_attempt_id,disposition:reopen\|cancel\|fail,residual_risk_refs,reason | Task；关闭旧Attempt再reopen |
 | task.scope.request | `/tasks/{id}/scope-requests` | B / task.coordinate_self | attempt_id,requested_scope,reason,expected_revisions | ScopeExpansionRequest；owner |
-| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | choice:approve|reject,proposal_digest,reason | ScopeRequest+Task；审批不超ceiling，执行先block |
+| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | choice:approve\|reject,proposal_digest,reason | ScopeRequest+Task；审批不超ceiling，执行先block |
 
 ## 认知与契约
 
@@ -101,8 +101,8 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 |---|---|---|---|---|
 | cognition.report | `/reports` | B / cognition.report | task_id,attempt_id?,boundary,understanding,assumptions,uncertainties,claims,confidence,confidence_reason,evidence_refs,input_revisions,supersedes_id? | EpistemicReport；owner/指定参与者 |
 | discrepancy.create | `/discrepancies` | B / cognition.discuss | subject_ref,report_refs,severity,participants,summary,affected_actions | Discrepancy；有subject参与关系 |
-| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | status:clarifying|negotiating,reason,evidence_refs | Discrepancy；participant |
-| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | kind:consensus|dismissal|override,reason,evidence_refs,accepted_by,input_digest | Resolution；override不冒充共识 |
+| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | status:clarifying\|negotiating,reason,evidence_refs | Discrepancy；participant |
+| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | kind:consensus\|dismissal\|override,reason,evidence_refs,accepted_by,input_digest | Resolution；override不冒充共识 |
 | contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,subject_ref,contract_kind,payload,participants_required,participants_optional,input_refs,supersedes_id? | ContractProposal；subject participant |
 | contract.accept | `/contract-proposals/{id}:accept` | B / contract.accept | proposal_digest,evidence_refs | Acceptance；self slot |
 | contract.accept_proxy | `/contract-proposals/{id}:accept-proxy` | M / contract.proxy | participant_slot_id,proposal_digest,proxy_policy_ref,reason,evidence_refs | Acceptance；policy明确允许 |
@@ -135,7 +135,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| message.send | `/messages` | B / message.send | kind:notification|request,subject_ref,recipient_ids,summary,payload,artifact_refs,response_contract? | Message+Deliveries；关系/大小/收件权限 |
+| message.send | `/messages` | B / message.send | kind:notification\|request,subject_ref,recipient_ids,summary,payload,artifact_refs,response_contract? | Message+Deliveries；关系/大小/收件权限 |
 | message.respond | `/messages/{id}:respond` | B / message.respond | obligation_id,response_payload,summary,evidence_refs | Response+Obligation；原recipient |
 | message.waive_response | `/response-obligations/{id}:waive` | B / message.send | reason | Obligation；原sender；main只能以原sender身份 |
 | inbox.claim | `/inbox:claim` | B / inbox.consume | limit?,max_bytes? | DeliveryLeaseBatch；authenticated self |
@@ -144,7 +144,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | inbox.presented | `/deliveries/{id}:presented` | B / inbox.consume | evidence_kind,evidence_digest | Delivery；能力证据足够才presented |
 | inbox.ack | `/deliveries/{id}:ack` | B / inbox.consume | reason? | Delivery；不自动响应 |
 | inbox.defer | `/deliveries/{id}:defer` | B / inbox.consume | defer_until,reason | Delivery；只改投递调度 |
-| artifact.upload.create | `/artifact-uploads` | B / artifact.attach | domain_ref,visibility:project_shared|recipient_only,size_bytes,media_type,expected_digest | UploadIntent；领域允许该actor附加 |
+| artifact.upload.create | `/artifact-uploads` | B / artifact.attach | domain_ref,visibility:project_shared\|recipient_only,size_bytes,media_type,expected_digest | UploadIntent；领域允许该actor附加 |
 | artifact.upload.finalize | `/artifact-uploads/{id}:finalize` | B / artifact.attach | digest,size_bytes | ArtifactRef；相同领域授权重验 |
 | artifact.promote | `/artifacts/{digest}:promote` | M / artifact.promote | domain_ref,reason | ArtifactRef+Operation；project_shared，禁止hash绕授权 |
 | artifact.promote.user | `/control/artifacts/{digest}:promote` | U / — | domain_ref,reason | 同上 |
@@ -182,7 +182,11 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 ## CLI 映射与退出码
 
-命令树：`daemon start|stop|status`；`project init|list|show|archive|reactivate|unregister|reset-lineage`；`root register|bind|list`；`agent enroll|list|show|reprobe|retire`；`authority appoint|revoke|handoff|show`；`task create|list|show|publish|recover`；`decision list|show|resolve`；`checkpoint create|list|show`；`operation list|show|cancel|resolve`；`config show|validate`；`doctor`；`experiment run|report`。
+可落地的用户命令树：`daemon start|stop|status`；`project init|list|show|confirm-completion|archive|reactivate|unregister|reset-lineage`；`root register|bind|list`；`agent enroll|list|show`；`authority appoint|revoke|show`；`task create|list|show`；`decision list|show|resolve`；`checkpoint create|list|show`；`operation list|show|resolve`；`config show|validate`；`doctor`；`experiment run|report`。
+
+旧概览曾列出`agent reprobe/retire`、`authority handoff`、`task publish/recover`、`operation cancel`，但对应目录只有D/M主体handler，尚无U授权。首发用户CLI不注册这些未绑定动作；相同领域行为仍由自身bridge/current main工具完成。不得为补齐help表而让CLI读取Agent token或自行增加user权限。参数、组合接入和映射见[CLI契约](cli-contract.md)。
+
+`project confirm-completion <proposal_id> --request-file <json> --expected-revision <n>`只映射已注册的U-only `project.completion.confirm`。`proposal_id`进入URI，`--expected-revision`成为CompletionProposal的If-Match；请求文件必须提供同一版本的`proposal_digest`、`expected_project_revision`和`expected_revisions`。CLI不补“最新”值，也不从决定解决、归档或其他动作自动确认项目完成。
 
 CLI是user_control入口，必要的Agent执行命令由typed tools完成，不能通过CLI伪造owner。未列出的管理高级命令可通过公共HTTP调用，不承诺为每个底层动作做交互向导。CLI `--json`输出同一DTO/Problem；无secret，quiet/stdout与日志stderr分开。
 

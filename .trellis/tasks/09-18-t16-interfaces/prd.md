@@ -29,3 +29,7 @@ T15, T07。父任务只分组；meta.depends_on 是项目约定，Trellis 不自
 ## 不包含
 
 不增加 Web UI、远程认证、隐含认知推断或 daemon Git 写操作；不改变用户已确认权限边界。其他模块只能经 public ports 接入。涉及宿主的真实能力不以模拟通过代替。
+
+## 本轮补充验收
+
+- [ ] CLI契约逐项映射已有U handler，Agent-only保留动作不出现在用户可执行help中；秘密不进入模型或CLI参数。

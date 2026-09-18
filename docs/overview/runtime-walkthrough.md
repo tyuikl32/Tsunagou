@@ -14,11 +14,21 @@
 
 用户通过 CLI/HTTP 控制通道任命一个就绪 Agent 为主 Agent。它读取目标、项目 policy 和用户授权上限，向其他 Agent 分发接入或任务协作要求。主权限不能由子 Agent 自己申请成功。
 
+### 用户怎样加入两个子 Agent
+
+用户在已装adapter的宿主中分别打开两个新对话，再对每个对话执行`tsunagou --project PROJECT_ID agent enroll --adapter <kind> --mode attach`，按宿主选择器指定目标会话。CLI/有权限的main签发worker票据，由目标bridge私下兑换；不把票据或session token粘贴到模型里。支持managed_launch时可由系统启动，不支持时手动打开再attach。
+
+`agent list/show`应显示两个不同agent_id和各自HostSession，能力检查通过才ready；同目录工作不共享身份。用户只需设定目标、任命main和必要边界，主Agent随后负责普通任务拆分。它创建/发布子任务，子Agent各自读取黑板、claim并准备执行；加入项目本身不自动获得任务owner或执行Grant。
+
+如果ready之前进入degraded，先修复adapter诊断，不能当作可工作成员。完整步骤和不同宿主/会话恢复规则见[子Agent指南](subagent-guide.md)与[CLI/HTTP手册](cli-http-manual.md)。
+
 ## 3. 开始协作
 
 主 Agent 创建任务与明确依赖；参与者查询黑板，原子领取符合条件的开放任务。开始前提交理解与假设，检查契约、风险建议、工作空间和所需资源 Lease。所有前置条件满足后进入 running。
 
 例如 API Agent 认为 `status` 是可空字符串，而调用方认为它必填。两者提交报告，创建 Discrepancy，协商出一个 `data_schema` 契约。所有必需参与者接受同一 proposal digest 后，依赖契约的任务解除相关阻塞。
+
+两个子Agent直接对自己的报告、契约接受和结果负责。main可组织讨论，但不能把“收到消息”替换成某个子Agent的接受，也不能仅凭main角色提交别人Attempt。父任务和子任务独立：委派不强制父任务暂停，父终态也不自动取消仍有价值的子任务。
 
 ## 4. 遇到阻塞与用户决策
 
@@ -34,6 +44,6 @@ Agent 提交结果 manifest 和验证证据，由指定验收方式处理。需�
 
 ## 6. 用户确认完成与恢复
 
-主 Agent 提议项目完成，当前 Attempt 与执行授权先收敛，用户确认精确 proposal revision/digest。Project 立即变为 completed，同时生成必须完成的 checkpoint Operation。checkpoint 失败不撤销用户完成结论，但阻塞需要它的归档、发布或迁移。
+主 Agent 提议项目完成，当前 Attempt 与执行授权先收敛，用户通过专门completion confirm控制接口确认精确 proposal revision/digest（见[手册](cli-http-manual.md)路由表）。Project 立即变为 completed，同时生成必须完成的 checkpoint Operation。checkpoint 失败不撤销用户完成结论，但阻塞需要它的归档、发布或迁移。
 
 daemon 崩溃后恢复 Job、outbox 和会话连接；clone 或回退旧 checkpoint 会建立新的运行身份，回退产生新 lineage。旧运行令牌、Grant 与 Lease 不能恢复使用。用户重新任命主 Agent，主 Agent 显式挑选需要继续的非终态任务。

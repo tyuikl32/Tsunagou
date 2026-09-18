@@ -13,7 +13,10 @@
       "depends_on": [],
       "specs": [
         "docs/implementation/architecture.md",
-        "docs/overview/technology.md"
+        "docs/overview/technology.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "pyproject.toml、uv.lock、src/tsunagou骨架",
@@ -41,7 +44,11 @@
       "depends_on": [],
       "specs": [
         "docs/implementation/adapters.md",
-        "docs/implementation/protocol.md"
+        "docs/implementation/protocol.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/overview/subagent-guide.md"
       ],
       "deliverables": [
         "docs/research/host-matrix.md",
@@ -72,7 +79,13 @@
       "specs": [
         "docs/implementation/protocol.md",
         "docs/implementation/data-model.md",
-        "docs/implementation/command-catalog.md"
+        "docs/implementation/command-catalog.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/cli-contract.md",
+        "docs/overview/cli-http-manual.md",
+        ".trellis/spec/backend/entrypoint-contracts.md"
       ],
       "deliverables": [
         "protocol/schemas/与fixtures/",
@@ -89,7 +102,8 @@
         "Python/TS对fixtures接受拒绝一致，JCS哈希一致",
         "每命令都有Schema和policy，无未注册handler，user-only不暴露MCP",
         "同输入两次生成字节一致，提交生成物无时间戳",
-        "runtime_epoch是UUID，其他epoch是安全整数；null和省略语义明确"
+        "runtime_epoch是UUID，其他epoch是安全整数；null和省略语义明确",
+        "手册请求示例替换明确占位值后通过生成Schema；header/body与Attempt上下文不产生第二种解释。"
       ],
       "trellis_path": ".trellis/tasks/09-18-t03-protocol"
     },
@@ -102,7 +116,10 @@
       ],
       "specs": [
         "docs/implementation/architecture.md",
-        "docs/implementation/modules/07-durability.md"
+        "docs/implementation/modules/07-durability.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "platform/db和durability核心",
@@ -133,7 +150,10 @@
       "specs": [
         "docs/implementation/modules/01-projects.md",
         "docs/implementation/architecture.md",
-        "docs/implementation/lifecycle.md"
+        "docs/implementation/lifecycle.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "projects实体/仓储/public ports",
@@ -165,7 +185,13 @@
       "specs": [
         "docs/implementation/modules/02-agents.md",
         "docs/implementation/modules/01-projects.md",
-        "docs/implementation/adapters.md"
+        "docs/implementation/adapters.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/coordination-walkthrough.md",
+        "docs/overview/subagent-guide.md",
+        ".trellis/spec/backend/entrypoint-contracts.md"
       ],
       "deliverables": [
         "agents接入/认证/public ports",
@@ -182,7 +208,8 @@
         "子Agent不能任命主Agent或操作其他Attempt",
         "并发兑换/重连无重复身份，token交付丢失走rebind",
         "baseline缺失仅diagnostic，raw ID/token不进共享历史或模型",
-        "无OAuth/keyring/refresh体系；Full Access防护范围如实说明"
+        "无OAuth/keyring/refresh体系；Full Access防护范围如实说明",
+        "用户attach两个会话产生独立worker身份；宿主内置subagent不自动视为正式成员；接入不授任务执行权。"
       ],
       "trellis_path": ".trellis/tasks/09-18-t06-identity-authority"
     },
@@ -195,7 +222,11 @@
       ],
       "specs": [
         "docs/implementation/modules/02-agents.md",
-        "docs/implementation/protocol.md"
+        "docs/implementation/protocol.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/coordination-walkthrough.md"
       ],
       "deliverables": [
         "Message/RoutingSnapshot/Delivery/ResponseObligation",
@@ -225,7 +256,11 @@
       ],
       "specs": [
         "docs/implementation/modules/03-tasks.md",
-        "docs/implementation/data-model.md"
+        "docs/implementation/data-model.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/coordination-walkthrough.md"
       ],
       "deliverables": [
         "tasks表/domain/public ports",
@@ -255,7 +290,10 @@
       ],
       "specs": [
         "docs/implementation/modules/05-resources.md",
-        "docs/implementation/modules/01-projects.md"
+        "docs/implementation/modules/01-projects.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "ResourceIntent/LeaseSet/WaitQueue",
@@ -285,7 +323,10 @@
       ],
       "specs": [
         "docs/implementation/modules/04-cognition.md",
-        "docs/implementation/runtime-prompts.md"
+        "docs/implementation/runtime-prompts.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "Report/Discrepancy/Contract/Risk实体与端口",
@@ -316,7 +357,10 @@
       ],
       "specs": [
         "docs/implementation/modules/06-workspaces.md",
-        "docs/implementation/modules/07-durability.md"
+        "docs/implementation/modules/07-durability.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "shared/worktree/external drivers",
@@ -347,7 +391,10 @@
       ],
       "specs": [
         "docs/implementation/modules/07-durability.md",
-        "docs/implementation/protocol.md"
+        "docs/implementation/protocol.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "upload intent/bytes/finalize与blob目录",
@@ -382,7 +429,11 @@
       "specs": [
         "docs/implementation/lifecycle.md",
         "docs/implementation/modules/03-tasks.md",
-        "docs/implementation/modules/04-cognition.md"
+        "docs/implementation/modules/04-cognition.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/coordination-walkthrough.md"
       ],
       "deliverables": [
         "application/workflows/task_execution",
@@ -399,7 +450,8 @@
         "任何输入变更使旧preflight失效，无半启动",
         "blocked仍可报告/协商但不能执行",
         "用户无响应不timeout，resume不自动start",
-        "流程层无自有领域表且仅用public端口"
+        "流程层无自有领域表且仅用public端口",
+        "coordination-walkthrough中的main+A+B事实轨迹通过，claim/resume只准备，start才执行。"
       ],
       "trellis_path": ".trellis/tasks/09-18-t13-task-orchestration"
     },
@@ -416,7 +468,10 @@
       ],
       "specs": [
         "docs/implementation/modules/07-durability.md",
-        "docs/implementation/lifecycle.md"
+        "docs/implementation/lifecycle.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "模块export/import profile与checkpoint format",
@@ -449,7 +504,11 @@
         "docs/implementation/lifecycle.md",
         "docs/implementation/modules/01-projects.md",
         "docs/implementation/modules/02-agents.md",
-        "docs/implementation/modules/07-durability.md"
+        "docs/implementation/modules/07-durability.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/coordination-walkthrough.md"
       ],
       "deliverables": [
         "UserDecision/Completion/Archive/Reactivate workflows",
@@ -481,7 +540,14 @@
       "specs": [
         "docs/implementation/command-catalog.md",
         "docs/implementation/protocol.md",
-        "docs/implementation/runtime-prompts.md"
+        "docs/implementation/runtime-prompts.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/cli-contract.md",
+        "docs/overview/cli-http-manual.md",
+        "docs/overview/subagent-guide.md",
+        ".trellis/spec/backend/entrypoint-contracts.md"
       ],
       "deliverables": [
         "FastAPI routers、共享MCP、Typer CLI",
@@ -498,7 +564,8 @@
         "REST/MCP相同命令hash、权限和错误，user-only不出现在Agent tools",
         "CLI可以初始化、接入、任命、查看/解决决定、恢复与查询Operation",
         "黑板不引入业务表，截断不漏身份/权限/阻塞",
-        "生成OpenAPI零diff，命令目录覆盖率100%"
+        "生成OpenAPI零diff，命令目录覆盖率100%",
+        "CLI契约逐项映射已有U handler，Agent-only保留动作不出现在用户可执行help中；秘密不进入模型或CLI参数。"
       ],
       "trellis_path": ".trellis/tasks/09-18-t16-interfaces"
     },
@@ -513,7 +580,14 @@
       "specs": [
         "docs/implementation/adapters.md",
         "docs/implementation/protocol.md",
-        "docs/implementation/runtime-prompts.md"
+        "docs/implementation/runtime-prompts.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/cli-contract.md",
+        "docs/implementation/coordination-walkthrough.md",
+        "docs/overview/subagent-guide.md",
+        ".trellis/spec/backend/entrypoint-contracts.md"
       ],
       "deliverables": [
         "packages/bridge-sdk",
@@ -530,7 +604,8 @@
         "两个session无凭据/上下文串用",
         "断线/重传/旧epoch同协议预期",
         "未知呈现/停止证据不虚报",
-        "四adapter仅做宿主翻译，不复制协议/任务状态机"
+        "四adapter仅做宿主翻译，不复制协议/任务状态机",
+        "attach与managed_launch增强分开；票据签发和bridge兑换保持不同principal，不能复制main token。"
       ],
       "trellis_path": ".trellis/tasks/09-18-t17-bridge-sdk"
     },
@@ -543,7 +618,11 @@
       ],
       "specs": [
         "docs/implementation/adapters.md",
-        "docs/implementation/runtime-prompts.md"
+        "docs/implementation/runtime-prompts.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/overview/subagent-guide.md"
       ],
       "deliverables": [
         "packages/adapter-codex",
@@ -573,7 +652,11 @@
       ],
       "specs": [
         "docs/implementation/adapters.md",
-        "docs/implementation/runtime-prompts.md"
+        "docs/implementation/runtime-prompts.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/overview/subagent-guide.md"
       ],
       "deliverables": [
         "packages/adapter-opencode",
@@ -603,7 +686,11 @@
       ],
       "specs": [
         "docs/implementation/adapters.md",
-        "docs/implementation/runtime-prompts.md"
+        "docs/implementation/runtime-prompts.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/overview/subagent-guide.md"
       ],
       "deliverables": [
         "packages/adapter-zcode",
@@ -633,7 +720,11 @@
       ],
       "specs": [
         "docs/implementation/adapters.md",
-        "docs/implementation/runtime-prompts.md"
+        "docs/implementation/runtime-prompts.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/overview/subagent-guide.md"
       ],
       "deliverables": [
         "packages/adapter-deepseek",
@@ -666,7 +757,10 @@
       ],
       "specs": [
         "docs/implementation/modules/08-evaluation.md",
-        "docs/implementation/validation.md"
+        "docs/implementation/validation.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md"
       ],
       "deliverables": [
         "evaluation模块、structlog与可选OTel",
@@ -700,7 +794,13 @@
       "specs": [
         "docs/implementation/validation.md",
         "docs/implementation/lifecycle.md",
-        "docs/implementation/modules/07-durability.md"
+        "docs/implementation/modules/07-durability.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/implementation/coordination-walkthrough.md",
+        "docs/overview/cli-http-manual.md",
+        ".trellis/spec/backend/entrypoint-contracts.md"
       ],
       "deliverables": [
         "tests/integration与fault_injection",
@@ -735,7 +835,12 @@
       "specs": [
         "docs/overview/demo.md",
         "docs/implementation/modules/08-evaluation.md",
-        "docs/implementation/validation.md"
+        "docs/implementation/validation.md",
+        "docs/implementation/build-guide.md",
+        "docs/implementation/directory-layout.md",
+        "docs/implementation/references.md",
+        "docs/overview/subagent-guide.md",
+        "docs/overview/cli-http-manual.md"
       ],
       "deliverables": [
         "用户使用与十分钟演示runbook",
@@ -752,7 +857,8 @@
         "工程发布门槛全过，四宿主各自有真实baseline证据",
         "研究指标如实判定，未达目标不宣称达成",
         "用户能按指南理解并演示认知闭环、身份边界和恢复",
-        "锁文件/Schema/OpenAPI/迁移/报告齐全，发布另按授权执行"
+        "锁文件/Schema/OpenAPI/迁移/报告齐全，发布另按授权执行",
+        "用户可按子Agent指南接入两个会话并按CLI/HTTP手册演示；每条示例与实现协议一致。"
       ],
       "trellis_path": ".trellis/tasks/09-18-t24-experiments-demo"
     }

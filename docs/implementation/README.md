@@ -9,6 +9,19 @@
 3. 所属模块的详细方案，以及[跨模块生命周期](lifecycle.md)。桥接工作还须读[四宿主适配](adapters.md)和[运行提示与黑板](runtime-prompts.md)。
 4. [验证与交付](validation.md)、[路线图与 Trellis 任务](roadmap.md)，再读取当前任务的 PRD/design/implement 和上下文 JSONL。
 
+## 从文档走到代码
+
+| 需要解决的问题 | 详细指导 |
+|---|---|
+| 具体先建什么、如何逐阶段验证 | [从空工程到首发的搭建步骤](build-guide.md) |
+| 文件放在哪里、谁拥有、哪些是生成物 | [预期目录与文件责任](directory-layout.md) |
+| 三个Agent实际怎样接入、协商、挂起与恢复 | [逐步协作事实轨迹](coordination-walkthrough.md) |
+| CLI参数如何映射已有权限和HTTP | [CLI外壳契约](cli-contract.md) |
+| 哪些官方资料支持我们的实现选择 | [外部知识索引](references.md) |
+| 向用户解释如何操作 | [CLI/HTTP简明手册](../overview/cli-http-manual.md)、[子Agent指南](../overview/subagent-guide.md) |
+
+上述指南的新增文件名/CLI外壳参数是工程细化，不新增领域动作或用户权限；目录树明确区分待建源码与当前已有文档。示例中的身份别名、版本占位值不能直接作为生产请求。
+
 ## 八大模块
 
 | 编号与源码名 | 实施规范 | 主要交付 |

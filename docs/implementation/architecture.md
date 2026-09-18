@@ -4,6 +4,8 @@
 
 一个用户级 daemon，绑定 loopback，管理多个 project runtime。每项目一个 SQLite 文件、一个单写队列、一个 OS 独占锁；同一进程内并发读。运行时按请求/连接/后台 Job 惰性加载，加载后保持到 daemon 退出、归档卸载或 unregister，不增加空闲卸载计时器。启动扫描已注册项目的未完成 Job/outbox，不等待用户打开项目才恢复持久工作。
 
+更细的假想文件树、模块内文件职责、开发仓库与用户项目目录分离见[目录方案](directory-layout.md)；每阶段建立与检查顺序见[搭建指南](build-guide.md)。
+
 ```text
 src/tsunagou/
   bootstrap/                 # 唯一依赖装配入口

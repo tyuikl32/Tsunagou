@@ -22,7 +22,11 @@
   "parent": "09-18-tsunagou-v1",
   "relatedFiles": [
     "docs/implementation/adapters.md",
-    "docs/implementation/protocol.md"
+    "docs/implementation/protocol.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/overview/subagent-guide.md"
   ],
   "notes": "",
   "meta": {

@@ -11,14 +11,14 @@
 | agents | display_name, adapter_kind, installation_id, conversation_key_digest, status | active conversation 组合唯一；显示名不认证 |
 | sessions | agent_id, status, credential_hash, connection_epoch, reconnect_nonce_hash, active_snapshot_id, profile_version, ended_reason? | 一个 Agent 最多一条非 ended；凭据不进入共享 export |
 | connections | session_id, epoch, created_at, closed_at?, continuity_digest | `(session_id,epoch)` 唯一；TCP 重连不自行多建业务连接 |
-| tickets | kind:worker|main|session_rebind, secret_hash, allowlist, ceiling_digest, installation_binding?, expires_at, consumed_at?, issued_by | 默认 10 分钟、单次消费；main ticket 绑定 expected authority epoch |
+| tickets | kind:worker\|main\|session_rebind, secret_hash, allowlist, ceiling_digest, installation_binding?, expires_at, consumed_at?, issued_by | 默认 10 分钟、单次消费；main ticket 绑定 expected authority epoch |
 | snapshots | session_id, connection_epoch, descriptor/probe/profile versions, host/adapter versions, protocol/bundle, capabilities, config/plugin digests, snapshot_digest, supersedes_id? | 不可变；能力 status supported/unsupported/unknown |
 | authority | status, current_main_agent_id?, authority_epoch, revision, transition_id? | 项目 singleton；任命只能 user_control |
 | authority_transitions | source/target_agent_id, source/target_epoch, frozen_grant_refs, adopted_refs, started_at, drain_deadline, status | 120 秒是收敛执行窗口，不是用户回复期限 |
 | messages | kind, sender_agent_id, subject_ref, summary, payload_json, payload_digest, routing_snapshot_id, in_reply_to? | 内容和收件集合不可变；大正文引用 ArtifactRef |
 | routing_snapshots | recipient_ids, capability_snapshot_refs, routing_reason | 发送时固化，不用“当前 main”动态读取 |
 | deliveries | message_id, recipient_agent_id, status, lease_owner?, lease_until?, fetched_at?, presented_at?, acknowledged_at?, defer_until?, push_failures | `(message_id,recipient)` 唯一；索引 `(recipient,status,created_at,id)` |
-| response_obligations | request_id, recipient_id, requirement:required|optional, status:pending|responded|waived|superseded|expired, deadline_at?, response_id?, superseded_by? | ACK 不更新；required 全部 responded/waived 才满足 |
+| response_obligations | request_id, recipient_id, requirement:required\|optional, status:pending\|responded\|waived\|superseded\|expired, deadline_at?, response_id?, superseded_by? | ACK 不更新；required 全部 responded/waived 才满足 |
 
 ## 接入与恢复
 

@@ -12,15 +12,15 @@ durability 拥有数据库 bootstrap/UoW 接口、事件序列、outbox、幂等
 |---|---|
 | events | event_seq,event_id,type,schema_version,aggregate_ref,actor_ref,command_id,occurred_at,payload,digest；`(lineage,event_seq)` 唯一，只追加 |
 | commands | principal_id,command_kind,command_id,input_hash,result_json,event_seq；四元组（含 project）唯一，秘密交付结果除外 |
-| outbox | event_seq,kind,target_ref,payload_digest,status:pending|running|done|failed,attempt_count,next_attempt_at；去重 kind/target/event |
+| outbox | event_seq,kind,target_ref,payload_digest,status:pending\|running\|done\|failed,attempt_count,next_attempt_at；去重 kind/target/event |
 | operations | kind,requested_by,input_digest,status,result_ref?,error?,cancel_requested_at?,revision；展示逻辑工作 |
-| resolutions | operation_id,actor,conclusion:verified_succeeded|verified_failed|risk_accepted|retry_authorized,evidence_refs,reason,followup_operation_id?,digest；只追加 |
+| resolutions | operation_id,actor,conclusion:verified_succeeded\|verified_failed\|risk_accepted\|retry_authorized,evidence_refs,reason,followup_operation_id?,digest；只追加 |
 | jobs | operation_id,handler_kind,payload_ref,input_digest,status,available_at,attempt_count,max_attempts,timeout_seconds,lease_owner?,lease_epoch,lease_until? |
 | job_attempts | job_id,attempt_no,lease_epoch,worker_id,started_at,finished_at?,outcome,external_effect_ref?,error_code?；不可改历史归属 |
-| checkpoints | digest,parent_digest?,lineage_id,through_event_seq,format_version,schema_bundle_digest,manifest_ref,status:staging|sealed|failed,reason |
+| checkpoints | digest,parent_digest?,lineage_id,through_event_seq,format_version,schema_bundle_digest,manifest_ref,status:staging\|sealed\|failed,reason |
 | materializations | generation_id,through_event_seq,staging_path,manifest_digest,status,operation_id；恢复能定位崩溃窗口 |
-| artifact_blobs | digest,size_bytes,media_type,storage_state:local|promoted,local_relative_path,verified_at；digest 唯一 |
-| artifact_uploads | intent_id,domain_ref,actor,size_limit,expected_digest?,received_bytes,status:pending|uploaded|finalized|expired,expires_at,temp_path |
+| artifact_blobs | digest,size_bytes,media_type,storage_state:local\|promoted,local_relative_path,verified_at；digest 唯一 |
+| artifact_uploads | intent_id,domain_ref,actor,size_limit,expected_digest?,received_bytes,status:pending\|uploaded\|finalized\|expired,expires_at,temp_path |
 | anchor_observations | checkpoint_digest,repository_id,ref_name,commit_oid,verified_at,tree_digest,status；仅本机 heads/tags |
 
 ## Job 与未知结果

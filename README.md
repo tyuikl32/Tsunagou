@@ -12,9 +12,13 @@ Tsunagou 是面向本机多个 Coding Agent 的协作后端。它让 Agent 共�
 | 设计原则与 Agent 运行原则 | [两组原则](docs/overview/principles.md) |
 | 八大模块如何配合 | [项目组成](docs/overview/architecture.md) |
 | 用户和 Agent 实际怎么使用 | [运行流程](docs/overview/runtime-walkthrough.md) |
+| 用户如何让子Agent加入、分工与恢复 | [子Agent指南](docs/overview/subagent-guide.md) |
+| CLI与HTTP怎么用 | [简明说明书](docs/overview/cli-http-manual.md) |
 | 技术、库与选型理由 | [技术说明](docs/overview/technology.md) |
 | 怎样演示和判断是否成功 | [演示与验收](docs/overview/demo.md) |
 | 开始实施 | [实施指导总入口](docs/implementation/README.md) |
+| 按什么顺序搭建、文件放在哪里 | [搭建步骤](docs/implementation/build-guide.md)、[预期目录](docs/implementation/directory-layout.md) |
+| 关键技术的官方资料 | [参考索引](docs/implementation/references.md) |
 | 任务顺序、依赖与 Trellis 用法 | [实施路线图](docs/implementation/roadmap.md) |
 | 本轮新增决策与历史依据 | [文档总目录](docs/README.md) |
 

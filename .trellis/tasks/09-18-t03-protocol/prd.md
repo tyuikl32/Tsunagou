@@ -29,3 +29,7 @@ T01。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动�
 ## 不包含
 
 不增加 Web UI、远程认证、隐含认知推断或 daemon Git 写操作；不改变用户已确认权限边界。其他模块只能经 public ports 接入。涉及宿主的真实能力不以模拟通过代替。
+
+## 本轮补充验收
+
+- [ ] 手册请求示例替换明确占位值后通过生成Schema；header/body与Attempt上下文不产生第二种解释。

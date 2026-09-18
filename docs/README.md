@@ -16,13 +16,15 @@
 
 ## 唯一基线
 
-优先级为：用户当前明确指令 → 已确认决策（新的覆盖旧的）→ [工程消歧 E01–E27](decisions/engineering-resolutions.md) → 当前实施规范 → 历史专题 → 研究建议。当前规范与已确认决定冲突时，先修规范，不能按方便的版本实现。
+优先级为：用户当前明确指令 → 已确认决策（新的覆盖旧的）→ [工程消歧 E01–E30](decisions/engineering-resolutions.md) → 当前实施规范 → 历史专题 → 研究建议。当前规范与已确认决定冲突时，先修规范，不能按方便的版本实现。
 
 本轮 Plan 的新增知识保存在 [D161–D181](decisions/2026-09-18-boundary-decisions.md)。此前 D1–D160、逐题回答和引用保存在历史目录。只包含“A/B/C”的回答必须连同原题阅读，不能脱离原选项重构用户意图。
 
 [决策追溯表](decisions/traceability.md) 将本轮每项决定映射到当前规范和具体实施任务。
 
 文档以中文说明、英文标识符组成。一个概念只使用一个规范英文名；界面可以显示中文。术语、状态和跨模块字段见[数据模型](implementation/data-model.md)，命令名字、权限和 URI 见[命令目录](implementation/command-catalog.md)。同一命令不在适配器中另起名字或更改权限语义。
+
+新读者可以从[子Agent加入与协作](overview/subagent-guide.md)、[CLI/HTTP说明书](overview/cli-http-manual.md)理解使用方式；实施Agent可从[搭建步骤](implementation/build-guide.md)、[预期目录](implementation/directory-layout.md)、[三Agent事实轨迹](implementation/coordination-walkthrough.md)开始。关键官方知识统一在[参考索引](implementation/references.md)，不要自行用不同SDK年代的示例替换当前协议。
 
 ## 更新约定
 

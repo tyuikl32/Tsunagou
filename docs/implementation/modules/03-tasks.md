@@ -9,14 +9,14 @@ Task 在同一时刻最多一个 current Attempt，一个 Attempt 只有一个�
 | 表（`tasks_`） | 必填字段与规则 |
 |---|---|
 | tasks | title, objective, status, parent_task_id?, current_attempt_id?, execution_scope, scope_revision, required_capabilities, prerequisites[], acceptance_policy, policy_digest, followup_of?；parent 只导航 |
-| edges | source_task_id,target_task_id,kind:blocks|related；blocks 表示 source 满足 success prerequisite 后 target 可开始，检测 DAG；related 允许环 |
+| edges | source_task_id,target_task_id,kind:blocks\|related；blocks 表示 source 满足 success prerequisite 后 target 可开始，检测 DAG；related 允许环 |
 | attempts | task_id,owner_agent_id,owner_session_id,execution_epoch,status,scope_snapshot_digest,capability_snapshot_id,workspace_id?,created_input_digest,close_reason?；current 唯一约束 |
-| preflights | attempt_id,input_revisions,input_digest,scope_digest,report_ref,contract_refs,lease_refs,workspace_ref,risk_ref,verdict:ready|blocked,blockers[]；不可变，start 重验输入 |
-| suspensions | attempt_id,reason_code,dependency_refs,checkpoint_summary,evidence_refs,observed_event_seq,status:active|cleared；无默认时限 |
+| preflights | attempt_id,input_revisions,input_digest,scope_digest,report_ref,contract_refs,lease_refs,workspace_ref,risk_ref,verdict:ready\|blocked,blockers[]；不可变，start 重验输入 |
+| suspensions | attempt_id,reason_code,dependency_refs,checkpoint_summary,evidence_refs,observed_event_seq,status:active\|cleared；无默认时限 |
 | results | attempt_id,summary,evidence_refs,artifact_refs,workspace_result_ref?,digest；不可变，提交不是 completed |
-| review_rounds | task_id,attempt_id,result_id,policy_digest,round,status:pending|accepted|changes_requested|rejected,required_slots[] |
+| review_rounds | task_id,attempt_id,result_id,policy_digest,round,status:pending\|accepted\|changes_requested\|rejected,required_slots[] |
 | review_decisions | round_id,slot_id,actor_id,verdict,evidence_refs,reason,digest；每 slot 一个有效决定，修订另开 round |
-| scope_requests | attempt_id,requested_scope,reason,input_revisions,digest,status:pending|approved|rejected|superseded |
+| scope_requests | attempt_id,requested_scope,reason,input_revisions,digest,status:pending\|approved\|rejected\|superseded |
 
 索引：task `(status,created_at,id)`、`parent_task_id`、attempt `(owner_agent_id,status)`；task.current_attempt 与 attempt.task 必须一致。TaskResult 绑定精确 child task/attempt/result/digest，后续子结果不替换历史引用。
 

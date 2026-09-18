@@ -24,7 +24,11 @@
     "docs/implementation/lifecycle.md",
     "docs/implementation/modules/01-projects.md",
     "docs/implementation/modules/02-agents.md",
-    "docs/implementation/modules/07-durability.md"
+    "docs/implementation/modules/07-durability.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/coordination-walkthrough.md"
   ],
   "notes": "",
   "meta": {

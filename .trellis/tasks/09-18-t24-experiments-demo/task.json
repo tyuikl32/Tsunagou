@@ -23,7 +23,12 @@
   "relatedFiles": [
     "docs/overview/demo.md",
     "docs/implementation/modules/08-evaluation.md",
-    "docs/implementation/validation.md"
+    "docs/implementation/validation.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/overview/subagent-guide.md",
+    "docs/overview/cli-http-manual.md"
   ],
   "notes": "",
   "meta": {

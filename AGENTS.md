@@ -30,4 +30,5 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - 四宿主都需正式共同基线真机证据；不得把未知能力写成 supported，模拟器通过不代表真实宿主通过。
 - 项目说明中的运行命令是待实现规范，不能据此报告已运行成功。每项验收以实际测试/版本/证据为准。
 - 文档校验：`python tools/docs/validate_docs.py`。修改公共语义时同步 Schema、命令目录、fixtures、任务和用户文档。
+- 实施步骤和文件位置见 [搭建指南](docs/implementation/build-guide.md)、[预期目录](docs/implementation/directory-layout.md)；用户子Agent接入与CLI/HTTP示例分别见 [接入指南](docs/overview/subagent-guide.md)、[操作手册](docs/overview/cli-http-manual.md)。示例不能创造未注册的U权限或把宿主临时subagent视为已认证项目成员。
 - 当前开发者 `tyuikl32`，开发平台 Codex。会话/任务自动 Git commit 已关闭；提交和发布按当前用户授权执行。

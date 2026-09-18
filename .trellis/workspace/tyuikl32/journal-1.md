@@ -41,3 +41,38 @@
 
 - 先执行T01工具链与T02四宿主可行性探针，按roadmap依赖推进；无需重开已确认产品边界问答。
 - Codex hooks文件已生成，自动注入仍取决于宿主开关与UI信任；未修改全局设置。
+
+
+## Session 2: 细化实施搭建、子Agent接入与CLI/HTTP手册
+<!-- trellis-session: v=2 fp=5560e1d76fd426a5 -->
+
+**Date**: 2026-09-18
+**Task**: 细化实施搭建、子Agent接入与CLI/HTTP手册
+**Branch**: `main`
+
+### Summary
+
+补全可执行搭建顺序、预期目录、官方参考、三Agent协作轨迹、子Agent加入流程及CLI/HTTP契约，并同步24个实施任务上下文。
+
+### Main Changes
+
+- 新增搭建指南、目录方案、协作轨迹、参考资料和入口契约。
+- 增强overview中的子Agent角色、加入与运行流程，并提供CLI/HTTP简明手册。
+- 将project.completion.confirm映射为U-only project confirm-completion CLI，不新增领域权限。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] python tools/docs/validate_docs.py：177份Markdown、434个本地链接、24个实施任务、620条上下文通过。
+- [OK] 26个活动Trellis任务context validate全部通过；git diff --check通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 从T01工程骨架与T02宿主探针开始首发实施。

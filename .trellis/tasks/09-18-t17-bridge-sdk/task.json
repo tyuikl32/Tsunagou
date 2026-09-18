@@ -23,7 +23,14 @@
   "relatedFiles": [
     "docs/implementation/adapters.md",
     "docs/implementation/protocol.md",
-    "docs/implementation/runtime-prompts.md"
+    "docs/implementation/runtime-prompts.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/cli-contract.md",
+    "docs/implementation/coordination-walkthrough.md",
+    "docs/overview/subagent-guide.md",
+    ".trellis/spec/backend/entrypoint-contracts.md"
   ],
   "notes": "",
   "meta": {

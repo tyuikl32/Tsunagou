@@ -10,9 +10,9 @@
 | `runtime_epoch` | UUIDv7，区别于数字 authority/connection/execution epoch |
 | `Timestamp` | UTC，精确到毫秒，`YYYY-MM-DDTHH:mm:ss.sssZ`；服务端记录事实时间，客户端时间只是 evidence |
 | `EntityRef` | `{kind,id,revision?,digest?}`；证据要求精确版本时 revision/digest 必填，禁止“最新版本”别名 |
-| `PathRule` | `{root_id,access:read|write,path_prefix:string[]}`；write 含 read；`[]` 前缀覆盖整个 root；规则列表为空则无文件权限 |
+| `PathRule` | `{root_id,access:read\|write,path_prefix:string[]}`；write 含 read；`[]` 前缀覆盖整个 root；规则列表为空则无文件权限 |
 | `ResourceKey` | path `{kind:path,root_id,segments}` 或 named `{kind:named,namespace,name}`，不支持 glob/正则/否定 |
-| `EvidenceRef` | `{kind:entity|artifact|external,ref,digest?,summary?}`；外部 URI 为证据引用，服务器不自动访问 |
+| `EvidenceRef` | `{kind:entity\|artifact\|external,ref,digest?,summary?}`；外部 URI 为证据引用，服务器不自动访问 |
 
 每个领域行至少含 `id,project_id,lineage_id,created_at`。可变 aggregate 加 `revision,updated_at`；不可变 record 无通用 PATCH。业务 FK 使用 `(project_id,lineage_id,id)`，即便 UUID 全局随机也不省略边界校验。所有引用都校验属于同项目/允许 lineage；跨 lineage 只有明确的历史 provenance 引用。
 

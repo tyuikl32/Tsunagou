@@ -4,3 +4,7 @@
 {"file": "docs/implementation/data-model.md", "reason": "验收、权限与边界审查；T08"}
 {"file": "docs/implementation/command-catalog.md", "reason": "验收、权限与边界审查；T08"}
 {"file": "docs/decisions/2026-09-18-boundary-decisions.md", "reason": "验收、权限与边界审查；T08"}
+{"file": "docs/implementation/build-guide.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T08"}
+{"file": "docs/implementation/directory-layout.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T08"}
+{"file": "docs/implementation/references.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T08"}
+{"file": "docs/implementation/coordination-walkthrough.md", "reason": "补充逐阶段搭建、文件责任、官方知识及接入/接口一致性；T08"}

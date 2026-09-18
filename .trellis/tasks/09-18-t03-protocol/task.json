@@ -23,7 +23,13 @@
   "relatedFiles": [
     "docs/implementation/protocol.md",
     "docs/implementation/data-model.md",
-    "docs/implementation/command-catalog.md"
+    "docs/implementation/command-catalog.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/cli-contract.md",
+    "docs/overview/cli-http-manual.md",
+    ".trellis/spec/backend/entrypoint-contracts.md"
   ],
   "notes": "",
   "meta": {

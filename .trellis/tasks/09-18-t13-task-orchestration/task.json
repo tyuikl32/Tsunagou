@@ -23,7 +23,11 @@
   "relatedFiles": [
     "docs/implementation/lifecycle.md",
     "docs/implementation/modules/03-tasks.md",
-    "docs/implementation/modules/04-cognition.md"
+    "docs/implementation/modules/04-cognition.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/coordination-walkthrough.md"
   ],
   "notes": "",
   "meta": {
