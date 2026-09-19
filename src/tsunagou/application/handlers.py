@@ -167,13 +167,20 @@ def build_handlers(
     def session_reconnect(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         session_id = _required_str(context, "session_id")
         reconnect_nonce = _required_str(payload, "reconnect_nonce")
+        expected_connection_epoch = payload.get("expected_connection_epoch")
+        if expected_connection_epoch is not None and not isinstance(expected_connection_epoch, int):
+            raise ValueError("invalid_expected_connection_epoch")
         baseline = payload.get("probe_payload")
         if baseline is not None and not isinstance(baseline, dict):
             raise ValueError("invalid_probe_payload")
-        # AuthorityService.rebind is the reconnect_nonce compare-and-swap: a stale
-        # nonce fails closed (stale_reconnect_nonce) instead of double-rotating the
-        # credential, which is what makes a reconnect idempotent under retry.
-        receipt = authority.rebind(session_id, expected_nonce=reconnect_nonce, baseline=baseline)
+        # AuthorityService.rebind is the reconnect_nonce + connection_epoch
+        # compare-and-swap: a stale nonce or epoch fails closed instead of
+        # double-rotating the credential, which is what makes a reconnect
+        # idempotent under retry (recovery.idempotent_reconnect).
+        receipt = authority.rebind(
+            session_id, expected_nonce=reconnect_nonce,
+            expected_connection_epoch=expected_connection_epoch, baseline=baseline,
+        )
         return {
             "agent_id": receipt.agent_id,
             "session_id": receipt.session_id,
@@ -226,10 +233,27 @@ def build_handlers(
         attempt = tasks.resume(task_id, context["principal_id"])
         return {"task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status}
 
+    def task_preflight(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        _authorize(context, "task.coordinate_self")
+        task_id = _required_str(payload, "task_id")
+        attempt_id = payload.get("attempt_id")
+        evidence_refs = tuple(payload.get("evidence_refs") or ())
+        preflight = tasks.preflight(
+            task_id, context["principal_id"], attempt_id=attempt_id, evidence_refs=evidence_refs,
+        )
+        return {
+            "task_id": task_id, "attempt_id": preflight.attempt_id,
+            "preflight_id": preflight.preflight_id, "status": preflight.status,
+        }
+
     def task_start(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.coordinate_self")
         task_id = _required_str(payload, "task_id")
-        attempt = tasks.start(task_id, context["principal_id"])
+        attempt_id = payload.get("attempt_id")
+        preflight_id = payload.get("preflight_id")
+        attempt = tasks.start(task_id, context["principal_id"], preflight_id=preflight_id)
+        if attempt_id is not None and attempt_id != attempt.attempt_id:
+            raise ValueError("attempt_id_mismatch")
         grant = authority.issue_execution_grant(
             agent_id=context["principal_id"], session_id=context["session_id"],
             task_id=task_id, attempt_id=attempt.attempt_id, execution_epoch=attempt.execution_epoch,
@@ -237,6 +261,20 @@ def build_handlers(
         return {
             "task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status,
             "execution_grant_id": grant.grant_id,
+        }
+
+    def task_progress(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        task_id = _required_str(payload, "task_id")
+        attempt_id = _required_str(payload, "attempt_id")
+        _authorize(context, "task.execute", task_id=task_id, attempt_id=attempt_id)
+        progress = tasks.progress(
+            task_id, context["principal_id"], attempt_id=attempt_id,
+            summary=payload.get("summary") or "",
+            evidence_refs=tuple(payload.get("evidence_refs") or ()),
+        )
+        return {
+            "task_id": task_id, "attempt_id": attempt_id,
+            "progress_id": progress.progress_id, "summary": progress.summary,
         }
 
     def task_block(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -320,7 +358,7 @@ def build_handlers(
         _authorize(context, "message.send")
         recipient_agent_id = _required_str(payload, "recipient_agent_id")
         message = messages.send(
-            command_id=context["command_hash"],
+            command_id=context["command_id"],
             sender_agent_id=context["principal_id"],
             recipient_agent_id=recipient_agent_id,
             kind=str(payload.get("kind", "message")),
@@ -340,6 +378,36 @@ def build_handlers(
         messages.respond(context["principal_id"], obligation_id, response_message_id)
         return {"obligation_id": obligation_id, "response_message_id": response_message_id, "status": "responded"}
 
+    def context_project_read(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        # A read-only, self-scoped project context snapshot. The actor is the
+        # authenticated principal (never a payload field), capabilities come from
+        # active grants, and owned tasks are scoped to this agent. No token,
+        # credential or absolute path enters the snapshot.
+        _authorize(context, "coordination.read")
+        agent_id = context["principal_id"]
+        agent = authority.agents.get(agent_id)
+        capabilities = sorted({
+            cap for grant in authority.grants.values()
+            if grant.principal_id == agent_id and grant.status == "active"
+            for cap in grant.capabilities
+        })
+        owned_tasks = [
+            {
+                "task_id": task.task_id, "title": task.title,
+                "objective": task.objective, "status": task.status,
+            }
+            for task in tasks.tasks.values()
+            if (attempt := tasks.attempts.get(task.current_attempt_id or "")) is not None
+            and attempt.owner_agent_id == agent_id
+        ]
+        return {
+            "agent_id": agent_id,
+            "role": agent.role if agent is not None else "worker",
+            "main_agent_id": authority.main_agent_id,
+            "scope": {"capabilities": capabilities},
+            "tasks": owned_tasks,
+        }
+
     return {
         "agent.enroll": enroll,
         "session.rebind": session_rebind,
@@ -350,7 +418,9 @@ def build_handlers(
         "task.create": task_create,
         "task.claim": task_claim,
         "task.resume": task_resume,
+        "task.preflight": task_preflight,
         "task.start": task_start,
+        "task.progress": task_progress,
         "task.block": task_block,
         "task.submit": task_submit,
         "cognition.report": cognition_report,
@@ -362,4 +432,5 @@ def build_handlers(
         "inbox.ack": inbox_ack,
         "message.send": message_send,
         "message.respond": message_respond,
+        "context.project_read": context_project_read,
     }

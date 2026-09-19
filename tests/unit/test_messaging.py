@@ -12,10 +12,17 @@ def test_pull_ack_is_idempotent_and_recipient_scoped(tmp_path: Path) -> None:
         command_id="cmd-1", sender_agent_id="main", recipient_agent_id="worker",
         kind="task.offer", subject_ref="task/1", summary="Please inspect", response_contract={"required": True},
     )
+    # The same command_id with identical input is idempotent; with changed input it
+    # must conflict instead of silently creating a second delivery.
     assert store.send(
         command_id="cmd-1", sender_agent_id="main", recipient_agent_id="worker",
-        kind="task.offer", subject_ref="task/1", summary="duplicate",
+        kind="task.offer", subject_ref="task/1", summary="Please inspect",
     ).message_id == message.message_id
+    with pytest.raises(ValueError):
+        store.send(
+            command_id="cmd-1", sender_agent_id="main", recipient_agent_id="worker",
+            kind="task.offer", subject_ref="task/1", summary="duplicate",
+        )
     assert store.fetch("other") == []
     fetched = store.fetch("worker")
     assert [item.message_id for item in fetched] == [message.message_id]
@@ -37,7 +44,15 @@ def test_ack_does_not_claim_presentation_and_obligation_requires_response(tmp_pa
     with pytest.raises(ValueError):
         store.present("worker", message.message_id, {})
     store.present("worker", message.message_id, {"ui": "cli", "at": "now"})
-    store.respond("worker", obligation.obligation_id, "response-1")
+    # A response message id that does not exist must not close the obligation.
+    with pytest.raises(ValueError):
+        store.respond("worker", obligation.obligation_id, "response-1")
+    assert store.obligations[obligation.obligation_id].status == "open"
+    response = store.send(
+        command_id="cmd-2-response", sender_agent_id="worker", recipient_agent_id="main",
+        kind="decision.response", subject_ref="decision/1", summary="Chosen", in_reply_to=message.message_id,
+    )
+    store.respond("worker", obligation.obligation_id, response.message_id)
     assert store.obligations[obligation.obligation_id].status == "responded"
 
 

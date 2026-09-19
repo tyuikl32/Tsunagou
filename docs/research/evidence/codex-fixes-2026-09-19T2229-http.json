@@ -1,0 +1,49 @@
+{
+  "host": "tsunagou-backend",
+  "version": "0.1.0",
+  "scope": "isolated_http_fixes",
+  "date_local": "2026-09-19",
+  "timezone": "Asia/Shanghai",
+  "window_utc": ["2026-09-19T14:29:00Z", "2026-09-19T14:30:00Z"],
+  "git_head": "166045e",
+  "bridge_server_version": "0.1.0",
+  "protocol_version": "1.0",
+  "isolation": "disposable_uvicorn_loopback_port; disposable_state_dir; disposable_control_token",
+  "note": "Backend/schema fixes re-verified over the REAL HTTP entrypoint only. This is NOT real-Codex-model tool-call evidence and does not flip any baseline row to supported.",
+  "fixes": {
+    "cognition.claims_schema": {
+      "object_claims_http": 200,
+      "object_claims_report_created": true,
+      "string_claims_http": 400,
+      "string_claims_code": "invalid_claim"
+    },
+    "message.respond_validation": {
+      "nonexistent_response_http": 400,
+      "nonexistent_response_code": "response_message_not_found",
+      "real_response_http": 200,
+      "real_response_status": "responded",
+      "obligation_stayed_open_after_negative": true
+    },
+    "delivery.deduplicate": {
+      "same_command_id_same_input": "same_message_id",
+      "same_command_id_changed_input_http": 400,
+      "same_command_id_changed_input_code": "command_id_conflict"
+    }
+  },
+  "baseline": {
+    "identity.session_isolation": {"status": "supported", "evidence_refs": ["admission.distinct_real_thread_digests"]},
+    "identity.continuity_evidence": {"status": "unknown", "reason": "compact_fork_new_lifecycle_not_observed"},
+    "context.project_read": {"status": "unknown", "reason": "no_project_id_task_scope_query_tools"},
+    "command.typed_tools": {"status": "unknown", "reason": "claims_items_schema_fixed; extra_fields_and_actor_rejection_still_missing"},
+    "task.lifecycle": {"status": "unknown", "reason": "preflight_progress_tools_missing"},
+    "cognition.report": {"status": "unknown", "reason": "claims_schema_fixed_at_source_and_http; awaiting_real_codex_model_reconfirmation"},
+    "contract.participation": {"status": "supported", "evidence_refs": ["contract.codex_mcp_propose", "contract.codex_mcp_accept_by_bound_worker", "contract.proposal_digest_matched"]},
+    "inbox.pull_fetch_ack": {"status": "supported", "evidence_refs": ["inbox.codex_mcp_claim", "inbox.codex_mcp_fetch", "inbox.codex_mcp_presented", "inbox.codex_mcp_ack"]},
+    "response.structured": {"status": "unknown", "reason": "respond_existence_sender_link_fixed; response_schema_contract_validation_still_missing"},
+    "recovery.idempotent_reconnect": {"status": "unknown", "reason": "in_flight_disconnect_fault_injection_missing"},
+    "delivery.deduplicate": {"status": "unknown", "reason": "command_id_conflict_fixed_at_source_and_http; awaiting_real_codex_model_reconfirmation"}
+  },
+  "host_session_admission_status": "ready",
+  "formal_baseline_ready": false,
+  "details_ref": "docs/acceptance/codex-fixes-2026-09-19.md"
+}

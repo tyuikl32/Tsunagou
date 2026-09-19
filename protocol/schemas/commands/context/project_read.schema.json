@@ -1,0 +1,9 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/context.project_read",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {},
+  "required": [],
+  "title": "ContextProjectReadPayload",
+  "type": "object"
+}

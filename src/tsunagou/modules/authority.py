@@ -258,12 +258,15 @@ class AuthorityService:
 
     def rebind(
         self, session_id: str, *, expected_nonce: str | None = None,
+        expected_connection_epoch: int | None = None,
         baseline: dict[str, Any] | None = None,
     ) -> EnrollmentReceipt:
         with self._lock:
             session = self.sessions.get(session_id)
             if session is None or not session.active:
                 raise ValueError("session_not_rebindable")
+            if expected_connection_epoch is not None and expected_connection_epoch != session.connection_epoch:
+                raise PermissionError("stale_connection_epoch")
             if expected_nonce is not None and not secrets.compare_digest(
                 session.reconnect_nonce_hash, _token_hash(expected_nonce)
             ):

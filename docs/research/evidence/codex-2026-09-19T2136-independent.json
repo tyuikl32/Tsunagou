@@ -1,0 +1,96 @@
+{
+  "host": "codex",
+  "version": "codex-cli 0.155.0-alpha.9.2",
+  "scope": "independent_live_bridge_partial",
+  "date_local": "2026-09-19",
+  "timezone": "Asia/Shanghai",
+  "window_utc": ["2026-09-19T13:10:34Z", "2026-09-19T13:41:34Z"],
+  "git_head": "166045e",
+  "bridge_server_version": "0.1.0",
+  "node_version": "v24.20.0",
+  "tsunagou_version": "0.1.0",
+  "uvicorn_version": "0.53.0",
+  "protocol_version": "1.0",
+  "schema_bundle_digest": "sha256:dfda63da8594b8a2e02d080ef33dd17a8259b74900cc69e3b605b5068e95b122",
+  "host_conversation_digests": [
+    "9e1ad0855065d6584d27bd05df3c1c591f80799288b21f35236b4e067a27f6d1",
+    "6604b05d79bf89d32bb9c9d9117ef59109839098512015b7dd60f69aa446d45a"
+  ],
+  "isolation": "new_codex_threads_and_project; independent_loopback_server_and_state; no_user_config_edit",
+  "checks": {
+    "admission": {
+      "distinct_real_thread_digests": true,
+      "digests_match_observed_thread_ids": true,
+      "main_first": {"status": "degraded", "epoch": 1},
+      "main_rebind": {"status": "ready", "epoch": 2, "mcp_inbox_claim": "completed"},
+      "worker_first": {"status": "degraded", "epoch": 1},
+      "worker_rebind": {"status": "ready", "epoch": 2, "mcp_inbox_claim": "completed"}
+    },
+    "task": {
+      "create": "authenticated_http_200",
+      "codex_mcp_claim": "completed",
+      "codex_mcp_start": "completed",
+      "codex_mcp_submit": "completed",
+      "preflight": "not_observed",
+      "progress": "not_observed"
+    },
+    "cognition": {
+      "codex_mcp_report_attempts": 6,
+      "result": "invalid_claim",
+      "observed_claim_item_type": "string",
+      "backend_expected_claim_item_type": "object",
+      "report_turn_exit_code": 1,
+      "exit_reason": "operator_stopped_repeated_invalid_claim_retries"
+    },
+    "contract": {
+      "codex_mcp_propose": "completed",
+      "codex_mcp_accept_by_bound_worker": "completed",
+      "proposal_digest_matched": true
+    },
+    "inbox": {
+      "codex_mcp_claim": "completed",
+      "codex_mcp_fetch": "completed",
+      "codex_mcp_presented": "completed",
+      "codex_mcp_ack": "completed",
+      "delivery_status": "acked"
+    },
+    "response": {
+      "codex_mcp_send_with_contract": "completed",
+      "codex_mcp_respond": "completed",
+      "http_nonexistent_response_message_accepted": true,
+      "negative_http_status": 200,
+      "invalid_response_obligation_status": "responded"
+    },
+    "recovery": {
+      "bad_nonce_http_status": 403,
+      "valid_nonce_http_status": 200,
+      "epoch_change": "2_to_3",
+      "stale_retry_http_status": 401,
+      "fresh_ticket_rebind_epoch": 4,
+      "codex_mcp_after_rebind": "completed",
+      "in_flight_disconnect": "not_observed"
+    },
+    "deduplication": {
+      "codex_mcp_identical_arguments_twice": "completed",
+      "same_message_id_for_identical_arguments": true,
+      "http_same_command_id_changed_input_status": 200,
+      "http_same_command_id_changed_input_created_second_message": true
+    }
+  },
+  "baseline": {
+    "identity.session_isolation": {"status": "supported", "evidence_refs": ["admission.distinct_real_thread_digests", "admission.digests_match_observed_thread_ids"]},
+    "identity.continuity_evidence": {"status": "unknown", "reason": "resume_rebind_observed; compact_and_fork_not_observed"},
+    "context.project_read": {"status": "unknown", "reason": "root_directory_digest_only; no_project_id_task_scope_query"},
+    "command.typed_tools": {"status": "unknown", "reason": "tools_listed_and_called_but_cognition_claims_schema_mismatch"},
+    "task.lifecycle": {"status": "unknown", "reason": "claim_start_submit_observed; preflight_progress_missing"},
+    "cognition.report": {"status": "unknown", "reason": "six_live_invalid_claim_results"},
+    "contract.participation": {"status": "supported", "evidence_refs": ["contract.codex_mcp_propose", "contract.codex_mcp_accept_by_bound_worker", "contract.proposal_digest_matched"]},
+    "inbox.pull_fetch_ack": {"status": "supported", "evidence_refs": ["inbox.codex_mcp_claim", "inbox.codex_mcp_fetch", "inbox.codex_mcp_presented", "inbox.codex_mcp_ack"]},
+    "response.structured": {"status": "unknown", "reason": "nonexistent_response_message_accepted_and_contract_schema_unchecked"},
+    "recovery.idempotent_reconnect": {"status": "unknown", "reason": "nonce_epoch_and_rebind_observed; in_flight_disconnect_missing"},
+    "delivery.deduplicate": {"status": "unknown", "reason": "same_input_dedup_observed; same_command_id_changed_input_created_second_message"}
+  },
+  "host_session_admission_status": "ready",
+  "formal_baseline_ready": false,
+  "details_ref": "docs/acceptance/codex-independent-2026-09-19.md"
+}

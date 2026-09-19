@@ -46,7 +46,7 @@ const PROTOCOL_VERSION = "1.0";
 // Read from the local protocol registry; the flat command entrypoint does not
 // validate the payload against a schema, only the envelope shape, but we send
 // the real bundle digest so a stricter future server rejects stale tool shapes.
-const SCHEMA_BUNDLE_DIGEST = "sha256:dfda63da8594b8a2e02d080ef33dd17a8259b74900cc69e3b605b5068e95b122";
+const SCHEMA_BUNDLE_DIGEST = "sha256:f2c3d8e0dc89f8b454288048d6326a4446f51659003045ac6194d6da39545fc6";
 
 interface SessionCredential {
   agent_id: string;
@@ -76,6 +76,16 @@ interface ToolSpec {
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/** Deterministic JSON string with sorted object keys, so identical payloads map
+ *  to the same command id regardless of key order the model happened to use. */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  return "{" + Object.keys(value as Record<string, unknown>).sort()
+    .map((key) => JSON.stringify(key) + ":" + canonicalJson((value as Record<string, unknown>)[key]))
+    .join(",") + "}";
 }
 
 function env(name: string, fallback = ""): string {
@@ -166,10 +176,12 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "task__create", command_kind: "task.create", description: "Create, ready and publish a task in this coordination scope (main-authority only).", inputSchema: { type: "object", required: ["title", "objective"], properties: { title: { type: "string" }, objective: { type: "string" }, parent_task_id: { type: "string" }, blocks: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
   { name: "task__claim", command_kind: "task.claim", description: "Claim a task for this agent (preparation, not execution).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" } }, additionalProperties: false } },
   { name: "task__resume", command_kind: "task.resume", description: "Resume a previously claimed task (preparation, not execution).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" } }, additionalProperties: false } },
-  { name: "task__start", command_kind: "task.start", description: "Begin executing a claimed task; issues the execution grant for this attempt.", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" } }, additionalProperties: false } },
+  { name: "task__preflight", command_kind: "task.preflight", description: "Run a preflight check on a claimed task attempt (preparation, not execution).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
+  { name: "task__start", command_kind: "task.start", description: "Begin executing a claimed task after preflight; issues the execution grant for this attempt.", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, preflight_id: { type: "string" } }, additionalProperties: false } },
+  { name: "task__progress", command_kind: "task.progress", description: "Record progress on a running attempt (execution command).", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, summary: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
   { name: "task__block", command_kind: "task.block", description: "Mark a task blocked with a reason.", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, reason_code: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__submit", command_kind: "task.submit", description: "Submit the work for a started attempt (execution command).", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, summary: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, artifact_refs: { type: "array", items: { type: "string" } }, workspace_result_ref: { type: "string" } } } },
-  { name: "cognition__report", command_kind: "cognition.report", description: "Submit an explicit cognition report (claims, assumptions, uncertainties).", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, claims: { type: "array" }, assumptions: { type: "array" }, uncertainties: { type: "array" } } } },
+  { name: "cognition__report", command_kind: "cognition.report", description: "Submit an explicit cognition report (claims, assumptions, uncertainties).", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, claims: { type: "array", items: { type: "object", required: ["subject_key"], properties: { subject_key: { type: "string" }, subject: { type: "string" }, claim_type: { type: "string" }, equality_key: { type: "string" }, value: {}, evidence_refs: { type: "array", items: { type: "string" } } } } }, assumptions: { type: "array", items: { type: "string" } }, uncertainties: { type: "array", items: { type: "string" } } } } },
   { name: "contract__propose", command_kind: "contract.propose", description: "Propose a coordination contract with required/optional participants.", inputSchema: { type: "object", properties: { payload: { type: "object" }, participants_required: { type: "array" }, participants_optional: { type: "array" } }, additionalProperties: false } },
   { name: "contract__accept", command_kind: "contract.accept", description: "Accept a specific contract proposal digest as a participant slot.", inputSchema: { type: "object", required: ["proposal_id", "participant_slot", "proposal_digest"], properties: { proposal_id: { type: "string" }, participant_slot: { type: "string" }, proposal_digest: { type: "string" } }, additionalProperties: false } },
   { name: "inbox__claim", command_kind: "inbox.claim", description: "Claim this agent's inbox deliveries.", inputSchema: { type: "object", properties: { limit: { type: "integer" } }, additionalProperties: false } },
@@ -178,14 +190,19 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "inbox__ack", command_kind: "inbox.ack", description: "Acknowledge a presented inbox delivery.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "message__send", command_kind: "message.send", description: "Send a message to another agent.", inputSchema: { type: "object", required: ["recipient_agent_id"], properties: { recipient_agent_id: { type: "string" }, kind: { type: "string" }, subject_ref: { type: "string" }, summary: { type: "string" }, payload: { type: "object" }, priority: { type: "integer" }, response_contract: { type: "object" }, in_reply_to: { type: "string" } } } },
   { name: "message__respond", command_kind: "message.respond", description: "Fulfill a response obligation on a received message.", inputSchema: { type: "object", required: ["obligation_id", "response_message_id"], properties: { obligation_id: { type: "string" }, response_message_id: { type: "string" } }, additionalProperties: false } },
+  { name: "context__project_read", command_kind: "context.project_read", description: "Read this agent's project context: identity, role, scope capabilities and owned tasks.", inputSchema: { type: "object", additionalProperties: false } },
 ];
 
 class HttpTransport {
   public constructor(private readonly baseUrl: string) {}
 
   public async dispatch(kind: string, payload: Record<string, unknown>, session: SessionCredential): Promise<unknown> {
+    // A stable, content-derived command id makes a retried tool call idempotent
+    // (the same kind+payload maps to the same id, so message.send dedups), while a
+    // genuinely different payload becomes a distinct command. A reused id with
+    // changed content is the server's job to reject as a conflict.
     const envelope = {
-      command_id: randomUUID(),
+      command_id: "idem:" + hash(`${kind}:${canonicalJson(payload)}`),
       protocol_version: PROTOCOL_VERSION,
       schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
       payload,

@@ -132,13 +132,24 @@ class MessageStore:
         payload = payload or {}
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > MAX_PAYLOAD_BYTES:
             raise ValueError("payload_limit_exceeded")
+        payload_digest = canonical_digest(payload)
         with self._lock:
             existing = self.command_index.get(command_id)
-            if existing:
-                return self.messages[existing]
+            if existing is not None:
+                prior = self.messages[existing]
+                if (
+                    prior.sender_agent_id == sender_agent_id
+                    and prior.recipient_agent_id == recipient_agent_id
+                    and prior.kind == kind
+                    and prior.subject_ref == subject_ref
+                    and prior.summary == summary
+                    and prior.payload_digest == payload_digest
+                ):
+                    return prior
+                raise ValueError("command_id_conflict")
             message = Message(
                 new_id(), command_id, sender_agent_id, recipient_agent_id, kind, subject_ref,
-                summary, payload, canonical_digest(payload), new_id(), _now(), in_reply_to,
+                summary, payload, payload_digest, new_id(), _now(), in_reply_to,
             )
             self.messages[message.message_id] = message
             self.deliveries[message.message_id] = Delivery(message.message_id, recipient_agent_id, priority)
@@ -204,6 +215,13 @@ class MessageStore:
                 raise PermissionError("obligation_recipient_mismatch")
             if obligation.status != "open":
                 raise ValueError("obligation_already_closed")
+            response = self.messages.get(response_message_id)
+            if response is None:
+                raise ValueError("response_message_not_found")
+            if response.sender_agent_id != recipient_agent_id:
+                raise PermissionError("response_sender_mismatch")
+            if response.in_reply_to != obligation.message_id:
+                raise ValueError("response_not_linked_to_obligation")
             obligation.status = "responded"
             obligation.response_message_id = response_message_id
             obligation.closed_at = _now()

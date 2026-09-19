@@ -23,8 +23,8 @@
 | command.typed_tools | unknown | unknown | unknown | unknown | 需共享 MCP |
 | task.lifecycle | unknown | unknown | unknown | unknown | 需 T08/T17 |
 | cognition.report | unknown | unknown | unknown | unknown | 需 T10/T17 |
-| contract.participation | unknown | unknown | unknown | unknown | 需 T10/T17 |
-| inbox.pull_fetch_ack | unknown | unknown | unknown | unknown | 需 T07/T17 |
+| contract.participation | supported（独立双会话提案与指定 worker 接受正例） | unknown | unknown | unknown | [Codex 独立复验](evidence/codex-2026-09-19T2136-independent.json) |
+| inbox.pull_fetch_ack | supported（独立双会话拉取、呈现、ACK 正例） | unknown | unknown | unknown | [Codex 独立复验](evidence/codex-2026-09-19T2136-independent.json) |
 | response.structured | unknown | unknown | unknown | unknown | 需 T07/T17 |
 | recovery.idempotent_reconnect | unknown | unknown | unknown | unknown | 需独立 bridge |
 | delivery.deduplicate | unknown | unknown | unknown | unknown | 需独立 bridge |
@@ -52,3 +52,4 @@
 - MCP 共享服务的 Python SDK、bridge 使用的 TypeScript SDK 和具体版本在 T02/T17 锁定；本矩阵只记录研究状态。
 - 2026-09-19 首轮续测的脱敏 JSON 为 [Codex](evidence/codex-2026-09-19T160205.json)、[OpenCode](evidence/opencode-2026-09-19T160232.json)、[DeepSeek Harness](evidence/deepseek-2026-09-19T160700.json)。三份均保持 `ready: false`，只证明宿主原生会话隔离；CLI `ticket_required` 和 HTTP `handler_not_registered` 阻断真实 HostSession 及后续 10 项共同基线，不能据此宣称多 Agent 协作通过。
 - Codex `0.155.0-alpha.9.2` 的 [新无模型探针](evidence/codex-2026-09-19T170100.json)与 [十项专项记录](../acceptance/codex-pilot-2026-09-19.md)再次确认仅原生隔离有证据，`ready: false`；它不替代项目 bridge/HostSession 验收。
+- 2026-09-19 21:10–21:41 的 [Codex 独立真实 bridge 复验](../acceptance/codex-independent-2026-09-19.md)在隔离项目和状态中完成双会话入会，并取得契约参与和 inbox 全程的真实 MCP 正例。连续性、项目语义读取、typed schema、完整任务生命周期、认知报告、结构化回应、在途断线恢复和完整去重仍保留 `unknown`：其中报告 `invalid_claim`、不存在的回复消息被接受、同 command ID 改输入生成第二条消息都有隔离环境的实际反例。运行时两个 session 曾为 `ready`，不等于 11 项正式基线通过；最新脱敏证据为 [Codex JSON](evidence/codex-2026-09-19T2136-independent.json)。

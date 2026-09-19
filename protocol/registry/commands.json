@@ -235,6 +235,12 @@
       "schema": "commands/contract/withdraw.schema.json",
       "uri": "/contract-proposals/{id}:withdraw"
     },
+    "context.project_read": {
+      "payload_fields": [],
+      "principal": "B",
+      "schema": "commands/context/project_read.schema.json",
+      "uri": "/context:project-read"
+    },
     "discrepancy.advance": {
       "payload_fields": [
         "status"
@@ -1094,6 +1100,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:dfda63da8594b8a2e02d080ef33dd17a8259b74900cc69e3b605b5068e95b122",
+  "schema_bundle_digest": "sha256:f2c3d8e0dc89f8b454288048d6326a4446f51659003045ac6194d6da39545fc6",
   "supported_previous_version": "0.9"
 }

@@ -3,13 +3,49 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "assumptions": {},
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "attempt_id": {
       "minLength": 1,
       "type": "string"
     },
     "boundary": {},
-    "claims": {},
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "subject_key"
+        ],
+        "properties": {
+          "subject_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "claim_type": {
+            "type": "string"
+          },
+          "equality_key": {
+            "type": "string"
+          },
+          "value": {},
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
     "confidence": {},
     "confidence_reason": {},
     "evidence_refs": {},
@@ -22,7 +58,12 @@
       "minLength": 1,
       "type": "string"
     },
-    "uncertainties": {},
+    "uncertainties": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "understanding": {}
   },
   "required": [

@@ -61,6 +61,25 @@ class ReviewRound:
     reason: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PreflightResult:
+    preflight_id: str
+    task_id: str
+    attempt_id: str
+    status: str
+    evidence_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressRecord:
+    progress_id: str
+    task_id: str
+    attempt_id: str
+    summary: str
+    evidence_refs: tuple[str, ...]
+    recorded_at: float
+
+
 class TaskStateError(ValueError):
     pass
 
@@ -73,6 +92,8 @@ class TaskService:
         self.results: dict[str, TaskResult] = {}
         self.reviews: dict[tuple[str, int], ReviewRound] = {}
         self.scope_requests: dict[str, dict[str, Any]] = {}
+        self.preflights: dict[str, PreflightResult] = {}
+        self.progress_records: dict[str, ProgressRecord] = {}
 
     def create_task(
         self, title: str, objective: str, *, parent_task_id: str | None = None,
@@ -138,9 +159,29 @@ class TaskService:
             task.revision += 1
             return current
 
+    def preflight(
+        self, task_id: str, agent_id: str, *, attempt_id: str | None = None,
+        evidence_refs: tuple[str, ...] = (),
+    ) -> PreflightResult:
+        with self._lock:
+            task = self._task(task_id)
+            attempt = self._current_attempt(task)
+            if attempt.owner_agent_id != agent_id:
+                raise TaskStateError("attempt_owner_required")
+            if task.status != "claimed":
+                raise TaskStateError("task_not_preflightable")
+            if attempt_id is not None and attempt_id != attempt.attempt_id:
+                raise TaskStateError("attempt_id_mismatch")
+            preflight = PreflightResult(
+                new_id(), task_id, attempt.attempt_id, "preflighted", evidence_refs
+            )
+            self.preflights[preflight.preflight_id] = preflight
+            return preflight
+
     def start(
         self, task_id: str, agent_id: str, *, workspace_ready: bool = True,
         lease_valid: bool = True, contract_ready: bool = True, report_ready: bool = True,
+        preflight_id: str | None = None,
     ) -> Attempt:
         with self._lock:
             task = self._task(task_id)
@@ -149,6 +190,10 @@ class TaskService:
                 raise TaskStateError("attempt_owner_required")
             if attempt.status != "claimed" or task.status != "claimed":
                 raise TaskStateError("attempt_not_startable")
+            if preflight_id is not None:
+                preflight = self.preflights.get(preflight_id)
+                if preflight is None or preflight.task_id != task_id or preflight.attempt_id != attempt.attempt_id:
+                    raise TaskStateError("preflight_id_mismatch")
             missing = [name for name, value in {
                 "workspace": workspace_ready, "lease": lease_valid,
                 "contract": contract_ready, "report": report_ready,
@@ -163,6 +208,23 @@ class TaskService:
             task.status = "running"
             task.revision += 1
             return attempt
+
+    def progress(
+        self, task_id: str, agent_id: str, *, attempt_id: str | None = None,
+        summary: str = "", evidence_refs: tuple[str, ...] = (),
+    ) -> ProgressRecord:
+        with self._lock:
+            task = self._task(task_id)
+            attempt = self._current_attempt(task)
+            if attempt.owner_agent_id != agent_id or attempt.status != "running" or task.status != "running":
+                raise TaskStateError("attempt_owner_or_running_required")
+            if attempt_id is not None and attempt_id != attempt.attempt_id:
+                raise TaskStateError("attempt_id_mismatch")
+            record = ProgressRecord(
+                new_id(), task_id, attempt.attempt_id, summary, evidence_refs, time.time()
+            )
+            self.progress_records[record.progress_id] = record
+            return record
 
     def block(self, task_id: str, reason: str) -> Task:
         with self._lock:
