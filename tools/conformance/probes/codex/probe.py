@@ -6,16 +6,18 @@ import argparse
 import json
 import os
 import queue
+import secrets
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
-from tools.conformance.probes.common import IdentityEvidence, write_evidence
+from tools.conformance.probes.common import BASELINE, IdentityEvidence, write_evidence
 
 
 class Rpc:
@@ -26,7 +28,7 @@ class Rpc:
         self.process = subprocess.Popen(
             [executable, "app-server", "--stdio"], cwd=root, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8",
+            text=True, encoding="utf-8", errors="replace",
         )
         self.lines: queue.Queue[str] = queue.Queue()
         self.sequence = 0
@@ -52,7 +54,7 @@ class Rpc:
         while True:
             message = json.loads(self.lines.get(timeout=30))
             if message.get("id") == self.sequence:
-                return message
+                return cast(dict[str, Any], message)
 
     def close(self) -> None:
         if self.process.poll() is None:
@@ -64,16 +66,46 @@ class Rpc:
                 self.process.wait(timeout=5)
 
 
-def run(executable: str) -> dict[str, Any]:
-    identity = IdentityEvidence()
-    version = subprocess.run([executable, "--version"], capture_output=True, text=True, check=True).stdout.strip()
-    result: dict[str, Any] = {"host": "codex", "version": version, "scope": "disposable_no_model_turn",
-                              "checks": {}, "ready": False}
-    with tempfile.TemporaryDirectory(
-        prefix="tsunagou-codex-probe-", ignore_cleanup_errors=True
-    ) as name:
-        root = Path(name)
+@contextmanager
+def disposable_probe_root(work_root: Path | None = None) -> Iterator[Path]:
+    """Create a disposable root under an explicitly writable parent on Windows."""
+    parent = (work_root or Path.cwd()).resolve()
+    parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(10):
+        root = parent / f"tsunagou-codex-probe-{secrets.token_hex(8)}"
+        try:
+            # CPython/MinGW can translate POSIX 0o700 into a Windows ACL that
+            # denies creating children. Inherit the already private parent ACL.
+            root.mkdir()
+            if os.name != "nt":
+                root.chmod(0o700)
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise RuntimeError("probe_root_collision")
+    try:
         (root / "codex-home").mkdir()
+        yield root
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _baseline(overrides: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {name: overrides.get(name, {"status": "unknown"}) for name in BASELINE}
+
+
+def run(executable: str, *, work_root: Path | None = None) -> dict[str, Any]:
+    identity = IdentityEvidence()
+    version = subprocess.run(
+        [executable, "--version"], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=True,
+    ).stdout.strip()
+    result: dict[str, Any] = {
+        "host": "codex", "version": version, "scope": "disposable_no_model_turn",
+        "checks": {}, "baseline": _baseline({}), "ready": False,
+    }
+    with disposable_probe_root(work_root) as root:
         rpc = Rpc(executable, root)
         try:
             initialized = rpc.call("initialize", {"clientInfo": {"name": "tsunagou_probe", "version": "0.1.0"},
@@ -89,6 +121,12 @@ def run(executable: str) -> dict[str, Any]:
                 ids.append(reply["result"]["thread"]["id"])
             result["checks"]["same_directory_distinct"] = ids[0] != ids[1]
             result["identity_digests"] = [identity.digest(value) for value in ids]
+            result["baseline"] = _baseline({
+                "identity.session_isolation": {
+                    "status": "supported" if result["checks"]["same_directory_distinct"] else "unsupported",
+                    "evidence_refs": ["initialize", "same_directory_distinct"],
+                },
+            })
             for method, label in (("thread/resume", "resume"), ("thread/fork", "fork")):
                 reply = rpc.call(method, {"threadId": ids[0], "cwd": str(root), "approvalPolicy": "never"})
                 if "result" in reply:
@@ -112,10 +150,11 @@ def run(executable: str) -> dict[str, Any]:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--executable", default=shutil.which("codex"))
+    parser.add_argument("--work-root", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not args.executable:
         parser.error("codex_not_installed")
-    evidence = run(args.executable)
+    evidence = run(args.executable, work_root=args.work_root)
     write_evidence(args.output, evidence)
     print(json.dumps(evidence))

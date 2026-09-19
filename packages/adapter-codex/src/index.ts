@@ -8,8 +8,10 @@ import {
   type HostAdapter,
   type HostIdentity,
   type HostLifecycleEvent,
+  type HostLifecycleObservation,
   type HostProbeInput,
   createInstallationPlan,
+  observeHostLifecycle,
   type InstallationPlan,
 } from "@tsunagou/bridge-sdk";
 
@@ -24,7 +26,7 @@ export interface CodexEvidenceInput extends HostProbeInput {
 }
 
 export type CodexLifecycleEvent = HostLifecycleEvent & {
-  readonly source: "codex_app_server" | "codex_cli";
+  readonly source?: "codex_app_server" | "codex_cli";
 };
 
 function toCheck(name: BaselineCapability, evidence: CodexEvidenceInput): ConformanceCheck {
@@ -40,10 +42,10 @@ function toCheck(name: BaselineCapability, evidence: CodexEvidenceInput): Confor
 export class CodexAdapter implements HostAdapter {
   public readonly kind = adapterKind;
   private readonly renderer = new ContextRenderer();
-  private lastLifecycle?: CodexLifecycleEvent;
+  private lastLifecycle?: HostLifecycleObservation;
 
   public getIdentity(input: HostProbeInput): HostIdentity | undefined {
-    if (input.host_kind !== adapterKind || !input.host_conversation_id_digest) return undefined;
+    if (input.host_kind !== adapterKind || !input.adapter_installation_id || !input.host_conversation_id_digest) return undefined;
     return {
       installation_id: input.adapter_installation_id,
       host_kind: adapterKind,
@@ -52,6 +54,9 @@ export class CodexAdapter implements HostAdapter {
   }
 
   public async probeCapabilities(input: HostProbeInput): Promise<readonly ConformanceCheck[]> {
+    if (this.getIdentity(input) === undefined) {
+      return BASELINE_CAPABILITIES.map((name) => ({ name, status: "unknown" as const }));
+    }
     return BASELINE_CAPABILITIES.map((name) => toCheck(name, input as CodexEvidenceInput));
   }
 
@@ -60,10 +65,11 @@ export class CodexAdapter implements HostAdapter {
   }
 
   public observeLifecycle(_input: HostProbeInput, event: HostLifecycleEvent): void {
-    this.lastLifecycle = event as CodexLifecycleEvent;
+    if (_input.host_kind !== adapterKind) throw new Error("adapter_host_mismatch");
+    this.lastLifecycle = observeHostLifecycle(_input, event);
   }
 
-  public lifecycle(): CodexLifecycleEvent | undefined {
+  public lifecycle(): HostLifecycleObservation | undefined {
     return this.lastLifecycle;
   }
 }

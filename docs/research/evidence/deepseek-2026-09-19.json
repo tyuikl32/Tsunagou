@@ -1,0 +1,33 @@
+{
+  "host": "deepseek",
+  "version": "0.1.5-rc.2",
+  "scope": "web_rpc_no_model_turn",
+  "checks": {
+    "same_directory_distinct": true,
+    "session_list": true
+  },
+  "ready": false,
+  "identity_digests": [
+    "6066912321d140192dea21e643ab13004a6b3cb1317df5007645d0a5300dcb14",
+    "4b43b32134e51487d97c08ca0a19b236aaa0560b5f1855dc2748c0b1c4725e68"
+  ],
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "same_directory_distinct",
+        "session_list"
+      ]
+    },
+    "identity.continuity_evidence": { "status": "unknown" },
+    "context.project_read": { "status": "unknown" },
+    "command.typed_tools": { "status": "unknown" },
+    "task.lifecycle": { "status": "unknown" },
+    "cognition.report": { "status": "unknown" },
+    "contract.participation": { "status": "unknown" },
+    "inbox.pull_fetch_ack": { "status": "unknown" },
+    "response.structured": { "status": "unknown" },
+    "recovery.idempotent_reconnect": { "status": "unknown" },
+    "delivery.deduplicate": { "status": "unknown" }
+  }
+}

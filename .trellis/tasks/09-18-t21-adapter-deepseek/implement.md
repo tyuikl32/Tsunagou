@@ -27,3 +27,8 @@
 - [ ] PRD逐项标记并附证据；没有产品实现前不得填写已通过。
 - [ ] 在Trellis journal记录结果、限制、依赖影响与下一任务。
 - [ ] 检查通过后完成/归档，更新任务依赖引用；发布、push、用户重大决定按已有授权处理。
+
+## 2026-09-19 T23 补证
+
+- 官方 `@deepseek-ai/dsh 0.1.5-rc.2` 使用隔离 Harness home 复跑成功；一次性 token 未写日志、命令行或仓库，session isolation/list 证据已脱敏。
+- adapter 增加身份绑定和生命周期连续性校验；剩余 10 项真实 Harness bridge baseline 继续 unknown，未以模型 API 替代。

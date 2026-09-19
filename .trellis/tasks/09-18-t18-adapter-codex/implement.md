@@ -27,3 +27,8 @@
 - [ ] PRD逐项标记并附证据；没有产品实现前不得填写已通过。
 - [ ] 在Trellis journal记录结果、限制、依赖影响与下一任务。
 - [ ] 检查通过后完成/归档，更新任务依赖引用；发布、push、用户重大决定按已有授权处理。
+
+## 2026-09-19 T23 补证
+
+- `codex-cli 0.155.0-alpha.9` disposable app-server 探针复跑成功；Windows work-root/UTF-8 失败已修复。
+- bridge 的任务命令去重、epoch 恢复和 inbox 分阶段测试已通过；这些 SDK 测试不能替代剩余 10 项 Codex 真实会话 baseline。

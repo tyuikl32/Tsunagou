@@ -8,8 +8,10 @@ import {
   type HostAdapter,
   type HostIdentity,
   type HostLifecycleEvent,
+  type HostLifecycleObservation,
   type HostProbeInput,
   createInstallationPlan,
+  observeHostLifecycle,
   type InstallationPlan,
 } from "@tsunagou/bridge-sdk";
 
@@ -26,14 +28,17 @@ function checks(input: OpenCodeEvidenceInput): readonly ConformanceCheck[] {
 export class OpenCodeAdapter implements HostAdapter {
   public readonly kind = adapterKind;
   private readonly renderer = new ContextRenderer();
-  private lastEvent?: HostLifecycleEvent;
+  private lastEvent?: HostLifecycleObservation;
 
   public getIdentity(input: HostProbeInput): HostIdentity | undefined {
-    if (input.host_kind !== adapterKind || !input.host_conversation_id_digest) return undefined;
+    if (input.host_kind !== adapterKind || !input.adapter_installation_id || !input.host_conversation_id_digest) return undefined;
     return { installation_id: input.adapter_installation_id, host_kind: adapterKind, host_conversation_id_digest: input.host_conversation_id_digest };
   }
 
   public async probeCapabilities(input: HostProbeInput): Promise<readonly ConformanceCheck[]> {
+    if (this.getIdentity(input) === undefined) {
+      return BASELINE_CAPABILITIES.map((name) => ({ name, status: "unknown" as const }));
+    }
     return checks(input as OpenCodeEvidenceInput);
   }
 
@@ -41,11 +46,12 @@ export class OpenCodeAdapter implements HostAdapter {
     return this.renderer.render(sections).text;
   }
 
-  public observeLifecycle(_input: HostProbeInput, event: HostLifecycleEvent): void {
-    this.lastEvent = event;
+  public observeLifecycle(input: HostProbeInput, event: HostLifecycleEvent): void {
+    if (input.host_kind !== adapterKind) throw new Error("adapter_host_mismatch");
+    this.lastEvent = observeHostLifecycle(input, event);
   }
 
-  public lifecycle(): HostLifecycleEvent | undefined {
+  public lifecycle(): HostLifecycleObservation | undefined {
     return this.lastEvent;
   }
 }

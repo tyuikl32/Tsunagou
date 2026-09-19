@@ -21,6 +21,26 @@ describe("Codex adapter evidence boundary", () => {
     expect(checks.every((check) => check.status === "unknown")).toBe(true);
   });
 
+  it("does not accept capability evidence without a bound host identity", async () => {
+    const adapter = new CodexAdapter();
+    const checks = await adapter.probeCapabilities({
+      adapter_installation_id: "i",
+      host_kind: "codex",
+      host_version: "0.154",
+      baseline: { "task.lifecycle": { status: "supported", evidence: "probe" } },
+    } as never);
+    expect(checks.find((check) => check.name === "task.lifecycle")?.status).toBe("unknown");
+  });
+
+  it("records only sanitized lifecycle continuity", () => {
+    const adapter = new CodexAdapter();
+    const input = { adapter_installation_id: "i", host_kind: "codex", host_version: "0.154", host_conversation_id_digest: "digest-a" };
+    adapter.observeLifecycle(input, { kind: "resume", host_conversation_id_digest: "digest-a" });
+    expect(adapter.lifecycle()).toEqual({ kind: "resume", identity_continuity: "same", consistent: true, host_conversation_id_digest: "digest-a" });
+    adapter.observeLifecycle(input, { kind: "fork", host_conversation_id_digest: "digest-a" });
+    expect(adapter.lifecycle()?.consistent).toBe(false);
+  });
+
   it("plans reversible profile changes without a credential", () => {
     const plan = createCodexInstallationPlan("i", "codex-profile", "install");
     expect(plan.bridge_command.join(" ")).not.toMatch(/token|secret/i);

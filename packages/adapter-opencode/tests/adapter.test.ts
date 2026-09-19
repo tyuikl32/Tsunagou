@@ -11,6 +11,12 @@ describe("OpenCode adapter evidence boundary", () => {
     expect(checks.map((check) => check.name)).toEqual(BASELINE_CAPABILITIES);
     expect(evaluateConformance(checks).ready).toBe(false);
   });
+  it("maps host lifecycle identity without exposing a raw session identifier", () => {
+    const adapter = new OpenCodeAdapter();
+    const input = { adapter_installation_id: "i", host_kind: "opencode", host_version: "1.18.31", host_conversation_id_digest: "digest-a" };
+    adapter.observeLifecycle(input, { kind: "fork", host_conversation_id_digest: "digest-b" });
+    expect(adapter.lifecycle()).toEqual({ kind: "fork", identity_continuity: "changed", consistent: true, host_conversation_id_digest: "digest-b" });
+  });
   it("uses only a non-secret profile reference", () => {
     expect(() => createOpenCodeInstallationPlan("i", "api-token-profile", "install")).toThrow("invalid_non_secret_profile");
   });

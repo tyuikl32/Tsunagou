@@ -29,6 +29,12 @@ export interface BridgeTransport {
   send<T>(envelope: CommandEnvelope, context?: TransportContext): Promise<T>;
 }
 
+export interface BridgeFailure {
+  readonly code?: string;
+  readonly status?: number;
+  readonly retry_after_ms?: number;
+}
+
 export interface TransportContext {
   readonly sessionId: string;
   readonly connectionEpoch: number;
@@ -93,7 +99,15 @@ export interface HostEnhancements {
 
 export interface HostLifecycleEvent {
   readonly kind: "resume" | "compact" | "new" | "clear" | "fork" | "stop" | "unknown";
-  readonly host_conversation_id?: string;
+  /** A probe-keyed digest. Raw host conversation IDs must stay inside the host integration. */
+  readonly host_conversation_id_digest?: string;
+}
+
+export interface HostLifecycleObservation {
+  readonly kind: HostLifecycleEvent["kind"];
+  readonly identity_continuity: "same" | "changed" | "unknown";
+  readonly consistent: boolean | undefined;
+  readonly host_conversation_id_digest?: string;
 }
 
 export type SessionMode = "attach" | "managed_launch";
@@ -140,14 +154,23 @@ export interface ContextSection {
 }
 
 export interface InboxItem {
+  readonly delivery_id: string;
   readonly message_id: string;
   readonly recipient_session_id: string;
   readonly body: string;
 }
 
+export interface InboxClaim {
+  readonly delivery_id: string;
+  readonly message_id: string;
+  readonly recipient_session_id: string;
+}
+
 export interface InboxSource {
-  pull(sessionId: string, cursor?: string): Promise<{ items: readonly InboxItem[]; cursor?: string }>;
-  ack(sessionId: string, messageId: string): Promise<void>;
+  claim(sessionId: string, cursor?: string): Promise<{ items: readonly InboxClaim[]; cursor?: string }>;
+  fetch(sessionId: string, deliveryId: string): Promise<InboxItem>;
+  presented(sessionId: string, deliveryId: string, evidenceDigest: string): Promise<void>;
+  ack(sessionId: string, deliveryId: string): Promise<void>;
 }
 
 export interface LeaseRenewer {
@@ -174,11 +197,85 @@ export function createStdioForwarder(sessionId: string): StdioForwarder {
 }
 
 export function createMcpTools(tools: readonly McpToolDescriptor[]): readonly McpToolDescriptor[] {
-  return tools.filter((tool) => !tool.name.toLowerCase().includes("token") && !tool.name.toLowerCase().includes("secret"));
+  const names = new Set<string>();
+  const commands = new Set<string>();
+  return tools.filter((tool) => {
+    const lowerName = tool.name.toLowerCase();
+    if (lowerName.includes("token") || lowerName.includes("secret")) return false;
+    const expectedName = tool.command_kind.replaceAll(".", "__");
+    if (tool.name !== expectedName) throw new Error("invalid_mcp_tool_name");
+    if (names.has(tool.name) || commands.has(tool.command_kind)) throw new Error("duplicate_mcp_tool");
+    names.add(tool.name);
+    commands.add(tool.command_kind);
+    return true;
+  });
+}
+
+function canonicalize(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
+  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(",")}}`;
+}
+
+function commandFingerprint(envelope: CommandEnvelope, kind?: CommandKind): string {
+  return canonicalize({
+    kind: kind ?? null,
+    protocol_version: envelope.protocol_version,
+    schema_bundle_digest: envelope.schema_bundle_digest,
+    payload: envelope.payload,
+  });
+}
+
+function failureDetails(error: unknown): BridgeFailure {
+  if (typeof error !== "object" || error === null) return {};
+  const record = error as Record<string, unknown>;
+  return {
+    code: typeof record.code === "string" ? record.code : undefined,
+    status: typeof record.status === "number" ? record.status : undefined,
+    retry_after_ms: typeof record.retry_after_ms === "number" ? record.retry_after_ms : undefined,
+  };
+}
+
+function isRetryableFailure(error: unknown): boolean {
+  const failure = failureDetails(error);
+  if (failure.status !== undefined) return failure.status === 429 || failure.status === 503;
+  if (failure.code !== undefined) {
+    return ["queue_capacity", "temporarily_unavailable", "ECONNRESET", "ETIMEDOUT", "EPIPE"].includes(failure.code);
+  }
+  return error instanceof Error && ["socket_closed", "connection_reset", "connection_timeout"].includes(error.message);
+}
+
+function sameCapabilities(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return left.size === right.size && [...left].every((capability) => right.has(capability));
+}
+
+export function observeHostLifecycle(input: HostProbeInput, event: HostLifecycleEvent): HostLifecycleObservation {
+  const previous = input.host_conversation_id_digest;
+  const current = event.host_conversation_id_digest;
+  const identity_continuity = previous === undefined || current === undefined
+    ? "unknown"
+    : previous === current ? "same" : "changed";
+  const expected = event.kind === "resume" || event.kind === "compact"
+    ? "same"
+    : event.kind === "new" || event.kind === "clear" || event.kind === "fork"
+      ? "changed"
+      : undefined;
+  return {
+    kind: event.kind,
+    identity_continuity,
+    consistent: expected === undefined || identity_continuity === "unknown" ? undefined : identity_continuity === expected,
+    host_conversation_id_digest: current,
+  };
 }
 
 export class BridgeClient {
-  private readonly seen = new Map<string, unknown>();
+  private readonly completed = new Map<string, unknown>();
+  private readonly commandFingerprints = new Map<string, string>();
+  private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly fetchedDeliveries = new Map<string, InboxItem>();
+  private readonly presentedDeliveries = new Set<string>();
+  private readonly acknowledgedDeliveries = new Set<string>();
   private connectionState: BridgeConnection;
   private readonly maxRetries: number;
   private readonly retryDelayMs: number;
@@ -195,39 +292,65 @@ export class BridgeClient {
     return this.connectionState;
   }
 
-  public reconnect(connection: BridgeConnection): void {
-    if (connection.sessionId !== this.connectionState.sessionId || connection.connectionEpoch <= this.connectionState.connectionEpoch) {
+  public reconnect(connection: BridgeConnection): boolean {
+    if (connection.sessionId !== this.connectionState.sessionId || connection.connectionEpoch < this.connectionState.connectionEpoch) {
       throw new Error("stale_connection_epoch");
     }
+    if (connection.connectionEpoch === this.connectionState.connectionEpoch) {
+      if (!sameCapabilities(connection.capabilities, this.connectionState.capabilities)) {
+        throw new Error("connection_epoch_conflict");
+      }
+      return false;
+    }
     this.connectionState = connection;
+    // A higher epoch must re-enter the authoritative transport so current
+    // credentials and epoch fencing are checked before an idempotent replay.
+    this.completed.clear();
+    return true;
   }
 
   public async send<T>(envelope: CommandEnvelope, kind?: CommandKind): Promise<T> {
     if (kind !== undefined && !kind.includes(".")) {
       throw new Error("invalid_command_kind");
     }
-    const existing = this.seen.get(envelope.command_id);
-    if (existing !== undefined) {
-      return existing as T;
+    const fingerprint = commandFingerprint(envelope, kind);
+    const existingFingerprint = this.commandFingerprints.get(envelope.command_id);
+    if (existingFingerprint !== undefined && existingFingerprint !== fingerprint) {
+      throw new Error("idempotency_conflict");
     }
-    let lastError: unknown;
-    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
-      try {
-        const result = await this.transport.send<T>(envelope, {
-          sessionId: this.connectionState.sessionId,
-          connectionEpoch: this.connectionState.connectionEpoch,
-          authorization: this.credentialProvider?.(),
-        });
-        this.seen.set(envelope.command_id, result);
-        return result;
-      } catch (error) {
-        lastError = error;
-        if (attempt < this.maxRetries && this.retryDelayMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
+    this.commandFingerprints.set(envelope.command_id, fingerprint);
+    if (this.completed.has(envelope.command_id)) return this.completed.get(envelope.command_id) as T;
+    const pending = this.inFlight.get(envelope.command_id);
+    if (pending !== undefined) return pending as Promise<T>;
+
+    const operation = (async (): Promise<T> => {
+      let lastError: unknown;
+      for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+        try {
+          const result = await this.transport.send<T>(envelope, {
+            sessionId: this.connectionState.sessionId,
+            connectionEpoch: this.connectionState.connectionEpoch,
+            authorization: this.credentialProvider?.(),
+          });
+          this.completed.set(envelope.command_id, result);
+          return result;
+        } catch (error) {
+          lastError = error;
+          if (!isRetryableFailure(error) || attempt >= this.maxRetries) break;
+          const retryAfterMs = failureDetails(error).retry_after_ms ?? this.retryDelayMs;
+          if (retryAfterMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+          }
         }
       }
+      throw lastError instanceof Error ? lastError : new Error("bridge_send_failed");
+    })();
+    this.inFlight.set(envelope.command_id, operation);
+    try {
+      return await operation;
+    } finally {
+      this.inFlight.delete(envelope.command_id);
     }
-    throw lastError instanceof Error ? lastError : new Error("bridge_send_failed");
   }
 
   public conformance(capabilities: Readonly<Partial<Record<BaselineCapability, boolean | undefined>>>): ConformanceReport {
@@ -235,22 +358,51 @@ export class BridgeClient {
       name,
       status: capabilities[name] === true ? "supported" : capabilities[name] === false ? "unsupported" : "unknown",
       strength: capabilities[name] === true ? "observed" : undefined,
-      evidence: capabilities[name] === true ? `${this.connectionState.sessionId}:${this.connectionState.connectionEpoch}` : undefined,
+      evidence: undefined,
     })) satisfies readonly ConformanceCheck[];
     return {
       ready: checks.every((check) => check.status === "supported" && check.evidence !== undefined),
       checks,
-      missing: checks.filter((check) => check.status !== "supported").map((check) => check.name as BaselineCapability),
+      missing: checks.filter((check) => check.status !== "supported" || check.evidence === undefined).map((check) => check.name as BaselineCapability),
     };
   }
 
-  public async pullInbox(source: InboxSource, cursor?: string): Promise<{ items: readonly InboxItem[]; cursor?: string }> {
-    const response = await source.pull(this.connectionState.sessionId, cursor);
-    const items = response.items.filter((item) => item.recipient_session_id === this.connectionState.sessionId);
-    for (const item of items) {
-      await source.ack(this.connectionState.sessionId, item.message_id);
+  public async pullInbox(source: InboxSource, cursor?: string): Promise<{ items: readonly InboxItem[]; pending_delivery_ids: readonly string[]; cursor?: string }> {
+    const response = await source.claim(this.connectionState.sessionId, cursor);
+    const claims = response.items.filter((item) => item.recipient_session_id === this.connectionState.sessionId);
+    const items: InboxItem[] = [];
+    const pendingDeliveryIds: string[] = [];
+    for (const claim of claims) {
+      if (this.acknowledgedDeliveries.has(claim.delivery_id)) continue;
+      if (this.fetchedDeliveries.has(claim.delivery_id)) {
+        pendingDeliveryIds.push(claim.delivery_id);
+        continue;
+      }
+      const item = await source.fetch(this.connectionState.sessionId, claim.delivery_id);
+      if (item.delivery_id !== claim.delivery_id || item.message_id !== claim.message_id || item.recipient_session_id !== this.connectionState.sessionId) {
+        throw new Error("inbox_delivery_mismatch");
+      }
+      this.fetchedDeliveries.set(item.delivery_id, item);
+      items.push(item);
     }
-    return { items, cursor: response.cursor };
+    return { items, pending_delivery_ids: pendingDeliveryIds, cursor: response.cursor };
+  }
+
+  public async markInboxPresented(source: InboxSource, deliveryId: string, evidenceDigest: string): Promise<boolean> {
+    if (!this.fetchedDeliveries.has(deliveryId)) throw new Error("inbox_delivery_not_fetched");
+    if (!evidenceDigest) throw new Error("presentation_evidence_required");
+    if (this.presentedDeliveries.has(deliveryId)) return false;
+    await source.presented(this.connectionState.sessionId, deliveryId, evidenceDigest);
+    this.presentedDeliveries.add(deliveryId);
+    return true;
+  }
+
+  public async ackInbox(source: InboxSource, deliveryId: string): Promise<boolean> {
+    if (!this.presentedDeliveries.has(deliveryId)) throw new Error("inbox_delivery_not_presented");
+    if (this.acknowledgedDeliveries.has(deliveryId)) return false;
+    await source.ack(this.connectionState.sessionId, deliveryId);
+    this.acknowledgedDeliveries.add(deliveryId);
+    return true;
   }
 
   public async renewLease(renewer: LeaseRenewer): Promise<boolean> {
@@ -271,8 +423,8 @@ export class ContextRenderer {
 export function evaluateConformance(checks: readonly ConformanceCheck[]): ConformanceReport {
   const byName = new Map(checks.map((check) => [check.name, check]));
   const normalized = BASELINE_CAPABILITIES.map((name) => byName.get(name) ?? { name, status: "unknown" as const });
-  const missing = normalized.filter((check) => check.status !== "supported").map((check) => check.name as BaselineCapability);
-  return { ready: missing.length === 0 && normalized.every((check) => check.evidence !== undefined), checks: normalized, missing };
+  const missing = normalized.filter((check) => check.status !== "supported" || !check.evidence).map((check) => check.name as BaselineCapability);
+  return { ready: missing.length === 0, checks: normalized, missing };
 }
 
 export async function runConformance(adapter: HostAdapter, input: HostProbeInput): Promise<ConformanceReport> {

@@ -29,8 +29,10 @@
 - [x] 修复根 TypeScript 检查指向不存在 `tsconfig.json` 的问题；6 个 workspace 检查、Vitest 19 tests、生成物零差异通过。
 - [x] CLI `--version`、doctor、三个 enroll 外壳、临时 Git 项目初始化和 loopback HTTP health 通过。
 - [x] Codex `0.155.0-alpha.9` 无模型探针证明初始化和同目录双 thread 隔离；空 thread resume/fork 返回 `-32600`，不得据此提升 ready。
-- [ ] OpenCode `1.18.31` 本轮 npm 获取/启动超时，未形成新证据；DeepSeek Harness 未在本轮重跑。
-- [ ] `release_check.py` 仍按设计返回 1：Codex 缺 11 项、OpenCode/DeepSeek 各缺 10 项真实共同基线；T23 不完成、不归档。
+- [x] 后续重试已跑通 OpenCode `1.18.31` 与 DeepSeek Harness `0.1.5-rc.2` 隔离真实探针，并形成 2026-09-19 脱敏证据。
+- [x] 根据失败修复 bridge/adapter：语义指纹去重、并发合并、幂等冲突、受控重试、epoch 恢复、inbox claim/fetch/presented/ACK 分离及宿主身份/生命周期脱敏。
+- [x] 修复 Codex Windows 探针的临时目录 ACL 与 UTF-8 解码问题；复跑证明初始化和 session isolation，空 thread resume/fork 仍如实为 `-32600`。
+- [ ] `release_check.py` 仍按设计返回 1：三个首发宿主各缺其余 10 项真实共同基线；T23 不完成、不归档。
 
 ## 结束与交接
 

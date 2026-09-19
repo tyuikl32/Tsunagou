@@ -28,3 +28,8 @@
 - [ ] PRD逐项标记并附证据；没有产品实现前不得填写已通过。
 - [ ] 在Trellis journal记录结果、限制、依赖影响与下一任务。
 - [ ] 检查通过后完成/归档，更新任务依赖引用；发布、push、用户重大决定按已有授权处理。
+
+## 2026-09-19 T23 补证
+
+- `opencode-ai 1.18.31` 纯 headless 服务真实探针复跑成功；健康、项目端点、同目录 session 隔离、详情、fork、history 与 typed session API 均可观察。
+- adapter 现在必须同时具备 installation ID 与脱敏 conversation digest 才接受 capability evidence；剩余 10 项真实 bridge baseline 继续 unknown。

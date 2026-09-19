@@ -1,6 +1,6 @@
 # Adapter and TypeScript guidance
 
-Status: approved design, no adapter implementation yet. Sources: [adapter plan](../../../docs/implementation/adapters.md), [wire protocol](../../../docs/implementation/protocol.md), [runtime prompts](../../../docs/implementation/runtime-prompts.md).
+Status: diagnostic adapters and shared bridge implemented; formal live baseline remains gated. Sources: [adapter plan](../../../docs/implementation/adapters.md), [wire protocol](../../../docs/implementation/protocol.md), [runtime prompts](../../../docs/implementation/runtime-prompts.md).
 
 ## Pre-Development Checklist
 
@@ -19,3 +19,57 @@ Capabilities are supported/unsupported/unknown with evidence and advisory/observ
 ## Quality Check
 
 Run common Vitest/simulator conformance, cross-language schema fixtures, secret isolation and real host lifecycle tests. All 11 baseline capabilities must pass per host/version. Save sanitized evidence, install/uninstall instructions, unsupported enhancements and exact dependency versions.
+
+## Scenario: authenticated replay across reconnect
+
+### 1. Scope / Trigger
+
+This contract applies when bridge command deduplication, retry, connection epoch, inbox delivery, or capability evidence changes. It prevents a cached result from bypassing current credentials and prevents an unknown external result from being executed twice.
+
+### 2. Signatures
+
+- `BridgeClient.send<T>(envelope: CommandEnvelope, kind?: CommandKind): Promise<T>`
+- `BridgeClient.reconnect(connection: BridgeConnection): boolean`
+- `BridgeClient.pullInbox(source, cursor?)`, `markInboxPresented(...)`, `ackInbox(...)`
+
+### 3. Contracts
+
+- Within one connection epoch, the same `command_id` plus canonical protocol/schema/kind/payload fingerprint may share an in-flight or completed result; changed input returns `idempotency_conflict`.
+- A higher connection epoch clears completed local results. A replay must reach the authoritative transport with the new epoch and current credential; server-side idempotency returns the original result.
+- Inbox claim, body fetch, presentation evidence, and ACK remain distinct and recipient-scoped. ACK requires a successful presentation record.
+- Capability evidence is a non-empty sanitized reference. `supported` with missing or empty evidence remains not ready.
+
+### 4. Validation & Error Matrix
+
+- lower epoch or different session -> `stale_connection_epoch`
+- same epoch with changed capabilities -> `connection_epoch_conflict`
+- reused command ID with changed fingerprint -> `idempotency_conflict`
+- typed 4xx, unknown error, or unknown external result -> no automatic retry
+- explicit 429/503, queue/transient code, or recognized connection-reset/timeout -> bounded retry
+
+### 5. Good/Base/Bad Cases
+
+- Good: same command is coalesced within epoch 1; after reconnect to epoch 2 it reaches transport once with epoch 2 and receives the authoritative replay result.
+- Base: identical reconnect response returns `false` and does not rotate state.
+- Bad: returning epoch 1's local cached success after epoch 2, retrying `unknown_external_result`, auto-ACKing on fetch, or accepting `evidence: ""`.
+
+### 6. Tests Required
+
+- Assert concurrent identical commands call transport once and changed payload conflicts.
+- Assert post-reconnect replay calls transport with the new epoch.
+- Assert typed/unknown failures are not retried and explicit transient failures are bounded.
+- Assert fetch/presented/ACK ordering and duplicate suppression.
+- Assert empty evidence leaves every claimed capability missing.
+
+### 7. Wrong vs Correct
+
+```typescript
+// Wrong: old local success bypasses epoch-2 authentication.
+bridge.reconnect(epoch2);
+return completed.get(commandId);
+
+// Correct: clear completed local results; preserve the fingerprint and let the
+// authoritative service fence epoch 2 and deduplicate the command ID.
+bridge.reconnect(epoch2); // clears completed results
+return transport.send(envelope, { connectionEpoch: 2, authorization });
+```
