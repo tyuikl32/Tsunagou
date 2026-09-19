@@ -1,4 +1,5 @@
 import json
+import tomllib
 from pathlib import Path
 
 
@@ -29,3 +30,11 @@ def test_root_check_runs_each_workspace_package_check() -> None:
     assert workspace_packages
     assert all(workspace_package.get("scripts", {}).get("check") for workspace_package in workspace_packages)
     assert "composite" not in tsconfig["compilerOptions"]
+
+
+def test_pytest_entrypoint_includes_repo_tools() -> None:
+    root = Path(__file__).parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    pytest_options = project["tool"]["pytest"]["ini_options"]
+
+    assert "." in pytest_options["pythonpath"]

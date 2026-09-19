@@ -1,0 +1,76 @@
+{
+  "host": "codex",
+  "version": "codex-cli 0.155.0-alpha.9",
+  "scope": "disposable_no_model_turn",
+  "checks": {
+    "initialize": true,
+    "same_directory_distinct": true,
+    "resume": {
+      "status": "failed",
+      "code": -32600,
+      "reason": "empty_thread_not_persisted_or_api_precondition"
+    },
+    "fork": {
+      "status": "failed",
+      "code": -32600,
+      "reason": "empty_thread_not_persisted_or_api_precondition"
+    },
+    "compact": {
+      "status": "unknown",
+      "reason": "requires_model_history_and_authenticated_model_call"
+    },
+    "clear": {
+      "status": "unknown",
+      "reason": "no_verified_native_clear_surface"
+    },
+    "installation_profile": {
+      "status": "unknown",
+      "reason": "adapter_installation_identity_not_implemented"
+    }
+  },
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "initialize",
+        "same_directory_distinct"
+      ]
+    },
+    "identity.continuity_evidence": {
+      "status": "unknown"
+    },
+    "context.project_read": {
+      "status": "unknown"
+    },
+    "command.typed_tools": {
+      "status": "unknown"
+    },
+    "task.lifecycle": {
+      "status": "unknown"
+    },
+    "cognition.report": {
+      "status": "unknown"
+    },
+    "contract.participation": {
+      "status": "unknown"
+    },
+    "inbox.pull_fetch_ack": {
+      "status": "unknown"
+    },
+    "response.structured": {
+      "status": "unknown"
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "unknown"
+    },
+    "delivery.deduplicate": {
+      "status": "unknown"
+    }
+  },
+  "ready": false,
+  "identity_digests": [
+    "3922a2a9336e17ae29830f0ad198885fa00d5391f64934b304ec07c7002ba94c",
+    "c5a1d864f35b4cedbdb58c9119198dd50ef17f529b4950d4688bde2b8ed90b08"
+  ],
+  "stderr_lines_discarded": 4
+}

@@ -50,3 +50,4 @@
 - DeepSeek 的认证与 Web RPC 依据官方 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)、[browser-auth.ts](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/connection/src/browser-auth.ts) 和 [session-controller](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/api/session-controller/src/index.ts)；token、cookie、session 原始 ID 不进入证据。
 - ZCode 证据文件 `docs/research/evidence/zcode-2026-09-18.json` 由 `tools/conformance/probes/zcode/probe.py` 生成，明确记录 `executable_not_found` 和 11 项 unknown；非官方客户端不进入宿主支持证据。
 - MCP 共享服务的 Python SDK、bridge 使用的 TypeScript SDK 和具体版本在 T02/T17 锁定；本矩阵只记录研究状态。
+- 2026-09-19 首轮续测的脱敏 JSON 为 [Codex](evidence/codex-2026-09-19T160205.json)、[OpenCode](evidence/opencode-2026-09-19T160232.json)、[DeepSeek Harness](evidence/deepseek-2026-09-19T160700.json)。三份均保持 `ready: false`，只证明宿主原生会话隔离；CLI `ticket_required` 和 HTTP `handler_not_registered` 阻断真实 HostSession 及后续 10 项共同基线，不能据此宣称多 Agent 协作通过。

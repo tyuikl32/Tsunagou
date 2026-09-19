@@ -4,6 +4,8 @@ Sources: [validation](../../../docs/implementation/validation.md), [command cata
 
 T01 establishes Ruff/mypy/pytest and exact invocations in project configuration. T03 establishes schema/codegen fixtures. Run the relevant task checks, then required shared gates; do not invent command success before tooling exists.
 
+The documented `uv run pytest -q` console entrypoint must collect the same repository tests as `uv run python -m pytest -q`. Tests import local `tools.*` probe modules, which are not included in the published wheel; keep the repository root in pytest's configured `pythonpath` and check that configuration in the toolchain policy test. Do not treat a passing `python -m pytest` run alone as proof that the documented console entrypoint works.
+
 Every public command must have one registered policy, typed request/response and positive/negative authorization tests. JSON Schema is authoritative; generated files and OpenAPI must regenerate without diff. Test ownership, stale epochs, all-or-none mutations and recipient-only visibility.
 
 Use injected clocks for TTL/backoff and real SQLite/Git fixtures for persistence. Keep Windows release-blocking and record actual macOS/Linux coverage. Four host simulator passes do not replace four live-host records. Research outcome gates are separate from engineering correctness.
