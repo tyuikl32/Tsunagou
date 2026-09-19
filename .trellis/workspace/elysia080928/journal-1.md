@@ -41,3 +41,11 @@
 - 独立复现 `uv run pytest -q` 的 `tools` 导入失败；在 `pyproject.toml` 配置 pytest 仓库根路径，新增策略回归测试。`uv run --no-sync pytest -q` 与带同盘缓存的文档原命令均退出 0（1 skipped）。backend 质量规范已记录此入口契约。
 - T23 仍为 `in_progress`，原负责人不变；正式基线和 release gate 不伪造通过，未 push/发布。
 - 提交前复核：Ruff、mypy、协议、TypeScript、Vitest 28/28、文档与 T23 校验通过；`release_check.py` 仍因三个宿主各缺 10 项正式共同基线退出 1，检查逻辑未改。
+
+## 2026-09-19 - Codex 单宿主十项专项试验
+
+- 用户决定先抢跑 Codex 单宿主验证；保留原定三宿主首发门禁，不宣布 Codex-only 正式发布。
+- 当前工作区已有尚未提交的 bridge/身份安全改动：旧 epoch 在途请求不得污染新连接缓存，缺十项证据不得 ready/任命 main，票据仅存哈希，HTTP 不再信调用者自报身份；这些是代码层改动，不是 live baseline 证据。
+- `codex-cli 0.155.0-alpha.9.2` 隔离无模型探针退出 0；只证实双 thread 原生隔离，空 thread resume/fork 为 `-32600`。保存脱敏 JSON 于 `docs/research/evidence/codex-2026-09-19T170100.json`，仓库副本与探针输出解析内容一致。
+- `tsunagou agent enroll --adapter codex --mode attach` 退出 0 但返回 `ticket_required`。没有票据兑换、HostSession 或 Codex main/worker 协作；其余十项均是前置阻断，非实测失败。逐项复测指导见 `docs/acceptance/codex-pilot-2026-09-19.md`。
+- Codex adapter + bridge Vitest 17/17、Python 全量 pytest（1 skipped）、Ruff、mypy、协议校验（106/111）、六 workspace TypeScript 检查退出 0。`release_check.py` 仍退出 1，三个首发宿主各缺十项；T18/T23 保持 in_progress，未 commit/push/发布。

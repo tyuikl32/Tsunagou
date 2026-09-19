@@ -32,3 +32,9 @@
 
 - `codex-cli 0.155.0-alpha.9` disposable app-server 探针复跑成功；Windows work-root/UTF-8 失败已修复。
 - bridge 的任务命令去重、epoch 恢复和 inbox 分阶段测试已通过；这些 SDK 测试不能替代剩余 10 项 Codex 真实会话 baseline。
+
+## 2026-09-19 Codex 单宿主专项续测
+
+- `codex-cli 0.155.0-alpha.9.2` 的隔离无模型探针退出 0：初始化及两个新 thread 的身份隔离通过；空 thread resume/fork 返回 `-32600`，其余十项保持 unknown。脱敏 JSON 见 `docs/research/evidence/codex-2026-09-19T170100.json`。
+- `tsunagou agent enroll --adapter codex --mode attach` 退出 0 但仅返回 `ticket_required`；无 ticket 兑换、HostSession 或 main/worker 真实协作，十项正式测试均因前置条件未满足而未进入。逐项复测顺序见 `docs/acceptance/codex-pilot-2026-09-19.md`。
+- Codex adapter + bridge Vitest 17/17 通过是代码回归，不是宿主能力证据。T18 不标完成，不提升 capability 状态；原负责人 `tyuikl32` 未变。

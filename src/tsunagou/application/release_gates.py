@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-BASELINE_CAPABILITIES = (
-    "identity.session_isolation", "identity.continuity_evidence", "context.project_read",
-    "command.typed_tools", "task.lifecycle", "cognition.report", "contract.participation",
-    "inbox.pull_fetch_ack", "response.structured", "recovery.idempotent_reconnect",
-    "delivery.deduplicate",
+from tsunagou.shared_kernel.baseline import (
+    BASELINE_CAPABILITIES as BASELINE_CAPABILITIES,
 )
+from tsunagou.shared_kernel.baseline import (
+    missing_baseline_capabilities as missing_baseline_capabilities,
+)
+
 # ZCode remains an implemented/diagnostic adapter, but is deferred from the
 # first release gate until an official host and a reproducible baseline exist.
 REQUIRED_HOSTS = ("codex", "opencode", "deepseek")
@@ -29,21 +30,6 @@ class GateReport:
 
 def require_live_baseline(evidence: Mapping[str, Any]) -> bool:
     return not missing_baseline_capabilities(evidence)
-
-
-def missing_baseline_capabilities(evidence: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return the exact baseline rows that prevent a host from becoming ready."""
-    rows = evidence.get("baseline")
-    if not isinstance(rows, Mapping):
-        return BASELINE_CAPABILITIES
-    return tuple(
-        name for name in BASELINE_CAPABILITIES
-        if not (
-            isinstance(rows.get(name), Mapping)
-            and rows[name].get("status") == "supported"
-            and bool(rows[name].get("evidence_refs"))
-        )
-    )
 
 
 def evaluate_host_matrix(matrix: Mapping[str, Mapping[str, Any]]) -> GateReport:

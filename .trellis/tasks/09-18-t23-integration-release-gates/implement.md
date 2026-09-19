@@ -56,6 +56,29 @@
 - 真实 bridge 接入需要 CLI 用户控制凭据、私下票据兑换、服务端认证、HostSession 绑定及注册领域 handler，跨 T16/T17/T18–T21；未在 T23 验收任务里以未认证的 HTTP 请求头拼接替代实现。三个首发宿主的正式基线仍各缺 10 项，T23 保持 `in_progress`。
 - 最终复核：Ruff、mypy（40 files）、协议校验（106 policies / 111 schemas）、6 workspace TypeScript、Vitest 28/28、文档校验和 T23 上下文校验均退出 0。`release_check.py` 仍退出 1，仅报告 Codex/OpenCode/DeepSeek 各缺其余 10 项 live baseline；没有修改检查逻辑。
 
+### 2026-09-19 Codex 单宿主快速试验
+
+- 用户要求先聚焦 Codex 的其余十项，不把这项试验误报为三宿主首发通过。试验记录：`docs/acceptance/codex-pilot-2026-09-19.md`；新探针 JSON：`docs/research/evidence/codex-2026-09-19T170100.json`。
+- 本机 Codex 已更新为 `0.155.0-alpha.9.2`；无模型探针退出 0，仍只证明原生 thread 隔离，空 thread resume/fork 返回 `-32600`。`agent enroll --adapter codex --mode attach` 退出 0 但结果为 `ticket_required`；没有 ticket 兑换、两个真实 HostSession 或第 8 节十项正式操作。
+- 定向 Codex adapter + bridge Vitest 17/17、Python 全量 pytest（1 skipped）、Ruff、mypy、协议校验和六 workspace TypeScript 检查退出 0。`release_check.py` 退出 1，Codex 及另两个首发宿主各缺十项；检查规则未改。
+- 工作区另有正在审查的恢复/身份安全改动，尚未提交，不能把本地测试通过说成 Codex 真机协作已通过。T23 仍 `in_progress`，原负责人 `tyuikl32` 不变。
+
+#### Bug Analysis: 旧 epoch 在途结果污染新连接
+
+1. **根因类别**：D（并发测试缺口）+ E（隐含“重连时没有在途请求”的假设）。`reconnect()` 只清理已完成缓存，没有隔离 `inFlight`；旧 Promise 可能被新 epoch 请求复用。
+2. **修复过程**：首次真实验收复核只发现风险、未修改；本轮在原拥有缓存的 bridge-sdk 处让更高 epoch 清理在途映射，旧请求完成/重试前检查连接代次，旧请求的 finally 只清理自身映射，避免删除新请求。没有通过 HTTP/宿主真机验证，不能夸大。
+3. **防复发机制**：P0 并发回归同时保持旧/新 transport 请求，先释放旧响应，断言旧请求 `stale_connection_epoch`、新请求仍需新凭据/epoch 并独立去重（已加入 Vitest）；P1 真机断线重连时验证服务端幂等（未完成）。规则已写入 `.trellis/spec/adapters/index.md`。
+4. **系统性扩展**：其他跨代缓存（inbox、Lease、认证上下文）也需逐项审查，不能因为同步单元测试绿就认为断线时序安全。
+5. **知识固化**：上述 spec 已更新；仓库没有 `src/templates/markdown/spec/` 可同步。暂不提交本轮改动。
+
+#### Bug Analysis: 自报身份和布尔值 ready
+
+1. **根因类别**：B（CLI/HTTP/authority/adapter 身份契约未贯通）+ D（只测服务对象，缺真实 HTTP/宿主链路）。默认 HTTP 接受调用者自填 principal 请求头；`baseline_ok: true` 可直接标 ready，忽略十项缺口。
+2. **修复过程**：本轮将 HTTP 身份改为可配置凭据解析、默认拒绝业务请求；服务端逐项要求 11 个 `supported` 和非空证据引用，degraded 无正式基础 Grant、不能任命 main；票据磁盘状态只留哈希。此举不等于已验证证据来源，也未完成 T 主体兑换或领域 handler。
+3. **防复发机制**：P0 测试无 bearer、旧 epoch、degraded、U/Agent 凭据隔离、票据/会话密钥不落盘（已有单元断言）；P0 真 Codex 两会话私下兑换和跨身份拒绝（未完成）；P1 所有业务 handler 做 grant/scope/revision 检查（未完成）。可执行契约已写入 `.trellis/spec/backend/entrypoint-contracts.md`。
+4. **系统性扩展**：`mcp_tools()` 名单、Schema、OpenAPI、真实 daemon 配置均需同一身份来源；不应在某个 transport 上补一个“可信 header”旁路。
+5. **知识固化**：跨层检查清单已更新；没有 spec 模板副本可同步。暂不提交本轮改动。
+
 #### Bug Analysis: pytest 命令入口不一致
 
 1. 根因：D（测试覆盖缺口）兼 E（隐含假设）。此前只用 `python -m pytest` 可从当前目录导入 `tools.*`；文档中的 `pytest` console entrypoint 不保证把仓库根目录放进 `sys.path`。

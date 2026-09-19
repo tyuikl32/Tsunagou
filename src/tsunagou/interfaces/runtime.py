@@ -14,6 +14,14 @@ Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)
+class PrincipalContext:
+    kind: str
+    principal_id: str
+    session_id: str | None = None
+    connection_epoch: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DispatchResponse:
     command_kind: str
     command_hash: str
@@ -33,12 +41,12 @@ class CommandDispatcher:
 
     def dispatch(
         self, command_kind: str, envelope: dict[str, Any], *,
-        principal_kind: str, principal_id: str,
+        principal: PrincipalContext,
     ) -> DispatchResponse:
         policy = self.registry.get(command_kind)
         if policy is None:
             raise KeyError("unknown_command")
-        if policy["principal"] != principal_kind:
+        if policy["principal"] != principal.kind:
             raise PermissionError("principal_kind_denied")
         handler = self.handlers.get(command_kind)
         if handler is None:
@@ -48,12 +56,17 @@ class CommandDispatcher:
             raise ValueError("malformed_command_envelope")
         semantic = {
             "command_kind": command_kind,
-            "principal_kind": principal_kind,
-            "principal_id": principal_id,
+            "principal_kind": principal.kind,
+            "principal_id": principal.principal_id,
             "payload": envelope["payload"],
         }
         command_hash = canonical_digest(semantic)
-        result = handler(envelope["payload"], {"principal_id": principal_id, "command_hash": command_hash})
+        result = handler(envelope["payload"], {
+            "principal_id": principal.principal_id,
+            "session_id": principal.session_id,
+            "connection_epoch": principal.connection_epoch,
+            "command_hash": command_hash,
+        })
         return DispatchResponse(command_kind, command_hash, result)
 
     def mcp_tools(self) -> list[dict[str, Any]]:

@@ -6,7 +6,7 @@
 
 | 宿主 | 本机状态 | 目标接入面 | 结论 |
 |---|---|---|---|
-| Codex CLI/App Server | codex 0.155.0-alpha.9 可执行 | app-server --stdio、thread lifecycle、MCP | 已取得无模型轮次的协议/身份探针；空 thread resume/fork 的宿主前置条件仍不满足，完整共同基线仍 unknown |
+| Codex CLI/App Server | codex 0.155.0-alpha.9.2 可执行 | app-server --stdio、thread lifecycle、MCP | 已取得无模型轮次的协议/身份探针；空 thread resume/fork 的宿主前置条件仍不满足，完整共同基线仍 unknown |
 | OpenCode | `opencode-ai 1.18.31` 可通过 npm 临时运行 | headless server REST、Session、fork、MCP/OpenAPI | 已完成无模型轮次真实 probe；完整共同基线仍 unknown |
 | ZCode Agent | 未安装；公开 npm/GitHub 结果只有非官方客户端或社区桥接 | z.ai 原生 session/hook/MCP | unknown；没有可锁定的官方 CLI/API 版本，hook 资料要求变更后新会话，不能假设热生效 |
 | DeepSeek Harness | `@deepseek-ai/dsh 0.1.5-rc.2` 可通过 npm 临时运行 | deepseek-ai/deepseek-harness Web RPC、session/tool 扩展 | 已完成临时家目录的无模型真实 probe；完整共同基线仍 unknown |
@@ -18,7 +18,7 @@
 | capability | Codex | OpenCode | ZCode | DeepSeek Harness | 证据 |
 |---|---|---|---|---|---|
 | identity.session_isolation | supported（两个 thread digest 不同） | supported（两个 session 与 fork digest 不同） | unknown | supported（两个同目录 session digest 不同） | 各宿主 disposable/temporary-home probe |
-| identity.continuity_evidence | observed（resume API 面） | unknown | unknown | unknown | 不把 API 存在当完整 ready |
+| identity.continuity_evidence | unknown（空 thread 的 resume/fork 为 `-32600`） | unknown | unknown | unknown | 不把 API 存在当连续性证据 |
 | context.project_read | unknown | unknown | unknown | unknown | 需 bridge |
 | command.typed_tools | unknown | unknown | unknown | unknown | 需共享 MCP |
 | task.lifecycle | unknown | unknown | unknown | unknown | 需 T08/T17 |
@@ -44,10 +44,11 @@
 - 探针入口在 tools/conformance/probes/<host>/；会启动宿主的探针使用一次性目录和独立环境，外部 Web 服务探针必须由调用者用临时 Harness home 启动，凭据不写入证据。
 - tools/conformance/probes/common.py 的 require_baseline 只有在 11 项全部 supported 且每项有 evidence_refs 时返回 true。
 - 未安装宿主仍要保留缺口记录；不能用模拟器或模型 API 将 unknown 改成 supported。
-- Codex 最新证据由 `tools/conformance/probes/codex/probe.py` 对 `codex-cli 0.155.0-alpha.9` 的 disposable app-server 产生；Windows 探针使用显式可写 work root 和 UTF-8 容错解码。证据文件为 `docs/research/evidence/codex-2026-09-19.json`，只把实际观察到的 session isolation 标为 supported。
+- Codex 最新无模型证据由 `tools/conformance/probes/codex/probe.py` 对 `codex-cli 0.155.0-alpha.9.2` 的 disposable app-server 产生；Windows 探针使用显式可写 work root 和 UTF-8 容错解码。证据文件为 `docs/research/evidence/codex-2026-09-19T170100.json`，只把实际观察到的 session isolation 标为 supported；此前 `alpha.9` 的记录仍保留供版本对照。
 - OpenCode 最新证据由 `tools/conformance/probes/opencode/probe.py` 对 `opencode-ai 1.18.31` headless server 产生；它只发送 session/project/fork/history/doc 请求，不发送模型 prompt。证据文件为 `docs/research/evidence/opencode-2026-09-19.json`。
 - DeepSeek 最新证据由 `tools/conformance/probes/deepseek/probe.py` 对官方 `@deepseek-ai/dsh 0.1.5-rc.2` 产生；服务使用临时 `DSH_HOME`/`DSH_AGENTS_HOME`，一次性 token 仅在启动编排器内存与探针子进程环境中存在，通过官方 token→HttpOnly cookie 流程调用 `session/create`、`session/list`，不发送模型 prompt。证据文件为 `docs/research/evidence/deepseek-2026-09-19.json`；探针不接受用户持久家目录作为运行环境。
 - DeepSeek 的认证与 Web RPC 依据官方 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)、[browser-auth.ts](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/connection/src/browser-auth.ts) 和 [session-controller](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/api/session-controller/src/index.ts)；token、cookie、session 原始 ID 不进入证据。
 - ZCode 证据文件 `docs/research/evidence/zcode-2026-09-18.json` 由 `tools/conformance/probes/zcode/probe.py` 生成，明确记录 `executable_not_found` 和 11 项 unknown；非官方客户端不进入宿主支持证据。
 - MCP 共享服务的 Python SDK、bridge 使用的 TypeScript SDK 和具体版本在 T02/T17 锁定；本矩阵只记录研究状态。
 - 2026-09-19 首轮续测的脱敏 JSON 为 [Codex](evidence/codex-2026-09-19T160205.json)、[OpenCode](evidence/opencode-2026-09-19T160232.json)、[DeepSeek Harness](evidence/deepseek-2026-09-19T160700.json)。三份均保持 `ready: false`，只证明宿主原生会话隔离；CLI `ticket_required` 和 HTTP `handler_not_registered` 阻断真实 HostSession 及后续 10 项共同基线，不能据此宣称多 Agent 协作通过。
+- Codex `0.155.0-alpha.9.2` 的 [新无模型探针](evidence/codex-2026-09-19T170100.json)与 [十项专项记录](../acceptance/codex-pilot-2026-09-19.md)再次确认仅原生隔离有证据，`ready: false`；它不替代项目 bridge/HostSession 验收。

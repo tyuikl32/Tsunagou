@@ -306,6 +306,7 @@ export class BridgeClient {
     // A higher epoch must re-enter the authoritative transport so current
     // credentials and epoch fencing are checked before an idempotent replay.
     this.completed.clear();
+    this.inFlight.clear();
     return true;
   }
 
@@ -322,19 +323,23 @@ export class BridgeClient {
     if (this.completed.has(envelope.command_id)) return this.completed.get(envelope.command_id) as T;
     const pending = this.inFlight.get(envelope.command_id);
     if (pending !== undefined) return pending as Promise<T>;
+    const connection = this.connectionState;
 
     const operation = (async (): Promise<T> => {
       let lastError: unknown;
       for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+        if (this.connectionState !== connection) throw new Error("stale_connection_epoch");
         try {
           const result = await this.transport.send<T>(envelope, {
-            sessionId: this.connectionState.sessionId,
-            connectionEpoch: this.connectionState.connectionEpoch,
+            sessionId: connection.sessionId,
+            connectionEpoch: connection.connectionEpoch,
             authorization: this.credentialProvider?.(),
           });
+          if (this.connectionState !== connection) throw new Error("stale_connection_epoch");
           this.completed.set(envelope.command_id, result);
           return result;
         } catch (error) {
+          if (this.connectionState !== connection) throw new Error("stale_connection_epoch");
           lastError = error;
           if (!isRetryableFailure(error) || attempt >= this.maxRetries) break;
           const retryAfterMs = failureDetails(error).retry_after_ms ?? this.retryDelayMs;
@@ -349,7 +354,7 @@ export class BridgeClient {
     try {
       return await operation;
     } finally {
-      this.inFlight.delete(envelope.command_id);
+      if (this.inFlight.get(envelope.command_id) === operation) this.inFlight.delete(envelope.command_id);
     }
   }
 

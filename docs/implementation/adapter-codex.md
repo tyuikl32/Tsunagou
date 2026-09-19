@@ -18,6 +18,8 @@ T02 当前唯一的本机证据是 `codex-cli 0.154.0-alpha.6.2` 的 disposable 
 
 当前 T02 证据：`identity.session_isolation` 有双 thread digest；resume/fork 是空 thread 的失败前置条件，compact/clear/profile identity 仍 unknown；任务、认知、契约、inbox、响应、重连和去重需要 bridge 真机测试。因此当前 Codex 适配器是 diagnostic-only，不能报告为正式共同基线支持。
 
+2026-09-19 对本机 `codex-cli 0.155.0-alpha.9.2` 的复测结果与十项后续操作见 [Codex 单宿主试验](../acceptance/codex-pilot-2026-09-19.md)；新版本仍只证明原生会话隔离，真实 `agent enroll` 停在 `ticket_required`。
+
 生命周期事件只保留 `resume`、`compact`、`new`、`clear`、`fork`、`stop` 等统一语义，并携带来源 `codex_app_server` 或 `codex_cli`；适配器不把事件直接改写为领域状态。没有可验证的 native hook、wake、tool gate、presented evidence 或 managed stop 时，这些增强保持 unknown。
 
 ## 验证命令

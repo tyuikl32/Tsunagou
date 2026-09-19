@@ -74,6 +74,34 @@ describe("bridge session isolation and recovery", () => {
     expect(epochs).toEqual([1, 2]);
   });
 
+  it("does not let an old in-flight result bypass the reconnected epoch", async () => {
+    const epochs: number[] = [];
+    let releaseOld!: () => void;
+    let releaseNew!: () => void;
+    const oldBlocked = new Promise<void>((resolve) => { releaseOld = resolve; });
+    const newBlocked = new Promise<void>((resolve) => { releaseNew = resolve; });
+    const bridge = createBridge({
+      async send<T>(_envelope, context) {
+        const epoch = context?.connectionEpoch ?? -1;
+        epochs.push(epoch);
+        await (epoch === 1 ? oldBlocked : newBlocked);
+        return { epoch } as T;
+      },
+    }, { connection: { sessionId: "session-a", connectionEpoch: 1, capabilities: new Set() } });
+    const envelope = { command_id: "cmd-race", protocol_version: "1", schema_bundle_digest: "d", payload: {} };
+    const oldRequest = bridge.send(envelope, "task.claim");
+    bridge.reconnect({ sessionId: "session-a", connectionEpoch: 2, capabilities: new Set() });
+    const newRequest = bridge.send(envelope, "task.claim");
+    releaseOld();
+    await expect(oldRequest).rejects.toThrow("stale_connection_epoch");
+    const duplicateNew = bridge.send(envelope, "task.claim");
+    expect(epochs).toEqual([1, 2]);
+    releaseNew();
+    await expect(Promise.all([newRequest, duplicateNew])).resolves.toEqual([{ epoch: 2 }, { epoch: 2 }]);
+    await expect(bridge.send(envelope, "task.claim")).resolves.toEqual({ epoch: 2 });
+    expect(epochs).toEqual([1, 2]);
+  });
+
   it("deduplicates concurrent commands and rejects command-id reuse with different input", async () => {
     let calls = 0;
     let release!: () => void;

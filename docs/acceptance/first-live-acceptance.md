@@ -2,6 +2,8 @@
 
 本文件是给项目维护者和验收人员使用的操作记录模板。它的目标是把当前剩余的 T18–T24 任务推进到“有真实证据可关闭”，而不是只运行一遍单元测试。
 
+2026-09-19 的 [Codex 单宿主试验记录](codex-pilot-2026-09-19.md)逐项说明其余十项当前为何被接入链路阻断，以及下次复测顺序；它不改变下文三宿主首发门禁。
+
 执行目录假定为 `D:\Tsunagou`，宿主为 Windows PowerShell。路径、端口、项目目录和版本必须按实际机器替换；命令中的 `<...>` 不是可以原样提交的值。
 
 ## 1. 当前未完成任务
@@ -33,7 +35,9 @@ T01–T17、T22 已有代码和测试证据。完整任务依赖与 Trellis 文�
 
    `identity.session_isolation`、`identity.continuity_evidence`、`context.project_read`、`command.typed_tools`、`task.lifecycle`、`cognition.report`、`contract.participation`、`inbox.pull_fetch_ack`、`response.structured`、`recovery.idempotent_reconnect`、`delivery.deduplicate`。
 
-5. 当前 `tsunagou agent enroll` 是外壳：它会返回 `status: ticket_required`，这表示桥接接入尚未完成，不能当作 Agent 已加入。只有真实 bridge 兑换票据、建立独立 session 并通过基线后，才算接入。
+   其中前 4 项（`identity.session_isolation`、`identity.continuity_evidence`、`context.project_read`、`command.typed_tools`）是**准入能力**：会话 `ready` 只看这 4 项，可由宿主原生探针 + adapter 安装自测在入会前真实预攒。其余 7 项是**运营能力**，必须由 ready 会话经 Tsunagou 真实执行后产生。`release_check.py` 仍要求三个首发宿主各自 11 项全部有真实 `evidence_refs`；`ready` 不等于首发通过。
+
+5. `tsunagou agent enroll` 只签发一次性票据并写入 0600 私有文件（不打印到 stdout），不代表 Agent 已加入。只有宿主 bridge 从该文件领取票据、通过 `agent.enroll` 兑换、建立独立 session 并通过 4 项准入能力后，才算接入。
 
 ## 3. 准备验收工作区
 

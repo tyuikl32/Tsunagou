@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tsunagou.shared_kernel.baseline import missing_admission_capabilities
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 
@@ -45,6 +46,7 @@ def _now() -> int:
 @dataclass(slots=True)
 class EnrollmentTicket:
     ticket_id: str
+    secret_hash: str
     installation_digest: str
     conversation_digest: str
     expires_at: int
@@ -116,7 +118,20 @@ class AuthorityService:
         if self.state_path is None or not self.state_path.is_file():
             return
         raw = json.loads(self.state_path.read_text(encoding="utf-8"))
-        self.tickets = {key: EnrollmentTicket(**value) for key, value in raw.get("tickets", {}).items()}
+        self.tickets = {}
+        migrated_ticket = False
+        for key, value in raw.get("tickets", {}).items():
+            if "secret_hash" in value:
+                ticket = EnrollmentTicket(**value)
+            else:
+                # Older local state used the redeemable secret as its key and ID.
+                # Rewrite it immediately so a read does not leave that secret on disk.
+                migrated_ticket = True
+                ticket = EnrollmentTicket(
+                    new_id(), _token_hash(key), value["installation_digest"],
+                    value["conversation_digest"], value["expires_at"], value.get("used", False),
+                )
+            self.tickets[ticket.secret_hash] = ticket
         self.agents = {key: Agent(**value) for key, value in raw.get("agents", {}).items()}
         self.sessions = {
             key: Session(**{**value, "reconnect_nonce_hash": value.get("reconnect_nonce_hash", "")})
@@ -128,6 +143,8 @@ class AuthorityService:
         }
         self.main_agent_id = raw.get("main_agent_id")
         self.authority_epoch = raw.get("authority_epoch", 1)
+        if migrated_ticket:
+            self._save()
 
     def _save(self) -> None:
         if self.state_path is None:
@@ -144,13 +161,14 @@ class AuthorityService:
 
     def issue_ticket(self, installation_id: str, conversation_id: str, ttl_seconds: int = 600) -> str:
         with self._lock:
-            ticket_id = new_id()
-            self.tickets[ticket_id] = EnrollmentTicket(
-                ticket_id, canonical_digest({"installation_id": installation_id}),
+            secret = secrets.token_urlsafe(32)
+            secret_hash = _token_hash(secret)
+            self.tickets[secret_hash] = EnrollmentTicket(
+                new_id(), secret_hash, canonical_digest({"installation_id": installation_id}),
                 canonical_digest({"conversation_id": conversation_id}), _now() + ttl_seconds,
             )
             self._save()
-            return ticket_id
+            return secret
 
     def redeem_ticket(
         self,
@@ -163,7 +181,7 @@ class AuthorityService:
     ) -> EnrollmentReceipt:
         del nonce  # the ticket itself is single-use; nonce is an adapter correlation field
         with self._lock:
-            ticket = self.tickets.get(ticket_id)
+            ticket = self.tickets.get(_token_hash(ticket_id))
             if ticket is None or ticket.used or ticket.expires_at < _now():
                 raise ValueError("invalid_or_consumed_enrollment_ticket")
             installation_digest = canonical_digest({"installation_id": installation_id})
@@ -175,30 +193,68 @@ class AuthorityService:
                 for session in self.sessions.values()
             ):
                 raise ValueError("conversation_already_attached")
+            snapshot = baseline or {}
+            status = session_status(snapshot)
+            snapshot_digest = canonical_digest(snapshot)
             ticket.used = True
             agent = Agent(new_id(), ticket.installation_digest)
             session_id = new_id()
             token = secrets.token_urlsafe(32)
             reconnect_nonce = secrets.token_urlsafe(24)
-            snapshot = baseline or {}
             session = Session(
                 session_id, agent.agent_id, ticket.conversation_digest, _token_hash(token),
                 _token_hash(reconnect_nonce),
-                status="ready" if snapshot.get("baseline_ok", False) else "degraded",
-                baseline={"status": session_status(snapshot), "digest": canonical_digest(snapshot)},
+                status=status,
+                baseline={"status": status, "digest": snapshot_digest},
             )
+            agent.status = "active" if status == "ready" else "provisioning"
             self.agents[agent.agent_id] = agent
             self.sessions[session_id] = session
-            base_grant = Grant(
-                new_id(), "agent_base", agent.agent_id, session_id, new_id(), None, None, None, None,
-                frozenset({"coordination.read", "coordination.report"}), {"agent_id": agent.agent_id},
-            )
-            self.grants[base_grant.grant_id] = base_grant
+            if status == "ready":
+                self._issue_base_grant(session)
             self._save()
             return EnrollmentReceipt(
                 agent.agent_id, session_id, session.connection_epoch, session.status,
                 token, reconnect_nonce,
             )
+
+    def redeem_rebind_ticket(
+        self, ticket_id: str, installation_id: str, conversation_id: str, *,
+        target_agent_id: str | None = None, baseline: dict[str, Any] | None = None,
+    ) -> EnrollmentReceipt:
+        """Resume an already-attached session with a fresh one-time ticket.
+
+        ``redeem_ticket`` refuses an already-attached conversation, so a resumed
+        conversation needs its own path: verify a *new* ticket against the same
+        installation/conversation, locate the existing session (by target agent or
+        by conversation digest), consume the ticket, then rebind the session with a
+        bumped epoch, a fresh credential and the new baseline. This is what proves
+        ``identity.continuity_evidence``: the same conversation digest coming back
+        across a resume, never a second identity for the same conversation.
+        """
+        with self._lock:
+            ticket = self.tickets.get(_token_hash(ticket_id))
+            if ticket is None or ticket.used or ticket.expires_at < _now():
+                raise ValueError("invalid_or_consumed_enrollment_ticket")
+            installation_digest = canonical_digest({"installation_id": installation_id})
+            conversation_digest = canonical_digest({"conversation_id": conversation_id})
+            if ticket.installation_digest != installation_digest or ticket.conversation_digest != conversation_digest:
+                raise ValueError("enrollment_identity_mismatch")
+            session = None
+            if target_agent_id is not None:
+                session = next(
+                    (candidate for candidate in self.sessions.values()
+                     if candidate.agent_id == target_agent_id and candidate.active), None,
+                )
+            if session is None:
+                session = next(
+                    (candidate for candidate in self.sessions.values()
+                     if candidate.conversation_digest == conversation_digest and candidate.active), None,
+                )
+            if session is None:
+                raise ValueError("session_not_rebindable")
+            ticket.used = True
+            return self.rebind(session.session_id, baseline=baseline)
 
     def rebind(
         self, session_id: str, *, expected_nonce: str | None = None,
@@ -212,14 +268,27 @@ class AuthorityService:
                 session.reconnect_nonce_hash, _token_hash(expected_nonce)
             ):
                 raise PermissionError("stale_reconnect_nonce")
+            new_status = session_status(baseline) if baseline is not None else None
+            new_digest = canonical_digest(baseline) if baseline is not None else None
             token = secrets.token_urlsafe(32)
             reconnect_nonce = secrets.token_urlsafe(24)
             session.credential_hash = _token_hash(token)
             session.reconnect_nonce_hash = _token_hash(reconnect_nonce)
             session.connection_epoch += 1
             if baseline is not None:
-                session.baseline = {"status": session_status(baseline), "digest": canonical_digest(baseline)}
-                session.status = session_status(baseline)
+                assert new_status is not None and new_digest is not None
+                session.baseline = {"status": new_status, "digest": new_digest}
+                session.status = new_status
+                self.agents[session.agent_id].status = "active" if session.status == "ready" else "provisioning"
+                if session.status == "ready" and not any(
+                    grant.kind == "agent_base" and grant.session_id == session_id and grant.status == "active"
+                    for grant in self.grants.values()
+                ):
+                    self._issue_base_grant(session)
+                if session.status != "ready":
+                    for key, grant in list(self.grants.items()):
+                        if grant.principal_id == session.agent_id and grant.status == "active":
+                            self.grants[key] = Grant(**{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"})
             self._save()
             return EnrollmentReceipt(
                 session.agent_id, session_id, session.connection_epoch, session.status,
@@ -230,6 +299,20 @@ class AuthorityService:
         session = self.sessions.get(session_id)
         return bool(session and session.active and secrets.compare_digest(session.credential_hash, _token_hash(token)))
 
+    def _issue_base_grant(self, session: Session) -> None:
+        grant = Grant(
+            new_id(), "agent_base", session.agent_id, session.session_id, new_id(), None, None, None, None,
+            frozenset({
+                "coordination.read", "coordination.report",
+                "task.claim", "task.coordinate_self",
+                "cognition.report",
+                "contract.propose", "contract.accept",
+                "inbox.consume",
+                "message.send", "message.respond",
+            }), {"agent_id": session.agent_id},
+        )
+        self.grants[grant.grant_id] = grant
+
     def appoint_main(self, *, actor_kind: str, agent_id: str) -> Grant:
         if actor_kind != "user_control":
             raise PermissionError("user_only")
@@ -237,9 +320,19 @@ class AuthorityService:
             agent = self.agents.get(agent_id)
             if agent is None:
                 raise KeyError(agent_id)
+            if agent.status != "active" or not any(
+                session.agent_id == agent_id and session.active and session.status == "ready"
+                for session in self.sessions.values()
+            ):
+                raise PermissionError("ready_session_required")
+            if self.main_agent_id is not None and self.main_agent_id != agent_id:
+                self.agents[self.main_agent_id].role = "worker"
             self.main_agent_id = agent_id
             agent.role = "main"
             self.authority_epoch += 1
+            for key, existing in list(self.grants.items()):
+                if existing.kind == "main_authority" and existing.status == "active":
+                    self.grants[key] = Grant(**{**asdict(existing), "capabilities": existing.capabilities, "status": "revoked"})
             grant = Grant(
                 new_id(), "main_authority", agent_id, None, new_id(), self.authority_epoch,
                 None, None, None, frozenset({"task.manage", "agent.appoint", "coordination.write"}),
@@ -271,6 +364,15 @@ class AuthorityService:
             raise PermissionError("only_user_can_appoint_or_issue_main")
         if issuer_agent_id != self.main_agent_id:
             raise PermissionError("main_authority_required")
+        if not any(
+            session.agent_id == issuer_agent_id and session.active and session.status == "ready"
+            for session in self.sessions.values()
+        ):
+            raise PermissionError("ready_session_required")
+        if session_id is not None:
+            target = self.sessions.get(session_id)
+            if target is None or target.agent_id != principal_id or not target.active or target.status != "ready":
+                raise PermissionError("ready_target_session_required")
         grant = Grant(
             new_id(), kind, principal_id, session_id, new_id(), self.authority_epoch,
             task_id, attempt_id, execution_epoch, frozenset(capabilities), scope or {},
@@ -290,6 +392,8 @@ class AuthorityService:
         grant = self.grants.get(grant_id)
         if session is None or grant is None or not session.active or grant.status != "active":
             raise PermissionError("invalid_session_or_grant")
+        if session.status != "ready":
+            raise PermissionError("ready_session_required")
         if session.agent_id != agent_id or grant.principal_id != agent_id:
             raise PermissionError("principal_mismatch")
         if capability not in grant.capabilities:
@@ -305,6 +409,55 @@ class AuthorityService:
         if grant.attempt_id is not None and grant.attempt_id != attempt_id:
             raise PermissionError("attempt_scope_denied")
         return grant
+
+    def find_grant(
+        self, *, agent_id: str, capability: str, session_id: str | None = None,
+        task_id: str | None = None, attempt_id: str | None = None,
+    ) -> Grant | None:
+        """Locate an active grant carrying a capability, scoped to session/task/attempt.
+
+        Command payloads do not carry a ``grant_id``; this maps a resolved principal and
+        its intended scope back to the grant that ``authorize`` will then re-validate.
+        """
+        for grant in self.grants.values():
+            if grant.status != "active" or grant.principal_id != agent_id:
+                continue
+            if capability not in grant.capabilities:
+                continue
+            # A grant whose session_id is None (e.g. main_authority) is deliberately
+            # session-independent: it binds to the principal across all of its
+            # sessions, so it must not be filtered out by a session-scoped lookup.
+            if session_id is not None and grant.session_id is not None and grant.session_id != session_id:
+                continue
+            if task_id is not None and grant.task_id != task_id:
+                continue
+            if attempt_id is not None and grant.attempt_id != attempt_id:
+                continue
+            return grant
+        return None
+
+    def issue_execution_grant(
+        self, *, agent_id: str, session_id: str, task_id: str, attempt_id: str,
+        execution_epoch: int = 1,
+    ) -> Grant:
+        """Issue the ``task.execute`` grant inside the ``task.start`` transaction.
+
+        This is the catalog's start-time execution grant. It is only reachable after
+        ``TaskService.start`` has verified attempt ownership, so it never grants
+        execution to an agent that did not successfully start the attempt.
+        """
+        with self._lock:
+            session = self.sessions.get(session_id)
+            if session is None or not session.active or session.status != "ready" or session.agent_id != agent_id:
+                raise PermissionError("ready_session_required")
+            grant = Grant(
+                new_id(), "task_attempt", agent_id, session_id, new_id(), self.authority_epoch,
+                task_id, attempt_id, execution_epoch, frozenset({"task.execute"}),
+                {"task_id": task_id, "attempt_id": attempt_id},
+            )
+            self.grants[grant.grant_id] = grant
+            self._save()
+            return grant
 
     def public_snapshot(self) -> dict[str, Any]:
         return {
@@ -338,4 +491,7 @@ class AuthorityService:
 
 
 def session_status(baseline: dict[str, Any]) -> str:
-    return "ready" if baseline.get("baseline_ok", False) else "degraded"
+    # Readiness gates on the 4 pre-enrollment admission capabilities only; the
+    # 7 operational capabilities are proven by ready sessions and feed the
+    # release gate rather than session admission.
+    return "degraded" if missing_admission_capabilities(baseline) else "ready"

@@ -125,20 +125,50 @@
           },
           {
             "in": "header",
-            "name": "X-Principal-Kind",
-            "required": true,
+            "name": "Authorization",
+            "required": false,
             "schema": {
-              "title": "X-Principal-Kind",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
             "in": "header",
-            "name": "X-Principal-Id",
-            "required": true,
+            "name": "Tsunagou-Session-Id",
+            "required": false,
             "schema": {
-              "title": "X-Principal-Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
             }
           }
         ],

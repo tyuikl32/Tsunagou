@@ -36,12 +36,14 @@ This contract applies when bridge command deduplication, retry, connection epoch
 
 - Within one connection epoch, the same `command_id` plus canonical protocol/schema/kind/payload fingerprint may share an in-flight or completed result; changed input returns `idempotency_conflict`.
 - A higher connection epoch clears completed local results. A replay must reach the authoritative transport with the new epoch and current credential; server-side idempotency returns the original result.
+- A higher epoch also detaches old in-flight promises. An epoch-1 completion after reconnect must reject as `stale_connection_epoch`, never populate epoch-2 completed results; its cleanup must not delete the epoch-2 in-flight entry for the same command ID. An old retry must not silently use the new credential/epoch.
 - Inbox claim, body fetch, presentation evidence, and ACK remain distinct and recipient-scoped. ACK requires a successful presentation record.
 - Capability evidence is a non-empty sanitized reference. `supported` with missing or empty evidence remains not ready.
 
 ### 4. Validation & Error Matrix
 
 - lower epoch or different session -> `stale_connection_epoch`
+- old in-flight result or retry after a higher-epoch reconnect -> `stale_connection_epoch`; same ID may be retried separately through epoch-2 transport
 - same epoch with changed capabilities -> `connection_epoch_conflict`
 - reused command ID with changed fingerprint -> `idempotency_conflict`
 - typed 4xx, unknown error, or unknown external result -> no automatic retry
@@ -52,11 +54,13 @@ This contract applies when bridge command deduplication, retry, connection epoch
 - Good: same command is coalesced within epoch 1; after reconnect to epoch 2 it reaches transport once with epoch 2 and receives the authoritative replay result.
 - Base: identical reconnect response returns `false` and does not rotate state.
 - Bad: returning epoch 1's local cached success after epoch 2, retrying `unknown_external_result`, auto-ACKing on fetch, or accepting `evidence: ""`.
+- Bad: preserving the epoch-1 in-flight promise so an epoch-2 caller receives its response without new transport authentication.
 
 ### 6. Tests Required
 
 - Assert concurrent identical commands call transport once and changed payload conflicts.
 - Assert post-reconnect replay calls transport with the new epoch.
+- Hold the epoch-1 transport response, reconnect, send the same command in epoch 2, then release epoch 1 first: the old call rejects, the new call remains coalesced with its own duplicate and caches only epoch-2 result.
 - Assert typed/unknown failures are not retried and explicit transient failures are bounded.
 - Assert fetch/presented/ACK ordering and duplicate suppression.
 - Assert empty evidence leaves every claimed capability missing.

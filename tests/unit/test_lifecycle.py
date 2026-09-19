@@ -5,6 +5,7 @@ import pytest
 from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.projects import ProjectRegistry
+from tsunagou.shared_kernel.baseline import BASELINE_CAPABILITIES
 
 
 def make_lifecycle(tmp_path: Path) -> LifecycleService:
@@ -30,7 +31,10 @@ def test_user_decision_exact_digest_and_completion_survives_checkpoint_failure(t
 def test_reset_invalidates_old_runtime_and_unknown_resolution_is_append_only(tmp_path: Path) -> None:
     service = make_lifecycle(tmp_path)
     main = service.authority.redeem_ticket(
-        service.authority.issue_ticket("i", "c"), "i", "c", baseline={"baseline_ok": True}
+        service.authority.issue_ticket("i", "c"), "i", "c", baseline={"baseline": {
+            name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]}
+            for name in BASELINE_CAPABILITIES
+        }}
     )
     service.authority.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
     old_lineage = service.registry.project.current_lineage_id
