@@ -4,7 +4,7 @@
   "packageManager": "pnpm@12.4.2",
   "engines": {"node": ">=24.19 <25", "pnpm": ">=12 <13"},
   "scripts": {
-    "check": "tsc -b --pretty false",
+    "check": "corepack pnpm -r run check",
     "test": "vitest run",
     "codegen": "python tools/codegen/generate_protocol.py"
   },

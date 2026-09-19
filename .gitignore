@@ -11,6 +11,20 @@ node_modules/
 dist/
 build/
 *.egg-info/
+pytest-cache-files-*/
+
+# Trellis developer-local toolchains, caches, logs and disposable acceptance roots
+.trellis/workspace/*/acceptance-control/
+.trellis/workspace/*/corepack*/
+.trellis/workspace/*/node*-temp/
+.trellis/workspace/*/npm-cache/
+.trellis/workspace/*/opencode-temp/
+.trellis/workspace/*/pnpm-*/
+.trellis/workspace/*/probe-temp/
+.trellis/workspace/*/pytest-*/
+.trellis/workspace/*/reviewer-pytest-*/
+.trellis/workspace/*/uv-*/
+.trellis/workspace/*/*.log
 
 # Local secrets and product runtime; shared checkpoint data stays trackable
 .env
