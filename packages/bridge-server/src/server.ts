@@ -188,7 +188,7 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "inbox__fetch", command_kind: "inbox.fetch", description: "Fetch one inbox message by id.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, delivery_lease_id: { type: "string" } }, additionalProperties: false } },
   { name: "inbox__presented", command_kind: "inbox.presented", description: "Record that a delivery was presented with an evidence digest.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, evidence_digest: { type: "string" }, evidence_kind: { type: "string" } }, additionalProperties: false } },
   { name: "inbox__ack", command_kind: "inbox.ack", description: "Acknowledge a presented inbox delivery.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "message__send", command_kind: "message.send", description: "Send a message to another agent.", inputSchema: { type: "object", required: ["recipient_agent_id"], properties: { recipient_agent_id: { type: "string" }, kind: { type: "string" }, subject_ref: { type: "string" }, summary: { type: "string" }, payload: { type: "object" }, priority: { type: "integer" }, response_contract: { type: "object" }, in_reply_to: { type: "string" } } } },
+  { name: "message__send", command_kind: "message.send", description: "Send a message to another agent.", inputSchema: { type: "object", required: ["recipient_agent_id"], properties: { command_id: { type: "string", description: "Optional idempotency key. Reusing this id with different message input is rejected as a conflict." }, recipient_agent_id: { type: "string" }, kind: { type: "string" }, subject_ref: { type: "string" }, summary: { type: "string" }, payload: { type: "object" }, priority: { type: "integer" }, response_contract: { type: "object", properties: { required: { type: "boolean" }, schema: { type: "object" } } }, in_reply_to: { type: "string" } } } },
   { name: "message__respond", command_kind: "message.respond", description: "Fulfill a response obligation on a received message.", inputSchema: { type: "object", required: ["obligation_id", "response_message_id"], properties: { obligation_id: { type: "string" }, response_message_id: { type: "string" } }, additionalProperties: false } },
   { name: "context__project_read", command_kind: "context.project_read", description: "Read this agent's project context: identity, role, scope capabilities and owned tasks.", inputSchema: { type: "object", additionalProperties: false } },
 ];
@@ -196,13 +196,18 @@ const TOOLS: readonly ToolSpec[] = [
 class HttpTransport {
   public constructor(private readonly baseUrl: string) {}
 
-  public async dispatch(kind: string, payload: Record<string, unknown>, session: SessionCredential): Promise<unknown> {
+  public async dispatch(
+    kind: string,
+    payload: Record<string, unknown>,
+    session: SessionCredential,
+    commandId?: string,
+  ): Promise<unknown> {
     // A stable, content-derived command id makes a retried tool call idempotent
     // (the same kind+payload maps to the same id, so message.send dedups), while a
     // genuinely different payload becomes a distinct command. A reused id with
     // changed content is the server's job to reject as a conflict.
     const envelope = {
-      command_id: "idem:" + hash(`${kind}:${canonicalJson(payload)}`),
+      command_id: commandId?.trim() || ("idem:" + hash(`${kind}:${canonicalJson(payload)}`)),
       protocol_version: PROTOCOL_VERSION,
       schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
       payload,
@@ -285,6 +290,41 @@ class HttpTransport {
     }
     return body.result;
   }
+
+  /** Reconnect an attached session after a restart (D principal): prove we still
+   *  hold the session credential at the expected epoch, and rotate token/nonce.
+   *  No ticket is involved and no baseline is re-sent — this is a pure credential
+   *  rotation, not a re-admission, so the session keeps its current status. */
+  public async reconnect(session: SessionCredential): Promise<SessionCredential> {
+    const envelope = {
+      command_id: randomUUID(),
+      protocol_version: PROTOCOL_VERSION,
+      schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
+      payload: {
+        reconnect_nonce: session.reconnect_nonce,
+        expected_connection_epoch: session.connection_epoch,
+      },
+    };
+    const response = await fetch(`${this.baseUrl}/api/v1/commands/session.reconnect`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${session.secret_token}`,
+        "tsunagou-session-id": session.session_id,
+        "tsunagou-connection-epoch": String(session.connection_epoch),
+      },
+      body: JSON.stringify(envelope),
+    });
+    const body = (await response.json().catch(() => ({}))) as {
+      result?: SessionCredential;
+      detail?: { code?: string };
+    };
+    if (!response.ok || body.result === undefined) {
+      const code = body.detail?.code ?? `http_${response.status}`;
+      throw new Error(`tsunagou_reconnect_error:${code}`);
+    }
+    return body.result;
+  }
 }
 
 function loadSession(path: string): PersistedSession | undefined {
@@ -342,6 +382,20 @@ async function main(): Promise<void> {
       session = undefined;
       process.stderr.write(`[tsunagou-bridge] bootstrap failed: ${error instanceof Error ? error.message : String(error)}\n`);
     }
+  } else if (session !== undefined) {
+    try {
+      // No ticket on restart: reconnect the persisted session (D principal) so the
+      // credential rotates and the epoch advances — the bridge's own recovery path,
+      // instead of silently reusing a possibly-stale credential. There is no new
+      // env/ticket identity here, so the persisted host digest is carried forward.
+      hostDigest ??= session.host_conversation_id_digest;
+      const credential = await transport.reconnect(session);
+      session = { ...credential, host_conversation_id_digest: hostDigest };
+      saveSession(cfg.sessionFile, credential, hostDigest);
+    } catch (error) {
+      session = undefined;
+      process.stderr.write(`[tsunagou-bridge] reconnect failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
   }
 
   const server = new Server({ name: "tsunagou", version: "0.1.0" }, { capabilities: { tools: {} } });
@@ -359,11 +413,12 @@ async function main(): Promise<void> {
       if (session === undefined) {
         throw new Error("not_enrolled:no_ticket_or_session_file");
       }
-      const result = await transport.dispatch(
-        tool.command_kind,
-        (request.params.arguments ?? {}) as Record<string, unknown>,
-        session,
-      );
+      const args = { ...((request.params.arguments ?? {}) as Record<string, unknown>) };
+      const commandId = typeof args.command_id === "string" ? args.command_id : undefined;
+      if ("command_id" in args) {
+        delete args.command_id;
+      }
+      const result = await transport.dispatch(tool.command_kind, args, session, commandId);
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

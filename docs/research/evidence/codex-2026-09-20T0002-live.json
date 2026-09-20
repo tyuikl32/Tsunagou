@@ -1,0 +1,162 @@
+{
+  "host": "codex",
+  "version": "codex-cli 0.155.0-alpha.9.2",
+  "scope": "single_host_live_bridge_followup",
+  "date_local": "2026-09-20",
+  "timezone": "Asia/Shanghai",
+  "window_utc_from_private_log_timestamps": [
+    "2026-09-20T00:02:40Z",
+    "2026-09-20T00:17:01Z"
+  ],
+  "git_head": "081116d",
+  "bridge_server_version": "0.1.0",
+  "bridge_dist_sha256": "f00aeab932fdf11d8e78aba26754c3e83f12c6199aba36734bd3bbdc2860e833",
+  "node_version": "v24.20.0",
+  "tsunagou_version": "0.1.0",
+  "protocol_version": "1.0",
+  "schema_bundle_digest": "sha256:f2c3d8e0dc89f8b454288048d6326a4446f51659003045ac6194d6da39545fc6",
+  "host_conversation_digests": {
+    "main": "b4a24ebfcb39e6b4f487a10fa11dffd9a9dc3387fcb92bcb6a936177497212dd",
+    "worker": "5d08f1afa878e5ceda474ce0257a90b9e38007f33a5e1d7dc10b585b4bea7b0a"
+  },
+  "isolation": "two dedicated Codex threads, empty project, isolated loopback service and durable state, ignore-user-config; private ticket and raw logs removed after extraction",
+  "host_session_admission_status": "ready",
+  "business_turns": [
+    {
+      "role": "main",
+      "label": "business",
+      "exit_code": 0,
+      "gateway_error_events_before_completion": 5,
+      "mcp": [
+        "context__project_read:completed",
+        "task__create:completed",
+        "message__send:completed",
+        "message__send:completed"
+      ]
+    },
+    {
+      "role": "worker",
+      "label": "lifecycle",
+      "exit_code": 0,
+      "gateway_error_events_before_completion": 4,
+      "mcp": [
+        "task__claim:completed",
+        "task__start:failed:preflight_id_mismatch",
+        "task__preflight:completed",
+        "task__start:completed",
+        "context__project_read:completed",
+        "task__progress:completed",
+        "cognition__report:completed",
+        "task__submit:completed"
+      ]
+    },
+    {
+      "role": "worker",
+      "label": "response-negatives",
+      "exit_code": 0,
+      "gateway_error_events_before_completion": 4,
+      "mcp": [
+        "cognition__report:failed:invalid_claim",
+        "inbox__claim:completed",
+        "inbox__fetch:completed",
+        "inbox__presented:completed",
+        "inbox__ack:completed",
+        "message__respond:failed:response_message_not_found",
+        "message__send:completed",
+        "message__respond:completed:responded",
+        "task__create:failed:capability_denied"
+      ]
+    },
+    {
+      "role": "main",
+      "label": "typed-negatives",
+      "exit_code": 0,
+      "gateway_error_events_before_completion": 4,
+      "mcp": [
+        "message__send:failed:unknown_payload_field:unexpected_field",
+        "message__send:failed:unknown_payload_field:actor_id"
+      ]
+    }
+  ],
+  "checks": {
+    "identity": {
+      "distinct_dedicated_conversation_digests": true,
+      "main_and_worker_ready_after_ticket_exchange": true,
+      "worker_rebind_cli_exit_code": 1,
+      "worker_rebind_mcp_completed_and_session_ready": true,
+      "worker_rebind_turn_failed_after_mcp": true
+    },
+    "context": {
+      "main_and_worker_live_query_completed": true,
+      "worker_owned_task_seen": true,
+      "worker_scope_capability_count": 11,
+      "project_id_returned": false
+    },
+    "typed_tools": {
+      "valid_live_calls_completed": true,
+      "unexpected_field_rejected": "unknown_payload_field",
+      "forged_actor_id_rejected": "unknown_payload_field",
+      "worker_main_only_task_creation_rejected": "capability_denied",
+      "invalid_calls_created_messages": false
+    },
+    "task": {
+      "live_create_claim_preflight_start_progress_submit": true,
+      "bogus_preflight_rejected": "preflight_id_mismatch",
+      "valid_start_after_negative_completed": true
+    },
+    "cognition": {
+      "object_claim_fields": [
+        "subject_key",
+        "claim_type",
+        "equality_key",
+        "value",
+        "evidence_refs"
+      ],
+      "assumptions_string_array": true,
+      "uncertainties_empty_array": true,
+      "report_id_returned": true,
+      "string_claim_rejected": "invalid_claim"
+    },
+    "inbox": {
+      "live_claim_fetch_presented_ack": true
+    },
+    "response": {
+      "required_response_obligation_created": true,
+      "nonexistent_response_message_rejected": "response_message_not_found",
+      "real_reply_linked_to_request": true,
+      "real_reply_id_used_to_respond": true,
+      "final_obligation_status": "responded",
+      "obligation_id_discovered_only_from_private_test_state": true,
+      "response_schema_enforced": false
+    },
+    "deduplication": {
+      "identical_live_tool_arguments_twice": true,
+      "same_message_id_returned": true,
+      "same_raw_command_id_changed_input_via_typed_mcp": "not_exposable_by_current_bridge",
+      "same_raw_command_id_changed_input_isolated_http": "see_codex_fixes_2026_09_19T2229_http"
+    },
+    "recovery": {
+      "session_usable_after_isolated_service_restart": true,
+      "in_flight_disconnect_injected": false
+    },
+    "continuity": {
+      "resume_rebind_observed": true,
+      "compact_fork_new_observed": false
+    }
+  },
+  "baseline": {
+    "identity.session_isolation": "supported",
+    "identity.continuity_evidence": "unknown",
+    "context.project_read": "unknown",
+    "command.typed_tools": "supported",
+    "task.lifecycle": "supported",
+    "cognition.report": "supported",
+    "contract.participation": "supported",
+    "inbox.pull_fetch_ack": "supported",
+    "response.structured": "unknown",
+    "recovery.idempotent_reconnect": "unknown",
+    "delivery.deduplicate": "unknown"
+  },
+  "formal_baseline_ready": false,
+  "details_ref": "docs/acceptance/codex-live-2026-09-20.md"
+}

@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
+
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 
@@ -137,6 +139,22 @@ class MessageStore:
             existing = self.command_index.get(command_id)
             if existing is not None:
                 prior = self.messages[existing]
+                prior_delivery = self.deliveries.get(existing)
+                prior_obligation = next(
+                    (
+                        obligation for obligation in self.obligations.values()
+                        if obligation.message_id == existing
+                    ),
+                    None,
+                )
+                prior_contract_digest = (
+                    canonical_digest(prior_obligation.contract)
+                    if prior_obligation is not None else None
+                )
+                current_contract_digest = (
+                    canonical_digest(response_contract)
+                    if response_contract is not None else None
+                )
                 if (
                     prior.sender_agent_id == sender_agent_id
                     and prior.recipient_agent_id == recipient_agent_id
@@ -144,6 +162,9 @@ class MessageStore:
                     and prior.subject_ref == subject_ref
                     and prior.summary == summary
                     and prior.payload_digest == payload_digest
+                    and prior.in_reply_to == in_reply_to
+                    and (prior_delivery.priority if prior_delivery is not None else 0) == priority
+                    and prior_contract_digest == current_contract_digest
                 ):
                     return prior
                 raise ValueError("command_id_conflict")
@@ -222,6 +243,12 @@ class MessageStore:
                 raise PermissionError("response_sender_mismatch")
             if response.in_reply_to != obligation.message_id:
                 raise ValueError("response_not_linked_to_obligation")
+            schema = obligation.contract.get("schema")
+            if isinstance(schema, dict):
+                validator = Draft202012Validator(schema)
+                errors = sorted(validator.iter_errors(response.payload), key=lambda error: list(error.path))
+                if errors:
+                    raise ValueError("response_schema_violation")
             obligation.status = "responded"
             obligation.response_message_id = response_message_id
             obligation.closed_at = _now()

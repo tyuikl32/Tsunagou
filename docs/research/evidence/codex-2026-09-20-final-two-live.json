@@ -1,0 +1,147 @@
+{
+  "host": "codex",
+  "model_backend": "gpt-5.6-sol",
+  "model_backend_source": "user-reported; codex exec JSONL did not expose a model/backend field and user configuration was not read",
+  "version": "codex-cli 0.155.0-alpha.9.2",
+  "scope": "single_host_live_bridge_final_two_capabilities_continuity_and_recovery",
+  "date_local": "2026-09-20",
+  "timezone": "Asia/Shanghai",
+  "git_head": "081116d9b6354ab986a4e71a89f9dc1bfe235e08",
+  "branch": "elysia",
+  "dirty_worktree_preserved": true,
+  "bridge_server_version": "0.1.0",
+  "bridge_path_b_reconnect": true,
+  "bridge_dist_sha256": "685acd965950acab44e38508d07ae2665f03fc931eaef5e4d510598214bfd873",
+  "node_version": "v24.20.0",
+  "tsunagou_version": "0.1.0",
+  "protocol_version": "1.0",
+  "digest_algorithm": "sha256('conversation_id:' + conversation_id)",
+  "isolation": "fresh dedicated worker Codex thread for recovery, real populated main thread for compact/fork/new, isolated loopback backend and private state, ignore-user-config; raw logs and credentials purged after extraction",
+  "identity.continuity_evidence": {
+    "status": "supported",
+    "all_three_real_lifecycle_scenarios_observed": true,
+    "compact": {
+      "observed": true,
+      "thread_digest": "1ce45cef4d2234bc6c0604725f3f4add819f03623aaad023e13d8341ba07d08f",
+      "in_place": true,
+      "uuid_unchanged": true,
+      "digest_unchanged": true,
+      "replacement_history_items_before_after": {"before": 21, "after": 7},
+      "compaction_summary_output_tokens": 470,
+      "window_number": 1,
+      "signal": "exec rollout jsonl 'compacted' event with replacement_history compaction item (not thread_history contextCompaction, which is vscode-source-only)"
+    },
+    "fork": {
+      "observed": true,
+      "parent_digest": "1ce45cef4d2234bc6c0604725f3f4add819f03623aaad023e13d8341ba07d08f",
+      "child_digest": "0069db8d22ffe7a962d966e1d2f7c9db946724126b33f30d7c6ecf8dba09e8a8",
+      "forked_from_id_matches_parent": true,
+      "forked_from_ordinal_exclusive": 115,
+      "distinct_digest": true,
+      "signal": "child rollout session_meta.forked_from_id (codex exec fork does not write thread_spawn_edges)"
+    },
+    "new": {
+      "observed": true,
+      "digest": "571b14817dd27ae3ae8b96ff5cb36acebcc18412559284cfa3d3f5aaeb49d9f9",
+      "fresh_thread_no_fork_parent": true,
+      "no_forked_from_id_in_session_meta": true,
+      "no_spawn_edge": true,
+      "tokens_used_small_indicating_empty_history": 13963,
+      "distinct_from_main_and_fork": true
+    },
+    "digest_continuity_holds": {
+      "compact_same_identity": true,
+      "fork_new_identity": true,
+      "new_new_identity": true
+    }
+  },
+  "recovery.idempotent_reconnect": {
+    "status": "supported",
+    "real_session": {
+      "host_conversation_digest": "377ad006b269076c37281ed4f9b20bd93a5a7ec5effd958102c74d7d9517ddd4",
+      "session_and_agent_identity_preserved_across_enroll_rebind_reconnect": true,
+      "epoch_progression": {"enroll": 1, "rebind": 2, "reconnect": 3},
+      "status_progression": {"enroll": "degraded", "rebind": "ready", "reconnect": "ready"},
+      "reconnect_http": 200,
+      "reconnect_initiated_by_bridge_without_ticket": true,
+      "reconnected_business_command": "context.project_read",
+      "reconnected_business_command_http": 200
+    },
+    "stale_rejects_on_real_session": {
+      "stale_epoch_header": {"http": 401, "code": "authentication_failed"},
+      "stale_token": {"http": 401, "code": "authentication_failed"},
+      "stale_reconnect_nonce": {"http": 403, "code": "stale_reconnect_nonce"},
+      "stale_connection_epoch_cas": {"http": 403, "code": "stale_connection_epoch"}
+    },
+    "idempotent_in_flight_recovery": {
+      "note": "literal in-flight drop (client closed socket after server received request) and idempotent retry injected at HTTP level on a disposable session via recovery_fault_inject.py; not a mid-flight kill on the real bridge session",
+      "delivered_script_exit_code": 0,
+      "in_flight_disconnect_applied_once": true,
+      "retry_same_command_id_same_message_id": true,
+      "changed_input_command_id_conflict": true,
+      "stale_retry_fail_closed": true
+    },
+    "honest_caveat": "real bridge performed the actual session.reconnect, epoch rotation (2->3), reconnected business command and stale rejects on the real worker session; the literal in-flight disconnect was injected at HTTP level on a disposable session because killing the real Codex process mid-request is not deterministically reproducible"
+  },
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-19T2136-independent.json"]
+    },
+    "identity.continuity_evidence": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20-final-two-audit.json#identity.continuity_evidence"]
+    },
+    "context.project_read": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20T1628-fivecaps-live.json#capabilities.context.project_read"]
+    },
+    "command.typed_tools": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20T0002-live.json"]
+    },
+    "task.lifecycle": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20T0002-live.json"]
+    },
+    "cognition.report": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20T0002-live.json"]
+    },
+    "contract.participation": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-19T2136-independent.json"]
+    },
+    "inbox.pull_fetch_ack": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-19T2136-independent.json"]
+    },
+    "response.structured": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20T1628-fivecaps-live.json#capabilities.response.structured"]
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_scope": "real_bridge_reconnect_and_post_reconnect_tool_plus_disposable_http_in_flight_fault",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20-final-two-audit.json#recovery.idempotent_reconnect", "docs/acceptance/codex-final-two-live-2026-09-20.md"]
+    },
+    "delivery.deduplicate": {
+      "status": "supported",
+      "strength": "observed",
+      "evidence_refs": ["docs/research/evidence/codex-2026-09-20T1628-fivecaps-live.json#capabilities.delivery.deduplicate"]
+    }
+  },
+  "strict_live_fault_note": "A literal mid-request transport disconnect on the same real Codex bridge session was not observed; the in-flight fault was injected on a disposable HTTP session. This does not change the documented baseline status but remains an explicit limit for stricter first-live acceptance.",
+  "formal_baseline_ready": true,
+  "details_ref": "docs/acceptance/codex-final-two-live-2026-09-20.md"
+}

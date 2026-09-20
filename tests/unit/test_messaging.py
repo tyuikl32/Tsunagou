@@ -17,6 +17,7 @@ def test_pull_ack_is_idempotent_and_recipient_scoped(tmp_path: Path) -> None:
     assert store.send(
         command_id="cmd-1", sender_agent_id="main", recipient_agent_id="worker",
         kind="task.offer", subject_ref="task/1", summary="Please inspect",
+        response_contract={"required": True},
     ).message_id == message.message_id
     with pytest.raises(ValueError):
         store.send(
@@ -30,6 +31,30 @@ def test_pull_ack_is_idempotent_and_recipient_scoped(tmp_path: Path) -> None:
     with pytest.raises(PermissionError):
         store.ack("other", message.message_id)
     assert store.sync("worker")[0].message_id == message.message_id
+
+
+def test_send_conflict_covers_all_semantic_fields(tmp_path: Path) -> None:
+    store = MessageStore(tmp_path / "messages.json")
+    contract = {"required": True, "schema": {"type": "object"}}
+    store.send(
+        command_id="cmd-all", sender_agent_id="main", recipient_agent_id="worker",
+        kind="task.offer", subject_ref="task/1", summary="Please inspect",
+        priority=7, response_contract=contract, in_reply_to="parent-1",
+    )
+    changed_variants = [
+        {"priority": 8},
+        {"response_contract": {"required": False}},
+        {"in_reply_to": "parent-2"},
+    ]
+    for changed in changed_variants:
+        with pytest.raises(ValueError, match="command_id_conflict"):
+            store.send(
+                command_id="cmd-all", sender_agent_id="main", recipient_agent_id="worker",
+                kind="task.offer", subject_ref="task/1", summary="Please inspect",
+                priority=changed.get("priority", 7),
+                response_contract=changed.get("response_contract", contract),
+                in_reply_to=changed.get("in_reply_to", "parent-1"),
+            )
 
 
 def test_ack_does_not_claim_presentation_and_obligation_requires_response(tmp_path: Path) -> None:

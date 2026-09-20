@@ -19,29 +19,67 @@ Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 # identity other than the one the bearer credential resolved. The dispatcher
 # rejects these before any handler runs.
 PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
-    "agent.enroll": frozenset({"installation_id", "conversation_evidence", "probe_payload", "client_nonce", "descriptor_ref", "negotiation"}),
-    "session.rebind": frozenset({"installation_id", "conversation_evidence", "target_agent_id", "probe_payload", "client_nonce"}),
-    "session.reconnect": frozenset({"reconnect_nonce", "expected_connection_epoch", "probe_payload", "continuity_evidence"}),
-    "agent.ticket.create.user": frozenset({"installation_id", "conversation_evidence", "ttl_seconds", "kind"}),
-    "authority.appoint": frozenset({"agent_id", "expected_authority_epoch", "ceiling_template", "reason"}),
+    "agent.enroll": frozenset({
+        "installation_id", "conversation_evidence", "probe_payload", "client_nonce",
+        "descriptor_ref", "negotiation",
+    }),
+    "session.rebind": frozenset({
+        "installation_id", "conversation_evidence", "target_agent_id", "probe_payload",
+        "client_nonce",
+    }),
+    "session.reconnect": frozenset({
+        "reconnect_nonce", "expected_connection_epoch", "probe_payload", "continuity_evidence",
+    }),
+    "agent.ticket.create.user": frozenset({
+        "installation_id", "conversation_evidence", "ttl_seconds", "kind",
+    }),
+    "authority.appoint": frozenset({
+        "agent_id", "expected_authority_epoch", "ceiling_template", "reason",
+    }),
     "authority.revoke": frozenset({"expected_authority_epoch", "reason"}),
     "task.create": frozenset({"title", "objective", "parent_task_id", "blocks"}),
     "task.claim": frozenset({"task_id", "capability_snapshot_id"}),
-    "task.resume": frozenset({"task_id", "attempt_id", "evidence_refs", "input_digest", "expected_revisions", "expected_execution_epoch"}),
+    "task.resume": frozenset({
+        "task_id", "attempt_id", "evidence_refs", "input_digest", "expected_revisions",
+        "expected_execution_epoch",
+    }),
     "task.preflight": frozenset({"task_id", "attempt_id", "evidence_refs", "expected_revisions"}),
-    "task.start": frozenset({"task_id", "attempt_id", "preflight_id", "expected_execution_epoch", "input_digest"}),
+    "task.start": frozenset({
+        "task_id", "attempt_id", "preflight_id", "expected_execution_epoch", "input_digest",
+    }),
     "task.progress": frozenset({"task_id", "attempt_id", "summary", "evidence_refs"}),
-    "task.block": frozenset({"task_id", "attempt_id", "reason_code", "reason", "checkpoint_summary", "dependency_refs", "evidence_refs"}),
-    "task.submit": frozenset({"task_id", "attempt_id", "summary", "evidence_refs", "artifact_refs", "workspace_result_ref"}),
-    "cognition.report": frozenset({"task_id", "attempt_id", "claims", "assumptions", "uncertainties", "boundary", "understanding", "confidence", "confidence_reason", "evidence_refs", "input_revisions", "supersedes_id"}),
-    "contract.propose": frozenset({"payload", "participants_required", "participants_optional", "contract_id", "contract_kind", "subject_ref", "input_refs", "supersedes_id"}),
-    "contract.accept": frozenset({"proposal_id", "participant_slot", "proposal_digest", "evidence_refs"}),
+    "task.block": frozenset({
+        "task_id", "attempt_id", "reason_code", "reason", "checkpoint_summary",
+        "dependency_refs", "evidence_refs",
+    }),
+    "task.submit": frozenset({
+        "task_id", "attempt_id", "summary", "evidence_refs", "artifact_refs",
+        "workspace_result_ref",
+    }),
+    "cognition.report": frozenset({
+        "task_id", "attempt_id", "claims", "assumptions", "uncertainties", "boundary",
+        "understanding", "confidence", "confidence_reason", "evidence_refs",
+        "input_revisions", "supersedes_id",
+    }),
+    "contract.propose": frozenset({
+        "payload", "participants_required", "participants_optional", "contract_id",
+        "contract_kind", "subject_ref", "input_refs", "supersedes_id",
+    }),
+    "contract.accept": frozenset({
+        "proposal_id", "participant_slot", "proposal_digest", "evidence_refs",
+    }),
     "inbox.claim": frozenset({"limit", "max_bytes"}),
     "inbox.fetch": frozenset({"message_id", "delivery_lease_id"}),
     "inbox.presented": frozenset({"message_id", "evidence_digest", "evidence_kind"}),
     "inbox.ack": frozenset({"message_id", "reason"}),
-    "message.send": frozenset({"recipient_agent_id", "kind", "subject_ref", "summary", "payload", "priority", "response_contract", "in_reply_to"}),
-    "message.respond": frozenset({"obligation_id", "response_message_id", "response_payload", "summary", "evidence_refs"}),
+    "message.send": frozenset({
+        "recipient_agent_id", "kind", "subject_ref", "summary", "payload", "priority",
+        "response_contract", "in_reply_to",
+    }),
+    "message.respond": frozenset({
+        "obligation_id", "response_message_id", "response_payload", "summary",
+        "evidence_refs",
+    }),
     "context.project_read": frozenset(),
 }
 

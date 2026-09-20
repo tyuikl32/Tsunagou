@@ -32,6 +32,8 @@ def _request(payload: dict[str, Any]) -> CommandRequest:
 
 def _harness(
     tmp_path: Path,
+    *,
+    project_id: str | None = None,
 ) -> tuple[Any, AuthorityService, TaskService, CognitionService, MessageStore, Any]:
     dispatcher = CommandDispatcher(ROOT / "protocol" / "registry" / "commands.json")
     authority = AuthorityService(tmp_path / "identity.json")
@@ -39,7 +41,8 @@ def _harness(
     cognition = CognitionService()
     messages = MessageStore()
     for kind, handler in build_handlers(
-        authority=authority, tasks=tasks, cognition=cognition, messages=messages
+        authority=authority, tasks=tasks, cognition=cognition, messages=messages,
+        project_id=project_id,
     ).items():
         dispatcher.register(kind, handler)
     app = create_app(dispatcher, authenticator=LocalCommandAuthenticator(authority=authority))
@@ -229,6 +232,61 @@ def test_message_respond_closes_obligation(tmp_path: Path) -> None:
     assert messages.obligations[obligation_id].status == "responded"
 
 
+def test_message_respond_validates_response_schema(tmp_path: Path) -> None:
+    _, authority, _, _, messages, endpoint = _harness(tmp_path)
+    receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    contract = {
+        "required": True,
+        "schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        },
+    }
+    question = messages.send(
+        command_id="schema-cmd", sender_agent_id="other", recipient_agent_id=receipt.agent_id,
+        kind="message", subject_ref="s", summary="question", response_contract=contract,
+    )
+    obligation = next(iter(messages.obligations.values()))
+    bad_answer = messages.send(
+        command_id="bad-answer", sender_agent_id=receipt.agent_id, recipient_agent_id="other",
+        kind="message", subject_ref="s", summary="bad answer", in_reply_to=question.message_id,
+        payload={"not_answer": 1},
+    )
+    with pytest.raises(HTTPException) as exc:
+        _call(endpoint, "message.respond", {
+            "obligation_id": obligation.obligation_id,
+            "response_message_id": bad_answer.message_id,
+        }, receipt)
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "response_schema_violation"
+    assert messages.obligations[obligation.obligation_id].status == "open"
+
+    good_answer = messages.send(
+        command_id="good-answer", sender_agent_id=receipt.agent_id, recipient_agent_id="other",
+        kind="message", subject_ref="s", summary="good answer", in_reply_to=question.message_id,
+        payload={"answer": "ok"},
+    )
+    result = _call(endpoint, "message.respond", {
+        "obligation_id": obligation.obligation_id,
+        "response_message_id": good_answer.message_id,
+    }, receipt)
+    assert result["status"] == "responded"
+    assert messages.obligations[obligation.obligation_id].status == "responded"
+
+
+def test_inbox_fetch_exposes_own_response_obligation(tmp_path: Path) -> None:
+    _, authority, _, _, messages, endpoint = _harness(tmp_path)
+    receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    message = messages.send(
+        command_id="obligation-cmd", sender_agent_id="other", recipient_agent_id=receipt.agent_id,
+        kind="message", subject_ref="s", summary="question", response_contract={"required": True},
+    )
+    fetched = _call(endpoint, "inbox.fetch", {"message_id": message.message_id}, receipt)
+    assert fetched["response_obligations"][0]["obligation_id"] in messages.obligations
+
+
 def test_business_commands_denied_for_degraded_session(tmp_path: Path) -> None:
     # A degraded session has no agent_base grant and must fail closed before any
     # business command is dispatched.
@@ -263,6 +321,17 @@ def test_context_project_read_returns_own_scope(tmp_path: Path) -> None:
     assert "coordination.read" in snapshot["scope"]["capabilities"]
     assert any(item["task_id"] == task_id for item in snapshot["tasks"])
     assert "secret_token" not in snapshot and "absolute_path" not in snapshot
+
+
+def test_context_project_read_includes_project_id(tmp_path: Path) -> None:
+    _, authority, tasks, _, _, endpoint = _harness(tmp_path, project_id="project-1")
+    receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    task_id = _open_task(tasks)
+    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+
+    snapshot = _call(endpoint, "context.project_read", {}, receipt)
+    assert snapshot["project_id"] == "project-1"
+    assert any(item["task_id"] == task_id for item in snapshot["tasks"])
 
 
 def test_reconnect_rejects_stale_connection_epoch(tmp_path: Path) -> None:

@@ -1,0 +1,172 @@
+{
+  "host": "codex",
+  "model_backend": "gpt-5.6-sol",
+  "model_backend_source": "user-reported during this acceptance turn; codex exec JSONL did not expose a model/backend field and user configuration was not read",
+  "version": "codex-cli 0.155.0-alpha.9.2",
+  "scope": "single_host_live_bridge_five_remaining_capabilities",
+  "date_local": "2026-09-20",
+  "timezone": "Asia/Shanghai",
+  "window_utc_from_private_log_file_times": [
+    "2026-09-20T08:28:46Z",
+    "2026-09-20T09:01:47Z"
+  ],
+  "git_head": "081116d9b6354ab986a4e71a89f9dc1bfe235e08",
+  "dirty_worktree_preserved": true,
+  "bridge_server_version": "0.1.0",
+  "bridge_dist_sha256": "3314f08472f83ad7e95209e77c93087cc018d09b2bbc663c0a2ed41328c23871",
+  "source_sha256": {
+    "packages/bridge-server/src/server.ts": "0849d6a9860a4d2dd9924f3eb833433fdec0d5b23502c28e974a29b6c82d605f",
+    "src/tsunagou/application/handlers.py": "2023d0dbd77343302386a0ce9f3d41f5dcb3ef30e45995e6a524f5df2691dff7",
+    "src/tsunagou/modules/messaging.py": "1dcd46984cdc7d049d0a745cab71325b51d29d956b28372d0d147be3eb13962e",
+    "src/tsunagou/bootstrap/container.py": "f863a20582a509f06b0edb2ed94418b0ce77457c036f25c1bdc56edfa0a16747",
+    "src/tsunagou/interfaces/runtime.py": "5af5639c795f0c5e8095b66b4d739a9be44040686cf9ee8c98cd562ebacb44fc"
+  },
+  "node_version": "v24.20.0",
+  "tsunagou_version": "0.1.0",
+  "protocol_version": "1.0",
+  "schema_bundle_digest": "sha256:f2c3d8e0dc89f8b454288048d6326a4446f51659003045ac6194d6da39545fc6",
+  "isolation": "fresh dedicated main and worker Codex threads, one empty git-initialized project, isolated loopback backend and private state, ignore-user-config; raw logs and credentials purged after extraction",
+  "host_conversation_digests": {
+    "main": "1ce45cef4d2234bc6c0604725f3f4add819f03623aaad023e13d8341ba07d08f",
+    "worker": "377ad006b269076c37281ed4f9b20bd93a5a7ec5effd958102c74d7d9517ddd4"
+  },
+  "agent_id_digests": {
+    "main": "df6ff0980a3b43e87308e177e5b64d413e140dc103914f895e11a867304d536d",
+    "worker": "f0cf7b22657ad325f39d109f1fdb6286b4550587bdc0cb21e6ff4da2b8b743a2"
+  },
+  "admission": {
+    "main_seed_cli_exit_code": 0,
+    "worker_seed_cli_exit_code": 0,
+    "ticket_issue_exit_codes": [0, 0],
+    "main_first_enroll_cli_exit_code": 0,
+    "worker_first_enroll_cli_exit_code": 0,
+    "first_enroll_status": "degraded",
+    "first_enroll_epoch": 1,
+    "tickets_consumed_by_bridge": true,
+    "main_rebind_status": "ready",
+    "worker_rebind_status": "ready",
+    "rebind_epoch": 2,
+    "agent_ids_unchanged_across_rebind": true,
+    "distinct_host_conversation_digests": true,
+    "main_appointed_by_isolated_u_control_http": 200
+  },
+  "real_model_turns": [
+    {
+      "role": "main",
+      "purpose": "context.project_read and rebind",
+      "cli_exit_code": 0,
+      "mcp": ["context__project_read:completed"]
+    },
+    {
+      "role": "worker",
+      "purpose": "resume identity confirmation",
+      "cli_exit_code": 0,
+      "mcp": ["context__project_read:completed"]
+    },
+    {
+      "role": "main",
+      "purpose": "structured request and deduplication",
+      "cli_exit_code": 0,
+      "mcp": [
+        "message__send:completed:structured_request",
+        "message__send:completed:dedup_first",
+        "message__send:completed:dedup_same_input",
+        "message__send:failed:command_id_conflict"
+      ]
+    },
+    {
+      "role": "worker",
+      "purpose": "structured response positive and negatives",
+      "cli_exit_code": 0,
+      "mcp": [
+        "inbox__claim:completed",
+        "inbox__fetch:completed",
+        "message__respond:failed:response_message_not_found",
+        "message__send:completed:invalid_schema_reply",
+        "message__respond:failed:response_schema_violation",
+        "message__send:completed:valid_schema_reply",
+        "message__respond:completed:responded"
+      ]
+    },
+    {
+      "role": "main",
+      "purpose": "context query after disposable recovery probe",
+      "cli_exit_code": 0,
+      "mcp": ["context__project_read:completed"]
+    }
+  ],
+  "capabilities": {
+    "context.project_read": {
+      "status": "supported",
+      "live_main_and_worker_query_completed": true,
+      "observed_fields": ["project_id", "agent_id", "role", "main_agent_id", "scope.capabilities", "tasks"],
+      "project_id_matches_isolated_configuration": true,
+      "agent_id_matches_bound_session": true,
+      "main_scope_capability_count": 10,
+      "worker_scope_capability_count": 10,
+      "current_run_task_count": 0,
+      "prior_real_worker_owned_task_ref": "docs/research/evidence/codex-2026-09-20T0002-live.json"
+    },
+    "response.structured": {
+      "status": "supported",
+      "request_message_digest": "2b39aeab3bcb5282e798d97cc2aa78e2189550c12bae0ce75bdf06f5ae9524e0",
+      "public_inbox_exposed_open_obligation_and_schema": true,
+      "required_schema_verdict_type": "string",
+      "nonexistent_response_message_error": "response_message_not_found",
+      "wrong_type_verdict_error": "response_schema_violation",
+      "invalid_verdict_observed_type": "Int64",
+      "valid_verdict_observed_type": "String",
+      "all_respond_calls_used_public_obligation_id": true,
+      "all_reply_messages_linked_to_request": true,
+      "valid_reply_response_status": "responded",
+      "final_obligation_status": "responded",
+      "negative_calls_left_obligation_open_inferred_from_later_success": true
+    },
+    "delivery.deduplicate": {
+      "status": "supported",
+      "dedup_message_digest": "26242fc7c465265b05f182556db8ce42ceb0f2ea9c2c74e4f3295a867a85fcbf",
+      "same_explicit_raw_command_id_for_three_live_mcp_calls": true,
+      "same_command_same_input_same_message_id": true,
+      "same_command_changed_summary_error": "command_id_conflict",
+      "isolated_message_count_after_structured_request_and_dedup_test": 2,
+      "changed_input_created_second_dedup_message": false
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "unknown",
+      "reason": "Delivered fault script reconnects a disposable HTTP session; the real Codex main session was not disconnected or reconnected in flight.",
+      "delivered_script_exit_code": 0,
+      "disposable_http_in_flight_applied_once": true,
+      "disposable_http_retry_idempotent": true,
+      "disposable_http_stale_retry_fail_closed": true,
+      "real_codex_context_query_after_script_completed": true,
+      "real_codex_main_epoch_after_script": 2,
+      "real_codex_session_in_flight_disconnect_observed": false
+    },
+    "identity.continuity_evidence": {
+      "status": "unknown",
+      "reason": "Delivered script labels synthetic HTTP conversation IDs compact/fork/new; it does not trigger those lifecycle actions on a populated real Codex thread.",
+      "delivered_script_exit_code": 0,
+      "synthetic_http_resume_same_agent": true,
+      "synthetic_http_fork_new_distinct_agents": true,
+      "real_codex_resume_same_agent_and_host_digest": true,
+      "real_codex_compact_observed": false,
+      "real_codex_fork_observed": false,
+      "real_codex_new_lifecycle_observed": false
+    }
+  },
+  "baseline": {
+    "identity.session_isolation": "supported",
+    "identity.continuity_evidence": "unknown",
+    "context.project_read": "supported",
+    "command.typed_tools": "supported",
+    "task.lifecycle": "supported",
+    "cognition.report": "supported",
+    "contract.participation": "supported",
+    "inbox.pull_fetch_ack": "supported",
+    "response.structured": "supported",
+    "recovery.idempotent_reconnect": "unknown",
+    "delivery.deduplicate": "supported"
+  },
+  "formal_baseline_ready": false,
+  "details_ref": "docs/acceptance/codex-fivecaps-live-2026-09-20.md"
+}

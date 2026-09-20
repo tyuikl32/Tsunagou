@@ -1,0 +1,68 @@
+{
+  "host": "tsunagou-backend",
+  "version": "0.1.0",
+  "scope": "isolated_http_gap_tools",
+  "date_local": "2026-09-19",
+  "timezone": "Asia/Shanghai",
+  "window_utc": ["2026-09-19T15:15:00Z", "2026-09-19T15:18:00Z"],
+  "git_head": "081116d",
+  "bridge_server_version": "0.1.0",
+  "protocol_version": "1.0",
+  "schema_bundle_digest": "sha256:f2c3d8e0dc89f8b454288048d6326a4446f51659003045ac6194d6da39545fc6",
+  "isolation": "disposable_uvicorn_loopback_port; in_memory_state; disposable_control_token",
+  "note": "Backend/bridge gap-capability additions re-verified over the REAL HTTP entrypoint only (stdlib urllib against a live uvicorn socket). This is NOT real-Codex-model tool-call evidence and does not flip any baseline row to supported.",
+  "gap_capabilities": {
+    "task.lifecycle": {
+      "claim_http": 200,
+      "preflight_http": 200,
+      "preflight_status": "preflighted",
+      "start_with_preflight_http": 200,
+      "start_status": "running",
+      "progress_http": 200,
+      "progress_id_present": true,
+      "bogus_preflight_http": 400,
+      "bogus_preflight_code": "preflight_id_mismatch"
+    },
+    "context.project_read": {
+      "http": 200,
+      "coordination_read_in_scope": true,
+      "owned_task_listed": true,
+      "secret_and_absolute_path_absent": true
+    },
+    "command.typed_tools": {
+      "unknown_payload_field_http": 400,
+      "unknown_payload_field_code": "unknown_payload_field"
+    },
+    "recovery.idempotent_reconnect": {
+      "rotate_fresh_nonce_correct_epoch_http": 200,
+      "rotate_epoch_incremented": true,
+      "stale_expected_connection_epoch_http": 403,
+      "stale_expected_connection_epoch_code": "stale_connection_epoch"
+    },
+    "identity.continuity_evidence": {
+      "note": "host-side; requires real Codex compact/fork/new lifecycle. No backend claim made here."
+    }
+  },
+  "baseline": {
+    "identity.session_isolation": {"status": "supported", "evidence_refs": ["admission.distinct_real_thread_digests"]},
+    "identity.continuity_evidence": {"status": "unknown", "reason": "compact_fork_new_lifecycle_not_observed"},
+    "context.project_read": {"status": "unknown", "reason": "project_id_task_scope_query_tools_added; awaiting_real_codex_model_confirmation"},
+    "command.typed_tools": {"status": "unknown", "reason": "extra_fields_and_actor_rejection_added; awaiting_real_codex_model_confirmation"},
+    "task.lifecycle": {"status": "unknown", "reason": "preflight_progress_tools_added; awaiting_real_codex_model_confirmation"},
+    "cognition.report": {"status": "unknown", "reason": "claims_schema_fixed_at_source_and_http; awaiting_real_codex_model_reconfirmation"},
+    "contract.participation": {"status": "supported", "evidence_refs": ["contract.codex_mcp_propose", "contract.codex_mcp_accept_by_bound_worker", "contract.proposal_digest_matched"]},
+    "inbox.pull_fetch_ack": {"status": "supported", "evidence_refs": ["inbox.codex_mcp_claim", "inbox.codex_mcp_fetch", "inbox.codex_mcp_presented", "inbox.codex_mcp_ack"]},
+    "response.structured": {"status": "unknown", "reason": "respond_existence_sender_link_fixed; response_schema_contract_validation_still_missing"},
+    "recovery.idempotent_reconnect": {"status": "unknown", "reason": "expected_connection_epoch_cas_added; in_flight_disconnect_fault_injection_still_missing"},
+    "delivery.deduplicate": {"status": "unknown", "reason": "command_id_conflict_fixed_at_source_and_http; awaiting_real_codex_model_reconfirmation"}
+  },
+  "regression": {
+    "pytest": "98 passed",
+    "tsc": "exit 0",
+    "validate_protocol": "validated 107 command policies and 112 schemas",
+    "http_probe_cases": "9/9 passed"
+  },
+  "host_session_admission_status": "ready",
+  "formal_baseline_ready": false,
+  "details_ref": "docs/acceptance/codex-gap-tools-2026-09-19.md"
+}

@@ -49,8 +49,8 @@ def _required_str(payload: dict[str, Any], key: str) -> str:
     return value
 
 
-def _message_view(message: Message) -> dict[str, Any]:
-    return {
+def _message_view(message: Message, messages: MessageStore | None = None) -> dict[str, Any]:
+    view: dict[str, Any] = {
         "message_id": message.message_id,
         "sender_agent_id": message.sender_agent_id,
         "recipient_agent_id": message.recipient_agent_id,
@@ -58,6 +58,19 @@ def _message_view(message: Message) -> dict[str, Any]:
         "subject_ref": message.subject_ref,
         "summary": message.summary,
     }
+    if messages is not None:
+        obligations = [
+            {
+                "obligation_id": obligation.obligation_id,
+                "status": obligation.status,
+                "contract": obligation.contract,
+            }
+            for obligation in messages.obligations.values()
+            if obligation.message_id == message.message_id
+        ]
+        if obligations:
+            view["response_obligations"] = obligations
+    return view
 
 
 def _slot(item: Any, required: bool) -> dict[str, Any]:
@@ -92,6 +105,7 @@ def _claim(item: Any) -> Claim:
 def build_handlers(
     *, authority: AuthorityService, tasks: TaskService | None = None,
     cognition: CognitionService | None = None, messages: MessageStore | None = None,
+    project_id: str | None = None,
 ) -> dict[str, Handler]:
     tasks = tasks if tasks is not None else TaskService()
     cognition = cognition if cognition is not None else CognitionService()
@@ -330,7 +344,7 @@ def build_handlers(
         _authorize(context, "inbox.consume")
         limit = int(payload.get("limit", 50))
         claimed = messages.fetch(context["principal_id"], limit=limit)
-        return {"messages": [_message_view(message) for message in claimed], "count": len(claimed)}
+        return {"messages": [_message_view(message, messages) for message in claimed], "count": len(claimed)}
 
     def inbox_fetch(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
@@ -338,7 +352,7 @@ def build_handlers(
         message = messages.messages.get(message_id)
         if message is None or message.recipient_agent_id != context["principal_id"]:
             raise PermissionError("inbox_access_denied")
-        return _message_view(message)
+        return _message_view(message, messages)
 
     def inbox_presented(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
@@ -401,6 +415,7 @@ def build_handlers(
             and attempt.owner_agent_id == agent_id
         ]
         return {
+            **({"project_id": project_id} if project_id else {}),
             "agent_id": agent_id,
             "role": agent.role if agent is not None else "worker",
             "main_agent_id": authority.main_agent_id,

@@ -1,0 +1,61 @@
+{
+  "host": "codex",
+  "version": "codex-cli 0.155.0-alpha.9.2",
+  "scope": "single_host_live_bridge_followup_20260920",
+  "date_local": "2026-09-20",
+  "timezone": "Asia/Shanghai",
+  "window_local": "2026-09-20 09:27-09:45",
+  "git_head": "081116d",
+  "bridge_server_version": "0.1.0",
+  "node_version": "v24.20.0",
+  "tsunagou_version": "0.1.0",
+  "protocol_version": "1.0",
+  "schema_bundle_digest": "sha256:f2c3d8e0dc89f8b454288048d6326a4446f51659003045ac6194d6da39545fc6",
+  "isolation": "fresh private root, git-initialized empty project, isolated loopback HTTP, ignore-user-config; raw logs and private credentials removed after extraction",
+  "product_fixes_this_turn": {
+    "context.project_read": "returns project_id from TSUNAGOU_PROJECT_ID or the coordination project file",
+    "response.structured": "inbox exposes recipient response_obligations and message.respond validates response payload against response_contract.schema",
+    "delivery.deduplicate": "conflict comparison now covers priority, response_contract, and in_reply_to; bridge exposes an optional message__send command_id idempotency key"
+  },
+  "local_verification": {
+    "pytest": "passed",
+    "ruff": "passed",
+    "mypy": "passed",
+    "protocol_validation": "passed",
+    "docs_validation": "passed",
+    "typescript_check": "passed",
+    "bridge_build": "passed",
+    "isolated_http_probe": {
+      "context.project_read.project_id_returned": true,
+      "response.structured.bad_schema_rejected": true,
+      "response.structured.good_schema_responded": true,
+      "delivery.deduplicate.same_command_same_input": true,
+      "delivery.deduplicate.same_command_changed_input_conflict": true
+    }
+  },
+  "real_codex_model_attempt": {
+    "status": "blocked",
+    "reason": "codex API key rejected with HTTP 401 invalid_api_key",
+    "seed_exit_codes": [1, 1],
+    "business_turn_exit_codes": [2, 2, 2],
+    "mcp_tool_calls_completed": 0,
+    "admission_status_after_failed_enroll": "degraded",
+    "formal_baseline_changed": false,
+    "private_root_removed": true
+  },
+  "baseline": {
+    "identity.session_isolation": "supported",
+    "identity.continuity_evidence": "unknown",
+    "context.project_read": "unknown",
+    "command.typed_tools": "supported",
+    "task.lifecycle": "supported",
+    "cognition.report": "supported",
+    "contract.participation": "supported",
+    "inbox.pull_fetch_ack": "supported",
+    "response.structured": "unknown",
+    "recovery.idempotent_reconnect": "unknown",
+    "delivery.deduplicate": "unknown"
+  },
+  "formal_baseline_ready": false,
+  "details_ref": "docs/acceptance/codex-live-2026-09-20-followup.md"
+}

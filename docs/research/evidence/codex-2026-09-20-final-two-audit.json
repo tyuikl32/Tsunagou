@@ -1,0 +1,83 @@
+{
+  "host": "codex",
+  "scope": "read_only_audit_of_final_two_capabilities",
+  "date_local": "2026-09-20",
+  "cli_version_from_rollout": "0.155.0-alpha.9.2",
+  "model_backend": "gpt-5.6-sol",
+  "model_backend_source": "user-reported; rollout model field was not used as an independent assertion",
+  "bridge_dist_sha256_verified": "685acd965950acab44e38508d07ae2665f03fc931eaef5e4d510598214bfd873",
+  "identity.continuity_evidence": {
+    "source": "read-only parse of retained Codex rollout metadata; no raw conversation IDs or transcript copied",
+    "digest_algorithm": "sha256('conversation_id:' + conversation_id)",
+    "main_digest": "1ce45cef4d2234bc6c0604725f3f4add819f03623aaad023e13d8341ba07d08f",
+    "compact": {
+      "event": "compacted",
+      "event_time_utc": "2026-09-20T12:04:14.833Z",
+      "same_main_digest": true,
+      "replacement_history_after_count": 7,
+      "replacement_history_before_count": 21,
+      "before_count_source": "collaborator report; not independently recomputed from retained event",
+      "rollout_sha256": "fb01a563dea98936ffac29629405c4cffbe118fd02b84e4941884ef6320b8256"
+    },
+    "fork": {
+      "session_meta_time_utc": "2026-09-20T12:13:55.050Z",
+      "child_digest": "0069db8d22ffe7a962d966e1d2f7c9db946724126b33f30d7c6ecf8dba09e8a8",
+      "forked_from_id_digest_matches_main": true,
+      "forked_from_ordinal_exclusive": 115,
+      "rollout_sha256": "5443de80a904819ad56ba7ed489b1903bd6d5534b557d8b9869b94f86337d3ab"
+    },
+    "new": {
+      "session_meta_time_utc": "2026-09-20T12:23:06.648Z",
+      "digest": "571b14817dd27ae3ae8b96ff5cb36acebcc18412559284cfa3d3f5aaeb49d9f9",
+      "no_fork_or_parent_field": true,
+      "distinct_from_main_and_fork": true,
+      "rollout_sha256": "1f5793a2c4070fa63158b1ef9a57c77b2bbf0179fa9aa5e52fef76147e8b570e"
+    },
+    "bridge_child_session_binding_directly_observed": false,
+    "note": "Host lifecycle metadata is independently observed. The fork/new rollouts did not call Tsunagou tools; new bridge child enrollment is not asserted by this audit."
+  },
+  "recovery.idempotent_reconnect": {
+    "real_worker_digest": "377ad006b269076c37281ed4f9b20bd93a5a7ec5effd958102c74d7d9517ddd4",
+    "real_worker_post_reconnect_tool": {
+      "tool": "context.project_read",
+      "call_time_utc": "2026-09-20T12:49:47.259Z",
+      "output_time_utc": "2026-09-20T12:49:47.442Z",
+      "turn_complete_time_utc": "2026-09-20T12:49:54.305Z",
+      "tool_call_completed": true,
+      "output_has_project_id": true,
+      "output_has_agent_id": true,
+      "output_has_tsunagou_error": false,
+      "rollout_sha256": "047dcb362a767f83abf640d7b9737ab450b4d2d129395f62cfa8071730b5103e",
+      "source": "read-only parse of retained Codex rollout metadata and tool result shape",
+      "post_reconnect_order_source": "collaborator report; the retained rollout independently confirms the later tool call, not the earlier HTTP reconnect response"
+    },
+    "collaborator_reported_backend": {
+      "source": "collaborator's sanitized final-two record; original private run was purged before this audit",
+      "epoch_progression": [1, 2, 3],
+      "real_bridge_reconnect_http": 200,
+      "same_agent_and_session": true,
+      "stale_epoch_header_http": 401,
+      "stale_token_http": 401,
+      "stale_nonce_http": 403,
+      "stale_cas_epoch_http": 403,
+      "reported_cli_exit_code": 0,
+      "cli_exit_code_independently_recovered": false
+    },
+    "disposable_http_fault": {
+      "source": "collaborator's sanitized report of recovery_fault_inject.py; raw run output was purged",
+      "script_exit_code_reported": 0,
+      "applied_once": true,
+      "same_command_id_same_message_id": true,
+      "changed_input_conflict": true,
+      "old_credential_fail_closed": true
+    },
+    "literal_in_flight_disconnect_on_real_codex_bridge_session": false,
+    "note": "Real Codex bridge reconnect and post-reconnect tool use are distinct from the disposable HTTP in-flight fault. This audit does not merge them into one observed event."
+  },
+  "privacy": {
+    "raw_conversation_ids_saved": false,
+    "tickets_tokens_nonces_saved": false,
+    "full_transcript_saved": false,
+    "private_absolute_paths_saved": false
+  }
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -35,12 +36,33 @@ def build_application() -> FastAPI:
     tasks = TaskService()
     cognition = CognitionService()
     messages = MessageStore(Path(state_dir) / "messages.json" if state_dir else None)
+    project_id = _project_id()
     dispatcher = CommandDispatcher(_REGISTRY)
     for command_kind, handler in build_handlers(
-        authority=authority, tasks=tasks, cognition=cognition, messages=messages
+        authority=authority, tasks=tasks, cognition=cognition, messages=messages,
+        project_id=project_id,
     ).items():
         dispatcher.register(command_kind, handler)
     authenticator = LocalCommandAuthenticator(
         authority=authority, control_token=os.environ.get("TSUNAGOU_CONTROL_TOKEN")
     )
     return create_app(dispatcher, authenticator=authenticator)
+
+
+def _project_id() -> str | None:
+    """Resolve a project id from the environment or the coordination repo."""
+    configured = os.environ.get("TSUNAGOU_PROJECT_ID")
+    if configured:
+        return configured
+    project_root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
+    if not project_root:
+        return None
+    project_file = Path(project_root) / ".tsunagou" / "project.json"
+    if not project_file.is_file():
+        return None
+    try:
+        raw = json.loads(project_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = raw.get("project_id")
+    return value if isinstance(value, str) and value else None
