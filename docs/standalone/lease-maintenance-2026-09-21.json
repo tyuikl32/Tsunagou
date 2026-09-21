@@ -1,12 +1,13 @@
 {
   "date": "2026-09-21",
   "command": "uv run --extra dev pytest -q tests/unit/test_runtime_maintenance.py",
+  "note": "The original evidence predates the task-queue correction; current behavior keeps the historical Attempt orphaned and returns the Task to open.",
   "scope": "RuntimeMaintenance lease expiry reconciliation",
   "passed": true,
   "assertions": [
     "an expired Lease becomes expired",
-    "the owned Attempt and Task become orphaned",
+    "the owned Attempt becomes orphaned and the Task returns to the open public queue",
     "the reconciliation writes one SQLite event in the same transaction"
   ],
-  "runtime_contract": "The daemon starts and stops the maintenance thread with its FastAPI lifecycle; recovery disposition remains an explicit Agent or user decision."
+  "runtime_contract": "The daemon starts and stops the maintenance thread with its FastAPI lifecycle; Lease expiry fences only the old Attempt, while any later eligible Agent may claim the open Task."
 }

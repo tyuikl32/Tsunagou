@@ -265,7 +265,8 @@ def _query_provider(
         if kind == "agents":
             return {
                 "items": [
-                    {"agent_id": item.agent_id, "status": item.status, "role": item.role}
+                    {"agent_id": item.agent_id, "status": item.status, "role": item.role,
+                     "conversation_digest": item.conversation_digest}
                     for item in authority.agents.values()
                 ],
                 "main_agent_id": authority.main_agent_id,

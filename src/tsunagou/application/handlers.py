@@ -229,7 +229,11 @@ def build_handlers(
             attempt.revision += 1
             task = tasks.tasks.get(attempt.task_id)
             if task is not None and task.current_attempt_id == attempt.attempt_id:
-                task.status = "orphaned"
+                # Expiry fences only the old execution Attempt. The Task is
+                # returned to the public queue so a later Agent can claim it;
+                # the old Agent is not a prerequisite for recovery.
+                task.current_attempt_id = None
+                task.status = "open"
                 task.orphan_reason = "resource_lease_expired"
                 task.revision += 1
             for key, grant in list(authority.grants.items()):
@@ -519,6 +523,15 @@ def build_handlers(
         try:
             execution_workflow.start(preflight, agent_id=context["principal_id"])
         except ValueError as exc:
+            # A failed start may have discovered a missing runtime condition
+            # after a preflight lease was reserved. Keep blocked work free of
+            # execution resources so another Agent can claim it later.
+            resources.release_for_attempt(current_attempt.attempt_id, reason="task_start_blocked")
+            for grant_id, grant in list(authority.grants.items()):
+                if grant.attempt_id == current_attempt.attempt_id and grant.status == "active":
+                    authority.grants[grant_id] = type(grant)(
+                        **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
+                    )
             raise ValueError(str(exc)) from exc
         attempt = tasks.attempts[preflight.attempt_id]
         if attempt_id is not None and attempt_id != attempt.attempt_id:
@@ -555,12 +568,20 @@ def build_handlers(
         attempt = tasks.attempts.get(current.current_attempt_id or "")
         if attempt is not None and attempt.owner_agent_id != context["principal_id"]:
             raise PermissionError("attempt_owner_required")
+        previous_attempt_id = attempt.attempt_id if attempt is not None else None
         reason = payload.get("reason_code") or payload.get("reason") or "blocked"
         task = tasks.block(
             task_id, str(reason), checkpoint_summary=payload.get("checkpoint_summary") or {},
             dependency_refs=tuple(payload.get("dependency_refs") or ()),
             evidence_refs=tuple(payload.get("evidence_refs") or ()),
         )
+        if previous_attempt_id is not None:
+            resources.release_for_attempt(previous_attempt_id, reason="task_blocked")
+            for grant_id, grant in list(authority.grants.items()):
+                if grant.attempt_id == previous_attempt_id and grant.status == "active":
+                    authority.grants[grant_id] = type(grant)(
+                        **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
+                    )
         return {"task_id": task_id, "status": task.status}
 
     def task_submit(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -875,7 +896,15 @@ def build_handlers(
             raise ValueError("proposal_digest_mismatch")
         related_task = tasks.tasks.get(decision.subject_ref)
         if related_task is not None and related_task.status not in {"completed", "cancelled"}:
+            previous_attempt_id = related_task.current_attempt_id
             tasks.block(related_task.task_id, f"user_decision_pending:{decision.decision_id}")
+            if previous_attempt_id is not None:
+                resources.release_for_attempt(previous_attempt_id, reason="user_decision_pending")
+                for grant_id, grant in list(authority.grants.items()):
+                    if grant.attempt_id == previous_attempt_id and grant.status == "active":
+                        authority.grants[grant_id] = type(grant)(
+                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
+                        )
         return {"decision_id": decision.decision_id, "proposal_digest": decision.input_digest,
                 "revision": decision.expected_revision, "status": decision.status,
                 "related_task_id": related_task.task_id if related_task is not None else None}

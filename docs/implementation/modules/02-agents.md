@@ -8,7 +8,7 @@
 
 | 表（`agents_` 前缀） | 字段 | 关键约束 |
 |---|---|---|
-| agents | display_name, adapter_kind, installation_id, conversation_key_digest, status | active conversation 组合唯一；显示名不认证 |
+| agents | display_name, adapter_kind, installation_id, conversation_key_digest, status | 每个 host conversation/subagent 一个 Agent；installation 不是身份；active conversation 组合唯一 |
 | sessions | agent_id, status, credential_hash, connection_epoch, reconnect_nonce_hash, active_snapshot_id, profile_version, ended_reason? | 一个 Agent 最多一条非 ended；凭据不进入共享 export |
 | connections | session_id, epoch, created_at, closed_at?, continuity_digest | `(session_id,epoch)` 唯一；TCP 重连不自行多建业务连接 |
 | tickets | kind:worker\|main\|session_rebind, secret_hash, allowlist, ceiling_digest, installation_binding?, expires_at, consumed_at?, issued_by | 默认 10 分钟、单次消费；main ticket 绑定 expected authority epoch |
@@ -22,13 +22,13 @@
 
 ## 接入与恢复
 
-bridge 自己读取宿主 conversation ID，与 installation_id 归一成服务端 keyed digest。resume/compaction 保持 conversation，fork/clear 新 conversation。无法证明连续性不伪造随机 ID，停在 degraded。
+bridge 自己读取宿主 conversation ID，与 installation_id 归一成服务端 keyed digest。resume/compaction 保持 conversation，fork/clear 新 conversation。无法证明连续性不复用已有 session 文件，也不伪造随机 ID，停在 degraded。installation 只描述宿主安装，不能把同一 IDE 的不同对话合并为一个 Agent；每个 conversation 必须有独立 Agent、Session、凭据和私有 session 文件。
 
 兑换 ticket 的一个 UoW 消费票据、创建 Agent/HostSession/凭据哈希/能力快照、事件与 agent_base。必需能力缺失时票据仍消费，Agent provisioning、Session degraded，仅 bootstrap diagnostics 可用；reprobe 原地修复。malformed/无效票据/conversation 冲突完全回滚。
 
 凭据首次经 bridge 私有交付通道返回，绝不进入模型或普通查询，服务端只持久保存哈希。交付响应丢失时同一 ticket+command_id+nonce 只能取回同一次接入的非秘密 receipt，不能新建 Agent；bridge 未安全保存 token 时通过 session_rebind_ticket 恢复。不要为了重放明文 token 引入加密缓存和密钥生命周期。T02/T06 必须验证 Windows 私有文件 ACL 和无 secret 日志路径。
 
-reconnect 用 session token、可信 continuity evidence、单次 reconnect nonce 与 expected connection_epoch CAS；成功推进 epoch 并更换 nonce，旧连接 commit 前被拒绝。重复同 nonce/command_id返回同一次连接结果，其他并发方失败。没有应用 heartbeat 不标 ended；显式 SessionEnd/rebind 才关闭身份。执行 Lease 的超时是独立机制。
+reconnect 用 session token、可信 continuity evidence、单次 reconnect nonce 与 expected connection_epoch CAS；成功推进 epoch 并更换 nonce，旧连接 commit 前被拒绝。重复同 nonce/command_id返回同一次连接结果，其他并发方失败。没有应用 heartbeat 不标 ended；显式 SessionEnd/rebind 才关闭身份。执行 Lease 的超时是独立机制，只撤当前 Attempt 的执行资格，不把 Task 绑定在旧 conversation 上。
 
 ## 主 Agent 与继任
 

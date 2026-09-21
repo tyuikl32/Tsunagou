@@ -28,11 +28,11 @@ named resource 的 exclusive_use 与任何另一个 active exclusive_use 冲突�
 
 ## 租约与等待
 
-execution Lease 默认 TTL 120 秒，bridge 每 30 秒 renew，renew 带完整 lease_set_id、attempt/execution_epoch、scope_digest。Lease 不按每个资源增加 fencing counter；Attempt.execution_epoch + session/runtime fencing 保护系统 API。到期在单写 UoW 标 expired、撤 execution grant、Task orphaned，追加事件；不宣称已杀死物理进程。
+execution Lease 默认 TTL 120 秒，bridge 每 30 秒 renew，renew 带完整 lease_set_id、attempt/execution_epoch、scope_digest。Lease 不按每个资源增加 fencing counter；Attempt.execution_epoch + session/runtime fencing 保护系统 API。到期在单写 UoW 标 expired、撤 execution grant、旧 Attempt orphaned，并把 Task 返回 `open` 公共队列，追加事件；不宣称已杀死物理进程，也不要求原 Agent 返回后任务才能被其他 Agent claim。
 
 claimed 的 preflight 可预留 Lease；start 时再次验证。Task 离开 running、取消 claimed、owner ended、权限撤销时释放；blocked 不续租。短事务内的 preflight→start 可使用同一 lease set，不能跳过仍有效检查。
 
-等待队列按 effective_priority、enqueued_at、id 排序；每 5 分钟 aging 一档，最多 high，无抢占。释放后仅通知候选重新检查，不能在 owner 无上下文时自动开始任务。用户等待不消耗执行 Lease。
+等待队列按 effective_priority、enqueued_at、id 排序；每 5 分钟 aging 一档，最多 high，无抢占。释放后仅通知候选重新检查，不能在 owner 无上下文时自动开始任务；Task 回到 open 后任何合格 Agent 都可 claim。用户等待不消耗执行 Lease。
 
 ## 端口和事件
 

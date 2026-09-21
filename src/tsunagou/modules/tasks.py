@@ -207,22 +207,37 @@ class TaskService:
     def claim(self, task_id: str, agent_id: str) -> Attempt:
         with self._lock:
             task = self._task(task_id)
-            if task.status != "open" or task.current_attempt_id is not None:
+            # A suspension is a task state, not an execution lease. Once the
+            # previous Attempt has been detached, any later eligible Agent may
+            # claim the task; joining time must not determine task ownership.
+            if task.status not in {"open", "blocked", "orphaned"}:
                 raise TaskStateError("task_not_claimable")
+            current = self.attempts.get(task.current_attempt_id or "")
+            if current is not None and current.status not in ATTEMPT_TERMINAL | {"blocked"}:
+                raise TaskStateError("task_not_claimable")
+            if current is not None and current.status == "blocked":
+                current.status = "orphaned"
+                current.ended_at = time.time()
+                current.revision += 1
             attempt = Attempt(new_id(), task_id, agent_id)
             self.attempts[attempt.attempt_id] = attempt
             task.current_attempt_id = attempt.attempt_id
             task.status = "claimed"
+            task.block_reason = None
+            task.orphan_reason = None
             task.revision += 1
             return attempt
 
     def resume(self, task_id: str, agent_id: str) -> Attempt:
         with self._lock:
             task = self._task(task_id)
-            if task.status not in {"blocked", "orphaned"}:
+            if task.status != "blocked":
                 raise TaskStateError("task_not_resumable")
             current = self.attempts.get(task.current_attempt_id or "")
-            if current is not None and current.owner_agent_id != agent_id:
+            suspended_id = task.suspension_snapshot.attempt_id if task.suspension_snapshot else None
+            suspended = self.attempts.get(suspended_id or "")
+            owner = current or suspended
+            if owner is None or owner.owner_agent_id != agent_id:
                 raise TaskStateError("attempt_owner_required")
             if current is None or current.status in ATTEMPT_TERMINAL:
                 current = Attempt(new_id(), task_id, agent_id)
@@ -231,8 +246,19 @@ class TaskService:
             current.status = "claimed"
             current.revision += 1
             task.status = "claimed"
+            task.block_reason = None
             task.revision += 1
             return current
+
+    def clear_blocker(self, task_id: str, expected_reason: str) -> Task:
+        """Clear one resolved blocker while preserving the task's suspension state."""
+        with self._lock:
+            task = self._task(task_id)
+            if task.block_reason != expected_reason:
+                raise TaskStateError("blocker_revision_conflict")
+            task.block_reason = None
+            task.revision += 1
+            return task
 
     def preflight(
         self, task_id: str, agent_id: str, *, attempt_id: str | None = None,
@@ -279,8 +305,16 @@ class TaskService:
                 "contract": contract_ready, "report": report_ready,
             }.items() if not value]
             if missing:
+                previous_attempt_id = attempt.attempt_id
+                attempt.status = "blocked"
+                attempt.revision += 1
                 task.status = "blocked"
                 task.revision += 1
+                task.block_reason = "start_blocked:" + ",".join(missing)
+                task.suspension_snapshot = SuspensionSnapshot(
+                    task_id=task_id, attempt_id=previous_attempt_id,
+                    reason=task.block_reason,
+                )
                 raise TaskStateError("start_blocked:" + ",".join(missing))
             attempt.status = "running"
             attempt.started_at = time.time()
@@ -314,11 +348,18 @@ class TaskService:
             task = self._task(task_id)
             if task.status in TASK_TERMINAL:
                 raise TaskStateError("terminal_task")
+            previous_attempt_id = task.current_attempt_id
+            previous_attempt = self.attempts.get(previous_attempt_id or "")
+            if previous_attempt is not None and previous_attempt.status not in ATTEMPT_TERMINAL:
+                previous_attempt.status = "blocked"
+                previous_attempt.revision += 1
+            # The blocked task remains durable and claimable. The old Attempt
+            # remains resumable by its owner, but holds no execution lease.
             task.status = "blocked"
             task.revision += 1
             task.block_reason = reason
             task.suspension_snapshot = SuspensionSnapshot(
-                task_id=task_id, attempt_id=task.current_attempt_id, reason=reason,
+                task_id=task_id, attempt_id=previous_attempt_id, reason=reason,
                 checkpoint_summary=dict(checkpoint_summary or {}),
                 dependency_refs=tuple(dependency_refs), evidence_refs=tuple(evidence_refs),
             )
@@ -400,10 +441,19 @@ class TaskService:
     def orphan(self, task_id: str, reason: str = "lease_expired") -> Task:
         with self._lock:
             task = self._task(task_id)
-            attempt = self._current_attempt(task)
-            attempt.status = "orphaned"
-            attempt.revision += 1
-            task.status = "orphaned"
+            attempt = self.attempts.get(task.current_attempt_id or "")
+            if attempt is not None:
+                attempt.status = "orphaned"
+                attempt.ended_at = time.time()
+                attempt.revision += 1
+            # Resource expiry fences only the old execution. It must not turn
+            # the durable task into a lease that requires the same Agent to
+            # return before another Agent can claim it.
+            task.current_attempt_id = None
+            # Lease expiry fences only the old execution attempt. The durable
+            # task returns to the public queue and does not require the old
+            # Agent, bridge, or conversation to come back.
+            task.status = "open"
             task.revision += 1
             task.orphan_reason = reason
             return task
@@ -428,15 +478,15 @@ class TaskService:
     def recover(self, task_id: str, *, expected_attempt_id: str, disposition: str) -> Task:
         with self._lock:
             task = self._task(task_id)
-            if task.current_attempt_id != expected_attempt_id:
-                raise TaskStateError("attempt_id_mismatch")
             attempt = self.attempts.get(expected_attempt_id)
-            if attempt is None:
+            if attempt is None or attempt.task_id != task_id:
                 raise TaskStateError("attempt_not_found")
+            if task.current_attempt_id is not None and task.current_attempt_id != expected_attempt_id:
+                raise TaskStateError("attempt_id_mismatch")
             if disposition == "reopen":
-                if task.status not in {"blocked", "orphaned", "cancel_requested", "changes_requested"}:
+                if task.status not in {"open", "blocked", "orphaned", "cancel_requested", "changes_requested"}:
                     raise TaskStateError("task_not_recoverable")
-                if attempt.status not in {"claimed", "running", "orphaned", "failed", "cancelled"}:
+                if attempt.status not in {"claimed", "running", "blocked", "orphaned", "failed", "cancelled"}:
                     raise TaskStateError("attempt_not_recoverable")
                 if attempt.status not in ATTEMPT_TERMINAL:
                     attempt.status = "orphaned"

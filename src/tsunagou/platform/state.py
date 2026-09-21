@@ -9,6 +9,7 @@ ProjectDatabase transaction as the command idempotency record and event.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
@@ -200,7 +201,20 @@ class ServiceStateRuntime:
             service.tickets = {
                 key: EnrollmentTicket(**item) for key, item in value.get("tickets", {}).items()
             }
-            service.agents = {key: Agent(**item) for key, item in value.get("agents", {}).items()}
+            service.agents = {
+                key: Agent(**{
+                    **item,
+                    "conversation_digest": item.get("conversation_digest") or next(
+                        (
+                            session.conversation_digest
+                            for session in service.sessions.values()
+                            if session.agent_id == key
+                        ),
+                        "",
+                    ),
+                })
+                for key, item in value.get("agents", {}).items()
+            }
             service.sessions = {key: Session(**item) for key, item in value.get("sessions", {}).items()}
             service.grants = {
                 key: Grant(**{**item, "capabilities": frozenset(item.get("capabilities", []))})
@@ -366,10 +380,19 @@ class ServiceStateRuntime:
                 )
         for task in self.tasks.tasks.values():
             attempt = self.tasks.attempts.get(task.current_attempt_id or "")
-            if task.status == "running" and attempt is not None:
+            if task.status in {"claimed", "running"} and attempt is not None:
+                if self.resources is not None:
+                    self.resources.release_for_attempt(
+                        attempt.attempt_id, reason="runtime_epoch_rotated",
+                    )
                 attempt.status = "orphaned"
+                attempt.ended_at = time.time()
                 attempt.revision += 1
-                task.status = "orphaned"
+                task.current_attempt_id = None
+                # A daemon restart invalidates execution authority and the
+                # in-memory claim. Leave the durable task in the public queue
+                # for any later Agent; the old Attempt remains evidence.
+                task.status = "open"
                 task.orphan_reason = "runtime_epoch_rotated"
                 task.revision += 1
 

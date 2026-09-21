@@ -52,7 +52,8 @@ def test_expired_lease_orphans_attempt_and_persists_reconciliation(tmp_path: Pat
 
     assert maintenance.run_once() == 1
     assert lease.status == "expired"
-    assert tasks.tasks[task.task_id].status == "orphaned"
+    assert tasks.tasks[task.task_id].status == "open"
+    assert tasks.tasks[task.task_id].current_attempt_id is None
     assert tasks.attempts[attempt.attempt_id].status == "orphaned"
     assert state.persisted == 1
     assert database.last_event_seq() == 1

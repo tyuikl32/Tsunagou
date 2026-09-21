@@ -57,6 +57,10 @@ class EnrollmentTicket:
 class Agent:
     agent_id: str
     installation_digest: str
+    # An Agent is one host conversation/worker, not an IDE installation. Keep
+    # the conversation binding on the Agent as well as its Session so a
+    # rebind request can never retarget a different conversation.
+    conversation_digest: str = ""
     status: str = "active"
     role: str = "worker"
 
@@ -132,11 +136,18 @@ class AuthorityService:
                     value["conversation_digest"], value["expires_at"], value.get("used", False),
                 )
             self.tickets[ticket.secret_hash] = ticket
-        self.agents = {key: Agent(**value) for key, value in raw.get("agents", {}).items()}
         self.sessions = {
             key: Session(**{**value, "reconnect_nonce_hash": value.get("reconnect_nonce_hash", "")})
             for key, value in raw.get("sessions", {}).items()
         }
+        self.agents = {}
+        for key, value in raw.get("agents", {}).items():
+            conversation_digest = value.get("conversation_digest") or next(
+                (session.conversation_digest for session in self.sessions.values()
+                 if session.agent_id == key),
+                "",
+            )
+            self.agents[key] = Agent(**{**value, "conversation_digest": conversation_digest})
         self.grants = {
             key: Grant(**{**value, "capabilities": frozenset(value.get("capabilities", []))})
             for key, value in raw.get("grants", {}).items()
@@ -197,7 +208,9 @@ class AuthorityService:
             status = session_status(snapshot)
             snapshot_digest = canonical_digest(snapshot)
             ticket.used = True
-            agent = Agent(new_id(), ticket.installation_digest)
+            agent = Agent(
+                new_id(), ticket.installation_digest, ticket.conversation_digest,
+            )
             session_id = new_id()
             token = secrets.token_urlsafe(32)
             reconnect_nonce = secrets.token_urlsafe(24)
@@ -244,9 +257,13 @@ class AuthorityService:
             if target_agent_id is not None:
                 session = next(
                     (candidate for candidate in self.sessions.values()
-                     if candidate.agent_id == target_agent_id and candidate.active), None,
+                     if candidate.agent_id == target_agent_id
+                     and candidate.conversation_digest == conversation_digest
+                     and candidate.active), None,
                 )
-            if session is None:
+                if session is None:
+                    raise ValueError("session_not_rebindable")
+            else:
                 session = next(
                     (candidate for candidate in self.sessions.values()
                      if candidate.conversation_digest == conversation_digest and candidate.active), None,

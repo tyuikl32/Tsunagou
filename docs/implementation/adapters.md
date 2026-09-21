@@ -12,7 +12,7 @@ daemon 的共享项目 MCP 服务由官方 Python SDK 接入 FastAPI/ASGI；官�
 
 | capability ID | 必需实测证据 |
 |---|---|
-| identity.session_isolation | 同目录两个会话产生不同身份和凭据，不能交叉操作 Attempt |
+| identity.session_isolation | 同 IDE/同目录两个 conversation 或 subagent 产生不同 Agent、Session 和凭据，不能交叉操作 Attempt |
 | identity.continuity_evidence | resume/compact 保持 ID，new/clear/fork 不同 |
 | context.project_read | 正确项目摘要与黑板入口，不串项目 |
 | command.typed_tools | schema 与 REST 语义一致，不能自报 actor |
@@ -39,7 +39,7 @@ daemon 的共享项目 MCP 服务由官方 Python SDK 接入 FastAPI/ASGI；官�
 
 ## 身份、凭据与生命周期
 
-统一输入含 `adapter_installation_id,host_kind,host_conversation_id,parent_host_conversation_id?,lifecycle_event,host_version`。ID 来自原生宿主或可靠绑定的对话生命周期；禁用 PID/cwd/显示名/LLM 自报。core 只做规范字符串比较并持久 keyed digest，原 ID 不进日志、prompt、共享 Git。installation UUIDv7 升级保持，重装/reset identity 新建。
+统一输入含 `adapter_installation_id,host_kind,host_conversation_id,parent_host_conversation_id?,lifecycle_event,host_version`。ID 来自原生宿主或可靠绑定的对话生命周期；禁用 PID/cwd/显示名/LLM 自报。core 只做规范字符串比较并持久 keyed digest，原 ID 不进日志、prompt、共享 Git。installation 是宿主安装标识，不是 worker 身份；同一 installation 下每个 conversation/subagent 都必须创建独立 Agent、Session、凭据和私有 session 文件。installation UUIDv7 升级保持，重装/reset identity 新建。
 
 token 由 bridge 私有内存/当前 OS 用户私有文件持有，经 header 注入；静态 MCP 配置只包含命令和非秘密 profile 引用，不写 args/env token。control token 不给 adapter。多个组件共享同一个逻辑 Connection。
 

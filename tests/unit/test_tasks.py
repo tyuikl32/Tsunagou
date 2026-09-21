@@ -49,6 +49,33 @@ def test_resume_is_claimed_then_start_and_submit_review() -> None:
     assert service.attempts[attempt.attempt_id].status == "completed"
 
 
+def test_blocked_task_can_be_claimed_by_a_later_agent_without_old_lease() -> None:
+    service = TaskService()
+    task = open_task(service)
+    first = service.claim(task.task_id, "first-worker")
+    service.block(task.task_id, "waiting-for-user")
+
+    second = service.claim(task.task_id, "later-worker")
+
+    assert second.owner_agent_id == "later-worker"
+    assert second.attempt_id != first.attempt_id
+    assert service.attempts[first.attempt_id].status == "orphaned"
+    assert task.current_attempt_id == second.attempt_id
+
+
+def test_orphaned_execution_returns_task_to_public_queue() -> None:
+    service = TaskService()
+    task = open_task(service)
+    first = service.claim(task.task_id, "first-worker")
+
+    service.orphan(task.task_id, "resource_lease_expired")
+    second = service.claim(task.task_id, "new-worker")
+
+    assert task.status == "claimed"
+    assert second.owner_agent_id == "new-worker"
+    assert service.attempts[first.attempt_id].status == "orphaned"
+
+
 def test_changes_requested_closes_old_attempt_and_parent_does_not_cascade() -> None:
     service = TaskService()
     parent = service.create_task("parent", "coordinate")

@@ -110,7 +110,7 @@ uv run python -m tsunagou recover
 
 ### 4.1 为每个会话签发票据和 bridge 配置
 
-当前 CLI 的实际接入命令如下。`--output-dir` 会生成 bridge 启动描述、一次性 `ticket.json` 和预期的 `bridge-session.json` 路径：
+当前 CLI 的实际接入命令如下。`--output-dir` 会生成 bridge 启动描述、一次性 `ticket.json` 和该会话专属的私有 session 路径：
 
 ```powershell
 $mainDir = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\bridges\main'
@@ -134,7 +134,7 @@ $worker.bridge_config
 
 `--mode launch` 只表示宿主允许由系统启动；当前 bridge 本身仍是 stdio MCP 进程，宿主不支持 managed launch 时使用 `attach`。CLI 的输出 `ticket_issued` 只表示票据已签发，不表示 Agent 已经 connected 或 ready。
 
-`ticket.json` 含一次性秘密，只能由对应 bridge 私下读取，兑换成功后会被 bridge 删除。生成的 adapter JSON 不保存 token，但其中包含本机路径和 daemon 地址，也不应提交到远程仓库。`bridge-session.json` 是 bridge 私有的恢复凭据，必须留在本机私有目录。
+`ticket.json` 含一次性秘密，只能由对应 bridge 私下读取，兑换成功后会被 bridge 删除。生成的 adapter JSON 不保存 token，但其中包含本机路径和 daemon 地址，也不应提交到远程仓库。session 文件按宿主 conversation 的摘要隔离；同一 IDE 的不同对话或 subagent 不得共享 `bridge-session.json`。
 
 ### 4.2 将配置加载到宿主
 
@@ -146,7 +146,7 @@ packages/bridge-server/dist/server.js
 
 bridge 是 stdio 服务，不要把它当成 HTTP 服务直接访问。bridge 启动时会：
 
-1. 从一次性 ticket 或已有 `bridge-session.json` 读取私有接入材料。
+1. 从一次性 ticket 或当前 conversation 专属的 session 文件读取私有接入材料。
 2. 通过 endpoint manifest 找到 daemon；daemon 重启换端口时不依赖旧的固定端口。
 3. 兑换或 reconnect 得到独立 session、connection epoch 和 Agent 身份。
 4. 通过 MCP `tools/list` 暴露已注册的 typed tools。

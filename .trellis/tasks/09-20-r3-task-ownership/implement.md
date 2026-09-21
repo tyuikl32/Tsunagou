@@ -56,6 +56,10 @@ python tools/docs/validate_docs.py
 
 实际实现结果（2026-09-21）：任务 create draft、ready/publish、claim、owner/preflight/start、submit/review、user-decision blocker、lease/workspace 前置和 worker 越权拒绝已接入 dispatcher，并在 Python M1 集成与双 bridge MCP smoke 中通过。补充接入主 Agent `root.manage` Grant、`root.register`/`root.bind`/`repository.register` 和 roots/repositories 查询；`tests/integration/test_m1_runtime_flow.py::test_main_can_register_bind_and_query_multiple_project_roots` 通过。
 
+2026-09-21 边界修正：执行 Lease 不再约束 Task 的领取资格。`block` 释放 Grant/Lease 并保留旧 Attempt 的 blocked 快照，原 owner 可 resume；后来加入的 Agent 可直接 claim blocked Task，旧 Attempt 关闭为历史 orphaned。Lease 到期和 daemon 重启将旧 Attempt 标为 orphaned、Task 回到 open 公共队列，不要求原 Agent 返回。对应决策见 [任务队列与对话身份修正](../../../docs/decisions/2026-09-21-task-queue-and-conversation-identity.md)。
+
+2026-09-21 身份修正：`installation_id` 不再作为 worker 身份边界。同一 IDE 的每个宿主 conversation/subagent 都有独立 Agent、Session、凭据和 bridge 私有 session 文件；Agent 持久保存 conversation digest，rebind 禁止跨 conversation retarget。新增单元测试覆盖同 installation 双 conversation 与错误 rebind。
+
 本轮继续接入并验证：`task.update_plan`、`task.edge.add/remove`、`task.cancel_request/ack`、`task.fail`、`task.recover`、`task.scope.request/resolve`、`task.self_accept`。恢复会释放旧 attempt 的 Lease 并撤销执行 Grant，scope 请求核对 `task`/`scope` revision；任务提供可选的结构化 execution scope，resource intent 按 root/path 前缀和 mode 校验子集；公开入口证据为 `test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped` 与 `test_task_execution_scope_rejects_resource_outside_declared_prefix`。
 
 本轮已收敛执行路径：`TaskExecutionWorkflow` 现在是 dispatcher handler 使用的唯一 preflight/start 编排，持久 `tasks.PreflightResult` 同时保存 digest、各领域 revision、evidence 和 blockers；陈旧契约或输入会在 running 前拒绝且不产生 Grant。`Task.block` 会保存 `SuspensionSnapshot`，并随 SQLite 快照恢复。指定 reviewer 的 `request_changes` 现在会同时关闭旧 Attempt、释放 Lease、撤销旧 execution Grant，下一次执行必须重新 claim/preflight/start。证据为 `test_m1_task_workspace_review_and_user_completion_survive_rebuild`、`test_stale_preflight_and_blocked_resume_never_auto_start`、`test_review_changes_requested_closes_execution_lease_and_grant` 和 `test_runtime_maintenance`。R3 尚需完整公共审查矩阵和全量 M1 故障门禁后再关闭。

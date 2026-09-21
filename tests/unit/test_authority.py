@@ -128,3 +128,24 @@ def test_rebind_rotates_connection_epoch_without_exposing_token_in_snapshot(tmp_
     assert rebound.connection_epoch == receipt.connection_epoch + 1
     assert service.verify_token(receipt.session_id, rebound.secret_token)
     assert receipt.secret_token not in str(service.public_snapshot())
+
+
+def test_each_conversation_is_a_distinct_worker_even_with_same_installation() -> None:
+    service = AuthorityService(None)
+    first = enroll(service, "same-ide", "conversation-a")
+    second = enroll(service, "same-ide", "conversation-b")
+
+    assert first.agent_id != second.agent_id
+    assert first.session_id != second.session_id
+    assert service.agents[first.agent_id].conversation_digest != service.agents[second.agent_id].conversation_digest
+
+
+def test_rebind_cannot_retarget_another_conversation_agent() -> None:
+    service = AuthorityService(None)
+    first = enroll(service, "same-ide", "conversation-a")
+    ticket = service.issue_ticket("same-ide", "conversation-b")
+
+    with pytest.raises(ValueError, match="session_not_rebindable"):
+        service.redeem_rebind_ticket(
+            ticket, "same-ide", "conversation-b", target_agent_id=first.agent_id,
+        )

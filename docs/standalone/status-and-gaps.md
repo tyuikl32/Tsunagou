@@ -49,10 +49,12 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 
 ### 02 agents：身份与消息已接入持久 runtime，双 bridge 首轮 smoke 已通过
 
+- 2026-09-21 修正身份边界：`installation_id` 只标识宿主安装；同一 IDE 下的不同 conversation/subagent 各自创建独立 `agent_id`、`session_id`、凭据和私有 bridge session 文件。服务端 rebind 同时核对 conversation digest，不能把新对话重绑到旧 Agent。
+
 - 已有：单次票据、会话 token/epoch、用户任命 main、Grant、私有 JSON 保存；消息、投递、ACK、回应义务；真实 stdio bridge 文件。2026-09-21 的构建探针证明 bridge 能从共享 registry 读取摘要并通过 MCP `tools/list` 暴露 48 个工具，其中包含任务恢复、认知分歧、契约处置、resource、workspace、review、decision 和 completion；随后单 bridge 认证 smoke 完成 ticket redemption、main 任命、reconnect 和 task create/ready/publish，两个独立 bridge 的完整首轮 MCP 协作也已通过，证据见 [bridge tools](bridge-smoke-2026-09-21.json)、[authenticated bridge](bridge-auth-smoke-2026-09-21.json) 与 [双 bridge](bridge-two-session-smoke-2026-09-21.json)。
 - 缺少：会话终止后同步撤授权、处理相关任务；消息投递租约和完整查询；主 Agent handoff/succession 实际入口；两个真实宿主 bridge 的接入回执。
 - 已修复：CLI 通过同一 daemon 签发票据，运行中的 daemon 可立即兑换；Authority、Grant、Message 与任务状态在同一 SQLite runtime 快照事务中恢复。
-- M1 已通过：用户决定、项目完成、checkpoint、daemon 重启和 recovery 已通过同一公开入口烟测；重启后还逐一查询 tasks、attempts、results、jobs、agents、cognition/contracts、messages、workspaces、decisions 和脱敏 audit，记录见 [m1-public-smoke-2026-09-21.json](m1-public-smoke-2026-09-21.json)。双 bridge 断线故障注入和本机凭据失败路径保留为完整接入后续。
+- M1 已通过：用户决定、项目完成、checkpoint、daemon 重启和 recovery 已通过同一公开入口烟测；重启后还逐一查询 tasks、attempts、results、jobs、agents、cognition/contracts、messages、workspaces、decisions 和脱敏 audit，记录见 [m1-public-smoke-2026-09-21.json](m1-public-smoke-2026-09-21.json)。重启会释放旧 claim/Lease 并将未完成 Task 放回 `open`，旧 Attempt 保留 orphaned 历史；双 bridge 断线故障注入和本机凭据失败路径保留为完整接入后续。
 - 原设计余量：高级 handoff 收敛、复杂路由、多个宿主生命周期增强、推送/唤醒。
 - 依据：[authority.py](../../src/tsunagou/modules/authority.py)、[messaging.py](../../src/tsunagou/modules/messaging.py)、[bridge server](../../packages/bridge-server/src/server.ts)、[原设计](../implementation/modules/02-agents.md)。
 
@@ -80,7 +82,7 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 
 - 已有：intent、路径前缀冲突、整组 reserve、renew、expire、wait 队列、external observation。
 - 已接入：资源 intent、整组 acquire、release、X 会话 renew；task.start 会检查当前 Attempt 的 active Lease，失败不写 running；若任务声明 execution scope，intent 会在 Lease 前按 root/path 前缀和 mode 校验子集。
-- 已接入第一轮：每次 start/acquire/renew 前检查到期 Lease；过期的 claimed/running attempt 标为 orphaned，相关执行 Grant 撤销。`RuntimeMaintenance` 还会在 daemon 生命周期内后台执行同一回收，并将结果写入 SQLite 事件。
+- 已接入第一轮：每次 start/acquire/renew 前检查到期 Lease；过期的 claimed/running Attempt 标为 orphaned，相关执行 Grant 撤销，Task 回到 `open` 公共队列，任何后来加入且具备基础权限的 Agent 都可重新 claim。`RuntimeMaintenance` 还会在 daemon 生命周期内后台执行同一回收，并将结果写入 SQLite 事件。Lease 只约束执行 Attempt，不约束 Task 的领取资格。
 - 缺少：physical identity alias 归一、跨 root 的完整 scope 版本模型、bridge 周期续租及更完整的撤权通知事务。
 - 已补：项目 root binding 的 `physical_identity` 参与 ResourceService 冲突归一；不同 root_id 指向同一物理目录时仍会冲突，回归见 `test_physical_root_aliases_conflict_even_with_distinct_root_ids`。常驻维护处理到期 Lease/Job 的机械撤权。
 - M1 后续：同路径独占写、不同路径并行、Lease 通知/续租和更完整的等待恢复。Lease 继续是协调规则，不是文件系统锁。

@@ -53,7 +53,7 @@ main 可以在可授权范围内留证接受风险、证明结果或授权新 Op
 | DB 事务失败 | 无部分任务/Grant/消息变更 | 原 command_id 重试 |
 | commit 后响应丢失 | 业务只执行一次 | 幂等重放；秘密交付丢失专门 rebind |
 | push/SSE 失败 | 持久 inbox 仍在 | pull sync |
-| Lease 到期 | 系统许可失效，物理进程可能仍在 | orphaned、scope residual risk |
+| Lease 到期 | 系统许可失效，物理进程可能仍在 | 旧 Attempt orphaned、撤执行权；Task 回到 open 公共队列，保留 residual risk |
 | Git 效果不明 | 已提交逻辑责任不回滚 | unknown、核验、显式 Resolution |
 | checkpoint 失败 | DB 已提交状态仍成立 | repair、barrier，不撤销用户完成 |
 | 用户未回答 | decision pending、相关 Task blocked | 持久等待，无关任务继续 |

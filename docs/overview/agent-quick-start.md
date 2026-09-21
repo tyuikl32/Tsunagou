@@ -64,7 +64,7 @@ uv run python -m tsunagou agent enroll `
   --output-dir $bridgeDir
 ```
 
-输出 `ticket_issued` 只表示票据签发。把输出目录中的 adapter JSON 加载到宿主的 MCP 配置入口；不要打开或复制 `ticket.json` 的秘密内容。bridge 成功兑换后会保存 `bridge-session.json` 并删除一次性 ticket。
+输出 `ticket_issued` 只表示票据签发。把输出目录中的 adapter JSON 加载到宿主的 MCP 配置入口；不要打开或复制 `ticket.json` 的秘密内容。bridge 成功兑换后会保存当前 conversation 专属的 session 文件并删除一次性 ticket。同一 IDE 的另一对话或 subagent 必须重新 enroll，不能复用该文件。
 
 ### 4. 验证 Agent 已加入
 

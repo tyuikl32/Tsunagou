@@ -135,6 +135,12 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     assert next(item for item in tasks_query(ProjectRegistry(tmp_path).project.project_id)["items"]
                 if item["task_id"] == task["task_id"])["status"] == "blocked"  # type: ignore[union-attr]
     agent_call("task.resume", {"task_id": task["task_id"], "attempt_id": attempt_id}, worker)
+    # Blocking releases the execution lease. A resumed Attempt must acquire a
+    # fresh lease before preflight/start; task suspension never owns a lease.
+    agent_call("resource.acquire", {
+        "task_id": task["task_id"], "attempt_id": attempt_id,
+        "intent_id": intent["intent_id"], "intent_revision": 1, "scope_digest": "scope",
+    }, worker)
     prepared = agent_call("workspace.prepare", {
         "task_id": task["task_id"], "attempt_id": attempt_id,
         "decision_id": selected["decision_id"], "input_digest": "fixture",

@@ -84,6 +84,7 @@ interface SessionCredential {
 
 interface PersistedSession extends SessionCredential {
   host_conversation_id_digest?: string;
+  conversation_binding_digest?: string;
 }
 
 interface TicketFile {
@@ -112,7 +113,7 @@ function config(): {
   httpUrl: string;
   daemonStateDir: string;
   ticketFile: string;
-  sessionFile: string;
+  sessionFile?: string;
   projectRoot: string;
   stateDir: string;
   hostIdCandidates: string[];
@@ -123,7 +124,7 @@ function config(): {
     httpUrl: env("TSUNAGOU_HTTP_URL", "http://127.0.0.1:8000").replace(/\/+$/, ""),
     daemonStateDir: env("TSUNAGOU_DAEMON_STATE_DIR", projectRoot ? join(projectRoot, ".tsunagou", "local") : ""),
     ticketFile: env("TSUNAGOU_TICKET_FILE"),
-    sessionFile: env("TSUNAGOU_SESSION_FILE", join(stateDir, "bridge-session.json")),
+    sessionFile: process.env.TSUNAGOU_SESSION_FILE || undefined,
     projectRoot,
     stateDir,
     hostIdCandidates: env(
@@ -394,9 +395,16 @@ function loadSession(path: string): PersistedSession | undefined {
   return raw;
 }
 
-function saveSession(path: string, session: SessionCredential, hostDigest: string | undefined): void {
+function saveSession(
+  path: string, session: SessionCredential, hostDigest: string | undefined,
+  conversationBindingDigest: string | undefined,
+): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify({ ...session, host_conversation_id_digest: hostDigest }, null, 2) + "\n", "utf-8");
+  writeFileSync(path, JSON.stringify({
+    ...session,
+    host_conversation_id_digest: hostDigest,
+    conversation_binding_digest: conversationBindingDigest,
+  }, null, 2) + "\n", "utf-8");
 }
 
 /** A previously persisted digest lets us observe resume continuity honestly. */
@@ -412,13 +420,34 @@ async function main(): Promise<void> {
   const projectDigest = cfg.projectRoot ? readProjectDigest(cfg.projectRoot) : undefined;
   const transport = new HttpTransport(readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl);
 
-  let session: PersistedSession | undefined = loadSession(cfg.sessionFile);
-  let observedContinuity = continuityRefs(session?.host_conversation_id_digest, hostDigest);
   const ticketPresent = cfg.ticketFile !== "" && existsSync(cfg.ticketFile);
+  const bootstrapTicket = ticketPresent ? readTicketFile(cfg.ticketFile) : undefined;
+  // A bridge credential belongs to one host conversation. Never use a global
+  // ~/.tsunagou/bridge-session.json: when Codex/OpenCode launches several
+  // conversations from the same IDE, that file would silently make them one
+  // worker. Explicit TSUNAGOU_SESSION_FILE remains supported for a caller
+  // that deliberately provisions one private file per conversation.
+  const conversationBindingDigest = bootstrapTicket
+    ? hash(`conversation_id:${bootstrapTicket.conversation_id}`)
+    : hostDigest;
+  const sessionFile = cfg.sessionFile ?? (
+    conversationBindingDigest
+      ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
+      : undefined
+  );
+  let session: PersistedSession | undefined = sessionFile ? loadSession(sessionFile) : undefined;
+  if (bootstrapTicket && session && (
+      session.conversation_binding_digest !== undefined
+        ? session.conversation_binding_digest !== conversationBindingDigest
+        : session.host_conversation_id_digest !== conversationBindingDigest
+  )) {
+    session = undefined;
+  }
+  let observedContinuity = continuityRefs(session?.host_conversation_id_digest, hostDigest);
 
   if (ticketPresent) {
     try {
-      const ticket = readTicketFile(cfg.ticketFile);
+      const ticket = bootstrapTicket!;
       // Codex does not expose its session id to spawned MCP servers (verified:
       // no CODEX_* env names are set), so the host conversation identity is the
       // ticket's bound conversation_id — a real host session id observed by the
@@ -441,7 +470,8 @@ async function main(): Promise<void> {
         ? await transport.rebind(ticket, session.agent_id, baseline)
         : await transport.enroll(ticket, baseline);
       session = { ...credential, host_conversation_id_digest: hostDigest };
-      saveSession(cfg.sessionFile, credential, hostDigest);
+      if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
+      saveSession(sessionFile, credential, hostDigest, conversationBindingDigest);
       unlinkSync(cfg.ticketFile); // single-use: consume the private ticket after redemption
     } catch (error) {
       session = undefined;
@@ -454,9 +484,14 @@ async function main(): Promise<void> {
       // instead of silently reusing a possibly-stale credential. There is no new
       // env/ticket identity here, so the persisted host digest is carried forward.
       hostDigest ??= session.host_conversation_id_digest;
+      if (hostDigest !== undefined && session.host_conversation_id_digest !== undefined
+          && hostDigest !== session.host_conversation_id_digest) {
+        throw new Error("host_conversation_identity_mismatch");
+      }
       const credential = await transport.reconnect(session);
       session = { ...credential, host_conversation_id_digest: hostDigest };
-      saveSession(cfg.sessionFile, credential, hostDigest);
+      if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
+      saveSession(sessionFile, credential, hostDigest, session.conversation_binding_digest);
     } catch (error) {
       session = undefined;
       process.stderr.write(`[tsunagou-bridge] reconnect failed: ${error instanceof Error ? error.message : String(error)}\n`);

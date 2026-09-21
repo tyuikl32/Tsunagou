@@ -37,7 +37,7 @@ A报告`status`可空，B报告`status`必填：两者以显式typed claims引�
 
 M risk.submit/workspace.select；A/B分别prepare workspace。worktree需要main实际执行Git后report，daemon只读核验。A/B在scope内acquire完整Lease set，preflight返回固定input revisions/digest，task.start事务重验后才running。
 
-一次start必须同事务建立Task/Attempt运行事实、执行Grant与必要关联事件；资源/契约/workspace已变更则拒绝，没有部分执行授权。bridge每30秒续Execution Lease，不要求模型持续输出。Lease过期导致系统orphaned与风险，不能反推物理宿主已停止。
+一次start必须同事务建立Task/Attempt运行事实、执行Grant与必要关联事件；资源/契约/workspace已变更则拒绝，没有部分执行授权。bridge每30秒续Execution Lease，不要求模型持续输出。Lease过期只使旧 Attempt orphaned 并撤销执行权，Task 回到 open 公共队列；不能反推物理宿主已停止，后来加入的合格 Agent 可以重新 claim。
 
 ## 等待用户时子 Agent 怎样工作
 

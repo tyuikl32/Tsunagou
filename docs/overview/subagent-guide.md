@@ -15,7 +15,7 @@ Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任�
    `tsunagou agent enroll --adapter codex --mode attach --installation-id <安装标识> --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/<会话名>`。输出目录中的 `ticket.json` 只供 bridge 私下读取，配置 JSON 只保存 daemon 地址、项目 state 目录、路径和启动参数，不保存 token；bridge 启动时从 state 目录读取当前 endpoint manifest，因此 daemon 重启换端口后不会继续使用旧地址。用户把该 JSON 的 env/command 配置交给对应宿主即可。若不提供 `--output-dir`，CLI仍只写私有临时票据，不生成启动描述。
 4. **查看接入结果。** 当前 CLI 没有注册 `agent list/show`；通过 HTTP 的 `/api/v1/projects/{project_id}/agents` 或主 Agent typed tools 查看独立 `agent_id`、宿主、session 状态及能力。`ticket_issued` 只表示票据已签发，只有 bridge 兑换成功并能读取项目上下文才算 ready；degraded 表示保留诊断对象，尚不能领取任务。
 5. **让主Agent安排工作。** 主Agent创建并发布子任务，告诉对应子Agent任务引用和目标。子Agent读取黑板，自己claim，报告理解并完成preflight，start后才可执行。
-6. **继续使用原对话。** 普通断线或恢复应保持同一Agent，adapter自动校验连续性；新建/clear/fork是另一会话，需要新身份，不能继承旧任务owner。
+6. **继续使用原对话。** 普通断线或恢复应保持同一 Agent，adapter 自动校验连续性；新建/clear/fork 或宿主内新 subagent 都是另一 worker，需要新身份，不能继承旧任务 owner。任务挂起或执行 Lease 过期后，原 Agent 不在线也不妨碍后来加入的合格 Agent claim；原 Agent 的 resume 只是保留上下文的便利路径。
 
 若宿主已验证支持managed_launch，用户可选择launch方式；没有该能力就按上述步骤手动打开再attach。两种方式都必须独立认证与probe，不因系统帮助启动就减少权限检查。
 

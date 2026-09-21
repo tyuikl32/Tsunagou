@@ -101,7 +101,7 @@ tools/dev/package_smoke.ps1          # wheel/npm 离开源码树安装与启动�
 3. 建八模块M1事实表，连接handler用repository。内存仅作请求内对象，不再有独立持久“真相”。身份、Grant、消息也迁移，不能JSON和SQLite双写。
 4. CLI的enroll/appoint/decision/operation全部经HTTP到同daemon；新增真实`daemon start/stop/status`、`--project`、必要list/show。连接失败退出5，未知对象404；取消固定`[]/submitted/unknown/ok`成功占位输出。
 5. `ProjectDatabase.dispatch`进入原子执行路径。认证/当前epoch检查先于幂等命中；同键同语义返回旧结果，异语义409；主对象revision检查在幂等命中之后。
-6. 实现server lifespan启动恢复和优雅停止。启动轮换runtime epoch，撤旧execution Grant/Lease，将未结束执行转blocked/recovery_review（保留Attempt所有者；不宣称进程已经停止）。接入身份可恢复，写代码必须重新resume/preflight/start。
+6. 实现server lifespan启动恢复和优雅停止。启动轮换runtime epoch，撤旧execution Grant/Lease，将未结束执行和旧 claim 转为历史 Attempt、Task 回到 `open` 公共队列（不宣称进程已经停止）。接入身份可恢复，写代码必须重新claim/preflight/start；原 owner 可通过历史证据继续协调，但不是其他 Agent 领取任务的前置条件。
 7. 正常查询用只读快照和query port，提供project/tasks/agents/authority/decisions/operations/blackboard。没有数据库就不报告业务健康。
 8. 对旧JSON目录做显式一次性导入：先备份，记录源digest/迁移版本，导入在事务内；校验ID/关系失败则保留原件并失败。不存在的旧Task/Contract不能凭Grant反造出来，旧execution Grant一律失效。
 
@@ -133,7 +133,7 @@ M1 的 scope 采用一个可选、结构化的最小形式：`task.create.execut
 2. 分歧比对限定同项目、同subject和相关当前报告；记录两侧report refs；提供list/show/resolve。主Agent裁决语义与受影响动作，内核只检查结构、主体、版本和契约接受。
 3. Contract与相关task/subject关联；required slots全部按同一proposal digest接受才生效。proposal改变或参与者变化使旧接受失效。仅报告存在不等于分歧已解决。
 4. resources落实intent/acquire/renew/release；校验有效scope；同物理路径alias归一；整组资源获取失败全部不授予。claim/preflight可预留，blocked释放。
-5. background维护到期：一个事务内expired Lease、撤Grant、Task orphaned、事件和通知。bridge每30秒续running Lease，默认TTL120秒；claimed预留过期则重新申请，不能假装已有X执行身份续租。
+5. background维护到期：一个事务内expired Lease、撤Grant、旧 Attempt orphaned、Task 回到 `open` 公共队列、事件和通知。Lease 只约束当前执行 Attempt，不约束 Task 本身；任何后来加入且有基础权限的 Agent 都可重新 claim。bridge每30秒续running Lease，默认TTL120秒；claimed预留过期则重新申请，不能假装已有X执行身份续租。
 6. workspace.select由main明确选择shared。prepare创建Operation，Job只读扫描实际roots/Git和文件摘要；把核验过的baseline和revision登记后ready。Git mutation仍由main。
 7. task.start核对baseline输入版本；workspace.result采集changed paths、patch/artifact及验证引用。允许Agent预期改动；无法归因的改动记录为观察，由main处理。至少在准备、执行前和结果/整合检查点重验，不把缺watcher写成实时保护。
 8. 附件使用现有流式blob算法，新增持久上传intent/ref；领域权限控制读取。TaskResult必须引用本Attempt的workspace result与有效验证记录。
