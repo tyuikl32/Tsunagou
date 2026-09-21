@@ -13,6 +13,7 @@
 - 项目可包含多个文件夹、多个 Git 仓库。用户选定一个已存在的 Git 仓库作为协调仓库，`.tsunagou/` 是项目协调数据的中心位置。
 - 八大模块处理项目与权限、Agent 接入、任务、认知协商、资源、工作空间、持久化、观测与评估。
 - 后续 Web 工作台可接入同一公共 API；本次不开发 Web UI。
+- 用户可以直接告诉已接入的 Agent“从 GitHub 安装 Tsunagou”；安装 skill 会克隆仓库、安装锁定的 Python/Node 依赖、构建 stdio bridge，并安装项目接入 skill。安装完成不等于已初始化项目或已接入 Agent，后续仍由 onboarding skill 引导用户完成控制 CLI 操作。
 
 ## 系统解决什么，Agent 负责什么
 

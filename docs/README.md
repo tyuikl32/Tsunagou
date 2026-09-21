@@ -28,7 +28,7 @@
 
 文档以中文说明、英文标识符组成。一个概念只使用一个规范英文名；界面可以显示中文。术语、状态和跨模块字段见[数据模型](implementation/data-model.md)，命令名字、权限和 URI 见[命令目录](implementation/command-catalog.md)。同一命令不在适配器中另起名字或更改权限语义。
 
-新读者可以从[子Agent加入与协作](overview/subagent-guide.md)、[CLI/HTTP说明书](overview/cli-http-manual.md)理解使用方式；实施Agent可从[搭建步骤](implementation/build-guide.md)、[预期目录](implementation/directory-layout.md)、[三Agent事实轨迹](implementation/coordination-walkthrough.md)开始。关键官方知识统一在[参考索引](implementation/references.md)，不要自行用不同SDK年代的示例替换当前协议。
+新读者可以从[Agent快速接入](overview/agent-quick-start.md)、[子Agent加入与协作](overview/subagent-guide.md)、[CLI/HTTP说明书](overview/cli-http-manual.md)理解使用方式；从 GitHub 安装的入口和 skill 行为见[安装 skill](../.agents/skills/tsunagou-install/SKILL.md)。实施Agent可从[搭建步骤](implementation/build-guide.md)、[预期目录](implementation/directory-layout.md)、[三Agent事实轨迹](implementation/coordination-walkthrough.md)开始。关键官方知识统一在[参考索引](implementation/references.md)，不要自行用不同SDK年代的示例替换当前协议。
 
 ## 更新约定
 

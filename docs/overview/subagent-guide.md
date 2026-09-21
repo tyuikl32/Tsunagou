@@ -6,14 +6,14 @@ Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任�
 
 ## 用户如何让子 Agent 加入
 
-以下是首发流程。当前 CLI/HTTP 已实现基础入口，完整领域命令仍按命令目录逐步接入；完整约定见[CLI与HTTP手册](cli-http-manual.md)。
+以下是首发流程。当前 M1 已有可运行的 CLI、daemon、HTTP 查询和 stdio bridge；用户 CLI 的实际命令范围与环境变量要求见[完整使用说明书](cli-http-manual.md)，尚未注册的领域命令仍由主 Agent typed tools 完成。
 
 1. **先建立调度中心。** 在已有Git仓库初始化项目，得到project_id。用户接入一个会话并任命主Agent，设好项目范围和授权上限。
 2. **准备子Agent所在宿主。** 按对应adapter安装指南启用工具入口。打开一个新对话，选择它需要工作的文件夹。这个工作目录可以是项目的其他root/仓库，不必与协调仓库相同。
 3. **把该对话接入指定项目。** 用户执行`agent enroll --adapter <kind> --mode attach`，明确选择宿主profile和目标会话。CLI申请一次性worker票据，adapter通过本机私有通道领取并兑换；用户不需要把票据或token贴进模型对话。
    当前 CLI 可同时生成逐会话的非秘密 bridge 启动描述：
    `tsunagou agent enroll --adapter codex --mode attach --installation-id <安装标识> --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/<会话名>`。输出目录中的 `ticket.json` 只供 bridge 私下读取，配置 JSON 只保存 daemon 地址、项目 state 目录、路径和启动参数，不保存 token；bridge 启动时从 state 目录读取当前 endpoint manifest，因此 daemon 重启换端口后不会继续使用旧地址。用户把该 JSON 的 env/command 配置交给对应宿主即可。若不提供 `--output-dir`，CLI仍只写私有临时票据，不生成启动描述。
-4. **查看接入结果。** `agent list/show`显示独立agent_id、宿主、会话状态及能力。4 项准入能力（会话隔离、连续性证据、项目读取、类型化工具）通过即 ready；其余 7 项运营能力由 ready 会话真实执行后产生，喂给首发发布门禁的 11 项全量校验。degraded表示保留诊断对象，尚不能领取任务，不能当作“已加入可工作”。
+4. **查看接入结果。** 当前 CLI 没有注册 `agent list/show`；通过 HTTP 的 `/api/v1/projects/{project_id}/agents` 或主 Agent typed tools 查看独立 `agent_id`、宿主、session 状态及能力。`ticket_issued` 只表示票据已签发，只有 bridge 兑换成功并能读取项目上下文才算 ready；degraded 表示保留诊断对象，尚不能领取任务。
 5. **让主Agent安排工作。** 主Agent创建并发布子任务，告诉对应子Agent任务引用和目标。子Agent读取黑板，自己claim，报告理解并完成preflight，start后才可执行。
 6. **继续使用原对话。** 普通断线或恢复应保持同一Agent，adapter自动校验连续性；新建/clear/fork是另一会话，需要新身份，不能继承旧任务owner。
 
@@ -60,6 +60,6 @@ Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任�
 
 **用户还没回答。** 相关Agent正常结束本轮并挂起，系统保留决定与快照；不需要持续向模型发无意义消息，也不自动判失败。
 
-**主Agent离线。** 子Agent可处理仍在权限内、不依赖main的工作；需要main的Git、统筹或决定等待。用户可通过authority appoint/revoke恢复统筹，子Agent不会自动选举自己。
+**主Agent离线。** 子Agent可处理仍在权限内、不依赖 main 的工作；需要 main 的 Git、统筹或决定等待。用户通过控制端的 `agent appoint AGENT_ID` 恢复统筹，子Agent不会自动选举自己；当前 CLI 没有 `authority appoint/revoke` 这组命令名。
 
 **宿主处于Full Access。** 子Agent仍须遵守调度中心的任务和scope。系统API会机械拒绝越权请求；无法控制的宿主文件操作可能只有提示/观察约束，不能说成OS沙箱已拦截。

@@ -1,5 +1,21 @@
 # Tsunagou
 
+## Agent installation entry
+
+When a user asks an Agent to install Tsunagou from GitHub, use the repository
+installer after cloning this repository. The installer is host-neutral and
+installs the locked Python dependencies, the pnpm workspace, the stdio bridge,
+and the project onboarding skills:
+
+```text
+https://github.com/tyuikl32/Tsunagou.git
+tools/install/install.py --skill-scope all --json
+```
+
+The Agent should choose or confirm the destination, preserve an existing dirty
+checkout, and report any skill-directory conflict instead of overwriting it.
+After installation, continue with [Agent 快速接入](docs/overview/agent-quick-start.md).
+
 Tsunagou 是面向本机多个 Coding Agent 的协作后端。它让 Agent 共享任务事实、公开理解与假设、发现分歧、协商契约，并在暂停、断线和换人之后继续工作。
 
 **当前状态（2026-09-20）：可启动的功能原型，尚非独立成品。** 已有102个Python测试、29个TS测试通过，但真实HTTP审计复现任务/契约重启丢失、幂等和主从任务边界等14项缺口，wheel独立安装还缺协议资源。当前优先完成[独立成品实施与调试](docs/standalone/README.md)，按实际业务闭环验收，不以宿主能力报告代替运行结果。T01–T17、T22的旧完成标记表示分项产物，不等于所有模块已接入运行时。

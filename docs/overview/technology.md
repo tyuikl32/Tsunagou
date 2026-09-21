@@ -1,6 +1,6 @@
 # 技术与库
 
-这是已选择的技术方向，不是已安装依赖清单。当前仓库尚无产品代码和锁文件；T01 生成锁文件并在 Windows 验证安装，T02 实测四种宿主。不得把研究时查询到的版本当作已通过测试。
+这是技术方向与实际安装边界。Python/Node 依赖由 `uv.lock`、`pnpm-lock.yaml` 和安装器共同固定；真实宿主兼容性仍按各自验收证据报告，不能把 bridge 构建通过写成宿主正式支持。
 
 | 层次 | 选用技术/库 | 用途 |
 |---|---|---|
@@ -12,6 +12,7 @@
 | 本机能力 | platformdirs、portalocker、watchfiles、tomlkit | 用户目录、项目独占锁、文件观察、配置文件 |
 | 标识与哈希 | uuid6、rfc8785、标准库 secrets/hashlib | UUIDv7、JCS canonical JSON、随机凭据与摘要 |
 | 桥接 | Node 24 LTS 窗口、pnpm 12、TypeScript 7、ESM/NodeNext | 四宿主 adapter 与共享 bridge-sdk |
+| Agent 接入体验 | `.agents/skills/tsunagou-install`、`.agents/skills/tsunagou-agent-onboarding`、`tools/install/install.py` | 安装发行物、配置宿主与引导 daemon/session 接入；不替代 daemon 授权 |
 | 协议生成 | datamodel-code-generator、json-schema-to-typescript、openapi-typescript、openapi-fetch | 一份契约生成双语言模型及 HTTP 客户端 |
 | MCP | 官方 Python SDK 承载 daemon 的项目 MCP 服务；官方 TypeScript SDK 用于 bridge 的必要传输适配 | 模型工具接入、stdio 薄转发；具体 SDK API/version 由 T02 锁定 |
 | 日志观测 | structlog；OpenTelemetry 选配 | 结构化审计、可选本机 OTLP |

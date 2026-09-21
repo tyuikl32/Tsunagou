@@ -7,7 +7,11 @@
 准备一个用户已有的 Git 协调仓库，然后初始化本机项目。`.tsunagou/` 从初始化开始保存项目中心持久化；代码仓库、外部根和协调仓库可以是多个目录。
 
 ```powershell
-tsunagou project init D:\Work\ControlRepo --name Demo --objective "统一 API 字段契约"
+$env:TSUNAGOU_PROJECT_ROOT = 'D:\Work\ControlRepo'
+$env:TSUNAGOU_STATE_DIR = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\local'
+git init --quiet $env:TSUNAGOU_PROJECT_ROOT
+tsunagou project init --coordination-root $env:TSUNAGOU_PROJECT_ROOT --name Demo --objective "统一 API 字段契约"
+tsunagou daemon start --coordination-root $env:TSUNAGOU_PROJECT_ROOT --port 0
 tsunagou doctor
 ```
 
@@ -16,9 +20,9 @@ tsunagou doctor
 用户在三个独立宿主对话中选择目标会话，按对应 adapter 的诊断结果执行 attach。系统签发一次性 worker ticket，bridge 私下兑换并保存 session credential；用户和模型都不粘贴 token。当前未通过真实基线的宿主会显示 diagnostic，不能 claim 任务。
 
 ```powershell
-tsunagou --project PROJECT_ID agent enroll --adapter codex --mode attach
-tsunagou --project PROJECT_ID agent enroll --adapter opencode --mode attach
-tsunagou --project PROJECT_ID agent list
+tsunagou agent enroll --adapter codex --mode attach --installation-id codex-main --conversation-id '<主会话标识>' --output-dir "$env:TSUNAGOU_PROJECT_ROOT\.tsunagou\bridges\main"
+tsunagou agent enroll --adapter opencode --mode attach --installation-id opencode-worker --conversation-id '<子会话标识>' --output-dir "$env:TSUNAGOU_PROJECT_ROOT\.tsunagou\bridges\worker"
+Invoke-RestMethod "$((Get-Content (Join-Path $env:TSUNAGOU_STATE_DIR 'endpoint.json') -Raw | ConvertFrom-Json).url)/api/v1/projects/<PROJECT_ID>/agents"
 ```
 
 用户只任命一个主 Agent；普通子任务由主 Agent 协调，不要求用户逐项审批。子 Agent 的临时宿主 subagent 不会自动成为项目成员，必须有独立 conversation digest 和 enrollment。
@@ -34,8 +38,8 @@ tsunagou --project PROJECT_ID agent list
 子 Agent claim 后先 preflight，再 start；共享资源有 Lease，主 Agent 负责 Git 写操作。用户提出重大 API 方向变化时，相关 Agent 提交 SuspensionSnapshot、block 并释放 Lease；不相交的 Agent 继续工作。用户稍后 resolve 精确 revision/digest，Agent 重连并 resume，再次 preflight/start。无 wake 宿主可由用户打开原会话后 pull 黑板恢复。
 
 ```powershell
-tsunagou --project PROJECT_ID decision list
-tsunagou --project PROJECT_ID operation show OPERATION_ID
+tsunagou decision list
+tsunagou operation show OPERATION_ID
 tsunagou recover
 ```
 

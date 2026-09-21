@@ -1,6 +1,6 @@
 # 预期目录与文件责任
 
-这是首发交付时的**设计目录**，不是当前已有源码清单。当前只有文档、Trellis资产及文档校验工具。T01开始按需要建文件，不预先创建所有空层。下列私有文件名可以在任务内调整；模块名、协议产物路径、公开语义和所有权不能由某个Agent自行改变。
+这是首发交付时的设计目录，并标注当前已存在的安装与 Agent skill 入口。代码层仍按任务逐步补齐，不预先创建所有空层。下列私有文件名可以在任务内调整；模块名、协议产物路径、公开语义和所有权不能由某个 Agent 自行改变。
 
 ## 源码仓库
 
@@ -101,7 +101,8 @@ Tsunagou/
 ├── tools/
 │   ├── codegen/                   # 唯一生成入口与schema subset lint
 │   ├── conformance/{probes,harness}/
-│   ├── dev/                       # Windows安装/检查/演示辅助
+│   ├── dev/                       # 安装/检查/演示辅助与独立烟测
+│   ├── install/install.py         # GitHub clone、Python/Node安装、bridge构建、skill安装
 │   └── docs/validate_docs.py       # 当前已有的文档校验
 ├── tests/
 │   ├── unit/modules/<module>/
@@ -110,6 +111,9 @@ Tsunagou/
 │   ├── benchmarks/ manual_live_agents/
 │   └── fixtures/                  # 测试项目，绝非真实用户项目
 ├── docs/{overview,implementation,decisions,research,history}/
+├── .agents/skills/                # 可跨宿主发现的项目级 Agent skill
+│   ├── tsunagou-install/          # 从 GitHub 安装 Tsunagou 和 skill
+│   └── tsunagou-agent-onboarding/ # daemon/bridge/session 接入向导
 └── .trellis/                      # 本仓库开发管理，不是产品协调数据库
 ```
 

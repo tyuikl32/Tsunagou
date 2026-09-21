@@ -1,214 +1,366 @@
-# CLI 与 HTTP API 简明说明书
+# Tsunagou 使用说明书
 
-这是首发 CLI/HTTP 使用手册。当前已实现 daemon、项目初始化与完成确认、Agent 接入、决定、checkpoint、recovery、HTTP command dispatcher 和协议生成物；表中尚未接入的领域命令仍是规范示例，不能据此报告完整产品流程已经运行。现阶段的真实状态和门禁见[路线图](../implementation/roadmap.md)。
+本文是当前代码的可执行使用说明。命令和路径以 `src/tsunagou/cli/app.py`、`src/tsunagou/api/app.py` 以及 [M1 验收记录](../standalone/m1-acceptance-2026-09-21.json) 为准。
 
-## 两个入口怎样分工
+当前阶段已经可以在本机启动一个持久化 daemon，初始化 Git 协调仓库，签发并兑换 bridge 接入票据，运行两个独立的 MCP bridge，处理任务、认知报告、契约、消息、用户决定、项目完成、checkpoint 和重启恢复。完整的 worktree/external 执行、后台 Job runner、真实 Codex/OpenCode/DeepSeek Harness 宿主验收和 ZCode 首发要求以外的扩展仍属于后续任务；本手册不会把这些能力写成当前已交付功能。
 
-CLI供用户初始化、接入Agent、任命main、查看状态和提交用户决定。HTTP是同一后端的本机公共接口，CLI、bridge、未来Web及其他本机程序都可使用；Agent通过bridge/MCP带自己的会话身份访问，不能借用用户CLI控制身份。
+## 1. 先理解三个身份
+
+| 身份 | 入口 | 能做什么 |
+|---|---|---|
+| 用户控制端 | `tsunagou` CLI 或带控制凭据的 HTTP | 初始化项目、接入 Agent、任命主 Agent、解决用户决定、确认项目完成、重试 checkpoint |
+| 主 Agent/子 Agent | 各自宿主加载的 stdio MCP bridge | 以自己的 session 读取黑板、领取和执行自己的任务、报告理解、协商契约、发送消息和提交结果 |
+| daemon | 本机 loopback HTTP 服务 | 统一协议版本、认证、授权、revision、幂等、SQLite 事务和持久化 |
+
+主 Agent 负责项目协调和 Git 写操作。子 Agent 不能因为拥有宿主的 Full Access 就取得主 Agent 的任务、用户控制权或其他 Agent 的执行权；宿主无法机械限制的文件操作只能由调度中心观察、记录并由主 Agent 处理。
 
 ```mermaid
 flowchart LR
-  U[用户终端 CLI] -->|control凭据| HTTP[本机HTTP API]
-  S[子Agent宿主对话] --> B[自己的Bridge]
-  M[主Agent宿主对话] --> MB[自己的Bridge]
-  B -->|独立session凭据| MCP[项目MCP服务]
-  MB -->|独立session凭据| MCP
-  HTTP --> C[同一命令授权与事务处理]
-  MCP --> C
-  C --> DB[项目SQLite和事件]
+  U[用户 CLI] -->|control.token| D[本机 daemon]
+  M[主 Agent 宿主] --> MB[主 Agent bridge]
+  W[子 Agent 宿主] --> WB[子 Agent bridge]
+  MB -->|独立 session| D
+  WB -->|独立 session| D
+  D --> DB[项目 .tsunagou/local/state.sqlite3]
+  M -->|协调和 Git 写入| R[项目代码仓库]
 ```
 
-MCP和HTTP共享应用处理语义，不需要服务器收到MCP后再向自己发HTTP。REST客户端与MCP工具必须得到相同权限和状态结果。
+## 2. 前置条件
 
-## 1. 启动并初始化项目
+源码运行需要 Python 3.13、`uv`、Git。构建和运行 bridge 需要 Node 24.19.x、Corepack 和 pnpm 12。项目的 Python 运行时依赖由 `pyproject.toml` 声明，Node 依赖由 workspace lockfile 声明。
 
-示例中`PROJECT_ID`、`AGENT_ID`等是应替换的非秘密占位值，不能直接作为真实UUID提交；目录也是用户自己的实际路径。
+在源码树中准备环境：
 
 ```powershell
-tsunagou daemon start
-tsunagou daemon status
-tsunagou project init --coordination-root "D:\Work\ControlRepo" --name "Demo" --objective "让API和调用方围绕同一契约完成协作"
-tsunagou project list
-tsunagou --project PROJECT_ID project show
+Set-Location D:\Tsunagou
+uv sync --locked
+corepack enable
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @tsunagou/bridge-server run build
 ```
 
-协调目录必须已经是Git仓库，Tsunagou从初始化开始在其中保存`.tsunagou/`。init不会自动替用户执行git init/commit。额外代码目录通过root登记，复杂payload从非秘密JSON文件读取：
+确认 CLI 和 bridge 产物：
 
 ```powershell
-tsunagou --project PROJECT_ID root register --request-file ".\root-request.json"
-tsunagou --project PROJECT_ID root list
+uv run python -m tsunagou --version
+Test-Path .\packages\bridge-server\dist\server.js
 ```
 
-root-request使用已定RootRegistration输入（name、kind、repository_id?、required、binding_request、reason），具体Schema由T03生成；不要把绝对路径塞入共享project描述或给文件加入token。输出若含operation_id，表示仍有核验/物化工作，可用operation show查看。
-
-## 2. 接入主 Agent 和两个子 Agent
-
-先按对应adapter指南启用工具入口，并打开三个独立宿主对话。首发验收使用 Codex、OpenCode、DeepSeek Harness；ZCode 接入命令保留在适配器文档中，但不参与首发发布门禁。
+若不从源码运行，可先构建 Python wheel 和 bridge npm 包，再把两者放到用户自己的本机安装目录。仓库提供的独立安装烟测会在源码树外执行同一流程：
 
 ```powershell
-tsunagou --project PROJECT_ID agent enroll --adapter codex --mode attach --installation-id codex-main --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/main
-tsunagou --project PROJECT_ID agent list
-tsunagou --project PROJECT_ID authority show
-tsunagou --project PROJECT_ID authority appoint MAIN_AGENT_ID --request-file ".\main-appointment.json" --expected-revision 1
-tsunagou --project PROJECT_ID agent enroll --adapter opencode --mode attach --installation-id opencode-worker --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/worker
-tsunagou --project PROJECT_ID agent enroll --adapter deepseek --mode attach --installation-id deepseek-worker --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/deepseek
-tsunagou --project PROJECT_ID agent list
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev/package_smoke.ps1
 ```
 
-每次attach都要选择明确的目标对话；多个profile时用`--profile <name>`，它只是安装档案选择，不是认证身份。main-appointment包含从authority show读取的expected_authority_epoch、用户选择的ceiling_template和reason；`--expected-revision 1`仅表示示例初始值，必须使用实际返回值。
+该脚本会创建临时 venv，安装 wheel，打包并安装 `@tsunagou/bridge-server`，确认 `python -m tsunagou --help` 和 `node dist/server.js` 均能启动，然后清理临时目录。它是安装回归，不会把 daemon 留在后台。正式安装时保留生成的 venv、bridge 包目录和对应的 `.tsunagou` 项目目录即可；不要通过 editable install 或手工复制 `protocol` 目录替代安装。
 
-接入时票据由CLI/授权main签发，所选bridge私下领取并兑换，session token只留在bridge。`--output-dir`生成的JSON不含秘密，ticket文件只作为bridge输入；用户不将票据粘贴到模型。当前首版命令仍需用户提供目标会话标识，后续配置生成器再接宿主原生会话发现。每个会话ready后才正式参与；degraded需先修复诊断。更完整解释见[子Agent指南](subagent-guide.md)。
+用户不需要把模型密钥交给 Tsunagou。模型仍由 Codex、OpenCode、DeepSeek Harness 等宿主提供；Tsunagou 只管理本地协作状态和 bridge 会话。
 
-支持managed_launch的宿主可以`--mode launch`；不支持时明确提示改用attach。没有该增强并不意味着不能正式协作。主Agent可在既有上限内组织更多worker加入，无需让用户重复确定每个普通任务参数。
+## 3. 创建协调项目并启动 daemon
 
-## 3. 看任务，让 Agent 执行自己的工作
+协调目录必须是用户选择的 Git 仓库。它可以和代码仓库相同，也可以是专门的控制仓库；多个代码目录通过主 Agent 的项目根登记进入同一个项目。Tsunagou 不替用户执行 `git init`，也不自动提交用户代码。
 
-用户向main描述目标，由main创建、发布、协调任务。子Agent自己通过工具claim/preflight/start、报告、协商和submit；CLI不会冒用其owner身份。
+下面的 PowerShell 片段使用临时路径。真实项目请替换 `$coordinationRoot`，并保留该目录作为项目持久化位置。
 
 ```powershell
-tsunagou --project PROJECT_ID task list
-tsunagou --project PROJECT_ID task show TASK_ID
-tsunagou --project PROJECT_ID --json agent show WORKER_AGENT_ID
+Set-Location D:\Tsunagou
+$coordinationRoot = 'D:\Work\TsunagouControl'
+New-Item -ItemType Directory -Force -Path $coordinationRoot | Out-Null
+git init --quiet $coordinationRoot
+
+$env:TSUNAGOU_PROJECT_ROOT = (Resolve-Path $coordinationRoot).Path
+$env:TSUNAGOU_STATE_DIR = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\local'
+
+$project = uv run python -m tsunagou project init `
+  --coordination-root $env:TSUNAGOU_PROJECT_ROOT `
+  --name 'Demo coordination project' `
+  --objective '让多个 Agent 围绕同一契约完成并审查代码任务' | ConvertFrom-Json
+$projectId = $project.project_id
+
+uv run python -m tsunagou daemon start `
+  --coordination-root $env:TSUNAGOU_PROJECT_ROOT `
+  --port 0
+uv run python -m tsunagou daemon status `
+  --coordination-root $env:TSUNAGOU_PROJECT_ROOT
+uv run python -m tsunagou doctor
 ```
 
-需要从用户控制面创建草稿时可`task create --request-file <json>`；创建只得到draft，不自动变为running。原命令树中的publish/recover等Agent动作目前没有对应U命令，首发用户CLI不提供冒充main的捷径；由current main使用其typed tools完成。
+`daemon start` 会在 `.tsunagou/local/` 写入：
 
-## 4. 用户处理重大决定
+- `endpoint.json`：本机 daemon 地址、PID 和项目 ID，不含控制 token。
+- `control.token`：用户控制凭据。它由本机文件权限保护，不应复制到聊天、日志、URL 或 Git。
+- `state.sqlite3`：项目协作事实、事件、幂等和操作状态。
+- `daemon.log`：脱敏运行日志。
+
+CLI 后续命令通过 `TSUNAGOU_PROJECT_ROOT` 或 `TSUNAGOU_STATE_DIR` 找到 endpoint manifest。新开终端时重新设置这两个环境变量，或者显式设置 `TSUNAGOU_DAEMON_URL` 和 `TSUNAGOU_CONTROL_TOKEN`。不要把 token 写入 PowerShell 历史或脚本仓库。
+
+停止和重启：
 
 ```powershell
-tsunagou --project PROJECT_ID decision list
-tsunagou --project PROJECT_ID decision show DECISION_ID
-tsunagou --project PROJECT_ID decision resolve DECISION_ID --choice approve --expected-revision 3 --digest "sha256:ACTUAL_PROPOSAL_DIGEST" --reason "按展示方案继续"
+uv run python -m tsunagou daemon stop --coordination-root $env:TSUNAGOU_PROJECT_ROOT
+uv run python -m tsunagou daemon start --coordination-root $env:TSUNAGOU_PROJECT_ROOT --port 0
+uv run python -m tsunagou recover
 ```
 
-choices来自该决定，不是所有决定都只能approve/reject。CLI取同版本决定绑定的expected_revisions提交，不能帮用户批准一个后来变化的方案。412/摘要冲突时重新show和审阅，不能简单删掉版本检查重试。
+同一个项目不应同时启动两个 daemon。第二个 writer 会被项目运行时锁拒绝；不要用多个服务进程抢占同一个 `state.sqlite3`。
 
-用户在对话里表达意见后仍通过control确认。相关子Agent已保存进度并挂起；确认不自动恢复文件执行。项目整体完成使用专门`project.completion.confirm`端点，见下文路由表；不能把普通task完成或一次消息ACK当作用户确认项目完成。
+## 4. 接入主 Agent 和子 Agent
 
-确认项目整体完成时，先审阅main或objective owner给出的精确CompletionProposal，再使用用户 CLI：
+一次接入绑定三个值：`adapter`、`installation_id` 和目标宿主的 `conversation_id`。一个宿主的新对话、clear 或 fork 不能直接继承旧 Agent 身份；需要为新会话重新接入或走受支持的 session rebind 流程。
 
-```json
-{
-  "proposal_digest": "sha256:ACTUAL_COMPLETION_PROPOSAL_DIGEST",
-  "expected_project_revision": 12,
-  "expected_revisions": {
-    "01995870-0000-7000-8000-000000000010": 9
-  }
-}
-```
+### 4.1 为每个会话签发票据和 bridge 配置
+
+当前 CLI 的实际接入命令如下。`--output-dir` 会生成 bridge 启动描述、一次性 `ticket.json` 和预期的 `bridge-session.json` 路径：
 
 ```powershell
-tsunagou --project PROJECT_ID project complete COMPLETION_PROPOSAL_ID --expected-project-revision 12 --digest "sha256:ACTUAL_COMPLETION_PROPOSAL_DIGEST"
+$mainDir = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\bridges\main'
+$workerDir = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\bridges\worker'
+
+$main = uv run python -m tsunagou agent enroll `
+  --adapter codex --mode attach `
+  --installation-id codex-main `
+  --conversation-id '<主 Agent 的真实宿主会话标识>' `
+  --output-dir $mainDir | ConvertFrom-Json
+
+$worker = uv run python -m tsunagou agent enroll `
+  --adapter opencode --mode attach `
+  --installation-id opencode-worker `
+  --conversation-id '<子 Agent 的真实宿主会话标识>' `
+  --output-dir $workerDir | ConvertFrom-Json
+
+$main.bridge_config
+$worker.bridge_config
 ```
 
-`COMPLETION_PROPOSAL_ID`、`--expected-project-revision`与`--digest`必须来自同一份已展示提案。该命令只以U身份调用既有`project.completion.confirm`，不会创建第二个领域命令；字段缺失或冲突时重新审阅完整提案。确认成功后Project立即completed，并返回强制checkpoint Operation；checkpoint后续失败不撤销完成事实。
+`--mode launch` 只表示宿主允许由系统启动；当前 bridge 本身仍是 stdio MCP 进程，宿主不支持 managed launch 时使用 `attach`。CLI 的输出 `ticket_issued` 只表示票据已签发，不表示 Agent 已经 connected 或 ready。
 
-## 5. 查看异步操作和诊断
+`ticket.json` 含一次性秘密，只能由对应 bridge 私下读取，兑换成功后会被 bridge 删除。生成的 adapter JSON 不保存 token，但其中包含本机路径和 daemon 地址，也不应提交到远程仓库。`bridge-session.json` 是 bridge 私有的恢复凭据，必须留在本机私有目录。
+
+### 4.2 将配置加载到宿主
+
+打开主 Agent 和子 Agent 的两个独立宿主对话，把各自 `bridge_config` 文件中的 `command`、`args` 和 `env` 配置交给宿主的 MCP 配置入口。配置指向构建后的：
+
+```text
+packages/bridge-server/dist/server.js
+```
+
+bridge 是 stdio 服务，不要把它当成 HTTP 服务直接访问。bridge 启动时会：
+
+1. 从一次性 ticket 或已有 `bridge-session.json` 读取私有接入材料。
+2. 通过 endpoint manifest 找到 daemon；daemon 重启换端口时不依赖旧的固定端口。
+3. 兑换或 reconnect 得到独立 session、connection epoch 和 Agent 身份。
+4. 通过 MCP `tools/list` 暴露已注册的 typed tools。
+5. 将脱敏启动诊断写入 bridge 的本地 state 目录。
+
+宿主加载配置后，先让两个会话执行一次项目查询工具。只有 bridge 成功兑换、session 状态为 ready 且查询能返回项目上下文，才算真正加入。`ticket_issued`、配置文件存在或宿主窗口打开都不能代替这一步。
+
+### 4.3 任命主 Agent
+
+新接入的 Agent 初始不是主 Agent。用户用控制 CLI 任命它：
 
 ```powershell
-tsunagou --project PROJECT_ID operation show OPERATION_ID
-tsunagou --project PROJECT_ID checkpoint list
-tsunagou --project PROJECT_ID checkpoint retry
-tsunagou config show --effective --provenance
-tsunagou config validate
-tsunagou doctor
+# AGENT_ID 必须来自已兑换会话的实际查询结果，不能手写占位符。
+uv run python -m tsunagou agent appoint AGENT_ID
 ```
 
-202或operation_id意味着已受理。支持Operation的命令可加`--wait <seconds>`，等待结束只影响终端：退出6表示CLI停止等待，后台操作仍继续；不会据此取消或判业务失败。
+任命是用户控制动作。worker session 调用同一 command 会被拒绝；子 Agent 不能通过修改 payload、换 HTTP 路径或使用宿主 Full Access 接管主 Agent。当前用户 CLI 没有 `agent list` 或 `authority show` 子命令，身份和状态请通过 HTTP 查询（见第 7 节）或主 Agent 的 typed tools 查看。
 
-原Operation为outcome_unknown时查看证据与Resolution。main可在其权限范围内判断，用户保留动作通过control；不能把risk_accepted显示为succeeded。Project completed但checkpoint failed时修复持久化，用户完成结论不撤销。
+## 5. 一个任务的运行流程
 
-## HTTP API 的预设架构
+当前用户 CLI 不伪造 Agent owner，也没有注册 `task list`、`task create`、`task show` 命令。任务由主 Agent 使用自己的 typed tools 创建和协调，用户通过 HTTP 查询结果。
 
-daemon监听`http://127.0.0.1:<随机端口>`，客户端通过用户级endpoint manifest发现端口与instance；不固定8000，不监听LAN，无首发浏览器CORS/Cookie登录。基础路由如下，`P=/api/v1/projects/{project_id}`。
+主 Agent 应按以下顺序组织任务：
 
-| 目的 | method/path | 主体 |
+1. 创建任务，使其保持 `draft`。
+2. 补齐目标、参与者、验收者、资源意图和工作区选择后，将任务置为 `ready` 并发布。
+3. 指定的子 Agent claim，形成唯一 Attempt；claim 不等于获得执行权。
+4. 子 Agent 先提交理解、假设、不确定性和需要的契约；分歧由参与者协商，主 Agent 处理授权范围内的解决，重大方向交用户决定。
+5. 通过 preflight，重新检查任务、契约、scope、workspace baseline 和 Lease；之后才能 start。
+6. 子 Agent 在自己的 Attempt 和 scope 内工作，发送进度和结果证据。主 Agent 执行 Git 写操作、整合和审查。
+7. 提交后释放执行 Grant/Lease，由指定 reviewer 验收。普通 task 完成不等于项目完成。
+
+主 Agent 的宿主可以是 Full Access，但调度中心仍以 Agent 身份、任务 owner、scope、Lease、revision 和 command principal 做机械检查。不能由系统可靠拦截的直接文件写入会在下一次 baseline/result 检查中作为观察事实交给主 Agent，系统不会自动回滚，也不会凭文件变化猜测是谁写的。
+
+## 6. 用户决定、项目完成和 checkpoint
+
+### 6.1 解决用户决定
+
+列出当前 daemon 可查询的决定：
+
+```powershell
+$decisions = uv run python -m tsunagou decision list | ConvertFrom-Json
+$decisions | ConvertTo-Json -Depth 10
+```
+
+从返回结果中取得同一条决定的 `decision_id`、当前 `revision`、`proposal_digest` 和实际 `choice` 值，再提交：
+
+```powershell
+uv run python -m tsunagou decision resolve DECISION_ID `
+  --choice approved `
+  --expected-revision REVISION `
+  --digest 'sha256:ACTUAL_PROPOSAL_DIGEST' `
+  --reason '已审阅该版本方案，按此继续'
+```
+
+`approved` 只是示例，必须使用该决定实际提供的 choice。revision 或 digest 冲突时重新读取并重新判断，不能删除版本检查，也不能重复使用旧的 `command_id` 伪造新决定。决定解决后，相关 Agent 是否继续由主 Agent 根据黑板重新安排；CLI 不自动恢复文件执行。
+
+### 6.2 确认项目完成
+
+项目完成只能由用户确认。主 Agent 必须先提交一份 CompletionProposal，用户核对其 `proposal_id`、`proposal_digest`、`expected_project_revision` 和当前责任是否已收敛，然后执行：
+
+```powershell
+uv run python -m tsunagou project complete COMPLETION_PROPOSAL_ID `
+  --expected-project-revision PROJECT_REVISION `
+  --digest 'sha256:ACTUAL_COMPLETION_PROPOSAL_DIGEST'
+```
+
+该命令只调用用户控制身份的 `project.completion.confirm`。成功后项目状态立即变为 `completed`，同时创建强制 checkpoint Operation。checkpoint 物化失败不会撤销已经确认的完成事实；应查询 Operation，修复持久化问题后再 retry。
+
+### 6.3 查看 Operation、checkpoint 和恢复状态
+
+```powershell
+uv run python -m tsunagou operation show OPERATION_ID
+uv run python -m tsunagou checkpoint list
+uv run python -m tsunagou checkpoint retry
+uv run python -m tsunagou recover
+```
+
+`checkpoint retry` 只用于已记录失败的物化重试；它不是任意外部副作用的盲目重放。`operation show` 返回 `succeeded`、`failed` 或仍在处理中的状态时，以服务端结果为准，不因 CLI 等待结束就把 Operation 判为失败。
+
+## 7. 当前 HTTP API
+
+daemon 默认只监听 `127.0.0.1` 的随机端口。端口从：
+
+```powershell
+$endpoint = Get-Content (Join-Path $env:TSUNAGOU_STATE_DIR 'endpoint.json') -Raw | ConvertFrom-Json
+$baseUrl = $endpoint.url
+Invoke-RestMethod "$baseUrl/api/v1/health"
+```
+
+当前已实际装配的查询路由：
+
+| 方法 | 路径 | 用途 |
 |---|---|---|
-| 存活和版本 | GET `/api/v1/health` | 不带项目秘密 |
-| 创建/列出项目 | POST / GET `/api/v1/projects` | U |
-| 项目状态/黑板 | GET `P` / `P/blackboard` | U或已授权Agent |
-| 用户发worker票据 | POST `P/control/enrollment-tickets` | U；secret私有交付 |
-| 目标bridge兑换 | POST `P/sessions:enroll` | ticket bootstrap；非普通Agent令牌 |
-| 任命main | POST `P/control/authority:appoint` | U |
-| 查询/领取任务 | GET `P/tasks/{id}` / POST `P/tasks/{id}:claim` | 查询按权限；claim仅ready Agent |
-| 报告/提契约 | POST `P/reports` / `P/contracts:propose` | 相关Agent |
-| 接受契约 | POST `P/contract-proposals/{id}:accept` | 对应参与者session |
-| 看/解决决定 | GET `P/decisions/{id}` / POST `P/control/decisions/{id}:resolve` | 查询main/U；resolve仅U |
-| 用户确认项目完成 | POST `P/control/completion-proposals/{id}:confirm` | U，提案及当前责任已收敛 |
-| 操作状态 | GET `P/operations/{id}` | 已授权主体 |
-| 变化提示 | GET `P/events:stream` | 已授权主体；断线后REST同步 |
-| 模型工具接入 | `P/mcp` | 每连接独立HostSession |
+| GET | `/api/v1/health` | 存活和版本 |
+| GET | `/api/v1/projects/{project_id}/tasks` | 任务及状态 |
+| GET | `/api/v1/projects/{project_id}/attempts` | Attempt、owner 和执行状态 |
+| GET | `/api/v1/projects/{project_id}/results` | 任务结果和摘要 |
+| GET | `/api/v1/projects/{project_id}/jobs` | 已持久化 Job 状态；当前有过期 lease 的机械维护，不代表后台 handler 已全面运行 |
+| GET | `/api/v1/projects/{project_id}/roots` | 项目根和绑定摘要 |
+| GET | `/api/v1/projects/{project_id}/repositories` | 仓库登记摘要 |
+| GET | `/api/v1/projects/{project_id}/agents` | Agent、session 和主 Agent 摘要 |
+| GET | `/api/v1/projects/{project_id}/messages` | 脱敏消息摘要 |
+| GET | `/api/v1/projects/{project_id}/contracts` | 契约摘要 |
+| GET | `/api/v1/projects/{project_id}/cognition` | 报告、分歧和契约 |
+| GET | `/api/v1/projects/{project_id}/resources` | 资源/Lease 摘要 |
+| GET | `/api/v1/projects/{project_id}/workspaces` | workspace baseline/result 摘要 |
+| GET | `/api/v1/projects/{project_id}/audit` | 脱敏事件审计 |
+| GET | `/api/v1/decisions` | 用户决定列表 |
+| GET | `/api/v1/operations/{operation_id}` | Operation 状态 |
+| GET | `/api/v1/checkpoints` | checkpoint 列表和 current 指针 |
+| GET | `/api/v1/artifacts/{artifact_ref}` | 已授权附件内容摘要/读取 |
+| GET | `/api/v1/recovery` | 当前恢复状态 |
 
-控制路径只是便于审查，**路径本身不产生权限**。服务器从Bearer凭据决定principal；把Agent token放到`/control/`仍然被拒绝。完整接口见[命令目录](../implementation/command-catalog.md)。
+所有写入统一走 command dispatcher：
 
-## 一个子 Agent claim 请求
-
-下面是协议示意；方括号中的secret是被遮蔽的header位置，不是让用户把真实值贴到文档或终端。bridge在内存注入Authorization和会话header。
-
-```http
-POST /api/v1/projects/01995870-0000-7000-8000-000000000001/tasks/01995870-0000-7000-8000-000000000010:claim HTTP/1.1
-Host: 127.0.0.1:PORT
-Authorization: Bearer [bridge-private-session-token]
-Content-Type: application/json
-Tsunagou-Protocol-Version: NEGOTIATED_VERSION
-Tsunagou-Schema-Digest: NEGOTIATED_BUNDLE_DIGEST
-Tsunagou-Session-Id: 01995870-0000-7000-8000-000000000002
-Tsunagou-Connection-Epoch: 2
-Tsunagou-Runtime-Epoch: 01995870-0000-7000-8000-000000000003
-If-Match: "rev-7"
+```text
+POST /api/v1/commands/{command_kind}
 ```
+
+请求体最小结构：
 
 ```json
 {
-  "command_id": "01995870-0000-7000-8000-000000000100",
-  "protocol_version": "NEGOTIATED_VERSION",
-  "schema_bundle_digest": "NEGOTIATED_BUNDLE_DIGEST",
-  "payload": {
-    "capability_snapshot_id": "01995870-0000-7000-8000-000000000004"
-  }
+  "command_id": "NEW_UUID",
+  "protocol_version": "REGISTRY_VERSION",
+  "schema_bundle_digest": "REGISTRY_SCHEMA_DIGEST",
+  "payload": {}
 }
 ```
 
-这里没有actor/owner参数，服务器从session得到子Agent身份。protocol_version和schema_bundle_digest必须替换为协商值并与header一致；例中的占位文本不是可通过Schema的实际值。成功后Task claimed、创建唯一Attempt；尚未running。
+用户命令带 `Authorization: Bearer <control.token>`。Agent 命令还必须带 bridge 私有的 `Tsunagou-Session-Id` 和 `Tsunagou-Connection-Epoch`；服务器从 session 得到 principal，不接受 payload 中伪造 `owner_id` 或 `actor_id`。协议版本和 digest 从仓库的 `protocol/registry/commands.json` 或生成 registry 读取，不能填文档中的占位文本。
 
-## 用户解决一个决定的请求
+### 7.1 查询示例
 
-用户控制客户端使用自己的私有control凭据；不带伪造Agent会话header。读取同版本decision后再提交：
+```powershell
+$projectId = $project.project_id
+$tasks = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/tasks"
+$agents = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/agents"
+$cognition = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/cognition"
+$audit = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/audit"
 
-```http
-POST /api/v1/projects/01995870-0000-7000-8000-000000000001/control/decisions/01995870-0000-7000-8000-000000000020:resolve HTTP/1.1
-Authorization: Bearer [user-control-private-token]
-Content-Type: application/json
-Tsunagou-Protocol-Version: NEGOTIATED_VERSION
-Tsunagou-Schema-Digest: NEGOTIATED_BUNDLE_DIGEST
-If-Match: "rev-3"
+$tasks | ConvertTo-Json -Depth 10
+$agents | ConvertTo-Json -Depth 10
 ```
 
-```json
-{
-  "command_id": "01995870-0000-7000-8000-000000000101",
-  "protocol_version": "NEGOTIATED_VERSION",
-  "schema_bundle_digest": "NEGOTIATED_BUNDLE_DIGEST",
-  "payload": {
-    "choice": "approve",
-    "proposal_digest": "ACTUAL_PROPOSAL_DIGEST",
-    "expected_revisions": {
-      "01995870-0000-7000-8000-000000000010": 9
-    },
-    "reason": "按已展示的设计方案继续"
-  }
-}
+当前查询实现集中在 loopback daemon，不是远程多租户 API；不要将端口绑定到 `0.0.0.0` 或配置 LAN 反向代理。未来 Web 工作台应复用同一 command/query 契约，不应另造一套项目事实。
+
+### 7.2 command dispatcher 示例
+
+仅在调试协议或编写客户端时直接调用 dispatcher。用户正常操作优先用 CLI，Agent 正常操作优先用 bridge typed tools：
+
+```powershell
+$token = (Get-Content (Join-Path $env:TSUNAGOU_STATE_DIR 'control.token') -Raw).Trim()
+$registry = Get-Content D:\Tsunagou\protocol\registry\commands.json -Raw | ConvertFrom-Json
+$body = @{
+  command_id = [guid]::NewGuid().ToString()
+  protocol_version = $registry.protocol_version
+  schema_bundle_digest = $registry.schema_bundle_digest
+  payload = @{}
+} | ConvertTo-Json -Depth 10
+
+Invoke-RestMethod "$baseUrl/api/v1/commands/checkpoint.create.user" `
+  -Method Post -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType 'application/json' -Body $body
 ```
 
-expected_revisions来自决定冻结的实际对象集合，示例单个Task不是所有决定的固定输入。项目完成专用确认还要求expected_project_revision及完成提案digest，不能用这段普通decision示例替代。
+不要把上述 token 命令保存到脚本、日志或共享终端。不要把 Agent 的 session token 当作用户 control token 使用。
 
-## 客户端必须正确理解的返回值
+## 8. HTTP/CLI 错误的处理方式
 
-- 200/201：领域结果已提交；查看materialization了解共享文件进度。202：外部Operation尚未结束，继续GET对应operation。
-- 相同command_id和相同语义输入重试返回原结果，replayed=true；变更输入却沿用ID是409 idempotency_conflict。身份已撤销时不能靠重放读取旧结果。
-- 412 revision_conflict：获取当前对象后重新判断，新输入使用新command_id；不能删除If-Match。428表示缺前置版本。
-- 403：主体/Grant/关系/scope不允许；换REST或MCP不会改变权限。423返回相关blockers，按remediation处理。
-- 401或409 stale_epoch：bridge恢复正确连接/身份后再处理；不能在参数里手填别人的agent_id。
-- 列表用items/next_cursor/snapshot_event_seq，limit默认50最大200；SSE只提示变化，正文与可靠状态仍需query。ACK仅收件处理，不表示response、契约接受或任务验收。
+| 结果 | 含义 | 处理 |
+|---|---|---|
+| `200` | 查询或命令结果已提交 | 读取返回 DTO；写入结果带 `command_hash` |
+| `400` | payload、协议版本或状态前置条件不合法 | 修正输入或先按返回 blocker 处理 |
+| `401` | control/session 凭据无效、过期或缺失 | 重新从当前用户/bridge 流程建立身份，不能复制别人的 token |
+| `403` | principal、owner、scope 或用户权限不允许 | 由主 Agent 请求正确授权，不能换路径绕过 |
+| `404` | 对象、Operation 或 artifact 不存在 | 使用当前 project/ID 查询，不要假设对象已创建 |
+| `409` | 幂等冲突、revision 冲突或 stale 状态 | 重新读取最新对象，用新的 `command_id` 重新判断 |
+| `503` | daemon 锁或运行时依赖暂不可用 | 查看 `daemon status`、日志和 `doctor`，不要重复启动第二个 writer |
 
-HTTP客户端应使用生成OpenAPI类型与共同envelope，不自行维护一套DTO。token由受限本机存储读入进程内存，不能放URL、环境变量、curl命令参数或示例JSON。精确开发契约见[protocol](../implementation/protocol.md)与[CLI映射](../implementation/cli-contract.md)。
+相同 principal、相同 command kind、相同 `command_id` 和相同语义输入重试，应得到原结果；改变 payload 却复用 command ID 必须失败。HTTP 查询中的 `items` 是当前已持久化快照，不能把空列表解释为“所有未来任务都不存在”。
+
+## 9. 第一次可重复验收
+
+这条烟测会创建临时 Git 项目，不修改真实代码仓库，也不连接用户 IDE。它覆盖当前 M1 的独立运行路径：CLI 初始化、daemon 生命周期、两个 bridge、用户/Agent 边界、任务和认知事实、决定、项目完成、checkpoint 失败重试、重启恢复和 HTTP 查询。
+
+```powershell
+Set-Location D:\Tsunagou
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev/package_smoke.ps1
+uv run python tools/dev/smoke_standalone.py
+uv run python tools/dev/commit_window_process_smoke.py
+uv run python tools/dev/audit_standalone.py --output docs/standalone/audit-local.json
+uv run --extra dev pytest -q
+corepack pnpm run check
+corepack pnpm exec vitest run
+uv run python tools/codegen/validate_protocol.py
+uv run python tools/docs/validate_docs.py
+```
+
+结束标准：所有命令退出码为 0；M1 记录中的十二条标准仍为 `passed`；没有把 ZCode 或未完成的真实宿主接入写成 supported。完整成品路线、R1-R6 缺口和人工调试步骤见 [独立成品文档](../standalone/README.md) 与 [调试执行单](../standalone/debugging-runbook.md)。
+
+## 10. 安全和清理
+
+- `.tsunagou/` 是项目持久化的一部分；备份或迁移项目时按 checkpoint 和项目规则处理，不随意删除 `state.sqlite3`。
+- `control.token`、`ticket.json`、`bridge-session.json` 和任何 session 私有目录都不能提交 Git、粘贴到模型或放入 HTTP URL。
+- 退出当前 shell 时清除临时环境变量；停止 daemon 使用它自己的 `daemon stop`，不要执行全机器 `Stop-Process python`。
+
+```powershell
+uv run python -m tsunagou daemon stop --coordination-root $env:TSUNAGOU_PROJECT_ROOT
+Remove-Item Env:TSUNAGOU_PROJECT_ROOT -ErrorAction SilentlyContinue
+Remove-Item Env:TSUNAGOU_STATE_DIR -ErrorAction SilentlyContinue
+Remove-Item Env:TSUNAGOU_DAEMON_URL -ErrorAction SilentlyContinue
+Remove-Item Env:TSUNAGOU_CONTROL_TOKEN -ErrorAction SilentlyContinue
+```
+
+更细的协议语义、模块边界和生成 Schema 见 [实施基线](../implementation/README.md)、[命令目录](../implementation/command-catalog.md)、[CLI 契约](../implementation/cli-contract.md) 和 [子 Agent 接入指南](subagent-guide.md)。
