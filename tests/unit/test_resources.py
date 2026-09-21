@@ -66,3 +66,19 @@ def test_waiting_selection_ages_without_auto_start() -> None:
         service.reserve_set(waiter.intent_id, execution_epoch=1, now=1)
     assert service.next_waiting(now=301).intent_id == waiter.intent_id
     assert all(lease.status == "active" for lease in service.lease_sets.values())
+
+
+def test_physical_root_aliases_conflict_even_with_distinct_root_ids() -> None:
+    service = ResourceService()
+    service.set_root_aliases({"root-a": "inode:1:42", "root-b": "inode:1:42"})
+    first = service.declare_intent(
+        task_id="t1", attempt_id="a1", owner_agent_id="w1", scope_digest="s",
+        resources=[ResourceRequest(ResourceKey.path("root-a", "src"), "exclusive_write")], reason="first",
+    )
+    service.reserve_set(first.intent_id, execution_epoch=1)
+    second = service.declare_intent(
+        task_id="t2", attempt_id="a2", owner_agent_id="w2", scope_digest="s",
+        resources=[ResourceRequest(ResourceKey.path("root-b", "src"), "exclusive_write")], reason="alias",
+    )
+    with pytest.raises(RuntimeError, match="resource_conflict"):
+        service.reserve_set(second.intent_id, execution_epoch=1)

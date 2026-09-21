@@ -1,0 +1,37 @@
+{
+  "date": "2026-09-21",
+  "status": "passed",
+  "scope": "M1 twelve final criteria for the independent local product",
+  "evidence_commands": [
+    "powershell -ExecutionPolicy Bypass -File tools/dev/package_smoke.ps1",
+    "python tools/dev/smoke_standalone.py",
+    "python tools/dev/commit_window_process_smoke.py",
+    "python tools/dev/audit_standalone.py --output docs/standalone/audit-2026-09-21.json",
+    "uv run --extra dev pytest -q",
+    "corepack pnpm run check",
+    "corepack pnpm exec vitest run",
+    "uv run python tools/codegen/validate_protocol.py",
+    "python tools/docs/validate_docs.py"
+  ],
+  "criteria": [
+    {"id": 1, "status": "passed", "evidence": ["package-smoke-2026-09-21.json"]},
+    {"id": 2, "status": "passed", "evidence": ["m1-public-smoke-2026-09-21.json", "bridge-two-session-smoke-2026-09-21.json"]},
+    {"id": 3, "status": "passed", "evidence": ["m1-public-smoke-2026-09-21.json"]},
+    {"id": 4, "status": "passed", "evidence": ["cognition-contract-actions-2026-09-21.json", "test_stale_preflight_and_blocked_resume_never_auto_start"]},
+    {"id": 5, "status": "passed", "evidence": ["test_task_execution_scope_rejects_resource_outside_declared_prefix", "test_failed_start_is_atomic"]},
+    {"id": 6, "status": "passed", "evidence": ["m1-public-smoke-2026-09-21.json"]},
+    {"id": 7, "status": "passed", "evidence": ["m1-public-smoke-2026-09-21.json"]},
+    {"id": 8, "status": "passed", "evidence": ["test_stale_preflight_and_blocked_resume_never_auto_start"]},
+    {"id": 9, "status": "passed", "evidence": ["checkpoint-failure-2026-09-21.json", "m1-public-smoke-2026-09-21.json"]},
+    {"id": 10, "status": "passed", "evidence": ["commit-window-process-2026-09-21.json", "m1-public-smoke-2026-09-21.json"]},
+    {"id": 11, "status": "passed", "evidence": ["audit-2026-09-21.json", "m1-public-smoke-2026-09-21.json"]},
+    {"id": 12, "status": "passed", "evidence": ["debugging-runbook.md", "audit-2026-09-21.json", "package-smoke-2026-09-21.json"]}
+  ],
+  "follow_on_scope": [
+    "complete original eight-module lifecycle and protocol matrix",
+    "active background Job runner and materialization interruption matrix",
+    "physical host Codex/OpenCode/DeepSeek formal baseline and later ZCode gate",
+    "worktree/external isolation, handoff/succession, full artifact repository and pagination"
+  ],
+  "note": "These follow-on items do not invalidate the M1 local product criteria; they remain in R1-R6 planning tasks and are not silently marked supported."
+}

@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-21",
+  "result": "passed",
+  "scope": "one temporary Git project, one authenticated stdio bridge, local daemon over loopback",
+  "steps": [
+    "CLI agent enroll issued a private ticket and a non-secret bridge config with --output-dir.",
+    "The bridge redeemed the ticket and reported session=ready with ticket-bound continuity evidence.",
+    "The user-control CLI appointed that agent as main.",
+    "The bridge restarted from its private session file, reconnected with the same agent identity and resume:same_digest.",
+    "MCP tools/call context__project_read returned the authenticated project context.",
+    "MCP tools/call task__create then task__ready then task__publish returned draft then open task state."
+  ],
+  "observed": {
+    "session_status": "ready",
+    "initial_continuity": "ticket:bound_conversation",
+    "reconnect_continuity": "resume:same_digest",
+    "task_create_status": "draft",
+    "task_publish_status": "open"
+  },
+  "limits": [
+    "This is an authenticated bridge smoke test, not a real Codex/OpenCode/DeepSeek host acceptance.",
+    "It exercises one bridge and a task lifecycle prefix; worker resource/workspace/review and failure injection remain M1 gates.",
+    "All temporary IDs, ticket material and paths were omitted from this evidence."
+  ]
+}

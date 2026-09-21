@@ -1,0 +1,25 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.review.request_changes",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "result_digest": {},
+    "slot_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "evidence_refs",
+    "reason",
+    "result_digest",
+    "slot_id"
+  ],
+  "title": "TaskReviewRequest_ChangesPayload",
+  "type": "object"
+}

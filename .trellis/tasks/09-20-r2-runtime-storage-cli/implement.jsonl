@@ -1,0 +1,14 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/index.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/data-model.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/07-durability.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/01-projects.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/02-agents.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/cli-contract.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"R2 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"src/tsunagou/platform/state.py","reason":"服务状态 SQLite 快照、重启恢复与失败回滚"}
+{"file":"src/tsunagou/cli/app.py","reason":"真实 daemon start/status/stop 与 HTTP CLI client"}

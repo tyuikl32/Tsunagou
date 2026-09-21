@@ -1,0 +1,22 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.submit",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifact_refs": {},
+    "evidence_refs": {},
+    "summary": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "workspace_result_ref": {}
+  },
+  "required": [
+    "artifact_refs",
+    "evidence_refs",
+    "summary",
+    "workspace_result_ref"
+  ],
+  "title": "TaskSubmitPayload",
+  "type": "object"
+}

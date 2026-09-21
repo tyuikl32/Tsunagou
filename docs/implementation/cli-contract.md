@@ -1,6 +1,6 @@
 # CLI 外壳与已有领域命令的精确映射
 
-本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init、agent enroll/appoint、decision、operation 和 recover 外壳；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
+本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/complete、agent enroll/appoint、decision、operation、checkpoint 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
 
 ## 1. 适用范围
 
@@ -18,7 +18,7 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 | `daemon status` / `stop` | 本机已验证daemon实例；stop优雅收敛 | status/worker收敛摘要 |
 | `project init --coordination-root <path> [--name <name>] [--objective <text>]` | `project.initialize`；缺name/objective交互询问，JSON模式要求补齐 | Project与genesis Operation |
 | `project list` / `show` | GET项目列表/指定Project | 同query DTO |
-| `project confirm-completion <proposal_id> --request-file <json> --expected-revision <n>` | `project.completion.confirm`；proposal_id绑定URI，If-Match绑定已审阅的CompletionProposal revision；文件必须含该版本的proposal_digest、expected_project_revision、expected_revisions | Project completed与强制checkpoint Operation；仅U可调用 |
+| `project complete <proposal_id> --expected-project-revision <n> --digest <digest>` | `project.completion.confirm`；proposal_id与digest绑定已审阅的CompletionProposal，project revision必须匹配 | Project completed与强制checkpoint Operation；仅U可调用 |
 | `root register --request-file <json>` | `root.register.user`；文件是catalog的业务payload | RootRegistration |
 | `root bind <root_id> --request-file <json> --expected-revision <n>` | `root.bind.user` | RootBinding/Operation |
 | `root list` | GET P/roots | RootPage，敏感字段脱敏 |
@@ -56,7 +56,7 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 
 `decision resolve`的digest必须与读取的proposal一致，CLI不能“取最新摘要”替换用户提供值；读取时revision已经变化就本地失败提示重新审阅。网络期间又变化由服务器412拒绝。具体动作仍由Server决定如何应用，不由CLI私自写Task/Grant。
 
-`project confirm-completion`同样只提交用户明确审阅的CompletionProposal：命令行中的proposal_id、`--expected-revision`和请求文件中的proposal_digest必须指向同一版本，请求文件还要原样携带该提案冻结的expected_project_revision与expected_revisions。CLI不得从“最新提案”补值，也不得由`decision resolve`、`project archive`或其他成功动作自动触发确认；缺字段返回输入错误，竞争变化由服务器拒绝并要求重新审阅。
+`project complete`只提交用户明确审阅的CompletionProposal：命令行中的proposal_id、`--expected-project-revision`和`--digest`必须指向同一版本。CLI不得从“最新提案”补值，也不得由`decision resolve`、`project archive`或其他成功动作自动触发确认；缺字段返回输入错误，竞争变化由服务器拒绝并要求重新审阅。
 
 CLI从platformdirs私有目录读取control token；不提供`--token`，不把秘密写环境变量、request-file、日志或JSON。T01固定普通运行参数的配置键；本手册不引入未登记的`TSUNAGOU_*`环境开关。endpoint由daemon发现文件读取并核对instance，不能凭过期PID连接别的服务。
 

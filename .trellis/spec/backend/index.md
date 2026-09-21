@@ -1,6 +1,6 @@
 # Backend implementation rules
 
-Status: documentation baseline; application code is not implemented yet. The rules are sourced from the approved project documents, not claimed as existing code patterns.
+Status: partial application implementation exists. The 2026-09-20 assembled-runtime audit found persistence, ownership, protocol and packaging gaps despite passing unit tests. Current delivery follows the [standalone M1 plan](../../../docs/standalone/implementation-plan.md); complete design remains normative for retained behavior.
 
 ## Pre-Development Checklist
 
@@ -14,9 +14,10 @@ Read [implementation index](../../../docs/implementation/README.md), the active 
 | [Logging](logging-guidelines.md) | Secrets and visibility |
 | [Quality](quality-guidelines.md) | Tests, protocol and release checks |
 | [Entrypoints](entrypoint-contracts.md) | CLI/HTTP/MCP identity, enrollment, examples and errors |
+| [Standalone Runtime](standalone-runtime.md) | Real process/HTTP audit, persistent state, M1 repair order and delivery checks |
 
 For build order and file placement, read [build guide](../../../docs/implementation/build-guide.md) and [planned directory layout](../../../docs/implementation/directory-layout.md). Official knowledge and adoption limits are indexed in [references](../../../docs/implementation/references.md).
 
 ## Quality Check
 
-Use the active task acceptance criteria. Until T01 creates product tooling, only `python tools/docs/validate_docs.py` and Trellis context validation are executable project checks. Do not claim product tests passed merely because planning validates.
+Use the active task acceptance criteria and real assembled runtime checks. Python/TypeScript tests and packaging tools exist; passing service-object tests does not prove that CLI/HTTP, persistence and workflows are connected. Run `python tools/docs/validate_docs.py` for documentation changes.

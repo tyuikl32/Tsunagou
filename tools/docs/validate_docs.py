@@ -68,7 +68,7 @@ def main() -> int:
     for task_id in tasks:
         visit(task_id)
 
-    parent_path = ROOT / ".trellis/tasks/09-18-tsunagou-v1/task.json"
+    parent_path = ROOT / plan["parent_task"] / "task.json"
     parent = json.loads(parent_path.read_text(encoding="utf-8"))
     for task_id, task in tasks.items():
         folder = ROOT / task["trellis_path"]

@@ -174,3 +174,95 @@ def test_full_baseline_still_required_by_release_gate(tmp_path: Path) -> None:
     missing = missing_baseline_capabilities(_admission_baseline())
     assert set(missing) == set(name for name in BASELINE_CAPABILITIES if name not in ADMISSION_CAPABILITIES)
     assert len(missing) == len(BASELINE_CAPABILITIES) - len(ADMISSION_CAPABILITIES)
+
+
+def test_review_changes_requested_closes_execution_lease_and_grant() -> None:
+    """A rejected result cannot keep using the previous execution credential."""
+    from tsunagou.application.handlers import build_handlers
+    from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceService
+    from tsunagou.modules.tasks import TaskService
+
+    authority = AuthorityService(None)
+    main = authority.redeem_ticket(
+        authority.issue_ticket("review-main", "review-main-conversation"),
+        "review-main", "review-main-conversation", baseline=complete_baseline(),
+    )
+    worker = authority.redeem_ticket(
+        authority.issue_ticket("review-worker", "review-worker-conversation"),
+        "review-worker", "review-worker-conversation", baseline=complete_baseline(),
+    )
+    authority.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+    tasks = TaskService()
+    resources = ResourceService()
+    task = tasks.create_task("review", "return changes")
+    tasks.ready(task.task_id)
+    tasks.publish(task.task_id)
+    attempt = tasks.claim(task.task_id, worker.agent_id)
+    preflight = tasks.preflight(task.task_id, worker.agent_id, attempt_id=attempt.attempt_id)
+    tasks.start(task.task_id, worker.agent_id, preflight_id=preflight.preflight_id, require_preflight=True)
+    grant = authority.issue_execution_grant(
+        agent_id=worker.agent_id, session_id=worker.session_id,
+        task_id=task.task_id, attempt_id=attempt.attempt_id,
+    )
+    intent = resources.declare_intent(
+        task_id=task.task_id, attempt_id=attempt.attempt_id, owner_agent_id=worker.agent_id,
+        scope_digest="review-scope", resources=[ResourceRequest(ResourceKey.path("root", "file.py"), "exclusive_write")],
+        reason="review test",
+    )
+    lease = resources.reserve_set(intent.intent_id, execution_epoch=attempt.execution_epoch)
+    result = tasks.submit(task.task_id, worker.agent_id, {"summary": "needs changes"})
+    authority.issue_grant(
+        issuer_agent_id=main.agent_id, kind="task_review", principal_id=main.agent_id,
+        session_id=main.session_id, task_id=task.task_id, capabilities={"task.review"},
+    )
+
+    handlers = build_handlers(authority=authority, tasks=tasks, resources=resources)
+    reviewed = handlers["task.review.request_changes"](
+        {"task_id": task.task_id, "result_id": result.result_id, "result_digest": result.digest},
+        {"kind": "M", "principal_id": main.agent_id, "session_id": main.session_id, "command_id": "review"},
+    )
+
+    assert reviewed["status"] == "changes_requested"
+    assert tasks.tasks[task.task_id].current_attempt_id is None
+    assert tasks.attempts[attempt.attempt_id].status == "orphaned"
+    assert resources.lease_sets[lease.lease_set_id].status == "released"
+    assert authority.grants[grant.grant_id].status == "revoked"
+
+
+def test_task_execution_scope_rejects_resource_outside_declared_prefix() -> None:
+    from tsunagou.application.handlers import build_handlers
+    from tsunagou.modules.tasks import TaskService
+
+    authority = AuthorityService(None)
+    main = authority.redeem_ticket(
+        authority.issue_ticket("scope-main", "scope-main-conversation"),
+        "scope-main", "scope-main-conversation", baseline=complete_baseline(),
+    )
+    worker = authority.redeem_ticket(
+        authority.issue_ticket("scope-worker", "scope-worker-conversation"),
+        "scope-worker", "scope-worker-conversation", baseline=complete_baseline(),
+    )
+    authority.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+    tasks = TaskService()
+    handlers = build_handlers(authority=authority, tasks=tasks)
+    main_context = {"kind": "M", "principal_id": main.agent_id, "session_id": main.session_id}
+    worker_context = {"kind": "B", "principal_id": worker.agent_id, "session_id": worker.session_id}
+    task = handlers["task.create"]({
+        "title": "scoped", "objective": "write only source", "execution_scope": {
+            "digest": "scope-v1",
+            "resources": [{"kind": "path", "root_id": "root", "segments": ["src"], "mode": "exclusive_write"}],
+        },
+    }, main_context)
+    handlers["task.ready"]({"task_id": task["task_id"]}, main_context)
+    handlers["task.publish"]({"task_id": task["task_id"]}, main_context)
+    claimed = handlers["task.claim"]({"task_id": task["task_id"]}, worker_context)
+    outside = {
+        "task_id": task["task_id"], "attempt_id": claimed["attempt_id"], "scope_digest": "scope-v1",
+        "resources": [{"kind": "path", "root_id": "root", "segments": ["tests", "fixture.py"], "mode": "exclusive_write"}],
+    }
+    with pytest.raises(PermissionError, match="task_scope_denied"):
+        handlers["resource.intent"](outside, worker_context)
+    inside = {**outside, "resources": [{
+        "kind": "path", "root_id": "root", "segments": ["src", "module.py"], "mode": "exclusive_write",
+    }]}
+    assert handlers["resource.intent"](inside, worker_context)["task_id"] == task["task_id"]

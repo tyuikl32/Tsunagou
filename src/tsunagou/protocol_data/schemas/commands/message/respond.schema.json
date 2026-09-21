@@ -1,0 +1,25 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/message.respond",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "obligation_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "response_payload": {},
+    "summary": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "evidence_refs",
+    "obligation_id",
+    "response_payload",
+    "summary"
+  ],
+  "title": "MessageRespondPayload",
+  "type": "object"
+}

@@ -1,0 +1,26 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/agent.enroll",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "client_nonce": {},
+    "conversation_evidence": {},
+    "descriptor_ref": {},
+    "installation_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "negotiation": {},
+    "probe_payload": {}
+  },
+  "required": [
+    "client_nonce",
+    "conversation_evidence",
+    "descriptor_ref",
+    "installation_id",
+    "negotiation",
+    "probe_payload"
+  ],
+  "title": "AgentEnrollPayload",
+  "type": "object"
+}

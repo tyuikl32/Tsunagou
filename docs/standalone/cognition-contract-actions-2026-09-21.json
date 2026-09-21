@@ -1,0 +1,19 @@
+{
+  "evidence_kind": "public_cognition_contract_actions",
+  "date": "2026-09-21",
+  "test": "tests/integration/test_m1_runtime_flow.py::test_cognition_discrepancy_and_contract_resolution_are_public_and_scoped",
+  "observed": {
+    "worker_created_discrepancy": true,
+    "worker_advanced_to_clarifying": true,
+    "main_resolved_by_consensus": true,
+    "proposer_withdrew_proposed_contract": true,
+    "participant_rejected_contract_with_digest": true,
+    "worker_cannot_use_main_resolution_capability": "covered by capability grant boundary"
+  },
+  "remaining": [
+    "discrepancy resolution is not yet linked to task.start blockers",
+    "proxy policy is not a persisted policy object",
+    "risk request/submit/accept runtime handlers remain unassembled",
+    "background resource expiry job remains pending"
+  ]
+}

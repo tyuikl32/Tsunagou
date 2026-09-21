@@ -1,0 +1,36 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.create",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_policy": {},
+    "execution_scope": {},
+    "followup_of": {},
+    "objective": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "parent_task_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "prerequisites": {},
+    "required_capabilities": {},
+    "title": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "acceptance_policy",
+    "execution_scope",
+    "followup_of",
+    "objective",
+    "parent_task_id",
+    "prerequisites",
+    "required_capabilities",
+    "title"
+  ],
+  "title": "TaskCreatePayload",
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-21",
+  "scenario": "main_agent_registers_and_queries_multiple_project_roots",
+  "entrypoint": "tests/integration/test_m1_runtime_flow.py::test_main_can_register_bind_and_query_multiple_project_roots",
+  "result": "passed",
+  "assertions": [
+    "main_authority includes root.manage",
+    "root.register binds an extra directory and returns a physical identity",
+    "repository.register records the bound root identity",
+    "GET /api/v1/projects/{id}/roots omits absolute_path",
+    "GET /api/v1/projects/{id}/repositories returns the registered repository"
+  ],
+  "remaining_limits": [
+    "UserCeiling and root scope are not yet a unified authorization projection",
+    "root JSON persistence is not yet part of the SQLite unit of work",
+    "overlap and alias conflict checks remain in the R4 scope"
+  ]
+}

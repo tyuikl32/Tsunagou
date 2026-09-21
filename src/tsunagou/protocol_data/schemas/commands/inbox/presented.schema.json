@@ -1,0 +1,15 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/inbox.presented",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_digest": {},
+    "evidence_kind": {}
+  },
+  "required": [
+    "evidence_digest",
+    "evidence_kind"
+  ],
+  "title": "InboxPresentedPayload",
+  "type": "object"
+}

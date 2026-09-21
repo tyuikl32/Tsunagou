@@ -1,0 +1,22 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.local_copy.delete",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data_loss_acceptance": {},
+    "exact_paths_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "recovery_evidence_refs": {}
+  },
+  "required": [
+    "data_loss_acceptance",
+    "exact_paths_digest",
+    "reason",
+    "recovery_evidence_refs"
+  ],
+  "title": "ProjectLocal_CopyDeletePayload",
+  "type": "object"
+}

@@ -1,0 +1,53 @@
+{
+  "id": "r1-protocol-package",
+  "name": "r1-protocol-package",
+  "title": "R1 协议与独立安装入口",
+  "description": "协议资源入包、具体 DTO、统一 dispatcher 与版本错误契约",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "protocol-package",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-20-tsunagou-m1",
+  "relatedFiles": [
+    "docs/standalone/implementation-plan.md",
+    "docs/standalone/status-and-gaps.md",
+    "docs/decisions/2026-09-20-standalone-priority.md",
+    ".trellis/spec/backend/index.md",
+    ".trellis/spec/backend/standalone-runtime.md",
+    "docs/implementation/protocol.md",
+    "docs/implementation/command-catalog.md",
+    "docs/implementation/architecture.md",
+    "docs/implementation/cli-contract.md",
+    ".trellis/spec/backend/entrypoint-contracts.md",
+    "docs/standalone/debugging-runbook.md"
+  ],
+  "notes": "2026-09-20 按用户要求从独立成品方案建任务；产品修改未开始。旧任务仅供历史追溯。",
+  "meta": {
+    "plan_id": "R1",
+    "depends_on": [],
+    "dependency_semantics": "Validate predecessor acceptance before start; parent/children only group tasks.",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false,
+    "replaces": [
+      "T01",
+      "T03",
+      "T16"
+    ],
+    "modules": [
+      "all"
+    ],
+    "plan_source": "docs/standalone/implementation-plan.md"
+  }
+}

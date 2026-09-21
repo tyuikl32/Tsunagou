@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-21",
+  "result": "passed",
+  "runner": "tools/dev/package_smoke.ps1",
+  "python": {
+    "command": "powershell -ExecutionPolicy Bypass -File tools/dev/package_smoke.ps1",
+    "cwd": "outside-source-tree",
+    "checks": [
+      "importlib.resources can read tsunagou.protocol_data/registry/commands.json",
+      "python -m tsunagou --help starts from the installed wheel"
+    ]
+  },
+  "bridge": {
+    "command": "powershell -ExecutionPolicy Bypass -File tools/dev/package_smoke.ps1",
+    "cwd": "outside-source-tree",
+    "checks": [
+      "npm pack contains dist, protocol/registry/commands.json and dependency declarations",
+      "bridge starts without schema_bundle_digest_unavailable"
+    ]
+  },
+  "limits": [
+    "The package smoke validates installability and startup; the full M1 workflow is recorded separately in m1-public-smoke-2026-09-21.json."
+  ]
+}

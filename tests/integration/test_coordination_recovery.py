@@ -50,3 +50,34 @@ def test_sqlite_crash_before_commit_and_epoch_fence_are_not_success(tmp_path: Pa
     with pytest.raises(RevisionConflict):
         with db.transaction("stale") as uow:
             uow.assert_runtime_epoch(old)
+
+
+def test_sqlite_commit_before_response_replays_original_result(tmp_path: Path) -> None:
+    db = ProjectDatabase(tmp_path / "state.sqlite3")
+    calls = 0
+
+    def command(uow: Any) -> dict[str, str]:
+        nonlocal calls
+        calls += 1
+        uow.append_event(
+            lineage_id="l", event_type="committed", aggregate_ref="x", actor_ref="a", payload={},
+        )
+        return {"value": "committed"}
+
+    def response_crash() -> NoReturn:
+        raise RuntimeError("injected_after_commit")
+
+    db.post_commit_hook = response_crash
+    with pytest.raises(RuntimeError, match="injected_after_commit"):
+        db.dispatch(
+            principal_id="a", command_kind="test.commit", command_id="same",
+            payload={}, handler=command,
+        )
+    replay = db.dispatch(
+        principal_id="a", command_kind="test.commit", command_id="same",
+        payload={}, handler=command,
+    )
+    assert replay.replayed is True
+    assert replay.result == {"value": "committed"}
+    assert calls == 1
+    assert db.last_event_seq() == 1

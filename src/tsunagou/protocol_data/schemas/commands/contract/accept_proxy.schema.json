@@ -1,0 +1,27 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/contract.accept_proxy",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "participant_slot_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "proposal_digest": {},
+    "proxy_policy_ref": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "evidence_refs",
+    "participant_slot_id",
+    "proposal_digest",
+    "proxy_policy_ref",
+    "reason"
+  ],
+  "title": "ContractAccept_ProxyPayload",
+  "type": "object"
+}

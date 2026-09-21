@@ -1,6 +1,6 @@
 # 从空工程到首发闭环的搭建指南
 
-本指南把[路线图](roadmap.md)转换成实施顺序。它不授权现在开始产品代码，也不替代各任务PRD。当前可运行的是Trellis脚本与文档校验；下文 `uv`、`pnpm`、`tsunagou` 产品检查仅在对应文件/入口建成后运行。
+本指南保留原 T01–T24 从空工程搭建完整设计的步骤，原任务均已关闭归档，历史顺序见[旧路线图](roadmap-legacy-2026-09-18.md)。当前已有原型，应按 [M1 / R1–R6](roadmap.md)及各任务 PRD 修复，不从 T01 重新搭建。当前可运行和待交付的命令分别见[调试执行单](../standalone/debugging-runbook.md) A/B 部分。
 
 每个阶段都要留下可复用产物和验证结果。完成一个阶段，不等于后续宿主/恢复功能已通过。目录路径见[详细目录](directory-layout.md)；命令和权限以[命令目录](command-catalog.md)为准。
 
@@ -17,7 +17,7 @@
 ```powershell
 git status --short
 python .trellis/scripts/task.py list
-python .trellis/scripts/task.py validate .trellis/tasks/09-18-t01-foundation
+python .trellis/scripts/task.py validate .trellis/tasks/09-20-r1-protocol-package
 python tools/docs/validate_docs.py
 ```
 

@@ -1,0 +1,14 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/index.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/protocol.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/command-catalog.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/architecture.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/cli-contract.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/validation.md","reason":"R1 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/audit-2026-09-20.json","reason":"真实 HTTP 审计：协议版本拒绝且 16/16 回归通过"}

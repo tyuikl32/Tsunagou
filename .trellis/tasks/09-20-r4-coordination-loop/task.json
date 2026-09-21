@@ -1,0 +1,61 @@
+{
+  "id": "r4-coordination-loop",
+  "name": "r4-coordination-loop",
+  "title": "R4 认知、资源与工作空间闭环",
+  "description": "显式协商、契约、资源租约、真实 shared 工作空间及结果",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "coordination",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-20-tsunagou-m1",
+  "relatedFiles": [
+    "docs/standalone/implementation-plan.md",
+    "docs/standalone/status-and-gaps.md",
+    "docs/decisions/2026-09-20-standalone-priority.md",
+    ".trellis/spec/backend/index.md",
+    ".trellis/spec/backend/standalone-runtime.md",
+    "docs/implementation/modules/04-cognition.md",
+    "docs/implementation/modules/05-resources.md",
+    "docs/implementation/modules/06-workspaces.md",
+    "docs/implementation/modules/07-durability.md",
+    "docs/implementation/coordination-walkthrough.md",
+    "docs/standalone/debugging-runbook.md"
+  ],
+  "notes": "2026-09-20 按用户要求从独立成品方案建任务；产品修改未开始。旧任务仅供历史追溯。",
+  "meta": {
+    "plan_id": "R4",
+    "depends_on": [
+      "R3"
+    ],
+    "dependency_semantics": "Validate predecessor acceptance before start; parent/children only group tasks.",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false,
+    "replaces": [
+      "T09",
+      "T10",
+      "T11",
+      "T12",
+      "T13"
+    ],
+    "modules": [
+      "cognition",
+      "resources",
+      "workspaces",
+      "tasks",
+      "durability"
+    ],
+    "plan_source": "docs/standalone/implementation-plan.md"
+  }
+}

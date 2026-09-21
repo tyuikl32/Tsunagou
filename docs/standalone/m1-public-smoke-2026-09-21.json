@@ -1,0 +1,50 @@
+{
+  "date": "2026-09-21",
+  "command": "python tools/dev/smoke_standalone.py",
+  "result": "passed",
+  "scope": "fresh temporary Git project, local daemon, two stdio MCP bridges, CLI user confirmation and daemon restart",
+  "observed": {
+    "bridge_sessions": 2,
+    "task_review": "completed",
+    "user_decision": "resolved",
+    "project_completion": "completed",
+    "task_execution_scope": "root/path prefix enforced before lease",
+    "checkpoint_pointer": "matched_checkpoint_retry_response",
+    "checkpoint_failure_retry": "failed operation queryable, user retry produced sealed pointer",
+    "recovery_status": "ready",
+    "post_restart_identity": "same_main_agent",
+    "worker_user_only_commands": "rejected",
+    "stale_execution_after_restart": "rejected",
+    "post_restart_queries": [
+      "tasks",
+      "attempts",
+      "results",
+      "agents",
+      "cognition",
+      "contracts",
+      "messages",
+      "jobs",
+      "workspaces",
+      "decisions",
+      "audit"
+    ]
+  },
+  "public_entries": [
+    "project init",
+    "daemon start/stop",
+    "agent enroll/appoint",
+    "MCP initialize/tools/list/tools/call",
+    "decision resolve",
+    "project complete",
+    "checkpoint list",
+    "checkpoint retry",
+    "recover",
+    "GET /api/v1/projects/{project_id}/tasks, /attempts, /results, /jobs, /agents, /cognition, /messages, /workspaces, /audit after restart",
+    "GET /api/v1/decisions after restart"
+  ],
+  "limits": [
+    "The two host sessions are launched by the smoke runner, not a real Codex/OpenCode/DeepSeek UI.",
+    "The public jobs query and expired-lease reconciliation are covered; active background job execution, materialization interruption and full old-session matrices remain separate gates.",
+    "Temporary IDs, ticket material and paths are omitted."
+  ]
+}

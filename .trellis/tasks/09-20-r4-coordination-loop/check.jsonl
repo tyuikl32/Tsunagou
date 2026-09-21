@@ -1,0 +1,13 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/index.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/04-cognition.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/05-resources.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/06-workspaces.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/07-durability.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/coordination-walkthrough.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/validation.md","reason":"R4 验收依据；M1 阶段范围以 standalone 为准"}

@@ -22,12 +22,13 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 ## Tsunagou 项目约定
 
-- 当前仓库已经完成基础产品实现和任务初始化；T01–T17、T22 有代码/测试证据，T18–T21、T23–T24 的真实宿主与实验门禁仍待补证。入口是 [实施基线](docs/implementation/README.md) 与 [用户说明](docs/overview/product.md)。
+- 当前仓库是可启动原型；T01–T17、T22 的旧完成标记仅证明分项产物，实际运行仍缺统一持久化、主从任务边界、事务编排及独立安装资源。当前优先读 [八模块审计与最小成品路径](docs/standalone/README.md)，按 R1–R6 补齐；完整目标保留在 [实施基线](docs/implementation/README.md)。
 - 规范优先级和历史追溯见 [文档目录](docs/README.md)。`docs/history/2026-09-18-source/` 是原始记录，不修改；新实现以当前 implementation、已确认 decisions 为准。
 - 开发前读相应 `.trellis/spec`、当前任务 PRD/design/implement 与上下文。任务依赖以 [task-plan.json](docs/implementation/task-plan.json) 和 `meta.depends_on` 为准；Trellis 父子关系不是依赖调度器。
+- 当前活动计划是 M1 总任务与 R1–R6 六个子任务，依次推进。此前 T01–T24 和旧总计划均已按用户要求完成或放弃并归档，不再作为活动依赖；处置记录见 [任务迁移清单](docs/standalone/trellis-transition-2026-09-20.json)。
 - 已确认的问题不要重新逐项询问用户。普通实现选择自行完成并留档；用户目标、重大设计和固定用户权限边界的实质变化才升级。
 - 系统代码维护身份、范围、版本、状态等机械不变量；业务语义交给运行时主 Agent。八模块以公开端口协作，workflows/blackboard 不新增领域真相。
-- 首发必需的 Codex、OpenCode、DeepSeek Harness 都需正式共同基线真机证据；ZCode 适配器保留但正式基线延后，不得把未知能力写成 supported，模拟器通过不代表真实宿主通过。
+- 当前 M1 以独立安装、实际业务闭环和重启恢复验收，宿主能力报告与研究实验不阻塞；见 [D183](docs/decisions/2026-09-20-standalone-priority.md)。原多宿主正式发布目标保留，ZCode后置；不得把未知能力写成supported或放弃owner、scope和user-only边界。
 - 项目说明中的运行命令是待实现规范，不能据此报告已运行成功。每项验收以实际测试/版本/证据为准。
 - 文档校验：`python tools/docs/validate_docs.py`。修改公共语义时同步 Schema、命令目录、fixtures、任务和用户文档。
 - 实施步骤和文件位置见 [搭建指南](docs/implementation/build-guide.md)、[预期目录](docs/implementation/directory-layout.md)；用户子Agent接入与CLI/HTTP示例分别见 [接入指南](docs/overview/subagent-guide.md)、[操作手册](docs/overview/cli-http-manual.md)。示例不能创造未注册的U权限或把宿主临时subagent视为已认证项目成员。

@@ -1,0 +1,12 @@
+{
+  "date": "2026-09-21",
+  "command": "uv run --extra dev pytest -q tests/integration/test_coordination_recovery.py::test_sqlite_commit_before_response_replays_original_result",
+  "scope": "ProjectDatabase dispatch commit-window fault injection",
+  "passed": true,
+  "assertions": [
+    "the one-shot hook raises after SQLite commit and before the caller receives a response",
+    "the same command_id replays the stored result without invoking the handler again",
+    "the committed event exists exactly once"
+  ],
+  "limitation": "This is an in-process deterministic commit-window injection; a real OS process kill matrix remains an R6 gate."
+}

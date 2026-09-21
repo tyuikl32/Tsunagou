@@ -26,7 +26,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | project.initialize | `/api/v1/projects`（全路径） | U / — | name,objective,coordination_root,initial_policy | Project+Operation；已有Git仓库，创建genesis |
 | project.configure | `:configure` | M / project.configure | policy_patch,reason | ProjectPolicy；不能扩大用户ceiling |
 | root.register | `/roots` | M / root.manage | name,kind,repository_id?,required,binding_request,reason | RootRegistration；超边界先用户决定 |
-| root.bind | `/roots/{id}:bind` | M / root.manage | absolute_path,expected_physical_identity?,reason | RootBinding+Operation；物理验证 |
+| root.bind | `/roots/{id}:bind` | M / root.manage | root_id,absolute_path,expected_physical_identity?,reason | RootBinding+Operation；物理验证 |
 | repository.register | `/repositories` | M / root.manage | name,root_id,required | RepositoryRegistration+Operation |
 | project.reconcile | `:reconcile` | M / project.reconcile | scope_refs,reason | Operation；只读观察、合并计划另确认 |
 | ceiling.set | `/control/ceiling:set` | U / — | ceiling,reason | UserCeiling；撤销不再满足范围的Grant |
@@ -61,6 +61,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | session.end | `/sessions/{id}:end` | D / — | reason,stop_evidence? | HostSession；self，撤Grant/处理Attempts |
 | authority.appoint | `/control/authority:appoint` | U / — | agent_id,expected_authority_epoch,ceiling_template,reason | Authority；ready且baseline通过 |
 | authority.revoke | `/control/authority:revoke` | U / — | expected_authority_epoch,reason | Authority unassigned，撤权 |
+| context.project_read | `/context:project-read` | B / coordination.read | — | 脱敏项目上下文；仅当前会话与授权可见 |
 | authority.handoff | `/authority:handoff` | M / authority.handoff | target_agent_id,expected_authority_epoch,adoption_plan,reason | AuthorityTransition |
 | authority.transition.report | `/authority-transitions/{id}:report` | H / authority.converge | stopped_refs,evidence_refs | Transition；只允许收敛对象 |
 | authority.transition.adopt | `/authority-transitions/{id}:adopt` | H / authority.converge | adopted_refs,expected_revisions,reason | Transition；target且scope可覆盖 |
@@ -168,7 +169,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | `/api/v1/projects` | ProjectRegistrationPage / U；Agent只能已绑定project |
 | `P`、`P/conditions`、`P/blockers` | ProjectView/ConditionPage/BlockerPage / B、U，敏感字段裁剪 |
 | `P/blackboard` | BlackboardSnapshot / B、U；统一read transaction，见runtime-prompts |
-| `P/{roots,repositories,agents,tasks,reports,discrepancies,contracts,workspaces,operations,checkpoints}` | 对应分页；每种都注册独立route，不在生产解析花括号 |
+| `P/{roots,repositories,agents,tasks,attempts,results,jobs,reports,discrepancies,contracts,workspaces,operations,checkpoints}` | 对应分页；每种都注册独立route，不在生产解析花括号 |
 | `P/<上述集合>/{id}` | 对应DTO、ETag；必须同project可见 |
 | `P/tasks/{id}/{attempts,results,reviews,preflight}` | Task子资源及当前有效preflight；无秘密 |
 | `P/authority`、`P/capabilities`、`P/protocol` | AuthorityView、服务端registry、版本/schema bundles |

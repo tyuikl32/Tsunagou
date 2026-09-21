@@ -1,8 +1,10 @@
 # 实施指导总入口
 
-本组文件是首发实现的规范基线。T01–T17、T22 已有产品代码和测试；T18–T21 为 diagnostic adapter，T23–T24 为集成/演示与实验准备。文中仍标为“待实测”的宿主能力必须由真实证据补齐，不能由 simulator 通过替代。
+本组文件保留完整产品的规范基线。2026-09-21运行审计确认：R1/R2 已补齐协议资源、SQLite runtime、事务幂等、真实 CLI 和 daemon lifecycle；项目完成确认的第一轮 checkpoint 也已能物化并查询。R3-R6 仍需完成真实文件 workspace、认知分歧、认证 bridge 闭环、审查/恢复和后台 Job。当前先按[最小独立成品方案](../standalone/README.md)推进；八模块差距、R1–R6步骤和可执行调试都在其中。能力报告及研究实验不阻塞该阶段，见[D183](../decisions/2026-09-20-standalone-priority.md)。
 
 ## 必读顺序
+
+当前活动任务已切换为 [M1 / R1–R6](roadmap.md)。旧 24 项与 V1 总任务全部关闭归档；完整模块规范继续保留，旧任务状态不作为新计划的完成依据。
 
 1. [设计与运行原则](../overview/principles.md)、[D161–D181](../decisions/2026-09-18-boundary-decisions.md)、[工程消歧](../decisions/engineering-resolutions.md)。
 2. [架构与事务](architecture.md)、[术语与数据模型](data-model.md)、[协议](protocol.md)、[命令目录](command-catalog.md)。

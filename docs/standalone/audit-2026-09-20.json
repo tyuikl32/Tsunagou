@@ -1,0 +1,193 @@
+{
+  "audit_kind": "assembled_backend",
+  "handler_coverage": {
+    "registered": 39,
+    "declared": 107,
+    "missing": [
+      "agent.retire",
+      "agent.succession",
+      "agent.ticket.create",
+      "artifact.promote",
+      "artifact.promote.user",
+      "artifact.upload.create",
+      "artifact.upload.finalize",
+      "authority.handoff",
+      "authority.transition.adopt",
+      "authority.transition.report",
+      "ceiling.set",
+      "checkpoint.create",
+      "checkpoint.create.user",
+      "contract.accept_proxy",
+      "contract.reject",
+      "contract.withdraw",
+      "discrepancy.advance",
+      "discrepancy.create",
+      "discrepancy.resolve",
+      "durability.reconcile",
+      "inbox.defer",
+      "inbox.renew",
+      "message.waive_response",
+      "operation.cancel",
+      "operation.resolve",
+      "operation.resolve.user",
+      "project.archive",
+      "project.completion.propose.owner",
+      "project.configure",
+      "project.initialize",
+      "project.lineage.reset",
+      "project.local_copy.delete",
+      "project.reactivate.main",
+      "project.reactivate.user",
+      "project.reconcile",
+      "project.replica.activate",
+      "project.tasks.restore_open",
+      "project.trust_change",
+      "project.unregister",
+      "publication.report",
+      "repository.register",
+      "resource.wait.cancel",
+      "risk.accept",
+      "risk.request",
+      "risk.revoke",
+      "risk.submit",
+      "root.bind",
+      "root.register",
+      "session.end",
+      "session.reprobe",
+      "shared.reconcile",
+      "task.cancel_ack",
+      "task.cancel_request",
+      "task.create.user",
+      "task.edge.add",
+      "task.edge.remove",
+      "task.fail",
+      "task.recover",
+      "task.scope.request",
+      "task.scope.resolve",
+      "task.self_accept",
+      "task.update_plan",
+      "user_decision.cancel",
+      "workspace.attach_external",
+      "workspace.cleanup",
+      "workspace.cleanup_force",
+      "workspace.git.report",
+      "workspace.integrate"
+    ]
+  },
+  "checks": [
+    {
+      "check": "offline_decision_must_not_report_success",
+      "passed": true,
+      "observed": {
+        "exit_code": 1,
+        "reported": "error"
+      }
+    },
+    {
+      "check": "health",
+      "passed": true,
+      "observed": {}
+    },
+    {
+      "check": "task_create_idempotency",
+      "passed": true,
+      "observed": {
+        "statuses": [
+          200,
+          200
+        ],
+        "same_task": true
+      }
+    },
+    {
+      "check": "task_create_is_draft",
+      "passed": true,
+      "observed": {
+        "actual": "draft"
+      }
+    },
+    {
+      "check": "protocol_version_rejected",
+      "passed": true,
+      "observed": {
+        "http_status": 400
+      }
+    },
+    {
+      "check": "project_task_query_available",
+      "passed": true,
+      "observed": {
+        "http_status": 200
+      }
+    },
+    {
+      "check": "start_requires_preflight_and_resources",
+      "passed": true,
+      "observed": {
+        "http_status": 400
+      }
+    },
+    {
+      "check": "worker_cannot_block_main_attempt",
+      "passed": true,
+      "observed": {
+        "http_status": 403
+      }
+    },
+    {
+      "check": "worker_cannot_take_over_main_attempt",
+      "passed": true,
+      "observed": {
+        "http_status": 400
+      }
+    },
+    {
+      "check": "failed_start_is_atomic",
+      "passed": true,
+      "observed": {
+        "http_status": 400,
+        "task_status": "claimed"
+      }
+    },
+    {
+      "check": "report_requires_real_task_relationship",
+      "passed": true,
+      "observed": {
+        "http_status": 400
+      }
+    },
+    {
+      "check": "task_survives_restart",
+      "passed": true,
+      "observed": {
+        "owned_tasks_after_restart": 1
+      }
+    },
+    {
+      "check": "contract_survives_restart",
+      "passed": true,
+      "observed": {
+        "http_status": 200
+      }
+    },
+    {
+      "check": "message_survives_restart",
+      "passed": true,
+      "observed": {}
+    },
+    {
+      "check": "project_sqlite_created",
+      "passed": true,
+      "observed": {}
+    },
+    {
+      "check": "cli_ticket_visible_to_running_server",
+      "passed": true,
+      "observed": {
+        "http_status": 200
+      }
+    }
+  ],
+  "passed": 16,
+  "failed": 0
+}

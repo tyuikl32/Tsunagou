@@ -1,0 +1,36 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/contract.propose",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "contract_kind": {},
+    "input_refs": {},
+    "participants_optional": {},
+    "participants_required": {},
+    "payload": {},
+    "subject_ref": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "supersedes_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_id",
+    "contract_kind",
+    "input_refs",
+    "participants_optional",
+    "participants_required",
+    "payload",
+    "subject_ref",
+    "supersedes_id"
+  ],
+  "title": "ContractProposePayload",
+  "type": "object"
+}

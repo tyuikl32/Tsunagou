@@ -1,0 +1,53 @@
+{
+  "id": "t16-interfaces",
+  "name": "t16-interfaces",
+  "title": "T16 HTTP、MCP、CLI、黑板与运行提示",
+  "description": "FastAPI routers、共享MCP、Typer CLI；一致读Blackboard与版本化提示资产；OpenAPI artifact、用户操作runbook",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "interfaces",
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": "2026-09-18",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/command-catalog.md",
+    "docs/implementation/protocol.md",
+    "docs/implementation/runtime-prompts.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/implementation/cli-contract.md",
+    "docs/overview/cli-http-manual.md",
+    "docs/overview/subagent-guide.md",
+    ".trellis/spec/backend/entrypoint-contracts.md"
+  ],
+  "notes": "2026-09-20：按用户要求关闭旧计划并归档。保留原分项完成记录，不表示独立成品已交付。",
+  "meta": {
+    "plan_id": "T16",
+    "depends_on": [
+      "T15",
+      "T07"
+    ],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "completed",
+    "product_implemented": true,
+    "closure": {
+      "disposition": "completed",
+      "closed_at": "2026-09-20",
+      "previous_status": "completed",
+      "reason": "用户要求将之前所有 Trellis 任务视为完成或放弃，以独立运行计划替代。",
+      "replaced_by": ".trellis/tasks/09-20-tsunagou-m1"
+    }
+  }
+}

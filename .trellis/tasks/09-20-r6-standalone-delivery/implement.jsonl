@@ -1,0 +1,10 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/index.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/validation.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/cli-contract.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/overview/cli-http-manual.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"R6 实现依据；M1 阶段范围以 standalone 为准"}

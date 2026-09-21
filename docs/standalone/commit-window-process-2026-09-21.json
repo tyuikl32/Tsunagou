@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-21",
+  "command": "uv run --extra dev python tools/dev/commit_window_process_smoke.py",
+  "scope": "two fresh daemon subprocesses, one pre-commit exit and one post-commit response-window exit",
+  "result": "passed",
+  "assertions": [
+    "the daemon exits before SQLite commit and the same command_id can be replayed after restart",
+    "the daemon exits after SQLite commit but before the HTTP response and the same command_id returns the stored result",
+    "the test uses loopback HTTP and CLI daemon lifecycle only; no domain service is instantiated by the harness"
+  ],
+  "limitations": [
+    "job/materialization interruption and a full old-session matrix remain separate gates",
+    "the fault switches are test-only environment variables and are unset for normal daemon runs"
+  ]
+}

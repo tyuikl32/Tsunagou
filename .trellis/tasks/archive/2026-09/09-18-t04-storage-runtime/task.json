@@ -1,0 +1,47 @@
+{
+  "id": "t04-storage-runtime",
+  "name": "t04-storage-runtime",
+  "title": "T04 SQLite事务、事件与持久Operation运行时",
+  "description": "platform/db和durability核心；UoW、Alembic、events/commands/outbox/operations/jobs；真实SQLite并发与故障测试",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "storage-runtime",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": "2026-09-18",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/architecture.md",
+    "docs/implementation/modules/07-durability.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md"
+  ],
+  "notes": "2026-09-20：按用户要求关闭旧计划并归档。保留原分项完成记录，不表示独立成品已交付。",
+  "meta": {
+    "plan_id": "T04",
+    "depends_on": [
+      "T03"
+    ],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "completed",
+    "product_implemented": true,
+    "closure": {
+      "disposition": "completed",
+      "closed_at": "2026-09-20",
+      "previous_status": "completed",
+      "reason": "用户要求将之前所有 Trellis 任务视为完成或放弃，以独立运行计划替代。",
+      "replaced_by": ".trellis/tasks/09-20-tsunagou-m1"
+    }
+  }
+}

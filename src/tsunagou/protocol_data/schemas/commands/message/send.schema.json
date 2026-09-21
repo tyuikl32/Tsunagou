@@ -1,0 +1,13 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/message.send",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {}
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "MessageSendPayload",
+  "type": "object"
+}

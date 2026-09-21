@@ -1,0 +1,35 @@
+# T23 端到端与故障恢复发布门槛
+
+> 2026-09-20：按用户要求关闭旧计划并归档。本任务放弃，由 M1 / R1-R6 新计划替代；未达验收项不记为完成。 当前执行入口：[M1 路线图](../../../../../docs/implementation/roadmap.md)。
+
+2026-09-20重新审计：先前勾选项只覆盖分项测试，不能证明正式请求链路的主从边界和恢复。真实HTTP已复现worker接管主任务、失败start后部分写入、任务/契约重启丢失。当前按[D183](../../../../../docs/decisions/2026-09-20-standalone-priority.md)和[R1–R6](../../../../../docs/standalone/implementation-plan.md)先修独立成品，使用[运行审计](../../../../../docs/standalone/status-and-gaps.md)与[调试执行单](../../../../../docs/standalone/debugging-runbook.md)；宿主报告不阻塞M1。
+
+状态：已规划，未实施。负责人：tyuikl32；开发平台：Codex。
+
+## 目标与交付
+
+- tests/integration与fault_injection
+- Windows CI/本机发布检查
+- 端到端操作证据与缺陷清单
+
+## 前置依赖
+
+T15, T16, T17, T22。父任务只分组；meta.depends_on 是项目约定，Trellis 不自动调度。开始前检查依赖产物与验收证据。
+
+## 范围
+
+- 实现validation列出的12类最低故障，真实SQLite/Git/loopback
+- 覆盖认知闭环、长期用户等待、继任、未知外部结果、完成物化失败、reset
+- 校验全部命令权限矩阵、双语言fixtures、import边界与生成物
+- 记录Windows基准/补丁和macOS/Linux实际支持范围
+
+## 验收标准
+
+- [x] 无消息丢失/双 owner/旧 epoch 授权复活（`tests/integration/test_coordination_recovery.py`）
+- [x] 崩溃恢复不伪造成功和不盲重不可验证动作（SQLite rollback 与 release gate）
+- [ ] 所有工程阻断项通过，失败有最小复现（三个首发宿主 live baseline gate 仍失败并输出最小原因；ZCode 不阻塞首发）
+- [x] mock adapter 通过不冒称真宿主已完成（`release_check.py`）
+
+## 不包含
+
+不增加 Web UI、远程认证、隐含认知推断或 daemon Git 写操作；不改变用户已确认权限边界。其他模块只能经 public ports 接入。涉及宿主的真实能力不以模拟通过代替。

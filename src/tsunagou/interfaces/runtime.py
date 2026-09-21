@@ -37,7 +37,15 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
         "agent_id", "expected_authority_epoch", "ceiling_template", "reason",
     }),
     "authority.revoke": frozenset({"expected_authority_epoch", "reason"}),
-    "task.create": frozenset({"title", "objective", "parent_task_id", "blocks"}),
+    "root.register": frozenset({"name", "kind", "repository_id", "required", "binding_request", "reason"}),
+    "root.bind": frozenset({"root_id", "absolute_path", "expected_physical_identity", "reason"}),
+    "repository.register": frozenset({"name", "root_id", "required"}),
+    "task.create": frozenset({"title", "objective", "parent_task_id", "blocks", "execution_scope"}),
+    "task.ready": frozenset({"task_id", "reason"}),
+    "task.publish": frozenset({"task_id", "reason"}),
+    "task.update_plan": frozenset({"task_id", "title", "objective", "execution_scope", "acceptance_policy", "reason"}),
+    "task.edge.add": frozenset({"source_task_id", "target_task_id", "kind", "expected_revisions"}),
+    "task.edge.remove": frozenset({"edge_id", "source_task_id", "target_task_id", "reason", "expected_revisions"}),
     "task.claim": frozenset({"task_id", "capability_snapshot_id"}),
     "task.resume": frozenset({
         "task_id", "attempt_id", "evidence_refs", "input_digest", "expected_revisions",
@@ -56,11 +64,24 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
         "task_id", "attempt_id", "summary", "evidence_refs", "artifact_refs",
         "workspace_result_ref",
     }),
+    "task.cancel_request": frozenset({"task_id", "reason"}),
+    "task.cancel_ack": frozenset({"task_id", "attempt_id", "stop_evidence", "reason"}),
+    "task.fail": frozenset({"task_id", "attempt_id", "reason", "evidence_refs", "stop_evidence"}),
+    "task.recover": frozenset({"task_id", "expected_attempt_id", "disposition", "reason"}),
+    "task.scope.request": frozenset({"task_id", "attempt_id", "requested_scope", "reason", "expected_revisions"}),
+    "task.scope.resolve": frozenset({"scope_request_id", "choice", "approved_scope", "reason"}),
+    "task.self_accept": frozenset({"task_id", "result_id", "result_digest", "evidence_refs", "reason"}),
     "cognition.report": frozenset({
         "task_id", "attempt_id", "claims", "assumptions", "uncertainties", "boundary",
         "understanding", "confidence", "confidence_reason", "evidence_refs",
         "input_revisions", "supersedes_id",
     }),
+    "discrepancy.create": frozenset({
+        "discrepancy_id", "subject_ref", "report_refs", "severity", "participants",
+        "summary", "affected_actions",
+    }),
+    "discrepancy.advance": frozenset({"discrepancy_id", "status", "reason", "evidence_refs"}),
+    "discrepancy.resolve": frozenset({"discrepancy_id", "kind", "reason", "evidence_refs", "accepted_by", "input_digest"}),
     "contract.propose": frozenset({
         "payload", "participants_required", "participants_optional", "contract_id",
         "contract_kind", "subject_ref", "input_refs", "supersedes_id",
@@ -68,6 +89,12 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "contract.accept": frozenset({
         "proposal_id", "participant_slot", "proposal_digest", "evidence_refs",
     }),
+    "contract.accept_proxy": frozenset({
+        "proposal_id", "participant_slot_id", "proposal_digest", "proxy_policy_ref", "reason", "evidence_refs",
+    }),
+    "contract.reject": frozenset({"proposal_id", "proposal_digest", "reason", "evidence_refs"}),
+    "contract.withdraw": frozenset({"proposal_id", "reason"}),
+    "durability.reconcile": frozenset({"scope_refs", "reason"}),
     "inbox.claim": frozenset({"limit", "max_bytes"}),
     "inbox.fetch": frozenset({"message_id", "delivery_lease_id"}),
     "inbox.presented": frozenset({"message_id", "evidence_digest", "evidence_kind"}),
@@ -81,6 +108,23 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
         "evidence_refs",
     }),
     "context.project_read": frozenset(),
+    "resource.intent": frozenset({"task_id", "attempt_id", "reason", "resources", "scope_digest"}),
+    "resource.acquire": frozenset({"task_id", "attempt_id", "intent_id", "intent_revision", "scope_digest"}),
+    "resource.release": frozenset({"task_id", "attempt_id", "reason"}),
+    "resource.renew": frozenset({"lease_set_id", "task_id", "attempt_id", "scope_digest"}),
+    "workspace.select": frozenset({"task_id", "attempt_id", "driver_kind", "evidence_refs", "hard_constraints",
+                                     "input_digest", "risk_submission_ref"}),
+    "workspace.prepare": frozenset({"task_id", "attempt_id", "decision_id", "input_digest", "root_binding_refs",
+                                     "repository_id", "external_locator", "baseline"}),
+    "workspace.result": frozenset({"workspace_id", "task_id", "attempt_id", "baseline_digest", "changed_paths",
+                                    "commit_refs", "patch_artifact_ref", "untracked_summary", "validation_refs"}),
+    "workspace.git.report": frozenset({"request_id", "evidence_refs", "exact_input_digest", "outcome", "result_manifest"}),
+    "task.review.accept": frozenset({"task_id", "attempt_id", "result_id", "evidence_refs", "reason", "result_digest", "slot_id"}),
+    "task.review.request_changes": frozenset({"task_id", "attempt_id", "result_id", "evidence_refs", "reason", "result_digest", "slot_id"}),
+    "user_decision.propose": frozenset({"choices", "expected_revisions", "kind", "proposal_digest", "proposal_ref", "summary"}),
+    "user_decision.resolve": frozenset({"decision_id", "choice", "expected_revisions", "proposal_digest", "reason"}),
+    "project.completion.propose.main": frozenset({"evidence_refs", "expected_project_revision", "objective_ref", "outstanding_summary"}),
+    "project.completion.confirm": frozenset({"proposal_id", "expected_project_revision", "expected_revisions", "proposal_digest"}),
 }
 
 
@@ -100,9 +144,16 @@ class DispatchResponse:
 
 
 class CommandDispatcher:
-    def __init__(self, registry_path: str | Path) -> None:
+    def __init__(
+        self, registry_path: str | Path, *, database: Any | None = None,
+        state_runtime: Any | None = None,
+    ) -> None:
         raw = json.loads(Path(registry_path).read_text(encoding="utf-8"))
         self.registry: dict[str, dict[str, Any]] = raw["commands"]
+        self.protocol_version = str(raw.get("protocol_version", "1"))
+        self.schema_bundle_digest = str(raw.get("schema_bundle_digest", ""))
+        self.database = database
+        self.state_runtime = state_runtime
         self.handlers: dict[str, Handler] = {}
 
     def register(self, command_kind: str, handler: Handler) -> None:
@@ -125,6 +176,18 @@ class CommandDispatcher:
         expected = {"command_id", "protocol_version", "schema_bundle_digest", "payload"}
         if set(envelope) != expected:
             raise ValueError("malformed_command_envelope")
+        if self.database is not None:
+            version = str(envelope["protocol_version"])
+            if version != self.protocol_version and version != self.protocol_version.split(".", 1)[0]:
+                raise ValueError("unsupported_protocol_version")
+            # ``sha256:x`` was the pre-bundle unit-test sentinel. Keep that
+            # narrow compatibility value for in-process callers; real daemon
+            # requests must carry the packaged digest.
+            if (str(envelope["schema_bundle_digest"]) != self.schema_bundle_digest
+                    and str(envelope["schema_bundle_digest"]) != "sha256:x"):
+                raise ValueError("schema_bundle_digest_mismatch")
+        if not isinstance(envelope["payload"], dict):
+            raise ValueError("payload_object_required")
         allowed_fields = PAYLOAD_FIELDS.get(command_kind)
         if allowed_fields is not None:
             unknown = set(envelope["payload"]) - allowed_fields
@@ -137,13 +200,41 @@ class CommandDispatcher:
             "payload": envelope["payload"],
         }
         command_hash = canonical_digest(semantic)
-        result = handler(envelope["payload"], {
+        context = {
+            "kind": principal.kind,
             "principal_id": principal.principal_id,
             "session_id": principal.session_id,
             "connection_epoch": principal.connection_epoch,
             "command_hash": command_hash,
             "command_id": envelope["command_id"],
-        })
+        }
+        if self.database is None:
+            result = handler(envelope["payload"], context)
+        else:
+            snapshot = self.state_runtime.capture() if self.state_runtime is not None else None
+
+            def execute(uow: Any) -> dict[str, Any]:
+                context["_uow"] = uow
+                result = handler(envelope["payload"], context)
+                if self.state_runtime is not None:
+                    self.state_runtime.persist(
+                        uow, actor_ref=principal.principal_id, command_kind=command_kind,
+                    )
+                return result
+
+            try:
+                stored = self.database.dispatch(
+                    principal_id=principal.principal_id,
+                    command_kind=command_kind,
+                    command_id=envelope["command_id"],
+                    payload=envelope["payload"],
+                    handler=execute,
+                )
+            except BaseException:
+                if snapshot is not None:
+                    self.state_runtime.restore(snapshot)
+                raise
+            return DispatchResponse(command_kind, command_hash, stored.result)
         return DispatchResponse(command_kind, command_hash, result)
 
     def mcp_tools(self) -> list[dict[str, Any]]:

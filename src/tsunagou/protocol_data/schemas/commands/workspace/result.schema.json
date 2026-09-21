@@ -1,0 +1,23 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/workspace.result",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baseline_digest": {},
+    "changed_paths": {},
+    "commit_refs": {},
+    "patch_artifact_ref": {},
+    "untracked_summary": {},
+    "validation_refs": {}
+  },
+  "required": [
+    "baseline_digest",
+    "changed_paths",
+    "commit_refs",
+    "patch_artifact_ref",
+    "untracked_summary",
+    "validation_refs"
+  ],
+  "title": "WorkspaceResultPayload",
+  "type": "object"
+}

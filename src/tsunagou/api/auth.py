@@ -76,7 +76,7 @@ class LocalCommandAuthenticator:
             ):
                 raise PermissionError("authentication_failed")
             return PrincipalContext("D", session.agent_id, session_id, connection_epoch)
-        if principal_kind not in {"B", "M"} or self.authority is None or session_id is None:
+        if principal_kind not in {"B", "M", "R"} or self.authority is None or session_id is None:
             raise PermissionError("authentication_failed")
         session = self.authority.sessions.get(session_id)
         if (
@@ -85,6 +85,14 @@ class LocalCommandAuthenticator:
             or not self.authority.verify_token(session_id, token)
         ):
             raise PermissionError("authentication_failed")
+        if principal_kind == "R":
+            if not any(
+                grant.kind == "task_review" and grant.principal_id == session.agent_id
+                and grant.session_id in {None, session_id} and grant.status == "active"
+                for grant in self.authority.grants.values()
+            ):
+                raise PermissionError("capability_denied")
+            return PrincipalContext("R", session.agent_id, session_id, connection_epoch)
         grant_kind = "agent_base" if principal_kind == "B" else "main_authority"
         if principal_kind == "M" and self.authority.main_agent_id != session.agent_id:
             raise PermissionError("capability_denied")

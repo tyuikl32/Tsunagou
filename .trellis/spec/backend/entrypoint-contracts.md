@@ -1,5 +1,7 @@
 # CLI, HTTP and enrollment entrypoint contracts
 
+Current delivery note (2026-09-20): [D183](../../../docs/decisions/2026-09-20-standalone-priority.md) prioritizes the local standalone M1 flow. The planned local_session admission mode uses independent tickets, private session credentials and epochs; host capability reports are not an M1 execution prerequisite. This is not implemented yet. Retain user/main/worker boundaries; do not fabricate supported capabilities. Existing contracts below describe the original full-host profile where applicable.
+
 ## 1. Scope / Trigger
 
 Apply when implementing T03/T06/T16/T17 or changing a request example. Sources: [CLI contract](../../../docs/implementation/cli-contract.md), [protocol](../../../docs/implementation/protocol.md), [command catalog](../../../docs/implementation/command-catalog.md), [user manual](../../../docs/overview/cli-http-manual.md). These are planned contracts, not existing application code.

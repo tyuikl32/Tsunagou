@@ -1,0 +1,13 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/index.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/protocol.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/command-catalog.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/architecture.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/cli-contract.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"R1 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"src/tsunagou/protocol_data/registry/commands.json","reason":"包内协议 registry 与 wheel 资源落地；源码树外可读取"}
+{"file":"src/tsunagou/protocol_data/openapi.json","reason":"OpenAPI 资源随 wheel 分发"}

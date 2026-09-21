@@ -1,0 +1,29 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/discrepancy.create",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "affected_actions": {},
+    "participants": {},
+    "report_refs": {},
+    "severity": {},
+    "subject_ref": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "affected_actions",
+    "participants",
+    "report_refs",
+    "severity",
+    "subject_ref",
+    "summary"
+  ],
+  "title": "DiscrepancyCreatePayload",
+  "type": "object"
+}

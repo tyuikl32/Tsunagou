@@ -27,6 +27,7 @@ def _filter_shared(value: Any) -> Any:
         return {
             key: _filter_shared(item) for key, item in value.items()
             if key.casefold() not in _SENSITIVE_KEYS
+            and not any(marker in key.casefold() for marker in ("token", "secret", "credential"))
         }
     if isinstance(value, list):
         return [_filter_shared(item) for item in value]
@@ -75,6 +76,17 @@ class CheckpointStore:
         schema_bundle_digest: str, domains: dict[str, list[dict[str, Any]]],
         parent_digest: str | None = None, artifact_digests: list[str] | None = None,
     ) -> CheckpointManifest:
+        # The process smoke harness can place a one-shot marker outside the
+        # application state.  Consuming it before staging proves that the
+        # completion handler preserves the user decision when materialization
+        # fails; this path is inert unless the test-only environment variable
+        # explicitly names an existing marker.
+        failure_marker = os.environ.get("TSUNAGOU_TEST_FAIL_CHECKPOINT_MARKER")
+        if failure_marker:
+            marker = Path(failure_marker)
+            if marker.is_file():
+                marker.unlink()
+                raise OSError("checkpoint_materialization_test_failure")
         checkpoint_id = new_id()
         staging_dir = self.staging / checkpoint_id
         staging_dir.mkdir(parents=True, exist_ok=False)

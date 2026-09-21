@@ -1,0 +1,12 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/index.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/03-tasks.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/lifecycle.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/coordination-walkthrough.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/01-projects.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"R3 实现依据；M1 阶段范围以 standalone 为准"}
+{"file":"tests/integration/test_m1_runtime_flow.py","reason":"任务 owner、preflight、执行、提交、review 与用户确认的正向运行证据"}

@@ -1,0 +1,12 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":".trellis/spec/backend/index.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":"docs/implementation/task-plan.json","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":"docs/overview/principles.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"M1 阶段范围、八模块不变量和独立交付验收"}
+{"file":"docs/standalone/audit-2026-09-20.json","reason":"已装配后端回归 16/16；不作为 M1 全部完成证明"}
+{"file":"tests/integration/test_m1_runtime_flow.py","reason":"完整任务/workspace/review/用户决定闭环在重建 application 后恢复"}
+{"file":"docs/standalone/m1-acceptance-2026-09-21.json","reason":"M1十二条最小产品标准的逐条真实入口验收证据"}

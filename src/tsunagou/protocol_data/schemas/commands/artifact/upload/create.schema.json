@@ -1,0 +1,15 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/artifact.upload.create",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "domain_ref": {},
+    "visibility": {}
+  },
+  "required": [
+    "domain_ref",
+    "visibility"
+  ],
+  "title": "ArtifactUploadCreatePayload",
+  "type": "object"
+}

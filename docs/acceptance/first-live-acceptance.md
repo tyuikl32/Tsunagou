@@ -1,12 +1,14 @@
 # 首次真实验收执行单
 
-本文件是给项目维护者和验收人员使用的操作记录模板。它的目标是把当前剩余的 T18–T24 任务推进到“有真实证据可关闭”，而不是只运行一遍单元测试。
+2026-09-20更新：本文件保留原多宿主正式发布的验收流程。当前用户要求先交付独立运行的最小成品，请执行[当前代码与成品调试单](../standalone/debugging-runbook.md)。现有问题不止宿主证据缺失，[真实HTTP审计](../standalone/status-and-gaps.md)已复现核心功能缺口；旧任务完成标记不能据此跳过修复。
+
+本文件保留原多宿主正式发布的验收模板。2026-09-20 用户要求关闭全部旧任务，T18–T21、T23–T24 已放弃归档，不再待本文件验收。下文是历史目标与操作参考，当前活动任务和关闭标准见 [M1 / R1–R6](../implementation/roadmap.md)。
 
 2026-09-19 的 [Codex 单宿主试验记录](codex-pilot-2026-09-19.md)逐项说明其余十项当前为何被接入链路阻断，以及下次复测顺序；它不改变下文三宿主首发门禁。
 
 执行目录假定为 `D:\Tsunagou`，宿主为 Windows PowerShell。路径、端口、项目目录和版本必须按实际机器替换；命令中的 `<...>` 不是可以原样提交的值。
 
-## 1. 当前未完成任务
+## 1. 原计划未完成内容（任务已放弃归档）
 
 | 任务 | 未完成内容 | 关闭所需的直接证据 |
 |---|---|---|
@@ -17,14 +19,14 @@
 | T23 工程与发布门禁 | Windows 完整基线、平台范围和所有发布检查 | 本地质量门禁全绿，三个首发宿主 live baseline 全绿，`release_check.py` 返回 0 |
 | T24 演示与实验 | A/B/C/D 各至少 5 次、多 Agent、另一宿主复验和报告 | 20 个真实 run、原始结果引用、失败样本、指标报告和三个首发宿主演示记录 |
 
-T01–T17、T22 已有代码和测试证据。完整任务依赖与 Trellis 文件见[任务计划](../implementation/task-plan.json)以及各任务目录：
+T01–T17、T22 保留历史完成记录。原依赖与 Trellis 文件见[旧任务计划](../implementation/task-plan-legacy-2026-09-18.json)以及各归档目录：
 
-- [T18 Codex](../../.trellis/tasks/09-18-t18-adapter-codex/prd.md)
-- [T19 OpenCode](../../.trellis/tasks/09-18-t19-adapter-opencode/prd.md)
-- [T20 ZCode](../../.trellis/tasks/09-18-t20-adapter-zcode/prd.md)
-- [T21 DeepSeek Harness](../../.trellis/tasks/09-18-t21-adapter-deepseek/prd.md)
-- [T23 发布门禁](../../.trellis/tasks/09-18-t23-integration-release-gates/prd.md)
-- [T24 实验与演示](../../.trellis/tasks/09-18-t24-experiments-demo/prd.md)
+- [T18 Codex](../../.trellis/tasks/archive/2026-09/09-18-t18-adapter-codex/prd.md)
+- [T19 OpenCode](../../.trellis/tasks/archive/2026-09/09-18-t19-adapter-opencode/prd.md)
+- [T20 ZCode](../../.trellis/tasks/archive/2026-09/09-18-t20-adapter-zcode/prd.md)
+- [T21 DeepSeek Harness](../../.trellis/tasks/archive/2026-09/09-18-t21-adapter-deepseek/prd.md)
+- [T23 发布门禁](../../.trellis/tasks/archive/2026-09/09-18-t23-integration-release-gates/prd.md)
+- [T24 实验与演示](../../.trellis/tasks/archive/2026-09/09-18-t24-experiments-demo/prd.md)
 
 ## 2. 验收规则
 

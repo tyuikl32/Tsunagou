@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,6 +86,8 @@ class ResultManifest:
     untracked_summary: tuple[str, ...]
     validation_refs: tuple[str, ...]
     digest: str
+    observed_state_digest: str | None = None
+    baseline_conflict: bool = False
 
 
 class GitReadOnlyPort:
@@ -214,10 +217,94 @@ class WorkspaceService:
         workspace.revision += 1
         return manifest
 
+    def scan_root(
+        self, root: str | Path, *, artifact_root: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Read a real Git working tree without attributing edits to a writer.
+
+        The scan is deliberately observational: it records current filesystem
+        facts and never decides whether a changed path was written by a user or
+        an Agent. A binary patch is stored content-addressed when Git can
+        produce one, so a result can be retrieved and verified after restart.
+        """
+        repository = Path(root).expanduser().resolve()
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=repository, check=True, capture_output=True, text=True, timeout=15,
+        )
+        status_lines = [line for line in status_result.stdout.splitlines() if line]
+        head_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repository, check=False,
+            capture_output=True, text=True, timeout=15,
+        )
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=repository, check=False,
+            capture_output=True, text=True, timeout=15,
+        )
+        head = head_result.stdout.strip() or None
+        branch = branch_result.stdout.strip() or None
+        changed_paths: set[str] = set()
+        untracked: set[str] = set()
+        for line in status_lines:
+            path = line[3:].strip()
+            if " -> " in path:
+                path = path.rsplit(" -> ", 1)[-1]
+            path = path.strip('"')
+            if not path:
+                continue
+            changed_paths.add(path)
+            if line.startswith("??"):
+                untracked.add(path)
+        tracked_state_digest = canonical_digest({"status": status_lines})
+        index_digest = canonical_digest({
+            "cached": subprocess.run(
+                ["git", "diff", "--cached", "--name-status"], cwd=repository,
+                check=True, capture_output=True, text=True, timeout=15,
+            ).stdout.splitlines(),
+        })
+        patch = self._patch_bytes(repository, sorted(changed_paths), status_lines)
+        patch_ref = None
+        if patch and artifact_root is not None:
+            digest = "sha256:" + hashlib.sha256(patch).hexdigest()
+            destination = Path(artifact_root) / (digest.replace(":", "_") + ".patch")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if not destination.exists():
+                destination.write_bytes(patch)
+            patch_ref = digest
+        return {
+            "head_commit": head,
+            "branch": branch,
+            "index_digest": index_digest,
+            "tracked_state_digest": tracked_state_digest,
+            "untracked_summary": sorted(untracked),
+            "changed_paths": sorted(changed_paths),
+            "patch_artifact_ref": patch_ref,
+            "dirty": bool(status_lines),
+        }
+
+    @staticmethod
+    def _patch_bytes(repository: Path, paths: list[str], status_lines: list[str]) -> bytes:
+        chunks: list[bytes] = []
+        for args in (["git", "diff", "--binary"], ["git", "diff", "--cached", "--binary"]):
+            result = subprocess.run(args, cwd=repository, check=True, capture_output=True, timeout=15)
+            if result.stdout:
+                chunks.append(result.stdout)
+        for path in paths:
+            if not any(line.startswith("??") and line[3:].strip().strip('"') == path for line in status_lines):
+                continue
+            result = subprocess.run(
+                ["git", "diff", "--no-index", "--binary", "--", "/dev/null", path],
+                cwd=repository, check=False, capture_output=True, timeout=15,
+            )
+            if result.stdout:
+                chunks.append(result.stdout)
+        return b"\n".join(chunks)
+
     def record_result(
         self, workspace_id: str, *, attempt_id: str, baseline_digest: str,
         commit_refs: list[str], patch_artifact_ref: str | None, changed_paths: list[str],
         untracked_summary: list[str], validation_refs: list[str],
+        observed_state_digest: str | None = None, baseline_conflict: bool = False,
     ) -> ResultManifest:
         workspace = self.workspaces[workspace_id]
         baseline = self.baselines.get(workspace.baseline_manifest_id or "")
@@ -229,12 +316,14 @@ class WorkspaceService:
             "workspace_id": workspace_id, "attempt_id": attempt_id, "baseline_digest": baseline_digest,
             "commit_refs": commit_refs, "patch_artifact_ref": patch_artifact_ref,
             "changed_paths": sorted(changed_paths), "untracked_summary": sorted(untracked_summary),
-            "validation_refs": sorted(validation_refs),
+            "validation_refs": sorted(validation_refs), "observed_state_digest": observed_state_digest,
+            "baseline_conflict": baseline_conflict,
         }
         result = ResultManifest(
             new_id(), workspace_id, attempt_id, baseline_digest, tuple(commit_refs), patch_artifact_ref,
             tuple(sorted(changed_paths)), tuple(sorted(untracked_summary)),
             tuple(sorted(validation_refs)), canonical_digest(body),
+            observed_state_digest, baseline_conflict,
         )
         self.results[result.manifest_id] = result
         workspace.result_manifest_id = result.manifest_id
@@ -269,4 +358,3 @@ class WorkspaceService:
         )
         self.git_requests[request.request_id] = request
         return request
-

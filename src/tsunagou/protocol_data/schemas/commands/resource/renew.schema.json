@@ -1,0 +1,13 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/resource.renew",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "scope_digest": {}
+  },
+  "required": [
+    "scope_digest"
+  ],
+  "title": "ResourceRenewPayload",
+  "type": "object"
+}

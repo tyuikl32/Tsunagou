@@ -1,0 +1,13 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.replica.activate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "mode": {}
+  },
+  "required": [
+    "mode"
+  ],
+  "title": "ProjectReplicaActivatePayload",
+  "type": "object"
+}

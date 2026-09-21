@@ -1,0 +1,16 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/message.waive_response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason"
+  ],
+  "title": "MessageWaive_ResponsePayload",
+  "type": "object"
+}

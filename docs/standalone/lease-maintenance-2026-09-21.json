@@ -1,0 +1,12 @@
+{
+  "date": "2026-09-21",
+  "command": "uv run --extra dev pytest -q tests/unit/test_runtime_maintenance.py",
+  "scope": "RuntimeMaintenance lease expiry reconciliation",
+  "passed": true,
+  "assertions": [
+    "an expired Lease becomes expired",
+    "the owned Attempt and Task become orphaned",
+    "the reconciliation writes one SQLite event in the same transaction"
+  ],
+  "runtime_contract": "The daemon starts and stops the maintenance thread with its FastAPI lifecycle; recovery disposition remains an explicit Agent or user decision."
+}

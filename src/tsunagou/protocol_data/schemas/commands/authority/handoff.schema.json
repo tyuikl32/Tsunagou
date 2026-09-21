@@ -1,0 +1,32 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/authority.handoff",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adoption_plan": {},
+    "expected_authority_epoch": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "target_agent_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "adoption_plan",
+    "expected_authority_epoch",
+    "reason",
+    "target_agent_id"
+  ],
+  "title": "AuthorityHandoffPayload",
+  "type": "object"
+}

@@ -1,0 +1,32 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.scope.request",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "requested_scope": {}
+  },
+  "required": [
+    "attempt_id",
+    "expected_revisions",
+    "reason",
+    "requested_scope"
+  ],
+  "title": "TaskScopeRequestPayload",
+  "type": "object"
+}

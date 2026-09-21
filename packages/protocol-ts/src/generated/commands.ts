@@ -18,6 +18,7 @@ export type CommandKind =
   | "checkpoint.create"
   | "checkpoint.create.user"
   | "cognition.report"
+  | "context.project_read"
   | "contract.accept"
   | "contract.accept_proxy"
   | "contract.propose"

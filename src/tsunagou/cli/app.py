@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
+import socket
 import subprocess
+import sys
 import tempfile
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, cast
 
@@ -72,10 +78,14 @@ if typer is not None:
     agent_app = typer.Typer(help="Agent enrollment and appointment.")
     decision_app = typer.Typer(help="User decision commands.")
     operation_app = typer.Typer(help="Durable operation queries.")
+    checkpoint_app = typer.Typer(help="Checkpoint creation and queries.")
+    daemon_app = typer.Typer(help="Local daemon lifecycle commands.")
     app.add_typer(project_app, name="project")
     app.add_typer(agent_app, name="agent")
     app.add_typer(decision_app, name="decision")
     app.add_typer(operation_app, name="operation")
+    app.add_typer(checkpoint_app, name="checkpoint")
+    app.add_typer(daemon_app, name="daemon")
 
     @app.callback()
     def callback(
@@ -93,7 +103,12 @@ if typer is not None:
 
     @app.command("doctor")
     def doctor(ctx: typer.Context) -> None:
-        result = {"status": "ok", "version": "0.1.0", "platform": "local"}
+        try:
+            result = _daemon_request("GET", "/api/v1/health")
+            result["daemon"] = "reachable"
+        except RuntimeError as exc:
+            print(json.dumps({"status": "unavailable", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(5) from exc
         print(json.dumps(result, sort_keys=True) if ctx.obj.get("json") else "Tsunagou doctor: ok")
 
     @project_app.command("init")
@@ -108,31 +123,261 @@ if typer is not None:
         assert registry.project is not None
         print(json.dumps({"project_id": registry.project.project_id, "status": "active"}, sort_keys=True))
 
-    def _invoke_command(
-        app: Any, command_kind: str, payload: dict[str, Any], *, authorization: str
-    ) -> dict[str, Any]:
-        from fastapi import HTTPException, Response
-
-        from tsunagou.api.app import CommandRequest
-        from tsunagou.shared_kernel.ids import new_id
-
-        endpoint = next(
-            route.endpoint for route in app.routes
-            if getattr(route, "path", "") == "/api/v1/commands/{command_kind}"
-        )
+    @project_app.command("complete")
+    def project_complete(
+        proposal_id: str = typer.Argument(...),
+        expected_project_revision: int = typer.Option(..., "--expected-project-revision"),
+        digest: str = typer.Option(..., "--digest"),
+    ) -> None:
+        """Confirm a main Agent's project-completion proposal as the user."""
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
         try:
-            return cast(dict[str, Any], endpoint(
-                command_kind,
-                CommandRequest(
-                    command_id=new_id(), protocol_version="1",
-                    schema_bundle_digest="sha256:x", payload=payload,
-                ),
-                Response(), authorization, None, None,
-            ))
-        except HTTPException as exc:
-            detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
-            print(json.dumps({"status": detail.get("code", "error")}, sort_keys=True))
+            result = _invoke_command(
+                "project.completion.confirm",
+                {
+                    "proposal_id": proposal_id,
+                    "expected_project_revision": expected_project_revision,
+                    "expected_revisions": {"decision": expected_project_revision},
+                    "proposal_digest": digest,
+                },
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
             raise typer.Exit(1) from exc
+        print(json.dumps(result, sort_keys=True))
+
+    def _coordination_state_dir(coordination_root: Path) -> Path:
+        return coordination_root.expanduser().resolve() / ".tsunagou" / "local"
+
+    def _state_dir_from_environment() -> Path | None:
+        value = os.environ.get("TSUNAGOU_STATE_DIR")
+        if value:
+            return Path(value)
+        root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
+        if root:
+            return _coordination_state_dir(Path(root))
+        return None
+
+    def _control_token() -> str | None:
+        value = os.environ.get("TSUNAGOU_CONTROL_TOKEN")
+        if value:
+            return value
+        state_dir = _state_dir_from_environment()
+        if state_dir is None:
+            return None
+        try:
+            value = (state_dir / "control.token").read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        return value or None
+
+    def _endpoint_manifest(coordination_root: Path) -> Path:
+        return _coordination_state_dir(coordination_root) / "endpoint.json"
+
+    def _choose_port(host: str) -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, 0))
+            return int(sock.getsockname()[1])
+
+    def _wait_for_daemon(url: str, process: subprocess.Popen[bytes], timeout: float = 10.0) -> None:
+        deadline = time.monotonic() + timeout
+        request = urllib.request.Request(url.rstrip("/") + "/api/v1/health", method="GET")
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError("daemon_exited_during_start")
+            try:
+                with urllib.request.urlopen(request, timeout=0.5) as response:
+                    if response.status == 200:
+                        return
+            except (urllib.error.URLError, TimeoutError, OSError):
+                time.sleep(0.1)
+        raise RuntimeError("daemon_start_timeout")
+
+    @daemon_app.command("start")
+    def daemon_start(
+        coordination_root: Path = typer.Option(Path("."), "--coordination-root"),  # noqa: B008
+        host: str = typer.Option("127.0.0.1", "--host"),
+        port: int = typer.Option(0, "--port", min=0, max=65535),
+        name: str = typer.Option("Tsunagou project", "--name"),
+        objective: str = typer.Option("Coordinate local agents", "--objective"),
+    ) -> None:
+        from tsunagou.modules.projects import ProjectRegistry
+
+        root = coordination_root.expanduser().resolve()
+        try:
+            registry = ProjectRegistry.initialize(root, name=name, objective=objective)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        assert registry.project is not None
+        state_dir = _coordination_state_dir(root)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = state_dir / "endpoint.json"
+        if manifest_path.is_file():
+            try:
+                existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+                existing_url = existing.get("url")
+                if isinstance(existing_url, str):
+                    with urllib.request.urlopen(existing_url.rstrip("/") + "/api/v1/health", timeout=1):
+                        print(json.dumps({"status": "already_running", **existing}, sort_keys=True))
+                        return
+            except (OSError, urllib.error.URLError, json.JSONDecodeError):
+                pass
+        token_path = state_dir / "control.token"
+        if token_path.is_file():
+            token = token_path.read_text(encoding="utf-8").strip()
+        else:
+            token = secrets.token_urlsafe(32)
+            token_path.write_text(token + "\n", encoding="utf-8", newline="\n")
+            _restrict_file_access(token_path)
+        selected_port = port or _choose_port(host)
+        url = f"http://{host}:{selected_port}"
+        log_path = state_dir / "daemon.log"
+        child_env = os.environ.copy()
+        child_env.update({
+            "TSUNAGOU_PROJECT_ROOT": str(root),
+            "TSUNAGOU_PROJECT_ID": registry.project.project_id,
+            "TSUNAGOU_STATE_DIR": str(state_dir),
+            "TSUNAGOU_CONTROL_TOKEN": token,
+            "PYTHONPATH": os.pathsep.join(
+                [str(Path(__file__).resolve().parents[2]), child_env.get("PYTHONPATH", "")]
+            ).rstrip(os.pathsep),
+        })
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        with open(log_path, "ab") as log_handle:
+            process = subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "tsunagou.bootstrap.container:build_application",
+                 "--factory", "--host", host, "--port", str(selected_port)],
+                cwd=str(root), env=child_env, stdout=log_handle, stderr=log_handle,
+                creationflags=flags,
+            )
+        try:
+            _wait_for_daemon(url, process)
+        except RuntimeError as exc:
+            if process.poll() is None:
+                process.terminate()
+            print(json.dumps({"status": "error", "error": str(exc), "log": str(log_path)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        manifest = {
+            "url": url, "pid": process.pid, "project_id": registry.project.project_id,
+            "state_dir": str(state_dir), "started_at": int(time.time()),
+        }
+        manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+        print(json.dumps({"status": "started", **manifest}, sort_keys=True))
+
+    @daemon_app.command("status")
+    def daemon_status(
+        coordination_root: Path = typer.Option(Path("."), "--coordination-root"),  # noqa: B008
+    ) -> None:
+        path = _endpoint_manifest(coordination_root)
+        if not path.is_file():
+            print(json.dumps({"status": "stopped", "manifest": str(path)}, sort_keys=True))
+            raise typer.Exit(3)
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            with urllib.request.urlopen(manifest["url"].rstrip("/") + "/api/v1/health", timeout=2) as response:
+                running = response.status == 200
+        except (OSError, urllib.error.URLError, KeyError, json.JSONDecodeError):
+            running = False
+        print(json.dumps({**manifest, "status": "running" if running else "stopped"}, sort_keys=True))
+        if not running:
+            raise typer.Exit(3)
+
+    @daemon_app.command("stop")
+    def daemon_stop(
+        coordination_root: Path = typer.Option(Path("."), "--coordination-root"),  # noqa: B008
+    ) -> None:
+        path = _endpoint_manifest(coordination_root)
+        if not path.is_file():
+            print(json.dumps({"status": "already_stopped"}, sort_keys=True))
+            return
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            pid = int(manifest["pid"])
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            print(json.dumps({"status": "error", "error": "invalid_endpoint_manifest"}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
+            else:
+                os.kill(pid, 15)
+        except OSError:
+            pass
+        path.unlink(missing_ok=True)
+        print(json.dumps({"status": "stopped", "pid": pid}, sort_keys=True))
+
+    def _daemon_url() -> str:
+        value = os.environ.get("TSUNAGOU_DAEMON_URL")
+        if value:
+            return value.rstrip("/")
+        state_dir = os.environ.get("TSUNAGOU_STATE_DIR")
+        if not state_dir:
+            project_root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
+            if project_root:
+                state_dir = str(_coordination_state_dir(Path(project_root)))
+        if state_dir:
+            manifest = Path(state_dir) / "endpoint.json"
+            if manifest.is_file():
+                try:
+                    value = json.loads(manifest.read_text(encoding="utf-8")).get("url")
+                    if isinstance(value, str) and value:
+                        return value.rstrip("/")
+                except (OSError, json.JSONDecodeError):
+                    pass
+        raise RuntimeError("daemon_endpoint_not_configured")
+
+    def _daemon_request(
+        method: str, path: str, body: dict[str, Any] | None = None,
+        *, authorization: str | None = None, session_id: str | None = None,
+        connection_epoch: int | None = None,
+    ) -> dict[str, Any]:
+        headers = {"Content-Type": "application/json"}
+        if authorization:
+            headers["Authorization"] = authorization
+        if session_id:
+            headers["Tsunagou-Session-Id"] = session_id
+        if connection_epoch is not None:
+            headers["Tsunagou-Connection-Epoch"] = str(connection_epoch)
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+        request = urllib.request.Request(_daemon_url() + path, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                raw = json.load(response)
+                return cast(dict[str, Any], raw.get("result", raw))
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = json.loads(exc.read()).get("detail", {})
+            except (OSError, json.JSONDecodeError):
+                detail = {}
+            code = detail.get("code", f"http_{exc.code}") if isinstance(detail, dict) else f"http_{exc.code}"
+            raise RuntimeError(str(code)) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise RuntimeError("daemon_unreachable") from exc
+
+    def _invoke_command(
+        command_kind: str, payload: dict[str, Any], *, authorization: str,
+    ) -> dict[str, Any]:
+        from importlib.resources import files
+        registry = json.loads(
+            files("tsunagou.protocol_data").joinpath("registry", "commands.json").read_text(encoding="utf-8")
+        )
+        return _daemon_request(
+            "POST", f"/api/v1/commands/{command_kind}",
+            {
+                "command_id": __import__("uuid").uuid4().hex,
+                "protocol_version": registry["protocol_version"],
+                "schema_bundle_digest": registry["schema_bundle_digest"],
+                "payload": payload,
+            },
+            authorization=authorization,
+        )
 
     @agent_app.command("enroll")
     def agent_enroll(
@@ -141,10 +386,11 @@ if typer is not None:
         installation_id: str | None = typer.Option(None, "--installation-id"),
         conversation_id: str | None = typer.Option(None, "--conversation-id"),
         ticket_file: Path | None = typer.Option(None, "--ticket-file"),  # noqa: B008
+        output_dir: Path | None = typer.Option(None, "--output-dir"),  # noqa: B008
     ) -> None:
         if mode not in {"attach", "launch"}:
             raise typer.BadParameter("mode must be attach or launch")
-        token = os.environ.get("TSUNAGOU_CONTROL_TOKEN")
+        token = _control_token()
         if not token:
             print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
             raise typer.Exit(1)
@@ -154,41 +400,69 @@ if typer is not None:
                 "reason": "target_conversation_identity_required",
             }, sort_keys=True))
             raise typer.Exit(0)
-        from tsunagou.bootstrap.container import build_application
-
+        if output_dir is not None and ticket_file is None:
+            output_dir = output_dir.expanduser().resolve()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            ticket_file = output_dir / "ticket.json"
         result = _invoke_command(
-            build_application(), "agent.ticket.create.user",
+            "agent.ticket.create.user",
             {"kind": "worker", "installation_id": installation_id,
              "conversation_evidence": {"conversation_id": conversation_id}},
             authorization=f"Bearer {token}",
         )
-        secret = result["result"]["secret"]
+        secret = result["secret"]
         path = _write_ticket_private(installation_id, conversation_id, secret, ticket_file)
+        bridge_config_path = None
+        if output_dir is not None:
+            output_dir = output_dir.expanduser().resolve()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            session_path = output_dir / "bridge-session.json"
+            bridge_config_path = output_dir / f"{adapter}-{installation_id}.json"
+            bridge_entry = Path(__file__).resolve().parents[3] / "packages" / "bridge-server" / "dist" / "server.js"
+            bridge_config_path.write_text(json.dumps({
+                "adapter": adapter,
+                "mode": mode,
+                "command": "node",
+                "args": [str(bridge_entry) if bridge_entry.is_file() else "<tsunagou-bridge-server>/dist/server.js"],
+                "env": {
+                    "TSUNAGOU_HTTP_URL": _daemon_url(),
+                    "TSUNAGOU_DAEMON_STATE_DIR": str(_state_dir_from_environment() or ""),
+                    "TSUNAGOU_TICKET_FILE": str(path),
+                    "TSUNAGOU_SESSION_FILE": str(session_path),
+                    "TSUNAGOU_PROJECT_ROOT": os.environ.get("TSUNAGOU_PROJECT_ROOT", ""),
+                    "TSUNAGOU_STATE_DIR": str(output_dir),
+                },
+                "secret_fields": [],
+            }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         print(json.dumps({
             "adapter": adapter, "mode": mode, "status": "ticket_issued",
             "installation_id": installation_id, "conversation_id": conversation_id,
             "ticket_file": str(path),
+            **({"bridge_config": str(bridge_config_path)} if bridge_config_path else {}),
         }, sort_keys=True))
 
     @agent_app.command("appoint")
     def agent_appoint(agent_id: str = typer.Argument(...)) -> None:
-        token = os.environ.get("TSUNAGOU_CONTROL_TOKEN")
+        token = _control_token()
         if not token:
             print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
             raise typer.Exit(1)
-        from tsunagou.bootstrap.container import build_application
-
         result = _invoke_command(
-            build_application(), "authority.appoint",
+            "authority.appoint",
             {"agent_id": agent_id}, authorization=f"Bearer {token}",
         )
         print(json.dumps({
-            "agent_id": agent_id, "status": "appointed", **result["result"],
+            "agent_id": agent_id, "status": "appointed", **result,
         }, sort_keys=True))
 
     @decision_app.command("list")
     def decision_list() -> None:
-        print("[]")
+        try:
+            result = _daemon_request("GET", "/api/v1/decisions")
+        except RuntimeError as exc:
+            print(json.dumps({"status": "unavailable", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(5) from exc
+        print(json.dumps(result, sort_keys=True))
 
     @decision_app.command("resolve")
     def decision_resolve(
@@ -198,22 +472,80 @@ if typer is not None:
         digest: str = typer.Option(..., "--digest"),
         reason: str | None = typer.Option(None, "--reason"),
     ) -> None:
-        print(json.dumps({
-            "decision_id": decision_id,
-            "choice": choice,
-            "expected_revision": expected_revision,
-            "digest": digest,
-            "reason": reason,
-            "status": "submitted",
-        }, sort_keys=True))
+        token = _control_token()
+        if not token:
+            raise typer.Exit(5)
+        try:
+            result = _invoke_command(
+                "user_decision.resolve",
+                {
+                    "decision_id": decision_id, "choice": choice,
+                    "expected_revisions": {"decision": expected_revision},
+                    "proposal_digest": digest, "reason": reason or "",
+                },
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, sort_keys=True))
 
     @operation_app.command("show")
     def operation_show(operation_id: str) -> None:
-        print(json.dumps({"operation_id": operation_id, "status": "unknown"}, sort_keys=True))
+        try:
+            result = _daemon_request("GET", f"/api/v1/operations/{operation_id}")
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, sort_keys=True))
+
+    @checkpoint_app.command("create")
+    def checkpoint_create() -> None:
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
+        try:
+            result = _invoke_command("checkpoint.create.user", {}, authorization=f"Bearer {token}")
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, sort_keys=True))
+
+    @checkpoint_app.command("retry")
+    def checkpoint_retry() -> None:
+        """Retry checkpoint materialization after a recorded failed operation."""
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
+        try:
+            result = _invoke_command(
+                "checkpoint.create.user", {"reason": "user_retry_after_failure"},
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, sort_keys=True))
+
+    @checkpoint_app.command("list")
+    def checkpoint_list() -> None:
+        try:
+            result = _daemon_request("GET", "/api/v1/checkpoints")
+        except RuntimeError as exc:
+            print(json.dumps({"status": "unavailable", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(5) from exc
+        print(json.dumps(result, sort_keys=True))
 
     @app.command("recover")
     def recover() -> None:
-        print(json.dumps({"status": "recovery_review_required"}, sort_keys=True))
+        try:
+            result = _daemon_request("GET", "/api/v1/recovery")
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(5) from exc
+        print(json.dumps(result, sort_keys=True))
 
     main = app
 else:

@@ -1,6 +1,6 @@
 # CLI 与 HTTP API 简明说明书
 
-这是首发 CLI/HTTP 使用手册。当前已实现基础 CLI 外壳、HTTP health/command dispatcher、协议生成物和诊断入口；表中尚未接入的领域命令仍是规范示例，不能据此报告完整产品流程已经运行。现阶段的真实状态和门禁见[路线图](../implementation/roadmap.md)。
+这是首发 CLI/HTTP 使用手册。当前已实现 daemon、项目初始化与完成确认、Agent 接入、决定、checkpoint、recovery、HTTP command dispatcher 和协议生成物；表中尚未接入的领域命令仍是规范示例，不能据此报告完整产品流程已经运行。现阶段的真实状态和门禁见[路线图](../implementation/roadmap.md)。
 
 ## 两个入口怎样分工
 
@@ -46,18 +46,18 @@ root-request使用已定RootRegistration输入（name、kind、repository_id?、
 先按对应adapter指南启用工具入口，并打开三个独立宿主对话。首发验收使用 Codex、OpenCode、DeepSeek Harness；ZCode 接入命令保留在适配器文档中，但不参与首发发布门禁。
 
 ```powershell
-tsunagou --project PROJECT_ID agent enroll --adapter codex --mode attach
+tsunagou --project PROJECT_ID agent enroll --adapter codex --mode attach --installation-id codex-main --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/main
 tsunagou --project PROJECT_ID agent list
 tsunagou --project PROJECT_ID authority show
 tsunagou --project PROJECT_ID authority appoint MAIN_AGENT_ID --request-file ".\main-appointment.json" --expected-revision 1
-tsunagou --project PROJECT_ID agent enroll --adapter opencode --mode attach
-tsunagou --project PROJECT_ID agent enroll --adapter deepseek --mode attach
+tsunagou --project PROJECT_ID agent enroll --adapter opencode --mode attach --installation-id opencode-worker --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/worker
+tsunagou --project PROJECT_ID agent enroll --adapter deepseek --mode attach --installation-id deepseek-worker --conversation-id <目标会话标识> --output-dir .tsunagou/bridges/deepseek
 tsunagou --project PROJECT_ID agent list
 ```
 
 每次attach都要选择明确的目标对话；多个profile时用`--profile <name>`，它只是安装档案选择，不是认证身份。main-appointment包含从authority show读取的expected_authority_epoch、用户选择的ceiling_template和reason；`--expected-revision 1`仅表示示例初始值，必须使用实际返回值。
 
-接入时票据由CLI/授权main签发，所选bridge私下领取并兑换，session token只留在bridge。用户不将票据粘贴到模型，不手工填写host_conversation_id。每个会话ready后才正式参与；degraded需先修复诊断。更完整解释见[子Agent指南](subagent-guide.md)。
+接入时票据由CLI/授权main签发，所选bridge私下领取并兑换，session token只留在bridge。`--output-dir`生成的JSON不含秘密，ticket文件只作为bridge输入；用户不将票据粘贴到模型。当前首版命令仍需用户提供目标会话标识，后续配置生成器再接宿主原生会话发现。每个会话ready后才正式参与；degraded需先修复诊断。更完整解释见[子Agent指南](subagent-guide.md)。
 
 支持managed_launch的宿主可以`--mode launch`；不支持时明确提示改用attach。没有该增强并不意味着不能正式协作。主Agent可在既有上限内组织更多worker加入，无需让用户重复确定每个普通任务参数。
 
@@ -85,7 +85,7 @@ choices来自该决定，不是所有决定都只能approve/reject。CLI取同�
 
 用户在对话里表达意见后仍通过control确认。相关子Agent已保存进度并挂起；确认不自动恢复文件执行。项目整体完成使用专门`project.completion.confirm`端点，见下文路由表；不能把普通task完成或一次消息ACK当作用户确认项目完成。
 
-确认项目整体完成时，先审阅main或objective owner给出的精确CompletionProposal，再准备仅含既定业务payload的`completion-confirm.json`：
+确认项目整体完成时，先审阅main或objective owner给出的精确CompletionProposal，再使用用户 CLI：
 
 ```json
 {
@@ -98,16 +98,17 @@ choices来自该决定，不是所有决定都只能approve/reject。CLI取同�
 ```
 
 ```powershell
-tsunagou --project PROJECT_ID project confirm-completion COMPLETION_PROPOSAL_ID --request-file ".\completion-confirm.json" --expected-revision 4
+tsunagou --project PROJECT_ID project complete COMPLETION_PROPOSAL_ID --expected-project-revision 12 --digest "sha256:ACTUAL_COMPLETION_PROPOSAL_DIGEST"
 ```
 
-`COMPLETION_PROPOSAL_ID`、`--expected-revision`与`proposal_digest`必须来自同一份已展示提案；文件中的project revision及其他expected revisions也必须原样保留。该命令只以U身份调用既有`project.completion.confirm`，不会创建第二个领域命令。CLI不会自动采用最新提案，`decision resolve`、`project archive`及其他命令成功也不会顺带确认；字段缺失或412冲突时重新审阅完整提案。确认成功后Project立即completed，并返回强制checkpoint Operation；checkpoint后续失败不撤销完成事实。
+`COMPLETION_PROPOSAL_ID`、`--expected-project-revision`与`--digest`必须来自同一份已展示提案。该命令只以U身份调用既有`project.completion.confirm`，不会创建第二个领域命令；字段缺失或冲突时重新审阅完整提案。确认成功后Project立即completed，并返回强制checkpoint Operation；checkpoint后续失败不撤销完成事实。
 
 ## 5. 查看异步操作和诊断
 
 ```powershell
 tsunagou --project PROJECT_ID operation show OPERATION_ID
 tsunagou --project PROJECT_ID checkpoint list
+tsunagou --project PROJECT_ID checkpoint retry
 tsunagou config show --effective --provenance
 tsunagou config validate
 tsunagou doctor

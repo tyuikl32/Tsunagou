@@ -1,0 +1,61 @@
+{
+  "id": "r3-task-ownership",
+  "name": "r3-task-ownership",
+  "title": "R3 任务状态机与主从边界",
+  "description": "owner 与 Attempt 校验、preflight、原子执行、阻塞及审查闭环",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "task-execution",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-20",
+  "completedAt": null,
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-20-tsunagou-m1",
+  "relatedFiles": [
+    "docs/standalone/implementation-plan.md",
+    "docs/standalone/status-and-gaps.md",
+    "docs/decisions/2026-09-20-standalone-priority.md",
+    ".trellis/spec/backend/index.md",
+    ".trellis/spec/backend/standalone-runtime.md",
+    "docs/implementation/modules/03-tasks.md",
+    "docs/implementation/lifecycle.md",
+    "docs/implementation/coordination-walkthrough.md",
+    "docs/implementation/modules/01-projects.md",
+    ".trellis/spec/backend/entrypoint-contracts.md",
+    "docs/standalone/debugging-runbook.md"
+  ],
+  "notes": "2026-09-20 按用户要求从独立成品方案建任务；产品修改未开始。旧任务仅供历史追溯。",
+  "meta": {
+    "plan_id": "R3",
+    "depends_on": [
+      "R2"
+    ],
+    "dependency_semantics": "Validate predecessor acceptance before start; parent/children only group tasks.",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false,
+    "replaces": [
+      "T06",
+      "T08",
+      "T13",
+      "T15"
+    ],
+    "modules": [
+      "tasks",
+      "projects",
+      "agents",
+      "resources",
+      "cognition",
+      "workspaces"
+    ],
+    "plan_source": "docs/standalone/implementation-plan.md"
+  }
+}

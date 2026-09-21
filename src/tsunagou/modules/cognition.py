@@ -54,6 +54,7 @@ class ContractProposal:
     required_slots: tuple[str, ...]
     digest: str
     status: str = "proposed"
+    proposed_by: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +161,65 @@ class CognitionService:
                         input_digest, (report.report_id,),
                     )
 
-    def propose_contract(self, payload: dict[str, Any], participants: list[dict[str, Any]]) -> ContractProposal:
+    def create_discrepancy(
+        self, *, subject_ref: str, report_refs: list[str], severity: str,
+        summary: str = "", participants: list[Any] | None = None,
+        affected_actions: list[Any] | None = None,
+    ) -> Discrepancy:
+        if not subject_ref:
+            raise ValueError("subject_ref_required")
+        if severity not in {"soft", "hard", "critical"}:
+            raise ValueError("invalid_discrepancy_severity")
+        refs = tuple(str(ref) for ref in report_refs if str(ref))
+        if not refs:
+            raise ValueError("report_refs_required")
+        missing = [ref for ref in refs if ref not in self.reports]
+        if missing:
+            raise KeyError(missing[0])
+        input_digest = canonical_digest({
+            "subject_ref": subject_ref, "report_refs": refs, "severity": severity,
+            "summary": summary, "participants": participants or [],
+            "affected_actions": affected_actions or [],
+        })
+        key = canonical_digest({"rule": "manual.discrepancy", "subject": subject_ref, "input": input_digest})
+        existing = self.discrepancies.get(key)
+        if existing is not None:
+            return existing
+        discrepancy = Discrepancy(
+            new_id(), "manual.discrepancy", "1", subject_ref, severity,
+            input_digest, refs,
+        )
+        self.discrepancies[key] = discrepancy
+        return discrepancy
+
+    def advance_discrepancy(self, discrepancy_id: str, status: str) -> Discrepancy:
+        discrepancy = self._discrepancy(discrepancy_id)
+        allowed = {"open": {"clarifying"}, "clarifying": {"negotiating"}, "negotiating": set()}
+        if status not in allowed.get(discrepancy.status, set()):
+            raise ValueError("invalid_discrepancy_transition")
+        object.__setattr__(discrepancy, "status", status)
+        return discrepancy
+
+    def resolve_discrepancy(self, discrepancy_id: str, kind: str) -> Discrepancy:
+        discrepancy = self._discrepancy(discrepancy_id)
+        terminal = {"consensus": "resolved", "dismissal": "dismissed", "override": "overridden"}
+        if kind not in terminal:
+            raise ValueError("invalid_discrepancy_resolution")
+        if discrepancy.status in {"resolved", "dismissed", "overridden"}:
+            raise ValueError("discrepancy_already_resolved")
+        object.__setattr__(discrepancy, "status", terminal[kind])
+        return discrepancy
+
+    def _discrepancy(self, discrepancy_id: str) -> Discrepancy:
+        for discrepancy in self.discrepancies.values():
+            if discrepancy.discrepancy_id == discrepancy_id:
+                return discrepancy
+        raise KeyError(discrepancy_id)
+
+    def propose_contract(
+        self, payload: dict[str, Any], participants: list[dict[str, Any]],
+        *, proposed_by: str | None = None,
+    ) -> ContractProposal:
         if not participants:
             raise ValueError("contract_requires_participant")
         slots = [str(item["slot"]) for item in participants]
@@ -175,7 +234,7 @@ class CognitionService:
         frozen_payload = copy.deepcopy(payload)
         frozen_participants = tuple(copy.deepcopy(participants))
         digest = canonical_digest({"payload": frozen_payload, "participants": frozen_participants})
-        proposal = ContractProposal(new_id(), frozen_payload, frozen_participants, required, digest)
+        proposal = ContractProposal(new_id(), frozen_payload, frozen_participants, required, digest, proposed_by=proposed_by)
         self.proposals[proposal.proposal_id] = proposal
         return proposal
 
@@ -206,6 +265,29 @@ class CognitionService:
         self.acceptances[(proposal_id, participant_slot)] = acceptance
         self._mark_proposal_accepted_if_complete(proposal)
         return acceptance
+
+    def reject_contract(
+        self, proposal_id: str, *, proposal_digest: str, actor_id: str, reason: str,
+    ) -> ContractProposal:
+        proposal = self.proposals[proposal_id]
+        if proposal.status != "proposed" or proposal.digest != proposal_digest:
+            raise ValueError("proposal_digest_mismatch")
+        participant = next(
+            (item for item in proposal.participants if item.get("agent_id") == actor_id), None
+        )
+        if participant is None:
+            raise PermissionError("participant_slot_denied")
+        object.__setattr__(proposal, "status", "rejected")
+        return proposal
+
+    def withdraw_contract(self, proposal_id: str, *, actor_id: str, reason: str) -> ContractProposal:
+        proposal = self.proposals[proposal_id]
+        if proposal.status != "proposed":
+            raise ValueError("proposal_not_withdrawable")
+        if proposal.proposed_by is not None and proposal.proposed_by != actor_id:
+            raise PermissionError("proposal_owner_required")
+        object.__setattr__(proposal, "status", "withdrawn")
+        return proposal
 
     def _mark_proposal_accepted_if_complete(self, proposal: ContractProposal) -> None:
         if all((proposal.proposal_id, slot) in self.acceptances for slot in proposal.required_slots):

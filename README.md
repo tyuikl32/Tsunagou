@@ -2,12 +2,13 @@
 
 Tsunagou 是面向本机多个 Coding Agent 的协作后端。它让 Agent 共享任务事实、公开理解与假设、发现分歧、协商契约，并在暂停、断线和换人之后继续工作。
 
-**当前状态：基础产品代码与测试已覆盖 T01–T17、T22；首发宿主的真实接入与共同基线尚未验收通过。** Codex、OpenCode、DeepSeek Harness 适配器仍需真实 bridge/HostSession 和双 Agent 协作证据。部分 CLI 命令目前只是外壳，例如 `tsunagou agent enroll` 返回 `ticket_required`，不能视为 Agent 已接入；文档中的完整运行流程也不能仅凭示例认定已可用。
+**当前状态（2026-09-20）：可启动的功能原型，尚非独立成品。** 已有102个Python测试、29个TS测试通过，但真实HTTP审计复现任务/契约重启丢失、幂等和主从任务边界等14项缺口，wheel独立安装还缺协议资源。当前优先完成[独立成品实施与调试](docs/standalone/README.md)，按实际业务闭环验收，不以宿主能力报告代替运行结果。T01–T17、T22的旧完成标记表示分项产物，不等于所有模块已接入运行时。
 
 ## 阅读入口
 
 | 你希望了解什么 | 入口 |
 |---|---|
+| 当前进度、八模块缺口、独立运行的实施与调试 | [最小成品路径](docs/standalone/README.md) |
 | 为什么做、解决什么问题、交付什么 | [项目说明](docs/overview/product.md) |
 | 设计原则与 Agent 运行原则 | [两组原则](docs/overview/principles.md) |
 | 八大模块如何配合 | [项目组成](docs/overview/architecture.md) |

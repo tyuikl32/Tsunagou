@@ -1,0 +1,46 @@
+{
+  "id": "t01-foundation",
+  "name": "t01-foundation",
+  "title": "T01 工程骨架与可复现工具链",
+  "description": "pyproject.toml、uv.lock、src/tsunagou骨架；package.json、pnpm-workspace.yaml、pnpm-lock.yaml；Windows开发引导与静态检查脚本",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "foundation",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-18",
+  "completedAt": "2026-09-18",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-18-tsunagou-v1",
+  "relatedFiles": [
+    "docs/implementation/architecture.md",
+    "docs/overview/technology.md",
+    "docs/implementation/build-guide.md",
+    "docs/implementation/directory-layout.md",
+    "docs/implementation/references.md",
+    "docs/research/toolchain-matrix.md"
+  ],
+  "notes": "2026-09-20：按用户要求关闭旧计划并归档。保留原分项完成记录，不表示独立成品已交付。",
+  "meta": {
+    "plan_id": "T01",
+    "depends_on": [],
+    "dependency_semantics": "project convention; check completion evidence before start",
+    "planning_status": "completed",
+    "product_implemented": true,
+    "closure": {
+      "disposition": "completed",
+      "closed_at": "2026-09-20",
+      "previous_status": "completed",
+      "reason": "用户要求将之前所有 Trellis 任务视为完成或放弃，以独立运行计划替代。",
+      "replaced_by": ".trellis/tasks/09-20-tsunagou-m1"
+    }
+  }
+}

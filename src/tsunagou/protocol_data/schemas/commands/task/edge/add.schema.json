@@ -1,0 +1,32 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.edge.add",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "kind": {},
+    "source_task_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "target_task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "expected_revisions",
+    "kind",
+    "source_task_id",
+    "target_task_id"
+  ],
+  "title": "TaskEdgeAddPayload",
+  "type": "object"
+}

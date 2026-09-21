@@ -1,0 +1,18 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/inbox.defer",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "defer_until": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "defer_until",
+    "reason"
+  ],
+  "title": "InboxDeferPayload",
+  "type": "object"
+}

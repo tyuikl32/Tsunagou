@@ -1,0 +1,28 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/publication.report",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checkpoint_digest": {},
+    "commit_oid": {},
+    "evidence_refs": {},
+    "ref_name": {},
+    "remote_name": {},
+    "reported_at": {},
+    "repository_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "checkpoint_digest",
+    "commit_oid",
+    "evidence_refs",
+    "ref_name",
+    "remote_name",
+    "reported_at",
+    "repository_id"
+  ],
+  "title": "PublicationReportPayload",
+  "type": "object"
+}

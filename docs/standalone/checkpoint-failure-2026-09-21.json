@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-21",
+  "command": "python -m pytest -q tests/integration/test_checkpoint_failure.py; python tools/dev/smoke_standalone.py",
+  "result": "passed",
+  "assertions": [
+    "A user completion confirmation returns Project completed even when checkpoint materialization raises disk full.",
+    "The failed checkpoint Operation is queryable with status failed and a stable error code.",
+    "A rebuild still reports Project completed; the user decision is not rolled back.",
+    "After rebuild, durability.reconcile rematerializes the failed operation and returns a verified checkpoint digest.",
+    "A real daemon smoke uses a one-shot marker, queries the failed operation over HTTP, and retries through the public checkpoint CLI to produce a sealed pointer."
+  ],
+  "scope": "public command dispatcher with deterministic fixture failure and real daemon process smoke",
+  "limits": [
+    "The one-shot marker is test-only and consumed before staging; normal runtime has no failure injection.",
+    "The user CLI retry creates a fresh checkpoint operation; the main Agent reconcile path updates the failed operation in place."
+  ]
+}

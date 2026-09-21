@@ -1,0 +1,51 @@
+{
+  "id": "tsunagou-m1",
+  "name": "tsunagou-m1",
+  "title": "M1 独立运行最小成品",
+  "description": "统筹 R1-R6，交付可安装、运行、协作、重启恢复的本机产品",
+  "status": "completed",
+  "dev_type": "planning",
+  "scope": "standalone-m1",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-20",
+  "completedAt": "2026-09-21",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-20-r1-protocol-package",
+    "09-20-r2-runtime-storage-cli",
+    "09-20-r3-task-ownership",
+    "09-20-r4-coordination-loop",
+    "09-20-r5-agent-user-recovery",
+    "09-20-r6-standalone-delivery"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "docs/standalone/implementation-plan.md",
+    "docs/standalone/status-and-gaps.md",
+    "docs/decisions/2026-09-20-standalone-priority.md",
+    ".trellis/spec/backend/index.md",
+    ".trellis/spec/backend/standalone-runtime.md",
+    "docs/implementation/task-plan.json",
+    "docs/standalone/debugging-runbook.md"
+  ],
+  "notes": "M1 十二条最小产品标准已通过；旧 T01-T24/旧 V1 已归档。R1-R6 中未覆盖完整原设计的内容保留为后续 follow-on，不回写为 M1 失败。",
+  "meta": {
+    "plan_id": "M1",
+    "depends_on": [],
+    "planning_status": "m1_acceptance_passed_follow_ons_open",
+    "product_implemented": true,
+    "plan_source": "docs/standalone/implementation-plan.md",
+    "replaces": [
+      "V1"
+    ],
+    "closure_manifest": "docs/standalone/trellis-transition-2026-09-20.json"
+  }
+}

@@ -1,0 +1,15 @@
+{"file":"docs/standalone/implementation-plan.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/decisions/2026-09-20-standalone-priority.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/index.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/data-model.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/07-durability.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/01-projects.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/modules/02-agents.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/cli-contract.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/implementation/validation.md","reason":"R2 验收依据；M1 阶段范围以 standalone 为准"}
+{"file":"docs/standalone/audit-2026-09-20.json","reason":"真实 daemon 子进程审计：幂等、重启、SQLite、CLI 票据 16/16 通过"}

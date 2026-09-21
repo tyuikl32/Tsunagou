@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-21",
+  "result": "passed",
+  "command": "node packages/bridge-server/scripts/smoke-two-bridges.mjs --project-root <temporary-git-project> --main-config <main-bridge-config> --worker-config <worker-bridge-config>",
+  "scope": "two independently authenticated stdio MCP bridges connected to one local daemon over loopback",
+  "steps": [
+    "The user-control CLI issued two private tickets and generated separate bridge configurations.",
+    "Two bridge processes redeemed separate tickets and exposed the same registered MCP tool set.",
+    "The main bridge created, readied and published a task; the worker bridge claimed the task.",
+    "Main selected shared workspace; worker declared and acquired an exclusive path lease.",
+    "Both sessions submitted different cognition claims for workspace.driver and the runtime recorded a discrepancy.",
+    "Main proposed a contract and both participant bridges accepted their slots.",
+    "Worker sent a message; main claimed, presented and acknowledged it.",
+    "Worker prepared/preflighted/started the workspace, wrote a real file, recorded the result and submitted it.",
+    "Main accepted the submitted result and the task reached completed.",
+    "A worker attempt to claim the already completed task was rejected, preserving ownership boundaries."
+  ],
+  "observed": {
+    "roles": ["main", "worker"],
+    "discrepancy_observed": true,
+    "baseline_conflict": true,
+    "test_executed": true,
+    "stale_execution_after_restart": "covered_by_public_smoke",
+    "message_acknowledged": true,
+    "response_obligation": "responded",
+    "foreign_execution_submit": "rejected",
+    "review_status": "completed",
+    "worker_takeover": "rejected"
+  },
+  "limits": [
+    "The host processes were launched by the smoke runner, not by a real Codex/OpenCode/DeepSeek UI.",
+    "User decision resolution, project completion confirmation and daemon restart are covered by the Python M1 integration and remain separate gates for the final product.",
+    "Temporary IDs, ticket material and absolute paths are intentionally omitted."
+  ]
+}

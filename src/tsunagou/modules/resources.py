@@ -78,10 +78,18 @@ class ResourceService:
     def __init__(self, *, ttl_seconds: int = 120) -> None:
         self.ttl_seconds = ttl_seconds
         self._lock = threading.RLock()
+        # Root IDs are project semantics; physical identities are local
+        # bindings.  Keep both so callers can still report the declared root
+        # while conflict checks treat aliases as the same resource.
+        self.root_aliases: dict[str, str] = {}
         self.intents: dict[str, ResourceIntent] = {}
         self.lease_sets: dict[str, LeaseSet] = {}
         self.observations: list[ResourceObservation] = []
         self.waiting: list[tuple[float, str]] = []
+
+    def set_root_aliases(self, aliases: dict[str, str]) -> None:
+        with self._lock:
+            self.root_aliases = {str(root_id): str(identity) for root_id, identity in aliases.items()}
 
     def declare_intent(
         self, *, task_id: str, attempt_id: str, owner_agent_id: str,
@@ -108,7 +116,7 @@ class ResourceService:
                 continue
             for incoming in requests:
                 for held in lease.resources:
-                    if self._conflict(incoming, held):
+                    if self._conflict(incoming, held, self.root_aliases):
                         conflicts.append(held.key.canonical)
         return sorted(set(conflicts))
 
@@ -199,12 +207,15 @@ class ResourceService:
             return self.intents[candidates[0][1]]
 
     @staticmethod
-    def _conflict(left: ResourceRequest, right: ResourceRequest) -> bool:
+    def _conflict(left: ResourceRequest, right: ResourceRequest, aliases: dict[str, str] | None = None) -> bool:
         if left.key.kind != right.key.kind:
             return False
         if left.key.kind == "named":
             return left.mode == "exclusive_use" and right.mode == "exclusive_use"
-        if left.key.root_id != right.key.root_id:
+        aliases = aliases or {}
+        left_root = aliases.get(str(left.key.root_id), str(left.key.root_id))
+        right_root = aliases.get(str(right.key.root_id), str(right.key.root_id))
+        if left_root != right_root:
             return False
         left_segments = left.key.segments
         right_segments = right.key.segments

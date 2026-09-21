@@ -309,7 +309,9 @@ class AuthorityService:
                 "coordination.read", "coordination.report",
                 "task.claim", "task.coordinate_self",
                 "cognition.report",
+                "cognition.discuss",
                 "contract.propose", "contract.accept",
+                "resource.intent", "resource.acquire", "resource.release", "workspace.prepare",
                 "inbox.consume",
                 "message.send", "message.respond",
             }), {"agent_id": session.agent_id},
@@ -338,7 +340,9 @@ class AuthorityService:
                     self.grants[key] = Grant(**{**asdict(existing), "capabilities": existing.capabilities, "status": "revoked"})
             grant = Grant(
                 new_id(), "main_authority", agent_id, None, new_id(), self.authority_epoch,
-                None, None, None, frozenset({"task.manage", "agent.appoint", "coordination.write"}),
+                None, None, None, frozenset({"task.manage", "root.manage", "agent.appoint", "coordination.write",
+                "workspace.select", "task.review", "user.decision.propose",
+                "cognition.resolve", "contract.accept_proxy", "durability.checkpoint"}),
                 {"agent_id": agent_id},
             )
             self.grants[grant.grant_id] = grant
@@ -455,7 +459,7 @@ class AuthorityService:
                 raise PermissionError("ready_session_required")
             grant = Grant(
                 new_id(), "task_attempt", agent_id, session_id, new_id(), self.authority_epoch,
-                task_id, attempt_id, execution_epoch, frozenset({"task.execute"}),
+                task_id, attempt_id, execution_epoch, frozenset({"task.execute", "workspace.result"}),
                 {"task_id": task_id, "attempt_id": attempt_id},
             )
             self.grants[grant.grant_id] = grant

@@ -1,0 +1,253 @@
+{
+  "closed_at": "2026-09-20",
+  "authorized_by": "user",
+  "reason": "旧Trellis任务视为完成或放弃；以独立运行M1/R1-R6替代后续推进。",
+  "replacement_parent": ".trellis/tasks/09-20-tsunagou-m1",
+  "completed_count": 20,
+  "abandoned_count": 7,
+  "tasks": [
+    {
+      "plan_id": "T01",
+      "title": "T01 工程骨架与可复现工具链",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t01-foundation"
+    },
+    {
+      "plan_id": "T02",
+      "title": "T02 四宿主与MCP可行性探针",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t02-host-probes"
+    },
+    {
+      "plan_id": "T03",
+      "title": "T03 统一Schema、DTO与命令策略目录",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t03-protocol"
+    },
+    {
+      "plan_id": "T04",
+      "title": "T04 SQLite事务、事件与持久Operation运行时",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t04-storage-runtime"
+    },
+    {
+      "plan_id": "T05",
+      "title": "T05 项目初始化、根目录与范围模型",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t05-projects-roots"
+    },
+    {
+      "plan_id": "T06",
+      "title": "T06 会话身份、最小认证、Grant与主权限",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t06-identity-authority"
+    },
+    {
+      "plan_id": "T07",
+      "title": "T07 持久消息、收件箱与回应义务",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t07-messaging"
+    },
+    {
+      "plan_id": "T08",
+      "title": "T08 任务、Attempt、委派与验收状态机",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t08-tasks"
+    },
+    {
+      "plan_id": "T09",
+      "title": "T09 资源冲突、等待与Lease",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t09-resources"
+    },
+    {
+      "plan_id": "T10",
+      "title": "T10 认知报告、分歧、契约和风险",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t10-cognition"
+    },
+    {
+      "plan_id": "T11",
+      "title": "T11 隔离驱动、工作空间与Git请求",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t11-workspaces"
+    },
+    {
+      "plan_id": "T12",
+      "title": "T12 领域授权附件与内容寻址存储",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t12-artifacts"
+    },
+    {
+      "plan_id": "T13",
+      "title": "T13 跨模块Preflight与认知协作闭环",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t13-task-orchestration"
+    },
+    {
+      "plan_id": "T14",
+      "title": "T14 Checkpoint、Git锚点与共享状态恢复",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t14-checkpoints"
+    },
+    {
+      "plan_id": "T15",
+      "title": "T15 重大决定、完成、继任与Lineage转换",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t15-lifecycles"
+    },
+    {
+      "plan_id": "T16",
+      "title": "T16 HTTP、MCP、CLI、黑板与运行提示",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t16-interfaces"
+    },
+    {
+      "plan_id": "T17",
+      "title": "T17 共享Bridge SDK与适配器一致性测试框架",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t17-bridge-sdk"
+    },
+    {
+      "plan_id": "T18",
+      "title": "T18 Codex正式共同基线适配",
+      "previous_status": "in_progress",
+      "previous_completed_at": null,
+      "disposition": "abandoned",
+      "status": "cancelled",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t18-adapter-codex"
+    },
+    {
+      "plan_id": "T19",
+      "title": "T19 OpenCode正式共同基线适配",
+      "previous_status": "in_progress",
+      "previous_completed_at": null,
+      "disposition": "abandoned",
+      "status": "cancelled",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t19-adapter-opencode"
+    },
+    {
+      "plan_id": "T20",
+      "title": "T20 ZCode正式共同基线适配（首发后）",
+      "previous_status": "in_progress",
+      "previous_completed_at": null,
+      "disposition": "abandoned",
+      "status": "cancelled",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t20-adapter-zcode"
+    },
+    {
+      "plan_id": "T21",
+      "title": "T21 DeepSeek Harness正式共同基线适配",
+      "previous_status": "in_progress",
+      "previous_completed_at": null,
+      "disposition": "abandoned",
+      "status": "cancelled",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t21-adapter-deepseek"
+    },
+    {
+      "plan_id": "T22",
+      "title": "T22 脱敏审计、指标与实验运行框架",
+      "previous_status": "completed",
+      "previous_completed_at": "2026-09-18",
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t22-observability"
+    },
+    {
+      "plan_id": "T23",
+      "title": "T23 端到端与故障恢复发布门槛",
+      "previous_status": "in_progress",
+      "previous_completed_at": null,
+      "disposition": "abandoned",
+      "status": "cancelled",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t23-integration-release-gates"
+    },
+    {
+      "plan_id": "T24",
+      "title": "T24 三宿主演示、对照实验与首发交付",
+      "previous_status": "in_progress",
+      "previous_completed_at": null,
+      "disposition": "abandoned",
+      "status": "cancelled",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-t24-experiments-demo"
+    },
+    {
+      "plan_id": "V1",
+      "title": "Tsunagou 首发实施计划",
+      "previous_status": "planning",
+      "previous_completed_at": null,
+      "disposition": "abandoned",
+      "status": "cancelled",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-tsunagou-v1"
+    },
+    {
+      "plan_id": "BOOTSTRAP",
+      "title": "Trellis bootstrap guidelines",
+      "previous_status": "completed",
+      "previous_completed_at": null,
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/00-bootstrap-guidelines"
+    },
+    {
+      "plan_id": "DOCS-ONBOARDING",
+      "title": "项目文档与首次接入指南",
+      "previous_status": "completed",
+      "previous_completed_at": null,
+      "disposition": "completed",
+      "status": "completed",
+      "archived_path": ".trellis/tasks/archive/2026-09/09-18-docs-onboarding-manual"
+    }
+  ]
+}

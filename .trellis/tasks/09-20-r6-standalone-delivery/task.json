@@ -1,0 +1,54 @@
+{
+  "id": "r6-standalone-delivery",
+  "name": "r6-standalone-delivery",
+  "title": "R6 封装、回归与独立交付",
+  "description": "独立安装包、真实入口端到端场景、故障测试和操作单",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": "standalone-delivery",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-20-tsunagou-m1",
+  "relatedFiles": [
+    "docs/standalone/implementation-plan.md",
+    "docs/standalone/status-and-gaps.md",
+    "docs/decisions/2026-09-20-standalone-priority.md",
+    ".trellis/spec/backend/index.md",
+    ".trellis/spec/backend/standalone-runtime.md",
+    "docs/standalone/debugging-runbook.md",
+    "docs/implementation/validation.md",
+    "docs/implementation/cli-contract.md",
+    "docs/overview/cli-http-manual.md",
+    ".trellis/spec/backend/quality-guidelines.md"
+  ],
+  "notes": "2026-09-20 按用户要求从独立成品方案建任务；产品修改未开始。旧任务仅供历史追溯。",
+  "meta": {
+    "plan_id": "R6",
+    "depends_on": [
+      "R5"
+    ],
+    "dependency_semantics": "Validate predecessor acceptance before start; parent/children only group tasks.",
+    "planning_status": "ready_for_implementation",
+    "product_implemented": false,
+    "replaces": [
+      "T01",
+      "T16",
+      "T23"
+    ],
+    "modules": [
+      "all"
+    ],
+    "plan_source": "docs/standalone/implementation-plan.md"
+  }
+}

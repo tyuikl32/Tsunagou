@@ -1,0 +1,15 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/artifact.upload.finalize",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "digest": {},
+    "size_bytes": {}
+  },
+  "required": [
+    "digest",
+    "size_bytes"
+  ],
+  "title": "ArtifactUploadFinalizePayload",
+  "type": "object"
+}

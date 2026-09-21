@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import sqlite3
 import time
 from collections.abc import Callable, Iterator
@@ -124,6 +125,14 @@ CREATE TABLE IF NOT EXISTS runtime_fences (
   project_id TEXT PRIMARY KEY,
   runtime_epoch TEXT NOT NULL,
   connection_epoch INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS module_state (
+  project_id TEXT NOT NULL,
+  module TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  payload_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY(project_id, module)
 );
 """
 
@@ -292,14 +301,53 @@ class UnitOfWork:
         if row is None or row[0] != expected:
             raise RevisionConflict("stale_runtime_epoch")
 
+    def put_module_state(self, module: str, payload_json: str) -> int:
+        """Persist one module snapshot inside the command transaction.
+
+        Snapshots are module-scoped recovery material, not a substitute for the
+        public domain model. The owning service remains the source of semantics;
+        this table only makes the existing service state survive a daemon restart
+        while its normalized repositories are being migrated.
+        """
+        row = self.conn.execute(
+            "SELECT revision FROM module_state WHERE project_id=? AND module=?",
+            (self.project_id, module),
+        ).fetchone()
+        revision = int(row[0]) + 1 if row is not None else 1
+        self.conn.execute(
+            """INSERT INTO module_state(project_id,module,revision,payload_json,updated_at)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(project_id,module) DO UPDATE SET
+                 revision=excluded.revision,payload_json=excluded.payload_json,
+                 updated_at=excluded.updated_at""",
+            (self.project_id, module, revision, payload_json, _now_ms()),
+        )
+        return revision
+
 
 class ProjectDatabase:
     def __init__(self, path: str | Path, project_id: str = "local-project") -> None:
         self.path = Path(path)
         self.project_id = project_id
         self.lock = ProjectLock(self.path.with_suffix(self.path.suffix + ".lock"))
+        self.process_lock = ProjectLock(self.path.with_suffix(self.path.suffix + ".runtime.lock"))
+        self._process_lock_held = False
+        # Test-only hook for the commit-window crash gate. Production callers
+        # leave it unset; a raised hook simulates a process dying after commit
+        # and before the response reaches the caller.
+        self.post_commit_hook: Callable[[], None] | None = None
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
+
+    def acquire_process_lock(self) -> None:
+        if not self._process_lock_held:
+            self.process_lock.__enter__()
+            self._process_lock_held = True
+
+    def release_process_lock(self) -> None:
+        if self._process_lock_held:
+            self.process_lock.__exit__(None, None, None)
+            self._process_lock_held = False
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=5, isolation_level=None)
@@ -324,6 +372,56 @@ class ProjectDatabase:
                     )
             finally:
                 conn.close()
+
+    def module_state(self, module: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM module_state WHERE project_id=? AND module=?",
+                (self.project_id, module),
+            ).fetchone()
+            return None if row is None else str(row[0])
+
+    def last_event_seq(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(event_seq), 0) FROM events WHERE project_id=?",
+                (self.project_id,),
+            ).fetchone()
+            return int(row[0]) if row is not None else 0
+
+    def list_events(self, *, limit: int = 200) -> list[dict[str, Any]]:
+        """Return committed event headers for read-only audit projection."""
+        bounded = max(1, min(int(limit), 1000))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT event_id,event_seq,event_type,aggregate_ref,actor_ref,command_id,
+                          occurred_at,payload_json,digest
+                   FROM events WHERE project_id=? ORDER BY event_seq DESC LIMIT ?""",
+                (self.project_id, bounded),
+            ).fetchall()
+        import json
+        return [
+            {
+                "event_id": str(row["event_id"]), "event_seq": int(row["event_seq"]),
+                "event_type": str(row["event_type"]), "aggregate_ref": str(row["aggregate_ref"]),
+                "actor_ref": str(row["actor_ref"]), "command_id": str(row["command_id"]),
+                "occurred_at": int(row["occurred_at"]),
+                "payload": json.loads(str(row["payload_json"])), "digest": str(row["digest"]),
+            }
+            for row in rows
+        ]
+
+    @property
+    def runtime_epoch(self) -> str:
+        """Return the persisted runtime fence used to invalidate old sessions."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT runtime_epoch FROM runtime_fences WHERE project_id=?",
+                (self.project_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("runtime_fence_missing")
+            return str(row[0])
 
     @contextlib.contextmanager
     def transaction(self, command_id: str | None = None) -> Iterator[UnitOfWork]:
@@ -383,7 +481,18 @@ class ProjectDatabase:
                         canonical_bytes(result).decode("utf-8"), uow._event_seq, _now_ms(),
                     ),
                 )
+                # These opt-in exits are used only by the standalone process
+                # crash harness.  They make the two response/commit windows
+                # observable without adding a production HTTP fault endpoint.
+                if os.environ.get("TSUNAGOU_TEST_EXIT_BEFORE_COMMIT_COMMAND_ID") == command_id:
+                    os._exit(73)
                 conn.commit()
+                if self.post_commit_hook is not None:
+                    hook = self.post_commit_hook
+                    self.post_commit_hook = None
+                    hook()
+                if os.environ.get("TSUNAGOU_TEST_EXIT_AFTER_COMMIT_COMMAND_ID") == command_id:
+                    os._exit(74)
                 return DispatchResult(command_id, result, uow._event_seq, False)
             except BaseException:
                 conn.rollback()
