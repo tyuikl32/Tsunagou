@@ -1,0 +1,34 @@
+{
+  "id": "project-local-agent-bootstrap",
+  "name": "project-local-agent-bootstrap",
+  "title": "项目本地 Agent 约束与快速初始化",
+  "description": "让新项目初始化时自动获得可被宿主发现的 Tsunagou 约束、接入向导和源码引用，并保持单 daemon 多项目模型",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "project-bootstrap",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-22",
+  "completedAt": "2026-09-22",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-22-project-local-contract",
+    "09-22-project-bootstrap-command",
+    "09-22-host-onboarding-materialization",
+    "09-22-project-bootstrap-acceptance"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "PLB",
+    "planning_status": "ready_for_review"
+  }
+}

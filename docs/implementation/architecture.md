@@ -11,6 +11,7 @@ src/tsunagou/
   bootstrap/                 # 唯一依赖装配入口
   api/ cli/                  # HTTP 和 CLI 外壳
   application/workflows/     # 跨模块编排，没有自有领域表
+  application/project_integration.py # 项目本地无秘密入口生成器，不是第九个业务模块
   application/queries/       # 黑板等组合查询，没有第二真相
   shared_kernel/             # ID/revision/clock/hash/errors/envelope
   generated/protocol/        # 生成的 Pydantic DTO，禁止手改

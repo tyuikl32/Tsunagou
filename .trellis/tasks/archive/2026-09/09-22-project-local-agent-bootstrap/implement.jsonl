@@ -1,0 +1,8 @@
+{"file":".trellis/spec/guides/index.md","reason":"跨层边界、持久化和规范同步要求"}
+{"file":".trellis/spec/backend/index.md","reason":"CLI、数据库、入口和独立运行时约定"}
+{"file":".trellis/spec/adapters/index.md","reason":"宿主发现、bridge、能力证据和秘密隔离"}
+{"file":"docs/implementation/modules/01-projects.md","reason":"项目根、权限、UserCeiling 和共享持久化边界"}
+{"file":"docs/implementation/modules/02-agents.md","reason":"逐 conversation 身份、bridge、主从和消息语义"}
+{"file":"docs/implementation/modules/07-durability.md","reason":"SQLite/事件/私有运行数据与共享 checkpoint 边界"}
+{"file":"docs/overview/agent-quick-start.md","reason":"现有安装、初始化和接入用户路径"}
+{"file":"docs/overview/principles.md","reason":"项目代码和运行时 LLM 原则"}

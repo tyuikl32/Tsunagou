@@ -4,10 +4,11 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from tsunagou import __version__
+from tsunagou.api.a2a import A2AGateway
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.interfaces.runtime import CommandDispatcher
 from tsunagou.shared_kernel.errors import IdempotencyConflict, LockUnavailable, RevisionConflict
@@ -40,6 +41,13 @@ def create_app(
         dispatcher = CommandDispatcher(registry)
     if authenticator is None:
         authenticator = LocalCommandAuthenticator()
+    a2a_gateway = A2AGateway(
+        dispatcher,
+        authenticator,
+        project_id=getattr(getattr(dispatcher, "database", None), "project_id", None),
+        query_provider=query_provider,
+    )
+    app.state.a2a_gateway = a2a_gateway
 
     @app.on_event("shutdown")
     def release_runtime_lock() -> None:
@@ -50,6 +58,41 @@ def create_app(
     @app.get("/api/v1/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(status="ok", version=__version__)
+
+    @app.get("/.well-known/agent-card.json")
+    def agent_card(request: Request) -> dict[str, Any]:
+        endpoint = f"{str(request.base_url).rstrip('/')}/api/v1/a2a"
+        return a2a_gateway.agent_card(endpoint)
+
+    @app.post("/api/v1/a2a")
+    def a2a_command(
+        request: dict[str, Any],
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        session_id: str | None = Header(default=None, alias="Tsunagou-Session-Id"),
+        connection_epoch: int | None = Header(default=None, alias="Tsunagou-Connection-Epoch"),
+    ) -> dict[str, Any]:
+        return a2a_gateway.dispatch(
+            request,
+            authorization=authorization,
+            session_id=session_id,
+            connection_epoch=connection_epoch,
+        )
+
+    @app.post("/api/v1/a2a/agents/{recipient_agent_id}")
+    def a2a_agent_command(
+        recipient_agent_id: str,
+        request: dict[str, Any],
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        session_id: str | None = Header(default=None, alias="Tsunagou-Session-Id"),
+        connection_epoch: int | None = Header(default=None, alias="Tsunagou-Connection-Epoch"),
+    ) -> dict[str, Any]:
+        return a2a_gateway.dispatch(
+            request,
+            authorization=authorization,
+            session_id=session_id,
+            connection_epoch=connection_epoch,
+            recipient_agent_id=recipient_agent_id,
+        )
 
     @app.post("/api/v1/commands/{command_kind}")
     def command(

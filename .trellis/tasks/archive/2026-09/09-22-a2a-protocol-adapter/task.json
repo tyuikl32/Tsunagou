@@ -1,0 +1,29 @@
+{
+  "id": "a2a-protocol-adapter",
+  "name": "a2a-protocol-adapter",
+  "title": "实现 A2A 协议适配与消息唤醒边界",
+  "description": "实现初版设计要求的 Agent-to-Agent 边界协议：Agent Card、A2A 消息/任务映射、流式或推送能力声明，并保持 Tsunagou 内部任务、权限、租约和持久化事实为唯一真相。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-22",
+  "completedAt": "2026-09-22",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "priority": "critical",
+    "owner": "tyuikl32"
+  }
+}

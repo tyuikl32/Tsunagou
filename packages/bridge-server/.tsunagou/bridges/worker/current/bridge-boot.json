@@ -1,0 +1,24 @@
+{
+  "host_digest": "089e17b9dbc6a20e6f16e911c3e6c749e236dc956328bb7c41cde6b3a93bf0a8",
+  "matched_host_env": "CODEX_THREAD_ID",
+  "baseline_status": null,
+  "codex_env_names": [
+    "CODEX_APP_TOOLS_PIPE_PATH",
+    "CODEX_CI",
+    "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+    "CODEX_MCP_NODE_PATH",
+    "CODEX_PERMISSION_PROFILE",
+    "CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE",
+    "CODEX_SESSION_ID",
+    "CODEX_SHELL",
+    "CODEX_THREAD_ID",
+    "CODEX_VERSION",
+    "CODEX_WINDOWS_SANDBOX_PACKAGE_FAMILY"
+  ],
+  "tsunagou_env_names": [
+    "TSUNAGOU_DAEMON_STATE_DIR",
+    "TSUNAGOU_HOST_ID_ENV",
+    "TSUNAGOU_PROJECT_ROOT",
+    "TSUNAGOU_STATE_DIR"
+  ]
+}

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"CLI、数据库、入口与独立运行时规范"}
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"daemon、多项目、runtime和源码树外运行"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"UoW、原子写和单一真相"}
+{"file":"docs/implementation/cli-contract.md","reason":"现有CLI命令和兼容语义"}
+{"file":"docs/implementation/modules/01-projects.md","reason":"project init和项目事实边界"}
+{"file":"docs/overview/agent-quick-start.md","reason":"onboarding顺序和用户控制边界"}

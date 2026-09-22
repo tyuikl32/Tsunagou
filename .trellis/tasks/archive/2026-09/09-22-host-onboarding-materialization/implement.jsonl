@@ -1,0 +1,5 @@
+{"file":".trellis/spec/adapters/index.md","reason":"宿主身份、bridge、能力探测和hook降级"}
+{"file":"docs/implementation/adapters.md","reason":"四宿主适配边界和baseline"}
+{"file":"docs/implementation/runtime-prompts.md","reason":"主/worker规则和黑板提示"}
+{"file":"docs/overview/subagent-guide.md","reason":"子Agent加入、任务和恢复规则"}
+{"file":"docs/overview/agent-quick-start.md","reason":"用户接入步骤和ready判定"}

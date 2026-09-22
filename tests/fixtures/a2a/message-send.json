@@ -1,0 +1,27 @@
+{
+  "jsonrpc": "2.0",
+  "id": "rpc-message-send-1",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "messageId": "a2a-fixture-message-1",
+      "contextId": "project-context",
+      "role": "agent",
+      "parts": [
+        {
+          "text": "Please review the current contract before implementation."
+        }
+      ],
+      "metadata": {
+        "tsunagou": {
+          "recipient_agent_id": "agent-recipient-from-route",
+          "kind": "request",
+          "subject_ref": "task:fixture",
+          "payload": {
+            "request": "contract-review"
+          }
+        }
+      }
+    }
+  }
+}

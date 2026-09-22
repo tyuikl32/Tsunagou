@@ -106,6 +106,15 @@ if typer is not None:
         try:
             result = _daemon_request("GET", "/api/v1/health")
             result["daemon"] = "reachable"
+            card = _daemon_request("GET", "/.well-known/agent-card.json")
+            capabilities = card.get("capabilities", {})
+            result["a2a"] = {
+                "status": "reachable",
+                "protocol_version": card.get("protocolVersion"),
+                "streaming": capabilities.get("streaming"),
+                "push_notifications": capabilities.get("pushNotifications"),
+                "wake": card.get("x-tsunagou", {}).get("wake"),
+            }
         except RuntimeError as exc:
             print(json.dumps({"status": "unavailable", "error": str(exc)}, sort_keys=True))
             raise typer.Exit(5) from exc
@@ -122,6 +131,39 @@ if typer is not None:
         registry = ProjectRegistry.initialize(coordination_root, name=name, objective=objective)
         assert registry.project is not None
         print(json.dumps({"project_id": registry.project.project_id, "status": "active"}, sort_keys=True))
+
+    @project_app.command("bootstrap")
+    def project_bootstrap(
+        ctx: typer.Context,
+        coordination_root: Path = typer.Option(..., "--coordination-root"),  # noqa: B008
+        source_root: Path | None = typer.Option(None, "--source-root"),  # noqa: B008
+        source_ref: str | None = typer.Option(None, "--source-ref"),
+        hosts: list[str] = typer.Option([], "--host"),  # noqa: B008
+        refresh: bool = typer.Option(False, "--refresh"),
+        force_managed: bool = typer.Option(False, "--force-managed"),
+    ) -> None:
+        """Materialize non-secret Tsunagou rules in a coordination project."""
+        from tsunagou.application.project_integration import ProjectIntegration, ProjectIntegrationError
+
+        try:
+            result = ProjectIntegration(coordination_root).bootstrap(
+                source_root=source_root,
+                source_ref=source_ref,
+                hosts=hosts or ["generic"],
+                refresh=refresh,
+                force_managed=force_managed,
+            )
+        except (ProjectIntegrationError, OSError, ValueError) as exc:
+            payload = {"status": "error", "error": str(exc)}
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            raise typer.Exit(1) from exc
+        if ctx.obj.get("json"):
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+            return
+        print(f"Tsunagou project bootstrap: {result['project_id']}")
+        for item in result["files"]:
+            print(f"{item['status']}: {item['path']}")
+        print("No credentials or runtime secrets were written.")
 
     @project_app.command("complete")
     def project_complete(

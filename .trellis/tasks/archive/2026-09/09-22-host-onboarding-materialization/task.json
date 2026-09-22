@@ -1,0 +1,29 @@
+{
+  "id": "host-onboarding-materialization",
+  "name": "host-onboarding-materialization",
+  "title": "宿主接入入口与 Agent 引导",
+  "description": "为 Codex 及其他首发宿主生成可发现的项目 skill/bridge 启动描述或明确降级路径，确保主 Agent、worker、用户边界被注入。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "project-bootstrap",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-22",
+  "completedAt": "2026-09-22",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-22-project-local-agent-bootstrap",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "PLB-3",
+    "depends_on": "project-bootstrap-command"
+  }
+}

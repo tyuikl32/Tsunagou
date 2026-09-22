@@ -13,7 +13,8 @@
 - 项目可包含多个文件夹、多个 Git 仓库。用户选定一个已存在的 Git 仓库作为协调仓库，`.tsunagou/` 是项目协调数据的中心位置。
 - 八大模块处理项目与权限、Agent 接入、任务、认知协商、资源、工作空间、持久化、观测与评估。
 - 后续 Web 工作台可接入同一公共 API；本次不开发 Web UI。
-- 用户可以直接告诉已接入的 Agent“从 GitHub 安装 Tsunagou”；安装 skill 会克隆仓库、安装锁定的 Python/Node 依赖、构建 stdio bridge，并安装项目接入 skill。安装完成不等于已初始化项目或已接入 Agent，后续仍由 onboarding skill 引导用户完成控制 CLI 操作。
+- 用户可以直接告诉正在目标业务项目中工作的 Agent“在这个项目里从 GitHub 安装 Tsunagou”；安装 skill 会保存当前 Git 根，克隆独立源码 checkout，安装锁定的 Python/Node 依赖，构建 stdio bridge，并把该项目显式传给 installer。项目未初始化时 installer 自动执行一次 `project init`，随后执行 `project bootstrap`；不指定项目根时仍保持 source/skill-only 安装。
+- 项目 bootstrap 在项目内生成无秘密的 `AGENTS.md` 受管区块、项目 skill、Agent context 和来源 manifest；这些入口引用 Tsunagou checkout/规范，但不复制源码。`.tsunagou/local`、token、ticket、session 和 SQLite 仍是本机私有 runtime，daemon 启动和 Agent enrollment 仍由 onboarding 继续完成。
 
 ## 系统解决什么，Agent 负责什么
 
@@ -40,6 +41,8 @@ Full Access 宿主中的文件和命令行为，可能只能通过自然语言�
 子Agent拥有独立宿主对话、身份与TaskAttempt：读取黑板、公开理解、领取任务、申请资源、参与契约并提交自己的结果。它不仅是main接收输出的临时执行器，也可以发现范围遗漏、指出认知冲突、挂起相关工作并在之后恢复。
 
 用户通过adapter把多个会话接入同一project；worker票据和独立session由系统/bridge管理，不需要把秘密粘贴给模型。ready代表可以协调，claim代表领到任务，start才代表可以在当前范围执行。用户任命main后，普通委派和协商尽量由main与子Agent自行完成。
+
+消息发送会先持久化到 daemon 收件箱，连接中的 Agent 在下一次 `inbox__claim`/黑板读取时可见。generic stdio bridge 没有让 daemon 反向启动或唤醒休眠 Codex 对话的通用通道；宿主支持 wake 时才可由对应 adapter 增强。没有 wake 不会丢消息，但用户或宿主需要重新打开/触发该对话，Agent 才能 pull 到新消息。
 
 具体接入步骤、主子职责与恢复情形见[子Agent指南](subagent-guide.md)，操作命令见[简明手册](cli-http-manual.md)。
 

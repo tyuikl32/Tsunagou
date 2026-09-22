@@ -1,0 +1,28 @@
+{
+  "id": "project-local-contract",
+  "name": "project-local-contract",
+  "title": "项目本地约束包与源码引用契约",
+  "description": "定义项目初始化后必须物化的受管文件、标记块、版本/来源引用和多宿主发现策略，不改代码。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "project-bootstrap",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-22",
+  "completedAt": "2026-09-22",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-22-project-local-agent-bootstrap",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "PLB-1"
+  }
+}

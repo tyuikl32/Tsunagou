@@ -183,7 +183,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 ## CLI 映射与退出码
 
-可落地的用户命令树：`daemon start|stop|status`；`project init|list|show|confirm-completion|archive|reactivate|unregister|reset-lineage`；`root register|bind|list`；`agent enroll|list|show`；`authority appoint|revoke|show`；`task create|list|show`；`decision list|show|resolve`；`checkpoint create|list|show`；`operation list|show|resolve`；`config show|validate`；`doctor`；`experiment run|report`。
+可落地的用户命令树：`daemon start|stop|status`；`project init|bootstrap|list|show|confirm-completion|archive|reactivate|unregister|reset-lineage`；`root register|bind|list`；`agent enroll|list|show`；`authority appoint|revoke|show`；`task create|list|show`；`decision list|show|resolve`；`checkpoint create|list|show`；`operation list|show|resolve`；`config show|validate`；`doctor`；`experiment run|report`。安装器的 `--project-root` 是显式选择后的安装联动参数，不是新的领域命令。
 
 旧概览曾列出`agent reprobe/retire`、`authority handoff`、`task publish/recover`、`operation cancel`，但对应目录只有D/M主体handler，尚无U授权。首发用户CLI不注册这些未绑定动作；相同领域行为仍由自身bridge/current main工具完成。不得为补齐help表而让CLI读取Agent token或自行增加user权限。参数、组合接入和映射见[CLI契约](cli-contract.md)。
 

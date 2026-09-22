@@ -41,6 +41,7 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 ### 01 projects：项目与额外根登记已接通，用户边界和完整项目生命周期仍缺
 
 - 已有：Git 项目初始化、`project.json`/`bindings.json`、主 Agent `root.manage` Grant、`root.register`/`root.bind`/`repository.register` handler，以及 roots/repositories 脱敏查询。2026-09-21 集成测试覆盖额外目录绑定、仓库登记和查询，证据见 [project roots smoke](project-roots-smoke-2026-09-21.json)。
+- 2026-09-22 已补项目本地 bootstrap：`project bootstrap` 在协调根生成无秘密的 `project-integration.json`、`agent-context.md`、项目 skill、`AGENTS.md`/`.gitignore` 受管区块；它不创建 Agent/任务、不写 token，并保留安装 checkout 与 daemon runtime 的分离。单元和真实 CLI smoke 已覆盖首次生成、重复 unchanged、已有用户正文和 refresh 冲突。
 - 缺少：UserCeiling 持久实体及请求授权连接、项目与 lineage 的关联校验、完整 project 生命周期命令和项目级配置查询。
 - 明确偏差：原设计用 project.toml/local config + SQLite；当前 JSON 项目文件还承载部分运行字段。根登记写入 JSON，与协作事实 SQLite 事务尚未统一；root/scope 仍未作为每个业务动作的统一授权前置。
 - M1 已通过：用户边界与派生 Grant、项目/根/仓库 revision 与 SQLite UoW、真实决定/完成/查询接口和项目内持久状态均有入口证据；完整项目生命周期仍是后续范围。
@@ -54,6 +55,7 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 - 已有：单次票据、会话 token/epoch、用户任命 main、Grant、私有 JSON 保存；消息、投递、ACK、回应义务；真实 stdio bridge 文件。2026-09-21 的构建探针证明 bridge 能从共享 registry 读取摘要并通过 MCP `tools/list` 暴露 48 个工具，其中包含任务恢复、认知分歧、契约处置、resource、workspace、review、decision 和 completion；随后单 bridge 认证 smoke 完成 ticket redemption、main 任命、reconnect 和 task create/ready/publish，两个独立 bridge 的完整首轮 MCP 协作也已通过，证据见 [bridge tools](bridge-smoke-2026-09-21.json)、[authenticated bridge](bridge-auth-smoke-2026-09-21.json) 与 [双 bridge](bridge-two-session-smoke-2026-09-21.json)。
 - 缺少：会话终止后同步撤授权、处理相关任务；消息投递租约和完整查询；主 Agent handoff/succession 实际入口；两个真实宿主 bridge 的接入回执。
 - 已修复：CLI 通过同一 daemon 签发票据，运行中的 daemon 可立即兑换；Authority、Grant、Message 与任务状态在同一 SQLite runtime 快照事务中恢复。
+- A2A 首版已补齐：daemon 现在提供 `/.well-known/agent-card.json`、`/api/v1/a2a` 和按收件 Agent 路由的 JSON-RPC endpoint；`message/send` 通过同一 dispatcher 写入持久消息，`tasks/get` 从内部任务查询映射状态，`tasks/cancel`、`tasks/fail`、`tasks/retry` 复用主 Agent/执行 Agent 的内部命令边界，重复 `messageId` 和 request ID 保持幂等。真实 build_application loopback audit 的 A2A 子集为 8/8 通过（`a2a_failed=0`，见 [A2A audit](a2a-audit-2026-09-22.json)）；A2A transition 的 principal/owner 负例由单元测试覆盖。总 audit 仍保留一个既有 `task_survives_restart` 失败，不能把总结果写成全绿。streaming、push notification 和空闲 Codex host wake 仍明确为 `unsupported`；delivery、presentation、host wake 三种证据不能混淆。
 - M1 已通过：用户决定、项目完成、checkpoint、daemon 重启和 recovery 已通过同一公开入口烟测；重启后还逐一查询 tasks、attempts、results、jobs、agents、cognition/contracts、messages、workspaces、decisions 和脱敏 audit，记录见 [m1-public-smoke-2026-09-21.json](m1-public-smoke-2026-09-21.json)。重启会释放旧 claim/Lease 并将未完成 Task 放回 `open`，旧 Attempt 保留 orphaned 历史；双 bridge 断线故障注入和本机凭据失败路径保留为完整接入后续。
 - 原设计余量：高级 handoff 收敛、复杂路由、多个宿主生命周期增强、推送/唤醒。
 - 依据：[authority.py](../../src/tsunagou/modules/authority.py)、[messaging.py](../../src/tsunagou/modules/messaging.py)、[bridge server](../../packages/bridge-server/src/server.ts)、[原设计](../implementation/modules/02-agents.md)。
@@ -138,6 +140,8 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 | F13 | 执行正常协作操作 | `state.sqlite3` 已建立并写入 | 事实已提交 SQLite | R2 |
 | F14 | CLI 给运行 daemon 签票后兑换 | HTTP 200 | 同 daemon签发和消费 | R2/R5 |
 | F15 | 安装 wheel后离开源码树启动 | Python wheel 和 Node bridge 包内资源均可读 | 包内资源可用 | R1/R6 |
+| F16 | 项目已登记但没有本地 Agent 入口 | `project bootstrap` 生成受管入口，重复运行 unchanged | 项目可被宿主发现约束，私有 runtime 不外泄 | 本轮项目 bootstrap |
+| F17 | daemon 消息后空闲宿主未自动回合 | pull-first inbox 保留未 ACK delivery；无通用 wake 承诺 | 消息持久化且下次 Agent pull 可见；Codex 自动唤醒待宿主能力 | Adapter 增强 |
 
 F01–F14 来自当前脚本；F15 来自 wheel 安装检查。它们是回归集合，不是无遗漏的全量安全审计。R3-R6 尚需补充的完整协作闭环仍列在下一节八模块缺口中。
 

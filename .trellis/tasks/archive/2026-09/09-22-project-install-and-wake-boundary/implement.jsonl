@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Cross-layer changes and public semantic synchronization"}
+{"file": ".trellis/spec/backend/standalone-runtime.md", "reason": "CLI and runtime persistence constraints"}
+{"file": ".trellis/spec/adapters/index.md", "reason": "Bridge, host capability and wake downgrade rules"}
+{"file": "docs/overview/agent-quick-start.md", "reason": "Current onboarding contract to update"}

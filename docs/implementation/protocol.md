@@ -6,6 +6,10 @@
 
 生成 Python 到 `src/tsunagou/generated/protocol/`，TS 到 `packages/protocol-ts/src/generated/`；FastAPI 导出 `protocol/openapi/v1/openapi.json`，HTTP 类型生成到 bridge-sdk。每份生成物包含 schema digest/生成器版本，无当前时间；同输入字节稳定。严禁手改生成物。
 
+## A2A 边界
+
+初版设计要求 Agent 之间通过 A2A 协商；daemon 当前提供一个独立的本机 JSON-RPC adapter。它复用同一 authenticator、command dispatcher、项目范围和持久化消息/任务事实，MCP bridge 不等于 A2A 实现。端点、Agent Card、Message/Task 映射、幂等、错误和 wake 能力声明见 [A2A 边界实现](a2a-boundary.md)。
+
 协议协商支持当前 N 与 N-1，未知 bundle digest 拒绝。`protocol_version`、`schema_bundle_digest`、`shared_format_version`、Alembic revision 是四个独立维度，不按字符串猜兼容性。未来 shared format 默认只读诊断，不能自动降级覆盖。
 
 ## 认证与入口

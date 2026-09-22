@@ -206,6 +206,67 @@ def verify(repo: Path, python_mode: str, *, skip_node: bool, dry_run: bool, log:
             run([node, "--check", str(entry)], cwd=repo, dry_run=dry_run, log=log)
 
 
+def bootstrap_project(
+    repo: Path,
+    project_root: Path,
+    python_mode: str,
+    hosts: list[str],
+    *,
+    project_name: str | None,
+    project_objective: str | None,
+    refresh: bool,
+    dry_run: bool,
+    log: list[str],
+) -> str:
+    """Initialize and materialize project-local rules after explicit selection."""
+    if python_mode == "skipped":
+        raise InstallError("project_bootstrap_requires_python_runtime")
+    if python_mode == "uv":
+        uv = find_executable("uv")
+        if not uv:
+            raise InstallError("project_bootstrap_uv_unavailable")
+        command = [uv, "run", "python", "-m", "tsunagou"]
+    else:
+        python_bin = repo / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        command = [str(python_bin), "-m", "tsunagou"]
+
+    project_manifest = project_root / ".tsunagou" / "project.json"
+    initialized = project_manifest.is_file()
+    if not initialized:
+        resolved_name = project_name or project_root.name or "Tsunagou project"
+        resolved_objective = project_objective or f"Coordinate local agents in {resolved_name}"
+        run(
+            [
+                *command,
+                "project",
+                "init",
+                "--coordination-root",
+                str(project_root),
+                "--name",
+                resolved_name,
+                "--objective",
+                resolved_objective,
+            ],
+            cwd=repo,
+            dry_run=dry_run,
+            log=log,
+        )
+        initialization_status = "planned" if dry_run else "initialized"
+    else:
+        initialization_status = "existing"
+
+    command.extend([
+        "project", "bootstrap", "--coordination-root", str(project_root),
+        "--source-root", str(repo),
+    ])
+    for host in hosts or ["generic"]:
+        command.extend(["--host", host])
+    if refresh:
+        command.append("--refresh")
+    run(command, cwd=repo, dry_run=dry_run, log=log)
+    return initialization_status
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Clone and install Tsunagou plus its Agent skills.")
     parser.add_argument("--repository", default=DEFAULT_REPOSITORY)
@@ -215,6 +276,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="Update conflicting existing Tsunagou skill directories")
     parser.add_argument("--skip-python", action="store_true")
     parser.add_argument("--skip-node", action="store_true")
+    parser.add_argument(
+        "--project-root",
+        help="Explicit business project root; initialize it when project.json is absent, then bootstrap entries",
+    )
+    parser.add_argument("--project-name", help="Name used when --project-root needs project initialization")
+    parser.add_argument("--project-objective", help="Objective used when --project-root needs project initialization")
+    parser.add_argument("--host", action="append", default=[], dest="hosts")
+    parser.add_argument("--refresh-project", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true", dest="json_output")
     return parser.parse_args()
@@ -231,6 +300,19 @@ def main() -> int:
         python_mode = install_python(repo, skip=args.skip_python, dry_run=args.dry_run, log=logs)
         node_mode = install_node(repo, skip=args.skip_node, dry_run=args.dry_run, log=logs)
         skills = install_skills(repo, args.skill_scope, force=args.force, dry_run=args.dry_run, log=logs)
+        project_initialization = "not_requested"
+        if args.project_root:
+            project_initialization = bootstrap_project(
+                repo,
+                Path(args.project_root).expanduser().resolve(),
+                python_mode,
+                args.hosts,
+                project_name=args.project_name,
+                project_objective=args.project_objective,
+                refresh=args.refresh_project,
+                dry_run=args.dry_run,
+                log=logs,
+            )
         verify(repo, python_mode, skip_node=args.skip_node, dry_run=args.dry_run, log=logs)
         result: dict[str, Any] = {
             "status": "dry_run" if args.dry_run else "installed",
@@ -240,6 +322,9 @@ def main() -> int:
             "python": python_mode,
             "node": node_mode,
             "bridge_entry": str(repo / "packages" / "bridge-server" / "dist" / "server.js"),
+            "project_root": str(Path(args.project_root).expanduser().resolve()) if args.project_root else None,
+            "project_bootstrap": "requested" if args.project_root else "not_requested",
+            "project_initialization": project_initialization,
             "skills": skills,
             "commands": logs,
         }

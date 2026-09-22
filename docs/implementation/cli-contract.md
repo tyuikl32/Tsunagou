@@ -1,6 +1,6 @@
 # CLI 外壳与已有领域命令的精确映射
 
-本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/complete、agent enroll/appoint、decision、operation、checkpoint 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
+本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/bootstrap/complete、agent enroll/appoint、decision、operation、checkpoint 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
 
 ## 1. 适用范围
 
@@ -17,6 +17,9 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 | `daemon start` | 用户配置+OS启动，绑定127.0.0.1随机端口 | endpoint/instance，不含token |
 | `daemon status` / `stop` | 本机已验证daemon实例；stop优雅收敛 | status/worker收敛摘要 |
 | `project init --coordination-root <path> [--name <name>] [--objective <text>]` | `project.initialize`；缺name/objective交互询问，JSON模式要求补齐 | Project与genesis Operation |
+| `project bootstrap --coordination-root <path> [--source-root <path>] [--source-ref <ref>] [--host <kind>] [--refresh]` | 项目本地入口物化；不创建Agent/任务，不写秘密 | 受管文件状态、project_id、source reference |
+
+安装器的显式 `--project-root` 表示用户已选择业务项目：若 `<root>/.tsunagou/project.json` 不存在，安装器会先调用 `project init`（可用 `--project-name`、`--project-objective` 指定初始化文字），随后调用 `project bootstrap`。不传 `--project-root` 时不会猜测项目或写入业务项目。
 | `project list` / `show` | GET项目列表/指定Project | 同query DTO |
 | `project complete <proposal_id> --expected-project-revision <n> --digest <digest>` | `project.completion.confirm`；proposal_id与digest绑定已审阅的CompletionProposal，project revision必须匹配 | Project completed与强制checkpoint Operation；仅U可调用 |
 | `root register --request-file <json>` | `root.register.user`；文件是catalog的业务payload | RootRegistration |

@@ -77,6 +77,11 @@ $project = uv run python -m tsunagou project init `
   --objective '让多个 Agent 围绕同一契约完成并审查代码任务' | ConvertFrom-Json
 $projectId = $project.project_id
 
+uv run python -m tsunagou project bootstrap `
+  --coordination-root $env:TSUNAGOU_PROJECT_ROOT `
+  --source-root 'D:\Tools\Tsunagou' `
+  --host codex
+
 uv run python -m tsunagou daemon start `
   --coordination-root $env:TSUNAGOU_PROJECT_ROOT `
   --port 0
@@ -84,6 +89,10 @@ uv run python -m tsunagou daemon status `
   --coordination-root $env:TSUNAGOU_PROJECT_ROOT
 uv run python -m tsunagou doctor
 ```
+
+安装 skill 在用户明确选定当前业务项目时，会把该路径作为
+`--project-root` 传给 installer；若 `.tsunagou/project.json` 不存在，
+installer 会先执行一次 `project init`，再执行上面的 `project bootstrap`。
 
 `daemon start` 会在 `.tsunagou/local/` 写入：
 
@@ -260,6 +269,9 @@ Invoke-RestMethod "$baseUrl/api/v1/health"
 | GET | `/api/v1/checkpoints` | checkpoint 列表和 current 指针 |
 | GET | `/api/v1/artifacts/{artifact_ref}` | 已授权附件内容摘要/读取 |
 | GET | `/api/v1/recovery` | 当前恢复状态 |
+| GET | `/.well-known/agent-card.json` | A2A Agent Card；不含秘密 |
+| POST | `/api/v1/a2a` | A2A JSON-RPC `message/send`、`tasks/get`、任务状态转换 |
+| POST | `/api/v1/a2a/agents/{recipient_agent_id}` | 路由到指定 Agent 的 A2A JSON-RPC |
 
 所有写入统一走 command dispatcher：
 
@@ -294,6 +306,10 @@ $agents | ConvertTo-Json -Depth 10
 ```
 
 当前查询实现集中在 loopback daemon，不是远程多租户 API；不要将端口绑定到 `0.0.0.0` 或配置 LAN 反向代理。未来 Web 工作台应复用同一 command/query 契约，不应另造一套项目事实。
+
+### 7.1.1 A2A 调用
+
+A2A 使用 Agent session token 和连接代次，不使用用户 `control.token`。首版支持同步 `message/send`、`tasks/get`、受权限约束的 `tasks/cancel`、`tasks/fail` 和 Tsunagou 扩展 `tasks/retry`；Agent Card 明确声明 streaming、push 和宿主 wake 为不支持。消息进入持久化 inbox 后由目标 Agent pull/fetch，不能把 JSON-RPC 成功响应解释为目标会话已经被唤醒。完整字段和幂等规则见 [A2A 边界实现](../implementation/a2a-boundary.md)。
 
 ### 7.2 command dispatcher 示例
 

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"源码树外、daemon lifecycle和多项目运行"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"集成、包装和发布验证"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"当前真实CLI/daemon smoke和秘密规则"}
+{"file":"docs/standalone/README.md","reason":"M1验收标准和不支持能力口径"}
+{"file":"docs/overview/cli-http-manual.md","reason":"用户可执行命令目录"}

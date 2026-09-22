@@ -1,0 +1,28 @@
+{
+  "id": "project-install-and-wake-boundary",
+  "name": "project-install-and-wake-boundary",
+  "title": "项目内自动安装与消息唤醒边界",
+  "description": "让 Agent 在明确当前业务项目后自动完成项目本地 Tsunagou bootstrap，并记录消息持久化、pull 与宿主唤醒边界，避免把 daemon 投递误称为 Codex 对话自动唤醒。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "tools/install,skills,docs,tests",
+  "package": null,
+  "priority": "P2",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-22",
+  "completedAt": "2026-09-22",
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "priority": "high"
+  }
+}

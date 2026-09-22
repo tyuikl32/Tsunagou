@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"公共命令、回归和发布门禁"}
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"CLI/HTTP/MCP入口和秘密处理"}
+{"file":"docs/standalone/status-and-gaps.md","reason":"当前运行审计与不可宣称能力"}
+{"file":"docs/implementation/cli-contract.md","reason":"命令目录和参数兼容核对"}

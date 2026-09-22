@@ -129,6 +129,19 @@ class Audit:
         }, headers)
         return status, body.get("result", body)
 
+    def a2a(
+        self, path: str, body: dict[str, Any] | None = None,
+        actor: dict[str, Any] | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        headers: dict[str, str] = {}
+        if actor is not None:
+            headers = {
+                "Authorization": f"Bearer {actor['secret_token']}",
+                "Tsunagou-Session-Id": actor["session_id"],
+                "Tsunagou-Connection-Epoch": str(actor["connection_epoch"]),
+            }
+        return self.http("POST", path, body, headers)
+
     def ok(self, kind: str, payload: dict[str, Any], actor: dict[str, Any] | str) -> dict[str, Any]:
         status, result = self.command(kind, payload, actor)
         if status != 200:
@@ -164,6 +177,28 @@ class Audit:
                     exit_code=offline.returncode, reported=json.loads(offline.stdout).get("status"))
         self.start()
         self.record("health", self.http("GET", "/api/v1/health")[0] == 200)
+        card_status, card = self.http("GET", "/.well-known/agent-card.json")
+        self.record(
+            "a2a_agent_card_truthful_capabilities",
+            card_status == 200
+            and card.get("protocolVersion") == "1.0"
+            and card.get("capabilities", {}).get("streaming") is False
+            and card.get("capabilities", {}).get("pushNotifications") is False
+            and card.get("x-tsunagou", {}).get("wake") == "unsupported",
+            http_status=card_status,
+        )
+        doctor = self.cli("--json", "doctor")
+        try:
+            doctor_body = json.loads(doctor.stdout)
+        except json.JSONDecodeError:
+            doctor_body = {}
+        self.record(
+            "doctor_reports_a2a_boundary",
+            doctor.returncode == 0
+            and doctor_body.get("a2a", {}).get("protocol_version") == "1.0"
+            and doctor_body.get("a2a", {}).get("wake") == "unsupported",
+            exit_code=doctor.returncode,
+        )
         main, worker = self.enroll("main"), self.enroll("worker")
         self.ok("authority.appoint", {"agent_id": main["agent_id"]}, self.control)
 
@@ -212,6 +247,102 @@ class Audit:
             "recipient_agent_id": worker["agent_id"], "kind": "notice",
             "subject_ref": durable["task_id"], "summary": "persist this message",
         }, main)
+        a2a_body = {
+            "jsonrpc": "2.0", "id": "audit-a2a-message", "method": "message/send",
+            "params": {"message": {
+                "messageId": "audit-a2a-message-1", "contextId": durable["task_id"],
+                "role": "agent", "parts": [{"text": "A2A durable audit message."}],
+                "metadata": {"tsunagou": {"kind": "request", "subject_ref": durable["task_id"]}},
+            }},
+        }
+        a2a_path = f"/api/v1/a2a/agents/{worker['agent_id']}"
+        a2a_status, a2a_first = self.a2a(a2a_path, a2a_body, main)
+        _, a2a_second = self.a2a(a2a_path, a2a_body, main)
+        first_message_id = a2a_first.get("result", {}).get("message", {}).get("messageId")
+        second_message_id = a2a_second.get("result", {}).get("message", {}).get("messageId")
+        self.record(
+            "a2a_message_send_is_durable_and_idempotent",
+            a2a_status == 200
+            and bool(first_message_id)
+            and first_message_id == second_message_id
+            and a2a_first.get("result", {}).get("message", {}).get("metadata", {}).get("tsunagou", {}).get("wake") == "unsupported",
+            http_status=a2a_status,
+        )
+        task_status, a2a_task = self.a2a(
+            "/api/v1/a2a",
+            {"jsonrpc": "2.0", "id": "audit-a2a-task", "method": "tasks/get",
+             "params": {"id": f"tsunagou:task:{durable['task_id']}"}},
+            main,
+        )
+        self.record(
+            "a2a_task_get_maps_internal_task",
+            task_status == 200
+            and a2a_task.get("result", {}).get("id") == f"tsunagou:task:{durable['task_id']}"
+            and a2a_task.get("result", {}).get("status", {}).get("state") == "submitted",
+            http_status=task_status,
+        )
+        cancel_task = self.ok("task.create", {"title": "a2a cancel", "objective": "audit cancel transition"}, main)
+        self.ok("task.ready", {"task_id": cancel_task["task_id"]}, main)
+        self.ok("task.publish", {"task_id": cancel_task["task_id"]}, main)
+        cancel_status, cancel_result = self.a2a(
+            "/api/v1/a2a",
+            {"jsonrpc": "2.0", "id": "audit-a2a-cancel", "method": "tasks/cancel",
+             "params": {"id": f"tsunagou:task:{cancel_task['task_id']}", "reason": "audit cancellation"}},
+            main,
+        )
+        self.record(
+            "a2a_cancel_uses_main_authority",
+            cancel_status == 200
+            and cancel_result.get("result", {}).get("metadata", {}).get("tsunagou", {}).get("transition") == "task.cancel_request",
+            http_status=cancel_status,
+        )
+        fail_task = self.ok("task.create", {"title": "a2a fail", "objective": "audit failure transition"}, main)
+        self.ok("task.ready", {"task_id": fail_task["task_id"]}, main)
+        self.ok("task.publish", {"task_id": fail_task["task_id"]}, main)
+        fail_attempt = self.ok("task.claim", {"task_id": fail_task["task_id"]}, worker)
+        fail_status, fail_result = self.a2a(
+            "/api/v1/a2a",
+            {"jsonrpc": "2.0", "id": "audit-a2a-fail", "method": "tasks/fail",
+             "params": {"id": fail_task["task_id"], "attemptId": fail_attempt["attempt_id"],
+                        "reason": "audit failure", "stopEvidence": {"kind": "audit"}}},
+            worker,
+        )
+        self.record(
+            "a2a_fail_uses_attempt_owner",
+            fail_status == 200 and fail_result.get("result", {}).get("status", {}).get("state") == "failed",
+            http_status=fail_status,
+        )
+        retry_task = self.ok("task.create", {"title": "a2a retry", "objective": "audit retry transition"}, main)
+        self.ok("task.ready", {"task_id": retry_task["task_id"]}, main)
+        self.ok("task.publish", {"task_id": retry_task["task_id"]}, main)
+        retry_attempt = self.ok("task.claim", {"task_id": retry_task["task_id"]}, worker)
+        self.ok(
+            "task.block",
+            {"task_id": retry_task["task_id"], "attempt_id": retry_attempt["attempt_id"], "reason": "audit retry"},
+            worker,
+        )
+        retry_status, retry_result = self.a2a(
+            "/api/v1/a2a",
+            {"jsonrpc": "2.0", "id": "audit-a2a-retry", "method": "tasks/retry",
+             "params": {"id": retry_task["task_id"], "attemptId": retry_attempt["attempt_id"],
+                        "reason": "audit retry"}},
+            main,
+        )
+        self.record(
+            "a2a_retry_reuses_recovery_transition",
+            retry_status == 200 and retry_result.get("result", {}).get("status", {}).get("state") == "submitted",
+            http_status=retry_status,
+        )
+        unsupported_status, unsupported = self.a2a(
+            "/api/v1/a2a",
+            {"jsonrpc": "2.0", "id": "audit-a2a-unsupported", "method": "message/stream", "params": {}},
+        )
+        self.record(
+            "a2a_rejects_unsupported_stream_without_auth",
+            unsupported_status == 200
+            and unsupported.get("error", {}).get("data", {}).get("code") == "a2a_method_not_supported",
+            http_status=unsupported_status,
+        )
         self.stop()
         self.start()
         context = self.ok("context.project_read", {}, worker)
@@ -238,9 +369,18 @@ class Audit:
             self.record("cli_ticket_visible_to_running_server", status == 200, http_status=status)
         else:
             self.record("cli_ticket_visible_to_running_server", False, cli_exit=issued.returncode)
-        return {"audit_kind": "assembled_backend", "handler_coverage": coverage, "checks": self.checks,
-                "passed": sum(check["passed"] for check in self.checks),
-                "failed": sum(not check["passed"] for check in self.checks)}
+        a2a_checks = [
+            check for check in self.checks
+            if check["check"].startswith("a2a_") or check["check"] == "doctor_reports_a2a_boundary"
+        ]
+        return {
+            "audit_kind": "assembled_backend", "handler_coverage": coverage, "checks": self.checks,
+            "a2a_checks": a2a_checks,
+            "a2a_passed": sum(check["passed"] for check in a2a_checks),
+            "a2a_failed": sum(not check["passed"] for check in a2a_checks),
+            "passed": sum(check["passed"] for check in self.checks),
+            "failed": sum(not check["passed"] for check in self.checks),
+        }
 
 
 def main() -> int:

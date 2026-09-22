@@ -16,7 +16,7 @@
 
 ### 用户怎样加入两个子 Agent
 
-用户在已装 adapter 的宿主中分别打开两个新对话，再对每个对话执行 `tsunagou agent enroll --adapter <kind> --mode attach --installation-id <id> --conversation-id <conversation> --output-dir <path>`，按宿主选择器指定目标会话。CLI/有权限的 main 签发 worker 票据，由目标 bridge 私下兑换；不把票据或 session token 粘贴到模型里。支持 managed_launch 时可由系统启动，不支持时手动打开再 attach。
+用户先执行 `tsunagou project bootstrap --coordination-root <path> --source-root <tsunagou-checkout> --host <kind>`，让项目目录出现 `AGENTS.md`、项目 skill 和 `.tsunagou/agent-context.md`。再在已装 adapter 的宿主中分别打开两个新对话，并对每个对话执行 `tsunagou agent enroll --adapter <kind> --mode attach --installation-id <id> --conversation-id <conversation> --output-dir <path>`，按宿主选择器指定目标会话。CLI/有权限的 main 签发 worker 票据，由目标 bridge 私下兑换；不把票据或 session token 粘贴到模型里。支持 managed_launch 时可由系统启动，不支持时手动打开再 attach。
 
 当前 CLI 没有 `agent list/show`；通过 `/api/v1/projects/{project_id}/agents` 或主 Agent typed tools 查看两个不同 `agent_id` 和各自 HostSession。能力检查通过才 ready；同目录工作不共享身份。用户只需设定目标、任命 main 和必要边界，主 Agent 随后负责普通任务拆分。它创建/发布子任务，子 Agent 各自读取黑板、claim 并准备执行；加入项目本身不自动获得任务 owner 或执行 Grant。
 

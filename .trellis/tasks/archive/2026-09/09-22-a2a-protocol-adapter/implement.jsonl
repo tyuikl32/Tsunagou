@@ -1,0 +1,4 @@
+{"file": "docs/implementation/protocol.md", "reason": "A2A boundary must reuse protocol/version/auth/idempotency contracts"}
+{"file": "docs/implementation/modules/02-agents.md", "reason": "Agent identity/message/delivery ownership and no-wake evidence"}
+{"file": "docs/implementation/adapters.md", "reason": "Adapter capability, Agent Card and wake declaration rules"}
+{"file": "docs/history/2026-09-18-source/agent_to_agent_deep_research.md", "reason": "Original A2A/MCP layering and official references"}

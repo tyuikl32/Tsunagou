@@ -19,6 +19,7 @@
 | 文件放在哪里、谁拥有、哪些是生成物 | [预期目录与文件责任](directory-layout.md) |
 | 三个Agent实际怎样接入、协商、挂起与恢复 | [逐步协作事实轨迹](coordination-walkthrough.md) |
 | CLI参数如何映射已有权限和HTTP | [CLI外壳契约](cli-contract.md) |
+| A2A Agent Card、JSON-RPC、任务映射和唤醒边界 | [A2A边界实现](a2a-boundary.md) |
 | 哪些官方资料支持我们的实现选择 | [外部知识索引](references.md) |
 | Codex 适配器如何安装、诊断和验收 | [Codex 适配器实施与诊断](adapter-codex.md) |
 | OpenCode 适配器如何安装、诊断和验收 | [OpenCode 适配器实施与诊断](adapter-opencode.md) |

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/a2a/1.0/tasks-fail.json",
+  "title": "Tsunagou A2A tasks/fail extension request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jsonrpc", "id", "method", "params"],
+  "properties": {
+    "jsonrpc": {"const": "2.0"},
+    "id": {"type": ["string", "number"]},
+    "method": {"const": "tasks/fail"},
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "attemptId", "reason"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "attemptId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "stopEvidence": {"type": "object"},
+        "metadata": {"type": "object"}
+      }
+    }
+  }
+}

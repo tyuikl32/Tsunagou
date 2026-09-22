@@ -48,6 +48,7 @@ Never invent a project ID, Agent ID, conversation ID, revision, digest, choice, 
 Guide the user to run these actions themselves:
 
 - `project init`
+- `project bootstrap`
 - `daemon start|status|stop`
 - `agent enroll`
 - `agent appoint`
@@ -62,13 +63,15 @@ The Agent may inspect public project context and use its own bridge tools after 
 Keep the user interaction short and stateful:
 
 1. Ask for the coordination root and whether it is already a Git repository. If it is not, show `git init --quiet <path>` and wait for the user to run it.
-2. Show the exact `project init --coordination-root <path>` command, including the user-selected name and objective. Do not silently choose a project boundary.
-3. Show `daemon start --coordination-root <path> --port 0`, then `daemon status` and `doctor`.
-4. Ask the user to set `TSUNAGOU_PROJECT_ROOT` and `TSUNAGOU_STATE_DIR` in the shell that will run later CLI commands. Explain that a new shell needs the variables again.
-5. For each host conversation, show one `agent enroll --adapter <kind> --mode attach --installation-id <id> --conversation-id <id> --output-dir <private-dir>` command. The user supplies the real host conversation identity; do not guess it.
-6. Tell the user to load the generated bridge JSON into that host. The bridge must redeem the private ticket and then call `context__project_read`.
-7. Report `ticket_issued` as pending. Report ready only after a successful bridge call and a non-degraded session status.
-8. If the user wants this Agent to coordinate, obtain its actual `agent_id` from the bridge context and show `agent appoint <agent_id>`. Do not run or simulate this user-only action as the Agent.
+2. If the user explicitly asked to install Tsunagou in the current project, the install skill may have already run `project init` and `project bootstrap` with that saved Git root. Verify `.tsunagou/project.json` and the generated project entries before continuing; do not create a second project.
+3. Otherwise show the exact `project init --coordination-root <path>` command, including the user-selected name and objective. Do not silently choose a project boundary.
+4. Show `project bootstrap --coordination-root <path> --source-root <Tsunagou checkout> --host <kind>` when the entries are missing, and explain that it writes only non-secret project-local instructions (`AGENTS.md`, `.agents/skills/tsunagou-project`, `.tsunagou/agent-context.md` and the integration manifest). It does not create an Agent or task.
+5. Show `daemon start --coordination-root <path> --port 0`, then `daemon status` and `doctor`.
+6. Ask the user to set `TSUNAGOU_PROJECT_ROOT` and `TSUNAGOU_STATE_DIR` in the shell that will run later CLI commands. Explain that a new shell needs the variables again.
+7. For each host conversation, show one `agent enroll --adapter <kind> --mode attach --installation-id <id> --conversation-id <id> --output-dir <private-dir>` command. The user supplies the real host conversation identity; do not guess it.
+8. Tell the user to load the generated bridge JSON into that host. The bridge must redeem the private ticket and then call `context__project_read`.
+9. Report `ticket_issued` as pending. Report ready only after a successful bridge call and a non-degraded session status.
+10. If the user wants this Agent to coordinate, obtain its actual `agent_id` from the bridge context and show `agent appoint <agent_id>`. Do not run or simulate this user-only action as the Agent.
 
 Use `uv run python -m tsunagou` instead of `tsunagou` when the executable is not on `PATH`. Do not add unsupported flags such as `--project`, `agent list`, `authority show`, or `task list` to current commands.
 

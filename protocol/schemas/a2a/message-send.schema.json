@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/a2a/1.0/message-send.json",
+  "title": "Tsunagou A2A message/send request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jsonrpc", "id", "method", "params"],
+  "properties": {
+    "jsonrpc": {"const": "2.0"},
+    "id": {"type": ["string", "number"]},
+    "method": {"const": "message/send"},
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["messageId", "role", "parts"],
+          "properties": {
+            "messageId": {"type": "string", "minLength": 1, "maxLength": 128},
+            "contextId": {"type": "string", "minLength": 1, "maxLength": 128},
+            "role": {"const": "agent"},
+            "parts": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {"text": {"type": "string", "minLength": 1}},
+                "additionalProperties": true
+              }
+            },
+            "metadata": {"type": "object"}
+          }
+        }
+      }
+    }
+  }
+}

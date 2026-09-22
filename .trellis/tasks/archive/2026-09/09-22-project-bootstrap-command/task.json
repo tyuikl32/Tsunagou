@@ -1,0 +1,29 @@
+{
+  "id": "project-bootstrap-command",
+  "name": "project-bootstrap-command",
+  "title": "项目初始化与安装脚本联动",
+  "description": "实现 project bootstrap/install 流程，将受管入口、安全忽略规则和本地配置写入目标项目，并保持幂等与不覆盖用户内容。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "project-bootstrap",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-22",
+  "completedAt": "2026-09-22",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-22-project-local-agent-bootstrap",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "PLB-2",
+    "depends_on": "project-local-contract"
+  }
+}

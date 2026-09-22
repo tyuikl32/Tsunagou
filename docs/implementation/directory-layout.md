@@ -39,6 +39,7 @@ Tsunagou/
 │   │   ├── enrollment.py          # 接入组合流程，秘密只给bridge
 │   │   └── commands/              # project/root/agent/authority/decision等
 │   ├── application/
+│   │   ├── project_integration.py # 项目本地无秘密入口生成器
 │   │   ├── command_dispatcher.py  # 唯一authorize-and-handle入口
 │   │   ├── command_policies.py    # 静态注册表，不解释任意策略DSL
 │   │   ├── workflows/
@@ -118,6 +119,25 @@ Tsunagou/
 ```
 
 ## 一个模块内部怎样放文件
+
+## 用户项目初始化后的入口
+
+`project bootstrap` 在用户选定的协调根生成轻量、无秘密的项目入口；它不复制本仓库源码：
+
+```text
+<user-coordination-root>/
+├── AGENTS.md                              # 用户正文 + TSUNAGOU 受管区块
+├── .agents/skills/tsunagou-project/
+│   └── SKILL.md                           # 项目 discoverability wrapper
+└── .tsunagou/
+    ├── project.json                       # Project 共享事实
+    ├── project-integration.json           # source/version/managed digest
+    ├── agent-context.md                   # 主/worker/user和恢复规则
+    ├── .gitignore                         # 受管私有运行规则
+    └── local/                             # endpoint/token/SQLite/session，默认忽略
+```
+
+`project-integration.json` 的 source checkout 路径只是本机诊断提示；GitHub URL、版本和项目相对规范链接才是可移植引用。一个 daemon 的多项目选择仍由 runtime/doctor 的实际配置证明，入口文件不创建全局项目单例。
 
 以 tasks 为例，其余模块按实际需要采用相同边界：
 

@@ -1,0 +1,29 @@
+{
+  "id": "project-bootstrap-acceptance",
+  "name": "project-bootstrap-acceptance",
+  "title": "独立多项目验收与使用文档",
+  "description": "增加真实临时项目、重复初始化、已有 AGENTS.md、daemon 多项目和源码路径变化的测试与操作文档。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "project-bootstrap",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-22",
+  "completedAt": "2026-09-22",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-22-project-local-agent-bootstrap",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "PLB-4",
+    "depends_on": "host-onboarding-materialization"
+  }
+}

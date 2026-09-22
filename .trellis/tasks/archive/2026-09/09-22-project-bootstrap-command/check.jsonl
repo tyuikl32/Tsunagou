@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"真实入口和回归测试"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"冲突、未知结果和退出码语义"}
+{"file":"docs/standalone/implementation-plan.md","reason":"M1安装和多项目验收边界"}
