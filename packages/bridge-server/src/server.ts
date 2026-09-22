@@ -91,6 +91,7 @@ interface TicketFile {
   installation_id: string;
   conversation_id: string;
   secret: string;
+  requested_role?: "worker" | "main";
 }
 
 interface ToolSpec {
@@ -164,6 +165,9 @@ function readTicketFile(path: string): TicketFile {
     || typeof raw.secret !== "string" || !raw.secret
   ) {
     throw new Error("invalid_ticket_file");
+  }
+  if (raw.requested_role !== undefined && raw.requested_role !== "worker" && raw.requested_role !== "main") {
+    throw new Error("invalid_ticket_role");
   }
   return raw;
 }

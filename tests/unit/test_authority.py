@@ -66,6 +66,26 @@ def test_boolean_or_incomplete_baseline_cannot_grant_ready_or_main(tmp_path: Pat
     assert len(service.grants) == 1
 
 
+def test_requested_main_role_is_applied_by_daemon_after_ticket_redeem(tmp_path: Path) -> None:
+    service = AuthorityService(tmp_path / "identity.json")
+    ticket = service.issue_ticket("install-main", "conversation-main", requested_role="main")
+    receipt = service.redeem_ticket(
+        ticket, "install-main", "conversation-main", baseline=complete_baseline(),
+    )
+    assert service.main_agent_id == receipt.agent_id
+    assert service.agents[receipt.agent_id].role == "main"
+    assert service.agents[receipt.agent_id].requested_role == "worker"
+
+
+def test_requested_main_role_waits_until_session_is_ready(tmp_path: Path) -> None:
+    service = AuthorityService(tmp_path / "identity.json")
+    ticket = service.issue_ticket("install-main", "conversation-main", requested_role="main")
+    receipt = service.redeem_ticket(ticket, "install-main", "conversation-main", baseline={})
+    assert service.main_agent_id is None
+    service.rebind(receipt.session_id, expected_nonce=receipt.reconnect_nonce, baseline=complete_baseline())
+    assert service.main_agent_id == receipt.agent_id
+
+
 def test_baseline_downgrade_freezes_existing_grants(tmp_path: Path) -> None:
     service = AuthorityService(tmp_path / "identity.json")
     main = enroll(service, "install-main", "conversation-main")

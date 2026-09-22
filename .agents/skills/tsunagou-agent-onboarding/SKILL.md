@@ -38,7 +38,7 @@ Before asking the user to do anything, determine which state applies:
 - **Ticket issued**: the user has an enrollment output, but the bridge has not redeemed it. This is not ready.
 - **Bridge connected**: the current conversation can call `context__project_read` and receives its own Agent/session context.
 - **Ready worker**: the Agent has its own identity and may wait for a task; it must not appoint itself main.
-- **Ready main**: the user has explicitly run `agent appoint AGENT_ID`; the Agent may coordinate within its granted ceiling.
+- **Ready main**: the user has explicitly requested `--role main` through `agent connect`, and the daemon has applied it after a ready bridge session; the Agent may coordinate within its granted ceiling.
 - **Recovering**: a saved `bridge-session.json` exists but reconnect or epoch checks fail. Do not reuse an old token manually; guide a rebind/re-enroll flow.
 
 Never invent a project ID, Agent ID, conversation ID, revision, digest, choice, or path. Ask the user for the missing value or tell them which query produces it.
@@ -68,10 +68,10 @@ Keep the user interaction short and stateful:
 4. Show `project bootstrap --coordination-root <path> --source-root <Tsunagou checkout> --host <kind>` when the entries are missing, and explain that it writes only non-secret project-local instructions (`AGENTS.md`, `.agents/skills/tsunagou-project`, `.tsunagou/agent-context.md` and the integration manifest). It does not create an Agent or task.
 5. Show `daemon start --coordination-root <path> --port 0`, then `daemon status` and `doctor`.
 6. Ask the user to set `TSUNAGOU_PROJECT_ROOT` and `TSUNAGOU_STATE_DIR` in the shell that will run later CLI commands. Explain that a new shell needs the variables again.
-7. For each host conversation, show one `agent enroll --adapter <kind> --mode attach --installation-id <id> --conversation-id <id> --output-dir <private-dir>` command. The user supplies the real host conversation identity; do not guess it.
-8. Tell the user to load the generated bridge JSON into that host. The bridge must redeem the private ticket and then call `context__project_read`.
-9. Report `ticket_issued` as pending. Report ready only after a successful bridge call and a non-degraded session status.
-10. If the user wants this Agent to coordinate, obtain its actual `agent_id` from the bridge context and show `agent appoint <agent_id>`. Do not run or simulate this user-only action as the Agent.
+7. For a normal local onboarding, show one copyable PowerShell command using `agent connect --adapter <kind> --profile <generated-profile> --role worker|main`. When the checkout is not the current directory, use `uv run --project <Tsunagou source checkout> python -m tsunagou ...` so the command works from the business project. The command creates a private per-profile identity when the host does not expose a native conversation ID, issues the ticket, writes the bridge configuration, and registers Codex MCP when available. Do not ask the user to discover or paste `conversation_id` or `agent_id`.
+8. `--role main` is an explicit user-control choice carried by the one-time ticket. The daemon applies it only after the bridge proves a ready session; a worker cannot request it through its bridge. Use `--role worker` for child sessions.
+9. Report `ticket_issued` as pending. The user may need to restart or reload the host after the command registers MCP. Report ready only after a successful bridge call and a non-degraded session status.
+10. Keep low-level `agent enroll` and `agent appoint <agent_id>` for recovery and diagnostics only. Never make them the normal onboarding path and never ask the user to copy a model-invented ID.
 
 Use `uv run python -m tsunagou` instead of `tsunagou` when the executable is not on `PATH`. Do not add unsupported flags such as `--project`, `agent list`, `authority show`, or `task list` to current commands.
 

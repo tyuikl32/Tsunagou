@@ -46,7 +46,8 @@
     },
     "agent.ticket.create.user": {
       "payload_fields": [
-        "kind"
+        "kind",
+        "role"
       ],
       "principal": "U",
       "schema": "commands/agent/ticket/create/user.schema.json",
@@ -1101,6 +1102,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:64351344f9cdb30cd456634a7e22109f75b1e8ed5bdbf585821fc39af20a48b3",
+  "schema_bundle_digest": "sha256:d0f82ac68dcb52558b91b61cadc9fdca6901ccec5d481aaaf5baf5bc77d262be",
   "supported_previous_version": "0.9"
 }

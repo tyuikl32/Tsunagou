@@ -31,7 +31,7 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
         "reconnect_nonce", "expected_connection_epoch", "probe_payload", "continuity_evidence",
     }),
     "agent.ticket.create.user": frozenset({
-        "installation_id", "conversation_evidence", "ttl_seconds", "kind",
+        "installation_id", "conversation_evidence", "ttl_seconds", "kind", "role",
     }),
     "authority.appoint": frozenset({
         "agent_id", "expected_authority_epoch", "ceiling_template", "reason",

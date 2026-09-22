@@ -115,35 +115,20 @@ uv run python -m tsunagou recover
 
 ## 4. 接入主 Agent 和子 Agent
 
-一次接入绑定三个值：`adapter`、`installation_id` 和目标宿主的 `conversation_id`。一个宿主的新对话、clear 或 fork 不能直接继承旧 Agent 身份；需要为新会话重新接入或走受支持的 session rebind 流程。
+一次接入由 `adapter` 和 profile 组成。profile 对应一个宿主对话或 subagent，避免同一 IDE 的不同会话共享身份。
 
-### 4.1 为每个会话签发票据和 bridge 配置
+### 4.1 一条命令签发票据并注册 bridge
 
-当前 CLI 的实际接入命令如下。`--output-dir` 会生成 bridge 启动描述、一次性 `ticket.json` 和该会话专属的私有 session 路径：
+正常流程使用高层 `connect`，一条命令同时完成 ticket、私有 bridge 配置和 Codex MCP 登记：
 
 ```powershell
-$mainDir = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\bridges\main'
-$workerDir = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\bridges\worker'
-
-$main = uv run python -m tsunagou agent enroll `
-  --adapter codex --mode attach `
-  --installation-id codex-main `
-  --conversation-id '<主 Agent 的真实宿主会话标识>' `
-  --output-dir $mainDir | ConvertFrom-Json
-
-$worker = uv run python -m tsunagou agent enroll `
-  --adapter opencode --mode attach `
-  --installation-id opencode-worker `
-  --conversation-id '<子 Agent 的真实宿主会话标识>' `
-  --output-dir $workerDir | ConvertFrom-Json
-
-$main.bridge_config
-$worker.bridge_config
+uv run python -m tsunagou agent connect --adapter codex --profile main --role main
+uv run python -m tsunagou agent connect --adapter codex --profile worker-01 --role worker
 ```
 
-`--mode launch` 只表示宿主允许由系统启动；当前 bridge 本身仍是 stdio MCP 进程，宿主不支持 managed launch 时使用 `attach`。CLI 的输出 `ticket_issued` 只表示票据已签发，不表示 Agent 已经 connected 或 ready。
+命令应从 Tsunagou checkout 运行；如果当前目录是业务项目，则把前缀改为 `uv run --project <Tsunagou checkout> python -m tsunagou`。命令自动生成或复用 profile 的本地会话绑定，写入 `.tsunagou\bridges\<adapter>-<profile>`，并在 Codex 可用时执行 `codex mcp add` 注册逐 profile bridge。一个宿主对话只能使用一个 profile，新对话或 subagent 必须换 profile。它不会把 ticket secret、session token 或 nonce 打印到 stdout。`--role main` 是用户在签发 ticket 时明确提出的角色选择；daemon 只有在 bridge 兑换且 session ready 后才应用主权限。`ticket_issued` 仍表示待宿主加载，Codex 通常需要重启或重新加载 MCP。
 
-`ticket.json` 含一次性秘密，只能由对应 bridge 私下读取，兑换成功后会被 bridge 删除。生成的 adapter JSON 不保存 token，但其中包含本机路径和 daemon 地址，也不应提交到远程仓库。session 文件按宿主 conversation 的摘要隔离；同一 IDE 的不同对话或 subagent 不得共享 `bridge-session.json`。
+低层 `agent enroll --installation-id ... --conversation-id ...` 仍保留给恢复和诊断；普通用户不需要手工查找宿主 ID，也不需要手动执行 `agent appoint`。
 
 ### 4.2 将配置加载到宿主
 
@@ -163,16 +148,9 @@ bridge 是 stdio 服务，不要把它当成 HTTP 服务直接访问。bridge �
 
 宿主加载配置后，先让两个会话执行一次项目查询工具。只有 bridge 成功兑换、session 状态为 ready 且查询能返回项目上下文，才算真正加入。`ticket_issued`、配置文件存在或宿主窗口打开都不能代替这一步。
 
-### 4.3 任命主 Agent
+### 4.3 主 Agent 边界
 
-新接入的 Agent 初始不是主 Agent。用户用控制 CLI 任命它：
-
-```powershell
-# AGENT_ID 必须来自已兑换会话的实际查询结果，不能手写占位符。
-uv run python -m tsunagou agent appoint AGENT_ID
-```
-
-任命是用户控制动作。worker session 调用同一 command 会被拒绝；子 Agent 不能通过修改 payload、换 HTTP 路径或使用宿主 Full Access 接管主 Agent。当前用户 CLI 没有 `agent list` 或 `authority show` 子命令，身份和状态请通过 HTTP 查询（见第 7 节）或主 Agent 的 typed tools 查看。
+`--role main` 只允许用户控制 CLI 在签发 ticket 时提出。worker session 调用同一控制 command 会被拒绝；子 Agent 不能通过修改 payload、换 HTTP 路径或使用宿主 Full Access 接管主 Agent。身份和状态通过 bridge 的 `context__project_read` 或 HTTP 查询（见第 7 节）查看。旧版本 ticket 恢复或人工纠正时才使用 `agent appoint <agent_id>`，且 ID 必须来自已兑换 bridge 的实际上下文。
 
 ## 5. 一个任务的运行流程
 

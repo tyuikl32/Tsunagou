@@ -99,6 +99,24 @@ def test_issue_user_ticket_returns_redeemable_secret(tmp_path: Path) -> None:
     assert receipt.baseline_status == "ready"
 
 
+def test_issue_user_ticket_can_request_main_without_agent_id(tmp_path: Path) -> None:
+    app, authority = _app(tmp_path, control_token="ctl")
+    result = _endpoint(app)(
+        "agent.ticket.create.user",
+        _request({
+            "kind": "worker", "role": "main", "installation_id": "install-main",
+            "conversation_evidence": {"conversation_id": "conversation-main"},
+        }),
+        Response(), "Bearer ctl", None, None,
+    )
+    secret = result["result"]["secret"]
+    receipt = authority.redeem_ticket(
+        secret, "install-main", "conversation-main", baseline=complete_baseline(),
+    )
+    assert result["result"]["requested_role"] == "main"
+    assert authority.main_agent_id == receipt.agent_id
+
+
 def test_appoint_requires_ready_session(tmp_path: Path) -> None:
     app, authority = _app(tmp_path, control_token="ctl")
     endpoint = _endpoint(app)

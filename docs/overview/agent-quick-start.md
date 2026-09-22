@@ -65,33 +65,37 @@ uv run python -m tsunagou doctor
 
 成功标志是 `daemon status` 返回 running，且 `.tsunagou/local/endpoint.json`、`control.token` 和 `state.sqlite3` 已生成。控制 token 只保存在本机，不能放进对话。
 
-### 4. 为当前宿主会话申请 bridge 配置
+### 4. 用一个命令接入当前宿主会话
 
-每个主 Agent 或子 Agent 会话都要有自己的 `installation_id`、`conversation_id` 和输出目录：
+正常接入不再要求用户查找 `conversation_id`、读取 `agent_id` 或手动复制 bridge JSON。每个主 Agent 或子 Agent 使用不同的 `--profile`，命令会创建独立的私有身份目录：
 
 ```powershell
-$bridgeDir = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\bridges\current'
-uv run python -m tsunagou agent enroll `
+# 如果当前目录不是 Tsunagou checkout，把 `uv run python` 改成
+# `uv run --project <Tsunagou checkout> python`。
+uv run python -m tsunagou agent connect `
   --adapter codex `
-  --mode attach `
-  --installation-id codex-current `
-  --conversation-id '<当前宿主的真实会话标识>' `
-  --output-dir $bridgeDir
+  --profile main `
+  --role main
 ```
 
-输出 `ticket_issued` 只表示票据签发。把输出目录中的 adapter JSON 加载到宿主的 MCP 配置入口；不要打开或复制 `ticket.json` 的秘密内容。bridge 成功兑换后会保存当前 conversation 专属的 session 文件并删除一次性 ticket。同一 IDE 的另一对话或 subagent 必须重新 enroll，不能复用该文件。
+子 Agent 使用同一命令，把 profile 和角色改为自己的值：
+
+```powershell
+uv run python -m tsunagou agent connect `
+  --adapter codex `
+  --profile worker-01 `
+  --role worker
+```
+
+命令由用户控制凭据执行，自动生成（或复用）该 profile 的会话绑定，签发一次性 ticket，写入 `.tsunagou\bridges\<adapter>-<profile>`，并在可用时执行 `codex mcp add` 注册逐会话 bridge。一个宿主对话只能使用一个 profile；新对话或 subagent 必须换 profile。`--role main` 是用户明确选择，daemon 只会在 bridge 兑换并达到 ready 后任命；Agent 不能通过 bridge 请求主权限。输出 `ticket_issued` 仍表示待宿主加载，Codex 通常需要重启或重新加载 MCP 配置。
+
+命令不会把 ticket secret、session token 或 nonce 打印到 stdout。低层 `agent enroll` 仅用于恢复和诊断；普通流程不要求用户再执行 `agent appoint`。
 
 ### 5. 验证 Agent 已加入
 
 让宿主启动 bridge，然后让当前 Agent 调用 `context__project_read`。必须看到自己的 `agent_id`、`session_id`、项目上下文和非 degraded 状态，才能继续工作。仅有宿主窗口、配置文件或 `ticket_issued` 都不算加入。
 
-如果当前 Agent 要成为主 Agent，用户从返回上下文取得真实 `agent_id` 后执行：
-
-```powershell
-uv run python -m tsunagou agent appoint AGENT_ID
-```
-
-worker 不应执行任命，也不能通过 Full Access、另一个 HTTP 路径或修改 payload 获得主 Agent 权限。
+如果上下文显示 `ready_main`，说明 `--role main` 的用户请求已经由 daemon 应用。worker 不应执行任命，也不能通过 Full Access、另一个 HTTP 路径或修改 payload 获得主 Agent 权限。若恢复旧版本生成的 ticket，才使用低层 `agent appoint`，并且 ID 必须来自已兑换 bridge 的上下文。
 
 ## 接入成功后的第一轮工作
 

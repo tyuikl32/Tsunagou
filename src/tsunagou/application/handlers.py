@@ -324,8 +324,18 @@ def build_handlers(
             raise ValueError("installation_id_required")
         conversation_id = _conversation_id(payload.get("conversation_evidence"))
         ttl_seconds = payload.get("ttl_seconds", 600)
-        secret = authority.issue_ticket(installation_id, conversation_id, ttl_seconds=int(ttl_seconds))
-        return {"installation_id": installation_id, "conversation_id": conversation_id, "secret": secret}
+        role = payload.get("role", "worker")
+        if role not in {"worker", "main"}:
+            raise ValueError("invalid_requested_role")
+        secret = authority.issue_ticket(
+            installation_id, conversation_id, ttl_seconds=int(ttl_seconds), requested_role=role,
+        )
+        return {
+            "installation_id": installation_id,
+            "conversation_id": conversation_id,
+            "requested_role": role,
+            "secret": secret,
+        }
 
     def appoint_main(payload: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         agent_id = payload.get("agent_id")

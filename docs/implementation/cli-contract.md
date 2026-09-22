@@ -1,10 +1,12 @@
 # CLI 外壳与已有领域命令的精确映射
 
-本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/bootstrap/complete、agent enroll/appoint、decision、operation、checkpoint 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
+本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/bootstrap/complete、agent connect/enroll/appoint、decision、operation、checkpoint 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
 
 ## 1. 适用范围
 
-CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bridge/MCP，不读取CLI控制凭据。`agent enroll`可以组合“用户申请票据”和“目标bridge兑换”，但两个请求仍属于不同principal和不同原子事务；组合不创造超级身份。
+CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bridge/MCP，不读取CLI控制凭据。`agent connect`是用户侧的便捷编排：它写 profile 私有票据和宿主配置；bridge 兑换仍是独立的 T principal 事务。`agent enroll`保留为低层恢复入口。`--role main` 只表示用户在签发 ticket 时提出主角色请求，daemon 仍在 ready session 后应用；组合不创造超级身份。
+
+| `agent connect --adapter <kind> --profile <name> --role worker|main` | U 签发逐 profile ticket，写入私有 bridge 配置，并按宿主登记 MCP | `ticket_issued`、profile 路径和宿主登记状态；不打印秘密 |
 
 `daemon start/stop/status`是本机进程管理，不伪装成Project领域mutation。其余项目操作走本机HTTP；不要直接读写SQLite绕过同一policy。
 

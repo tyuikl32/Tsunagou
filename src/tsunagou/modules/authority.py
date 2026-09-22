@@ -51,6 +51,7 @@ class EnrollmentTicket:
     conversation_digest: str
     expires_at: int
     used: bool = False
+    requested_role: str = "worker"
 
 
 @dataclass(slots=True)
@@ -63,6 +64,7 @@ class Agent:
     conversation_digest: str = ""
     status: str = "active"
     role: str = "worker"
+    requested_role: str = "worker"
 
 
 @dataclass(slots=True)
@@ -147,7 +149,11 @@ class AuthorityService:
                  if session.agent_id == key),
                 "",
             )
-            self.agents[key] = Agent(**{**value, "conversation_digest": conversation_digest})
+            self.agents[key] = Agent(**{
+                **value,
+                "conversation_digest": conversation_digest,
+                "requested_role": value.get("requested_role", "worker"),
+            })
         self.grants = {
             key: Grant(**{**value, "capabilities": frozenset(value.get("capabilities", []))})
             for key, value in raw.get("grants", {}).items()
@@ -170,13 +176,19 @@ class AuthorityService:
         }
         _save_json(self.state_path, raw)
 
-    def issue_ticket(self, installation_id: str, conversation_id: str, ttl_seconds: int = 600) -> str:
+    def issue_ticket(
+        self, installation_id: str, conversation_id: str, ttl_seconds: int = 600,
+        *, requested_role: str = "worker",
+    ) -> str:
+        if requested_role not in {"worker", "main"}:
+            raise ValueError("invalid_requested_role")
         with self._lock:
             secret = secrets.token_urlsafe(32)
             secret_hash = _token_hash(secret)
             self.tickets[secret_hash] = EnrollmentTicket(
                 new_id(), secret_hash, canonical_digest({"installation_id": installation_id}),
                 canonical_digest({"conversation_id": conversation_id}), _now() + ttl_seconds,
+                requested_role=requested_role,
             )
             self._save()
             return secret
@@ -211,6 +223,7 @@ class AuthorityService:
             agent = Agent(
                 new_id(), ticket.installation_digest, ticket.conversation_digest,
             )
+            agent.requested_role = ticket.requested_role
             session_id = new_id()
             token = secrets.token_urlsafe(32)
             reconnect_nonce = secrets.token_urlsafe(24)
@@ -225,6 +238,9 @@ class AuthorityService:
             self.sessions[session_id] = session
             if status == "ready":
                 self._issue_base_grant(session)
+                if agent.requested_role == "main":
+                    self.appoint_main(actor_kind="user_control", agent_id=agent.agent_id)
+                    agent.requested_role = "worker"
             self._save()
             return EnrollmentReceipt(
                 agent.agent_id, session_id, session.connection_epoch, session.status,
@@ -305,6 +321,9 @@ class AuthorityService:
                     for grant in self.grants.values()
                 ):
                     self._issue_base_grant(session)
+                if session.status == "ready" and self.agents[session.agent_id].requested_role == "main":
+                    self.appoint_main(actor_kind="user_control", agent_id=session.agent_id)
+                    self.agents[session.agent_id].requested_role = "worker"
                 if session.status != "ready":
                     for key, grant in list(self.grants.items()):
                         if grant.principal_id == session.agent_id and grant.status == "active":

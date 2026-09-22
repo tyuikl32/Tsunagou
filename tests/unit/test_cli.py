@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from tsunagou.cli.app import _write_ticket_private
+from tsunagou.cli.app import _profile_identity, _write_ticket_private
 
 
 def test_ticket_is_written_to_private_file_not_returned_in_output(tmp_path: Path) -> None:
@@ -30,3 +30,14 @@ def test_ticket_file_is_owner_only(tmp_path: Path) -> None:
         assert r"\Users:" not in out
     else:  # POSIX chmod is meaningful
         assert (path.stat().st_mode & 0o777) == 0o600
+
+
+def test_profile_identity_is_stable_and_separate(tmp_path: Path) -> None:
+    main_dir = tmp_path / "main"
+    worker_dir = tmp_path / "worker"
+    main_first = _profile_identity(main_dir, "codex", "main")
+    main_second = _profile_identity(main_dir, "codex", "main")
+    worker = _profile_identity(worker_dir, "codex", "worker")
+    assert main_first == main_second
+    assert main_first[1] != worker[1]
+    assert main_first[0] != worker[0]

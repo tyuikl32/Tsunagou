@@ -53,7 +53,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
 | agent.ticket.create | `/enrollment-tickets` | M / agent.enroll | kind:worker\|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id? | TicketReceipt；secret仅私有交付 |
-| agent.ticket.create.user | `/control/enrollment-tickets` | U / — | kind:worker\|main\|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id?,expected_authority_epoch? | main票据须authority代次 |
+| agent.ticket.create.user | `/control/enrollment-tickets` | U / — | kind:worker\|main\|session_rebind,role:worker\|main,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id?,expected_authority_epoch? | main票据须authority代次；`role` 是一次性接入后的显式用户角色请求 |
 | agent.enroll | `/sessions:enroll` | T / — | installation_id,conversation_evidence,descriptor_ref,probe_payload,client_nonce,negotiation | EnrollmentResult；secret走专用header/安全通道 |
 | session.rebind | `/sessions:rebind` | T / — | target_agent_id,installation_id,conversation_evidence,probe_payload,client_nonce | replacement HostSession；旧token和Grant撤销 |
 | session.reconnect | `/sessions/{id}:reconnect` | D / — | expected_connection_epoch,reconnect_nonce,continuity_evidence,probe_payload | ConnectionResult；token认证+nonce CAS |

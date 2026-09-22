@@ -69,7 +69,7 @@ show the user `git init --quiet <path>` rather than creating the repository
 silently.
 
 5. Tell the user exactly where the checkout, bridge entry and skills were installed. Do not claim that a daemon or Agent is ready yet.
-6. Offer the next step by loading `tsunagou-agent-onboarding`. For a project-root installation, it continues with `daemon start`, `agent enroll`, bridge loading and optional main appointment. For a source-only installation, it first guides the user through choosing a business project, `project init` and `project bootstrap`. Installation/bootstrap success alone must never be reported as Agent readiness.
+6. Offer the next step by loading `tsunagou-agent-onboarding`. For a project-root installation, it continues with `daemon start` and one `agent connect` command; the command can carry the user's explicit `--role main` choice and registers the bridge when the host supports it. For a source-only installation, it first guides the user through choosing a business project, `project init` and `project bootstrap`. Installation/bootstrap success alone must never be reported as Agent readiness.
 
 ## Existing installation
 
