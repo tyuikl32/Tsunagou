@@ -377,6 +377,7 @@ class AuthorityService:
             grant = Grant(
                 new_id(), "main_authority", agent_id, None, new_id(), self.authority_epoch,
                 None, None, None, frozenset({"task.manage", "root.manage", "agent.appoint", "coordination.write",
+                "project.configure",
                 "workspace.select", "task.review", "user.decision.propose",
                 "cognition.resolve", "contract.accept_proxy", "durability.checkpoint"}),
                 {"agent_id": agent_id},

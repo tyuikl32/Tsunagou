@@ -241,6 +241,10 @@ Invoke-RestMethod "$baseUrl/api/v1/health"
 | GET | `/api/v1/projects/{project_id}/cognition` | 报告、分歧和契约 |
 | GET | `/api/v1/projects/{project_id}/resources` | 资源/Lease 摘要 |
 | GET | `/api/v1/projects/{project_id}/workspaces` | workspace baseline/result 摘要 |
+| GET | `/api/v1/projects/{project_id}/coordination` | 计划、分工、WakeAttempt、重要事件和覆盖率 |
+| GET | `/api/v1/projects/{project_id}/assignments` | 分工状态和 worker 覆盖率 |
+| GET | `/api/v1/projects/{project_id}/wake-attempts` | 唤醒双确认、重试、deadline 和失败原因 |
+| GET | `/api/v1/projects/{project_id}/events` | 协调事件与 Main 可见汇总 |
 | GET | `/api/v1/projects/{project_id}/audit` | 脱敏事件审计 |
 | GET | `/api/v1/decisions` | 用户决定列表 |
 | GET | `/api/v1/operations/{operation_id}` | Operation 状态 |

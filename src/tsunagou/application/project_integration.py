@@ -196,7 +196,11 @@ class ProjectIntegration:
         refresh: bool = False,
         force_managed: bool = False,
     ) -> dict[str, Any]:
-        lock_name = canonical_digest({"coordination_root": str(self.root)}) + ".lock"
+        # ``canonical_digest`` is a protocol/display digest (``sha256:<hex>``).
+        # A colon is not a legal character in Windows filenames, so preserve the
+        # algorithm marker with a filename-safe separator while retaining the
+        # complete digest for stable per-root lock isolation.
+        lock_name = canonical_digest({"coordination_root": str(self.root)}).replace(":", "-", 1) + ".lock"
         lock_path = Path(tempfile.gettempdir()) / "tsunagou-project-locks" / lock_name
         with ProjectLock(lock_path):
             return self._bootstrap_locked(

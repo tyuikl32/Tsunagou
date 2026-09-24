@@ -87,14 +87,85 @@ export interface HostAdapter {
   renderContext?(input: HostProbeInput, sections: readonly ContextSection[]): string;
   observeLifecycle?(input: HostProbeInput, event: HostLifecycleEvent): void;
   readonly enhancements?: HostEnhancements;
+  /** Optional structured host wake port; absent means no adapter wake path. */
+  readonly wakeAdapter?: HostWakeAdapter;
 }
 
 export interface HostEnhancements {
-  wake?: (input: HostProbeInput) => Promise<boolean>;
+  /**
+   * Legacy enhancement hook. New integrations should implement HostWakeAdapter
+   * so an accepted wake carries auditable host evidence instead of a boolean.
+   */
+  wake?: (input: HostProbeInput, request?: HostWakeRequest) => Promise<boolean | HostWakeResult>;
   gateTool?: (input: HostProbeInput, toolName: string) => Promise<"allowed" | "denied" | "unknown">;
   observeTool?: (input: HostProbeInput, toolName: string) => Promise<boolean>;
   launch?: (input: HostProbeInput) => Promise<boolean>;
   stop?: (input: HostProbeInput) => Promise<boolean>;
+}
+
+/** A durable assignment reference carried by a host wake request. */
+export interface HostWakeRequest {
+  readonly wake_id: string;
+  readonly task_id: string;
+  readonly assignment_id: string;
+}
+
+export type HostWakeResultStatus = "accepted" | "unsupported" | "rejected" | "failed";
+
+/**
+ * Evidence returned by a host wake attempt. The turn identifier is deliberately
+ * a host-keyed digest; raw host conversation/turn identifiers must remain inside
+ * the host integration.
+ */
+export interface HostWakeResult {
+  readonly wake_id: string;
+  readonly status: HostWakeResultStatus;
+  readonly host_turn_id_digest?: string;
+  readonly evidence?: string;
+  readonly accepted_at?: string;
+  readonly reason?: string;
+}
+
+export type HostWakeCapabilityStatus = "supported" | "unsupported" | "unknown";
+
+export interface HostWakeCapability {
+  readonly status: HostWakeCapabilityStatus;
+  readonly strength?: CapabilityStrength;
+  readonly evidence?: string;
+}
+
+/**
+ * Host-specific wake port. A daemon may use this port only after capability
+ * evidence says supported. Calling wake on an unsupported adapter is a safe,
+ * auditable result and must never be treated as worker readiness.
+ */
+export interface HostWakeAdapter {
+  getWakeCapability(input: HostProbeInput): HostWakeCapability;
+  wake(input: HostProbeInput, request: HostWakeRequest): Promise<HostWakeResult>;
+}
+
+export type WakeEventKind =
+  | "worker.ready"
+  | "worker.blocked"
+  | "decision.requested"
+  | "lease.exception"
+  | "worker.submitted"
+  | "integration.conflict"
+  | "task.completed";
+
+/** Important coordination events that can be routed to the Main wake path. */
+export interface ImportantWakeEvent {
+  readonly event_id: string;
+  readonly kind: WakeEventKind;
+  readonly wake_id?: string;
+  readonly task_id?: string;
+  readonly agent_id?: string;
+  readonly summary: string;
+  readonly occurred_at: string;
+}
+
+export interface WakeEventNotifier {
+  notify(event: ImportantWakeEvent): Promise<void>;
 }
 
 export interface HostLifecycleEvent {

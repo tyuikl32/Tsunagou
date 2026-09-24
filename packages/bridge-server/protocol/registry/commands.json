@@ -182,6 +182,36 @@
       "schema": "commands/cognition/report.schema.json",
       "uri": "/reports"
     },
+    "coordination.plan": {
+      "payload_fields": [
+        "assignments",
+        "auto_wake",
+        "objective",
+        "wake_deadline_seconds"
+      ],
+      "principal": "M",
+      "schema": "commands/coordination/plan.schema.json",
+      "uri": "/coordination/plans"
+    },
+    "coordination.takeover": {
+      "payload_fields": [
+        "assignment_id",
+        "takeover_reason"
+      ],
+      "principal": "M",
+      "schema": "commands/coordination/takeover.schema.json",
+      "uri": "/coordination/assignments/{id}:takeover"
+    },
+    "coordination.wake.accepted": {
+      "payload_fields": [
+        "assignment_id",
+        "host_turn_id",
+        "wake_attempt_id"
+      ],
+      "principal": "D",
+      "schema": "commands/coordination/wake/accepted.schema.json",
+      "uri": "/coordination/wakes/{id}:accepted"
+    },
     "context.project_read": {
       "payload_fields": [],
       "principal": "B",
@@ -1080,6 +1110,15 @@
       "principal": "M",
       "schema": "commands/workspace/select.schema.json",
       "uri": "/workspace-decisions"
+    },
+    "worker.ready": {
+      "payload_fields": [
+        "assignment_id",
+        "wake_attempt_id"
+      ],
+      "principal": "B",
+      "schema": "commands/worker/ready.schema.json",
+      "uri": "/coordination/assignments/{id}:ready"
     }
   },
   "protocol_version": "1.0",
@@ -1102,6 +1141,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:d0f82ac68dcb52558b91b61cadc9fdca6901ccec5d481aaaf5baf5bc77d262be",
+  "schema_bundle_digest": "sha256:d8d1cb38997e31dfd6fa26540ea155a9940423d6d87e3b9ec8783f74c1dca960",
   "supported_previous_version": "0.9"
 }

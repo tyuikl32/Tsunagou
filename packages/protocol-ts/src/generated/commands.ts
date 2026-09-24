@@ -24,6 +24,9 @@ export type CommandKind =
   | "contract.propose"
   | "contract.reject"
   | "contract.withdraw"
+  | "coordination.plan"
+  | "coordination.takeover"
+  | "coordination.wake.accepted"
   | "discrepancy.advance"
   | "discrepancy.create"
   | "discrepancy.resolve"
@@ -107,4 +110,5 @@ export type CommandKind =
   | "workspace.prepare"
   | "workspace.result"
   | "workspace.select"
+  | "worker.ready"
 ;

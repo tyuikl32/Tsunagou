@@ -101,16 +101,18 @@ uv run python -m tsunagou agent connect `
 
 主 Agent 首次接入后先读取项目上下文，向用户报告：项目 ID、自己的 Agent/session 身份、当前角色、已有任务和未决决定。之后：
 
-1. 主 Agent 使用 typed tools 创建并发布任务，明确 worker、验收者、scope、workspace 和资源意图。
-2. worker 读取黑板并 claim 自己的任务；claim 还不是执行许可。
+1. 用户先让 Main 通过 `project__configure` 显式开启 `auto_wake_multi_agent`（只影响之后的新协调计划），再由 Main 使用 `coordination__plan` 一次性写入 worker、依赖、验收条件、workspace 和 ResourceIntent 声明；三个 worker 都 ready 时应优先覆盖三者。
+2. daemon/adapter 记录宿主回合接受；worker 被唤醒后先从 inbox 拉取 assignment，再调用 `worker__ready`。在这个双确认之前不能 claim/acquire Lease。
 3. worker 提交理解、假设、不确定性和契约接受；分歧由主 Agent 组织处理。
-4. preflight 通过后才 start，获得当前 Attempt 的执行 Grant 和资源 Lease。
-5. 主 Agent 负责 Git 写操作、整合和审查；worker 只提交自己的结果和证据。
-6. 用户只在重大设计、权限范围、冲突无法协调或项目完成时执行控制 CLI。
+4. preflight 通过后才 start，获得当前 Attempt 的执行 Grant 和资源 Lease；Lease 由 worker 自己维护，每次 `task__progress` 同时续租 active Lease，长步骤可显式调用 `resource__renew`。bridge/daemon 不会在 worker 沉默时替它续租；响应中的 `expires_at` 和续租提示用于安排下一次主动调用。
+5. 主 Agent 负责 Git 写操作、整合和审查；worker 只提交自己的结果和证据。整合请求明确不包含 push，云端上传仍由用户完成。
+6. 用户只在重大设计、权限范围、冲突无法协调或项目完成时执行控制 CLI；唤醒失败后的接管必须调用 `coordination__takeover` 并填写原因。
 
 ### 消息与唤醒
 
-`message__send` 成功后，daemon 会把消息和 delivery 持久化。主 Agent 在下一次读取上下文或调用 `inbox__claim` 时可以看到它。当前通用 stdio bridge 是 pull-first：daemon 不会凭借一条消息自动创建新的 Codex 回合，也不会假装拥有宿主级 wake API。若宿主没有已验证的 wake 能力，空闲主 Agent 需要用户重新打开/触发对话；消息不会因此丢失，未 ACK 的 delivery 仍可恢复。
+`message__send` 成功后，daemon 会把消息和 delivery 持久化。普通消息仍由目标 Agent 在下一次上下文读取或 `inbox__claim` 时 pull；只有已显式 opt-in 的新协调计划才创建 WakeAttempt。Codex adapter 在没有真实 App Server evidence 时保持 `wake=unsupported`，因此不能把 host turn accepted 当作 worker.ready，也不能在 ready 前创建执行 Lease。
+
+Main 需要提醒 worker 续租时，复用 `message__send` 发送结构化提醒，并在 payload 中带上 `assignment_id`、`task_id`、`attempt_id` 和当前 Lease 引用。提醒只记录并投递消息，不改变 Lease 到期时间；续租仍必须由 worker 调用 `task__progress` 或 `resource__renew` 完成。
 
 普通 task 完成不等于项目完成。用户确认项目完成时使用当前手册中的 `project complete` 命令；checkpoint 失败时查询 Operation，再使用 `checkpoint retry`。
 

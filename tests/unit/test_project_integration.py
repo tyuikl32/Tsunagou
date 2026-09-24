@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from importlib.resources import files
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from jsonschema import Draft202012Validator
 
 from tsunagou.application.project_integration import ProjectIntegration, ProjectIntegrationError
 from tsunagou.modules.projects import ProjectRegistry
+from tsunagou.shared_kernel.digests import canonical_digest
 
 
 def _project(root: Path) -> str:
@@ -61,6 +63,23 @@ def test_bootstrap_is_idempotent_and_preserves_user_agents_content(tmp_path: Pat
     assert agents.startswith("# User rules\nkeep this line\n")
     assert agents.count("TSUNAGOU:START") == 1
     assert (root / ".gitignore").read_text(encoding="utf-8").startswith("dist/\n")
+
+
+def test_bootstrap_project_lock_filename_is_windows_safe_and_root_specific(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "project"
+    _project(root)
+    lock_temp = tmp_path / "lock-temp"
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(lock_temp))
+
+    ProjectIntegration(root).bootstrap()
+
+    lock_files = list((lock_temp / "tsunagou-project-locks").iterdir())
+    assert len(lock_files) == 1
+    expected = canonical_digest({"coordination_root": str(root.resolve())}).replace(":", "-", 1) + ".lock"
+    assert lock_files[0].name == expected
+    assert ":" not in lock_files[0].name
 
 
 def test_bootstrap_requires_explicit_refresh_for_managed_changes(tmp_path: Path) -> None:

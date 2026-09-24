@@ -56,6 +56,7 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 - 缺少：会话终止后同步撤授权、处理相关任务；消息投递租约和完整查询；主 Agent handoff/succession 实际入口；两个真实宿主 bridge 的接入回执。
 - 已修复：CLI 通过同一 daemon 签发票据，运行中的 daemon 可立即兑换；Authority、Grant、Message 与任务状态在同一 SQLite runtime 快照事务中恢复。
 - A2A 首版已补齐：daemon 现在提供 `/.well-known/agent-card.json`、`/api/v1/a2a` 和按收件 Agent 路由的 JSON-RPC endpoint；`message/send` 通过同一 dispatcher 写入持久消息，`tasks/get` 从内部任务查询映射状态，`tasks/cancel`、`tasks/fail`、`tasks/retry` 复用主 Agent/执行 Agent 的内部命令边界，重复 `messageId` 和 request ID 保持幂等。真实 build_application loopback audit 的 A2A 子集为 8/8 通过（`a2a_failed=0`，见 [A2A audit](a2a-audit-2026-09-22.json)）；A2A transition 的 principal/owner 负例由单元测试覆盖。总 audit 仍保留一个既有 `task_survives_restart` 失败，不能把总结果写成全绿。streaming、push notification 和空闲 Codex host wake 仍明确为 `unsupported`；delivery、presentation、host wake 三种证据不能混淆。
+- 本轮协调切片已接入：项目通过 `project.configure` 显式启用 `auto_wake_multi_agent` 后，Main 可用 `coordination.plan` 原子创建分工、依赖、workspace/ResourceIntent 声明和 durable `WakeAttempt`；三个 ready worker 时计划覆盖率门禁要求三方分工。`coordination.wake.accepted` 只记录宿主接受回合，worker 首次 bridge 调用的 `worker.ready` 才解除 claim/acquire Lease 门禁。未验证真实 Codex App Server transport 前，能力仍保持 `wake=unsupported`，因此不把建档或 inbox 入队写成已唤醒。
 - M1 已通过：用户决定、项目完成、checkpoint、daemon 重启和 recovery 已通过同一公开入口烟测；重启后还逐一查询 tasks、attempts、results、jobs、agents、cognition/contracts、messages、workspaces、decisions 和脱敏 audit，记录见 [m1-public-smoke-2026-09-21.json](m1-public-smoke-2026-09-21.json)。重启会释放旧 claim/Lease 并将未完成 Task 放回 `open`，旧 Attempt 保留 orphaned 历史；双 bridge 断线故障注入和本机凭据失败路径保留为完整接入后续。
 - 原设计余量：高级 handoff 收敛、复杂路由、多个宿主生命周期增强、推送/唤醒。
 - 依据：[authority.py](../../src/tsunagou/modules/authority.py)、[messaging.py](../../src/tsunagou/modules/messaging.py)、[bridge server](../../packages/bridge-server/src/server.ts)、[原设计](../implementation/modules/02-agents.md)。
@@ -66,6 +67,7 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 - 已验证：重启保留 Task/Attempt；重复 command_id 只返回同一事实；create 保持 draft；省略 preflight 被拒；另一个 worker 不能 block/resume；错误 attempt_id 不产生 running 副作用。
 - 已接入：`task.update_plan`、`task.edge.add/remove`、`task.cancel_request/ack`、`task.fail`、`task.recover`、`task.scope.request/resolve`、`task.self_accept` 已有公开 handler；恢复会释放旧 Lease 并撤销旧执行 Grant，scope 请求校验 task/scope revision。公开入口证据见 [M1 runtime flow](../../tests/integration/test_m1_runtime_flow.py)。
 - 其他缺口：依赖完成、参与资格、恢复 owner、审查槽位的完整矩阵仍未形成事务闭环。`TaskExecutionWorkflow` 已成为 handler 的 preflight/start 唯一编排，持久 `tasks.PreflightResult` 记录 digest、revision、evidence 和 blockers；可选 execution scope 已按 root/path 前缀约束 resource intent；`request_changes` 已补上旧 Attempt 的 Lease 释放和 execution Grant 撤销，仍需继续扩展审查矩阵。
+- 协调计划的 worker claim、Lease 门禁、task.progress 自动续租、重要事件汇总、显式 Main takeover，以及 review changes_requested 后原 worker 的新 Attempt/WakeAttempt 重唤醒记录已接入；真实宿主回合仍受 wake evidence 硬门禁。
 - M1 已通过：持久 Task/Attempt/Result/Review、严格 owner、draft→ready→open、统一 preflight/start、失败回滚、指定审查者和重大决定阻塞/恢复均已覆盖；复杂继任、批量生命周期保留为后续。
 - 原设计余量：复杂委派/依赖图、后续任务关系、批量恢复和继任计划。
 - 依据：[tasks.py](../../src/tsunagou/modules/tasks.py)、[task_execution.py](../../src/tsunagou/application/workflows/task_execution.py)、[原设计](../implementation/modules/03-tasks.md)。
@@ -84,10 +86,14 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 
 - 已有：intent、路径前缀冲突、整组 reserve、renew、expire、wait 队列、external observation。
 - 已接入：资源 intent、整组 acquire、release、X 会话 renew；task.start 会检查当前 Attempt 的 active Lease，失败不写 running；若任务声明 execution scope，intent 会在 Lease 前按 root/path 前缀和 mode 校验子集。
-- 已接入第一轮：每次 start/acquire/renew 前检查到期 Lease；过期的 claimed/running Attempt 标为 orphaned，相关执行 Grant 撤销，Task 回到 `open` 公共队列，任何后来加入且具备基础权限的 Agent 都可重新 claim。`RuntimeMaintenance` 还会在 daemon 生命周期内后台执行同一回收，并将结果写入 SQLite 事件。Lease 只约束执行 Attempt，不约束 Task 的领取资格。
-- 缺少：physical identity alias 归一、跨 root 的完整 scope 版本模型、bridge 周期续租及更完整的撤权通知事务。
+- 已接入第一轮：每次 start/acquire/renew 前检查到期 Lease；`task.start` 在切换到 `running` 和签发 execution Grant 前再次验证当前 Lease，避免维护 tick 尚未运行时的过期竞态。过期的 claimed/running Attempt 标为 orphaned，相关执行 Grant 撤销，Task 回到 `open` 公共队列，匹配的 coordination Assignment 同步标为 `blocked` 并清理 `claimed_attempt_id/started_at`；该回收按 Attempt id 幂等执行，不会偷偷创建新的 WakeAttempt。任何后来加入且具备基础权限的 Agent 都可重新 claim。`RuntimeMaintenance` 还会在 daemon 生命周期内后台执行同一回收，并将结果写入 SQLite 事件。Lease 只约束执行 Attempt，不约束 Task 的领取资格。
+- 项目 bootstrap 的跨进程锁仍按完整 root digest 隔离，但会将 `sha256:` 等文件名不安全字符转换为安全分隔符；因此 Windows 与其他平台使用同一稳定、互不碰撞的锁命名。
+- 缺少：跨 root 的完整 scope 版本模型及更完整的撤权通知事务；worker 主动续租和响应提醒已接入，但不由 bridge/daemon 代办。
 - 已补：项目 root binding 的 `physical_identity` 参与 ResourceService 冲突归一；不同 root_id 指向同一物理目录时仍会冲突，回归见 `test_physical_root_aliases_conflict_even_with_distinct_root_ids`。常驻维护处理到期 Lease/Job 的机械撤权。
-- M1 后续：同路径独占写、不同路径并行、Lease 通知/续租和更完整的等待恢复。Lease 继续是协调规则，不是文件系统锁。
+- M1 后续：同路径独占写、不同路径并行和更完整的等待恢复。Lease 继续是协调规则，不是文件系统锁。
+- 协调 worker 的每次 `task.progress` 同时续租当前 Attempt 的 active Lease；`resource.renew` 仍可供长步骤显式续租。worker 响应会返回 Lease 到期和续租提示，Main 如需催促可复用 `message.send` 发送带 assignment/attempt 引用的结构化消息。Lease 到期仍按正常 orphan/回收处理，不由 daemon 静默延长，也没有后台 heartbeat。
+- WakeAttempt deadline 由现有 `RuntimeMaintenance` tick 自动推进；到期的 host acceptance/worker.ready 会被拒绝，唤醒最多执行三次并在最终失败时记录 Main 可见的重要事件。这只维护唤醒状态，不创建或续租执行 Lease。
+- `task.submit` 已纳入同一执行工作流：提交前重新检查当前 Lease，过期时拒绝且不创建结果，正常提交后将 Attempt 的 Lease 置为 `released`。
 - 原设计余量：完整排队公平性、复杂 consistent_read 和外部资源类别。
 - 依据：[resources.py](../../src/tsunagou/modules/resources.py)、[原设计](../implementation/modules/05-resources.md)。
 
@@ -95,7 +101,8 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 
 - 已有：shared/worktree/external 描述、隔离决策、GitActionRequest、baseline/result、目标 HEAD 核验、dirty cleanup 拒绝。
 - 已接入：main 选择 shared、worker prepare baseline、X 记录 result，workspace state 随 SQLite 快照恢复；task.start 检查 workspace ready；shared 根目录会读取 Git HEAD/branch/status，结果会生成内容寻址 patch、标记 baseline conflict，并可通过 artifact 查询读取。双 bridge smoke 还执行了一个真实 Node 检查，并在 baseline 后写入用户编辑文件，要求公开 result 返回 `baseline_conflict=true`。
-- 缺少：worktree/external 实际目录/Git Job、整合/清理与主 Agent动作关联。
+- 已补：Main-only `workspace.integrate` 会把 worker result 固化为带 exact input digest 的 pending GitActionRequest，并明确 `push_allowed=false`；实际 worktree 创建、冲突解决、local commit 及 report 仍需宿主侧 Git 操作证据。
+- 缺少：worktree/external 实际目录/Git Job、自动整合/清理与主 Agent动作关联。
 - 明确限制：`record_result` 比对的是已保存的 baseline digest，不等于重新扫描磁盘；HEAD 不变也可能有用户未提交改动。没有持续文件 watcher，不能自动识别某个 diff 是用户还是 Agent 写的。
 - M1 已通过：用户/main 明确选择 shared，对实际 root 生成 baseline/result、记录 patch、检查手动变化并将结果交给主 Agent；worktree/external 隔离仍是后续范围。Agent 正常写代码产生 dirty 是预期结果，不能一概当作用户冲突。
 - 原设计余量：worktree/external 完整 prepare/integrate/cleanup、多个仓库分步整合、跨机器环境恢复。
@@ -141,7 +148,7 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 | F14 | CLI 给运行 daemon 签票后兑换 | HTTP 200 | 同 daemon签发和消费 | R2/R5 |
 | F15 | 安装 wheel后离开源码树启动 | Python wheel 和 Node bridge 包内资源均可读 | 包内资源可用 | R1/R6 |
 | F16 | 项目已登记但没有本地 Agent 入口 | `project bootstrap` 生成受管入口，重复运行 unchanged | 项目可被宿主发现约束，私有 runtime 不外泄 | 本轮项目 bootstrap |
-| F17 | daemon 消息后空闲宿主未自动回合 | pull-first inbox 保留未 ACK delivery；无通用 wake 承诺 | 消息持久化且下次 Agent pull 可见；Codex 自动唤醒待宿主能力 | Adapter 增强 |
+| F17 | daemon 消息后空闲宿主未自动回合 | 默认仍 pull-first；只有项目显式 opt-in 的新协调计划进入 WakeAttempt/双确认状态机，通用 bridge 未验证 Codex transport 时仍为 unsupported | 消息持久化且 worker.ready 前不允许 Lease；真实 Codex 自动唤醒需 host evidence | Adapter 增强 |
 
 F01–F14 来自当前脚本；F15 来自 wheel 安装检查。它们是回归集合，不是无遗漏的全量安全审计。R3-R6 尚需补充的完整协作闭环仍列在下一节八模块缺口中。
 

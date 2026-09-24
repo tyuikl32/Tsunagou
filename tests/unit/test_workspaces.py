@@ -56,3 +56,29 @@ def test_dirty_baseline_head_change_and_cleanup_barriers() -> None:
             workspace.workspace_id, actor_main_id="main", task_terminal=True,
             checkpoint_ref="checkpoint", dirty=True,
         )
+
+
+def test_main_integration_request_is_pending_and_no_push() -> None:
+    service = WorkspaceService()
+    decision = worktree_decision(service)
+    workspace = service.request_workspace(
+        decision.decision_id, root_binding_refs=["root"], repository_id="repo",
+        current_main_id="main",
+    )
+    baseline = service.record_baseline(
+        workspace.workspace_id, head_commit="abc", branch="main", index_digest="i",
+        tracked_state_digest="t", untracked_summary=[], root_identities=["r"],
+    )
+    result = service.record_result(
+        workspace.workspace_id, attempt_id="a", baseline_digest=baseline.digest,
+        commit_refs=["worker-commit"], patch_artifact_ref=None,
+        changed_paths=["src/main.py"], untracked_summary=[], validation_refs=["tests"],
+    )
+    request = service.request_integration(
+        source_result_ref=result.manifest_id, target_repository_id="repo",
+        target_baseline_digest="target-baseline", plan_digest="plan", reason="reviewed",
+        actor_main_id="main",
+    )
+    assert request.status == "pending"
+    assert request.action == "integrate"
+    assert request.parameters["push_allowed"] is False

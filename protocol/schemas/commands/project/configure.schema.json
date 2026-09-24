@@ -3,7 +3,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "policy_patch": {},
+    "policy_patch": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_wake_multi_agent": {"type": "boolean"}
+      },
+      "required": ["auto_wake_multi_agent"],
+      "type": "object"
+    },
     "reason": {
       "maxLength": 4096,
       "type": "string"

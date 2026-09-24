@@ -27,6 +27,7 @@ from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.application.workflows.task_execution import TaskExecutionWorkflow
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.cognition import Claim, CognitionService
+from tsunagou.modules.coordination import CoordinationService
 from tsunagou.modules.messaging import Message, MessageStore
 from tsunagou.modules.projects import ProjectRegistry, physical_identity
 from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceService
@@ -188,12 +189,14 @@ def build_handlers(
     schema_bundle_digest: str = "",
     project_root: str | None = None, artifact_root: str | None = None,
     project_registry: ProjectRegistry | None = None,
+    coordination: CoordinationService | None = None,
 ) -> dict[str, Handler]:
     tasks = tasks if tasks is not None else TaskService()
     cognition = cognition if cognition is not None else CognitionService()
     messages = messages if messages is not None else MessageStore()
     resources = resources if resources is not None else ResourceService()
     workspaces = workspaces if workspaces is not None else WorkspaceService()
+    coordination = coordination if coordination is not None else CoordinationService()
     execution_workflow = TaskExecutionWorkflow(
         tasks=tasks, cognition=cognition, resources=resources, workspaces=workspaces,
         strict_runtime=strict_runtime,
@@ -218,29 +221,71 @@ def build_handlers(
 
     def _reconcile_expired_leases() -> None:
         """Revoke execution state when a lease expires before the next request."""
-        for lease_id in resources.expire_due():
+        # ``expire_due`` returns only rows whose status changed in this call.
+        # Include already-expired rows too: a prior maintenance pass may have
+        # persisted the Lease fence but crashed before reconciling the owning
+        # Attempt.  The attempt/status guards below make this replay-safe.
+        expired_ids = set(resources.expire_due())
+        expired_ids.update(
+            lease.lease_set_id for lease in resources.lease_sets.values()
+            if lease.status == "expired"
+        )
+        for lease_id in expired_ids:
             lease = resources.lease_sets.get(lease_id)
             if lease is None:
                 continue
             attempt = tasks.attempts.get(lease.attempt_id)
-            if attempt is None or attempt.status not in {"claimed", "running"}:
+            if attempt is None:
                 continue
-            attempt.status = "orphaned"
-            attempt.revision += 1
-            task = tasks.tasks.get(attempt.task_id)
-            if task is not None and task.current_attempt_id == attempt.attempt_id:
-                # Expiry fences only the old execution Attempt. The Task is
-                # returned to the public queue so a later Agent can claim it;
-                # the old Agent is not a prerequisite for recovery.
-                task.current_attempt_id = None
-                task.status = "open"
-                task.orphan_reason = "resource_lease_expired"
-                task.revision += 1
-            for key, grant in list(authority.grants.items()):
-                if grant.attempt_id == attempt.attempt_id and grant.status == "active":
-                    authority.grants[key] = type(grant)(
-                        **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                    )
+            assignment = coordination.assignment_for_task(attempt.task_id)
+            if attempt.status in {"claimed", "running"}:
+                attempt.status = "orphaned"
+                attempt.revision += 1
+                task = tasks.tasks.get(attempt.task_id)
+                if task is not None and task.current_attempt_id == attempt.attempt_id:
+                    # Expiry fences only the old execution Attempt. The Task is
+                    # returned to the public queue so a later Agent can claim it;
+                    # the old Agent is not a prerequisite for recovery.
+                    task.current_attempt_id = None
+                    task.status = "open"
+                    task.orphan_reason = "resource_lease_expired"
+                    task.revision += 1
+                for key, grant in list(authority.grants.items()):
+                    if grant.attempt_id == attempt.attempt_id and grant.status == "active":
+                        authority.grants[key] = type(grant)(
+                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
+                        )
+            if assignment is not None:
+                coordination.mark_lease_expired(attempt.task_id, attempt.attempt_id)
+
+    def _assignment_id_for_task(task_id: str) -> str | None:
+        assignment = coordination.assignment_for_task(task_id)
+        return assignment.assignment_id if assignment is not None else None
+
+    def _lease_guidance(attempt_id: str | None = None) -> dict[str, Any]:
+        """Expose worker-owned renewal facts without renewing on its behalf."""
+        with resources._lock:  # noqa: SLF001 - snapshot lease guidance atomically
+            leases = [
+                lease for lease in resources.lease_sets.values()
+                if attempt_id is not None
+                and lease.attempt_id == attempt_id
+                and lease.status == "active"
+            ]
+            leases.sort(key=lambda item: item.lease_set_id)
+            return {
+                "renewal_owner": "worker",
+                "renew_with": ["task.progress", "resource.renew"],
+                "daemon_heartbeat": False,
+                "leases": [
+                    {
+                        "lease_set_id": lease.lease_set_id,
+                        "attempt_id": lease.attempt_id,
+                        "status": lease.status,
+                        "expires_at": lease.expires_at,
+                    }
+                    for lease in leases
+                ],
+            }
 
     def enroll(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         installation_id = payload.get("installation_id")
@@ -406,6 +451,32 @@ def build_handlers(
         authority.revoke_main(actor_kind="user_control")
         return {"main_agent_id": None, "authority_epoch": authority.authority_epoch}
 
+    def project_configure(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        try:
+            _authorize(context, "project.configure")
+        except PermissionError:
+            # Main grants issued before this capability was introduced only
+            # carry coordination.write; keep their upgrade path fail-closed
+            # to current Main authority without broadening worker access.
+            _authorize(context, "coordination.write")
+        if context["principal_id"] != authority.main_agent_id:
+            raise PermissionError("main_authority_required")
+        if project_registry is None:
+            raise RuntimeError("project_not_initialized")
+        policy_patch = payload.get("policy_patch")
+        if not isinstance(policy_patch, dict):
+            raise ValueError("policy_patch_required")
+        project = project_registry.configure(
+            policy_patch=policy_patch,
+            reason=_required_str(payload, "reason"),
+        )
+        return {
+            "project_id": project.project_id,
+            "policy_revision": project.policy_revision,
+            "settings": dict(project.settings),
+            "config_revision": project.config.revision if project.config else None,
+        }
+
     def task_create(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
         title = _required_str(payload, "title")
@@ -473,8 +544,13 @@ def build_handlers(
     def task_claim(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.claim")
         task_id = _required_str(payload, "task_id")
+        coordination.require_worker_ready(task_id, context["principal_id"])
         attempt = tasks.claim(task_id, context["principal_id"])
-        return {"task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status}
+        coordination.mark_claimed(task_id, context["principal_id"], attempt.attempt_id)
+        return {
+            "task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status,
+            "lease_guidance": _lease_guidance(attempt.attempt_id),
+        }
 
     def task_resume(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.coordinate_self")
@@ -512,50 +588,69 @@ def build_handlers(
         task_id = _required_str(payload, "task_id")
         attempt_id = payload.get("attempt_id")
         preflight_id = payload.get("preflight_id")
-        current_task = tasks.tasks.get(task_id)
-        current_attempt = tasks.attempts.get(current_task.current_attempt_id or "") if current_task else None
-        if current_task is None or current_attempt is None:
-            raise KeyError(task_id)
-        if attempt_id is not None and attempt_id != current_attempt.attempt_id:
-            raise ValueError("attempt_id_mismatch")
-        expected_epoch = payload.get("expected_execution_epoch")
-        if expected_epoch is not None and int(expected_epoch) != current_attempt.execution_epoch:
-            raise ValueError("execution_epoch_conflict")
-        if preflight_id is None:
-            raise ValueError("preflight_required")
-        if preflight_id not in tasks.preflights:
-            raise ValueError("preflight_id_mismatch")
-        preflight = tasks.preflights[preflight_id]
-        if preflight.task_id != task_id or preflight.attempt_id != current_attempt.attempt_id:
-            raise ValueError("preflight_id_mismatch")
-        if strict_runtime and payload.get("input_digest") and payload["input_digest"] != preflight.input_digest:
-            raise ValueError("preflight_digest_mismatch")
-        try:
-            execution_workflow.start(preflight, agent_id=context["principal_id"])
-        except ValueError as exc:
-            # A failed start may have discovered a missing runtime condition
-            # after a preflight lease was reserved. Keep blocked work free of
-            # execution resources so another Agent can claim it later.
-            resources.release_for_attempt(current_attempt.attempt_id, reason="task_start_blocked")
-            for grant_id, grant in list(authority.grants.items()):
-                if grant.attempt_id == current_attempt.attempt_id and grant.status == "active":
-                    authority.grants[grant_id] = type(grant)(
-                        **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                    )
-            raise ValueError(str(exc)) from exc
-        attempt = tasks.attempts[preflight.attempt_id]
-        if attempt_id is not None and attempt_id != attempt.attempt_id:
-            raise ValueError("attempt_id_mismatch")
-        grant = authority.issue_execution_grant(
-            agent_id=context["principal_id"], session_id=context["session_id"],
-            task_id=task_id, attempt_id=attempt.attempt_id, execution_epoch=attempt.execution_epoch,
-        )
-        return {
-            "task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status,
-            "execution_grant_id": grant.grant_id,
-        }
+        # ResourceService's lock is the execution fence shared with the
+        # runtime maintenance loop. Holding it across expiry reconciliation,
+        # TaskService.start, and execution-grant issuance prevents a lease
+        # from expiring in the gap after validation but before the running
+        # state/grant become visible together.
+        with resources._lock:  # noqa: SLF001 - shared in-process state fence
+            _reconcile_expired_leases()
+            current_task = tasks.tasks.get(task_id)
+            current_attempt = tasks.attempts.get(current_task.current_attempt_id or "") if current_task else None
+            if current_task is None or current_attempt is None:
+                if current_task is not None and current_task.orphan_reason == "resource_lease_expired":
+                    raise ValueError("resource_lease_expired")
+                raise KeyError(task_id)
+            if attempt_id is not None and attempt_id != current_attempt.attempt_id:
+                raise ValueError("attempt_id_mismatch")
+            expected_epoch = payload.get("expected_execution_epoch")
+            if expected_epoch is not None and int(expected_epoch) != current_attempt.execution_epoch:
+                raise ValueError("execution_epoch_conflict")
+            if preflight_id is None:
+                raise ValueError("preflight_required")
+            if preflight_id not in tasks.preflights:
+                raise ValueError("preflight_id_mismatch")
+            preflight = tasks.preflights[preflight_id]
+            if preflight.task_id != task_id or preflight.attempt_id != current_attempt.attempt_id:
+                raise ValueError("preflight_id_mismatch")
+            if strict_runtime and payload.get("input_digest") and payload["input_digest"] != preflight.input_digest:
+                raise ValueError("preflight_digest_mismatch")
+            try:
+                execution_workflow.start(preflight, agent_id=context["principal_id"])
+            except ValueError as exc:
+                # A failed start may have discovered a missing runtime
+                # condition after a preflight lease was reserved. Keep blocked
+                # work free of execution resources so another Agent can claim
+                # it later.
+                if str(exc) == "resource_lease_expired":
+                    # The lease may have crossed its deadline after the first
+                    # reconciliation pass but before the final start check.
+                    # Run the same orphan/open + grant-revocation path again
+                    # before releasing any remaining active rows.
+                    _reconcile_expired_leases()
+                resources.release_for_attempt(current_attempt.attempt_id, reason="task_start_blocked")
+                for grant_id, grant in list(authority.grants.items()):
+                    if grant.attempt_id == current_attempt.attempt_id and grant.status == "active":
+                        authority.grants[grant_id] = type(grant)(
+                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
+                        )
+                raise ValueError(str(exc)) from exc
+            attempt = tasks.attempts[preflight.attempt_id]
+            if attempt_id is not None and attempt_id != attempt.attempt_id:
+                raise ValueError("attempt_id_mismatch")
+            coordination.mark_started(task_id, context["principal_id"], attempt.attempt_id)
+            grant = authority.issue_execution_grant(
+                agent_id=context["principal_id"], session_id=context["session_id"],
+                task_id=task_id, attempt_id=attempt.attempt_id, execution_epoch=attempt.execution_epoch,
+            )
+            return {
+                "task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status,
+                "execution_grant_id": grant.grant_id,
+                "lease_guidance": _lease_guidance(attempt.attempt_id),
+            }
 
     def task_progress(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        _reconcile_expired_leases()
         task_id = _required_str(payload, "task_id")
         attempt_id = _required_str(payload, "attempt_id")
         _authorize(context, "task.execute", task_id=task_id, attempt_id=attempt_id)
@@ -564,9 +659,31 @@ def build_handlers(
             summary=payload.get("summary") or "",
             evidence_refs=tuple(payload.get("evidence_refs") or ()),
         )
+        renewed: list[dict[str, Any]] = []
+        # A progress report also renews the active Lease. The lease scope is
+        # read from the durable intent rather than caller input, so a worker
+        # cannot renew a different scope while reporting progress.
+        for lease in resources.lease_sets.values():
+            if lease.attempt_id != attempt_id or lease.status != "active":
+                continue
+            renewed_lease = resources.renew(
+                lease.lease_set_id, attempt_id=attempt_id,
+                execution_epoch=tasks.attempts[attempt_id].execution_epoch,
+                scope_digest=lease.scope_digest,
+            )
+            renewed.append({
+                "lease_set_id": renewed_lease.lease_set_id,
+                "expires_at": renewed_lease.expires_at,
+            })
+        coordination.record_event(
+            "task.progress", actor_id=context["principal_id"], task_id=task_id,
+            assignment_id=_assignment_id_for_task(task_id),
+            summary=str(payload.get("summary") or ""), important=False,
+        )
         return {
             "task_id": task_id, "attempt_id": attempt_id,
             "progress_id": progress.progress_id, "summary": progress.summary,
+            "renewed_leases": renewed,
         }
 
     def task_block(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -585,6 +702,12 @@ def build_handlers(
             dependency_refs=tuple(payload.get("dependency_refs") or ()),
             evidence_refs=tuple(payload.get("evidence_refs") or ()),
         )
+        coordination.record_event(
+            "task.blocked", actor_id=context["principal_id"], task_id=task_id,
+            assignment_id=_assignment_id_for_task(task_id),
+            summary=str(reason), important=True,
+        )
+        coordination.mark_blocked(task_id, context["principal_id"])
         if previous_attempt_id is not None:
             resources.release_for_attempt(previous_attempt_id, reason="task_blocked")
             for grant_id, grant in list(authority.grants.items()):
@@ -598,8 +721,41 @@ def build_handlers(
         task_id = _required_str(payload, "task_id")
         attempt_id = _required_str(payload, "attempt_id")
         _authorize(context, "task.execute", task_id=task_id, attempt_id=attempt_id)
+        # Capture the caller's attempt before reconciliation.  If a Lease is
+        # already due, reconciliation intentionally orphans that Attempt and
+        # revokes its execution grant; surface the deterministic Lease fence
+        # to this command instead of allowing a stale submit to succeed.
+        now = time.time()
+        attempt_leases = [
+            lease for lease in resources.lease_sets.values()
+            if lease.attempt_id == attempt_id
+        ]
+        lease_expired = any(
+            lease.status == "expired"
+            or (lease.status == "active" and lease.expires_at <= now)
+            for lease in attempt_leases
+        )
+        _reconcile_expired_leases()
+        if lease_expired:
+            raise ValueError("resource_lease_expired")
         work = {key: value for key, value in payload.items() if key not in {"task_id", "attempt_id"}}
-        result = tasks.submit(task_id, context["principal_id"], work)
+        try:
+            result = execution_workflow.submit(
+                task_id, context["principal_id"], work, attempt_id=attempt_id,
+            )
+        except ValueError as exc:
+            # A deadline may pass after the initial reconciliation but before
+            # the workflow's atomic check.  Re-run the normal orphan/revoke
+            # path before returning the failure to the caller.
+            if str(exc) == "resource_lease_expired":
+                _reconcile_expired_leases()
+            raise
+        coordination.mark_submitted(task_id, context["principal_id"], attempt_id)
+        coordination.record_event(
+            "task.submitted", actor_id=context["principal_id"], task_id=task_id,
+            assignment_id=_assignment_id_for_task(task_id),
+            summary=result.digest, important=True,
+        )
         if strict_runtime and authority.main_agent_id and authority.main_agent_id != context["principal_id"]:
             reviewer_session = next(
                 (session for session in authority.sessions.values()
@@ -634,6 +790,7 @@ def build_handlers(
             _required_str(payload, "task_id"), context["principal_id"],
             attempt_id=_required_str(payload, "attempt_id"), reason=_required_str(payload, "reason"),
         )
+        coordination.mark_failed(task.task_id, context["principal_id"])
         resources.release_for_attempt(payload["attempt_id"], reason="task_failed")
         return {"task_id": task.task_id, "status": task.status, "revision": task.revision}
 
@@ -747,6 +904,7 @@ def build_handlers(
             raise ValueError("resource_intent_attempt_mismatch")
         if attempt.owner_agent_id != context["principal_id"]:
             raise PermissionError("attempt_owner_required")
+        coordination.require_worker_ready(task_id, context["principal_id"])
         expected_revision = payload.get("intent_revision")
         if expected_revision is not None and int(expected_revision) != intent.revision:
             raise ValueError("resource_intent_revision_conflict")
@@ -754,8 +912,11 @@ def build_handlers(
         if scope_digest is not None and str(scope_digest) != intent.scope_digest:
             raise ValueError("resource_scope_conflict")
         lease = resources.reserve_set(intent_id, execution_epoch=attempt.execution_epoch, attempt_status=attempt.status)
-        return {"lease_set_id": lease.lease_set_id, "attempt_id": attempt_id,
-                "expires_at": lease.expires_at, "status": lease.status}
+        return {
+            "lease_set_id": lease.lease_set_id, "attempt_id": attempt_id,
+            "expires_at": lease.expires_at, "status": lease.status,
+            "lease_guidance": _lease_guidance(attempt_id),
+        }
 
     def resource_release(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "resource.release")
@@ -862,6 +1023,28 @@ def build_handlers(
                 "observed_state_digest": result.observed_state_digest,
                 **({"patch_artifact_ref": result.patch_artifact_ref} if result.patch_artifact_ref else {})}
 
+    def workspace_integrate(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        """Create a Main-only, no-push integration request from a worker result."""
+        _authorize(context, "workspace.select")
+        if context["principal_id"] != authority.main_agent_id:
+            raise PermissionError("main_authority_required")
+        request = workspaces.request_integration(
+            source_result_ref=_required_str(payload, "source_result_ref"),
+            target_repository_id=_required_str(payload, "target_repository_id"),
+            target_baseline_digest=_required_str(payload, "target_baseline_digest"),
+            plan_digest=_required_str(payload, "plan_digest"),
+            reason=_required_str(payload, "reason"),
+            actor_main_id=context["principal_id"],
+        )
+        return {
+            "request_id": request.request_id,
+            "workspace_id": request.workspace_id,
+            "action": request.action,
+            "status": request.status,
+            "exact_input_digest": request.exact_input_digest,
+            "push_allowed": False,
+        }
+
     def task_review(payload: dict[str, Any], context: dict[str, Any], *, decision: str) -> dict[str, Any]:
         task_id = _required_str(payload, "task_id")
         result_id = _required_str(payload, "result_id")
@@ -877,6 +1060,7 @@ def build_handlers(
         )
         if decision == "accepted":
             resources.release_for_attempt(result.attempt_id, reason="review_accepted")
+            coordination.mark_completed(task_id, result.submitted_by, result.attempt_id)
         elif decision == "changes_requested":
             # A review that sends work back closes the current execution just as
             # a recovery does.  The next attempt must receive a fresh claim,
@@ -887,6 +1071,13 @@ def build_handlers(
                     authority.grants[grant_id] = type(grant)(
                         **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
                     )
+            assignment = coordination.assignment_for_task(task_id)
+            wake = coordination.rework(
+                assignment.assignment_id, reason=str(payload.get("reason") or "review_changes_requested"),
+            ) if assignment is not None else None
+            return {"task_id": task_id, "result_id": result_id, "decision": review.decision,
+                    "status": tasks.tasks[task_id].status,
+                    "wake_attempt_id": wake.wake_attempt_id if wake is not None else None}
         return {"task_id": task_id, "result_id": result_id, "decision": review.decision,
                 "status": tasks.tasks[task_id].status}
 
@@ -1235,6 +1426,192 @@ def build_handlers(
         messages.respond(context["principal_id"], obligation_id, response_message_id)
         return {"obligation_id": obligation_id, "response_message_id": response_message_id, "status": "responded"}
 
+    def coordination_plan(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        """Create an atomic Main-owned assignment plan and wake records.
+
+        Host wake itself is an adapter concern.  This handler only creates the
+        durable assignment/wake facts that the adapter consumes.
+        """
+        _authorize(context, "coordination.write")
+        if context["principal_id"] != authority.main_agent_id:
+            raise PermissionError("main_authority_required")
+        objective = _required_str(payload, "objective")
+        raw_assignments = payload.get("assignments")
+        if not isinstance(raw_assignments, list) or not raw_assignments:
+            raise ValueError("assignments_required")
+        # Auto-wake is an explicit opt-in for this new coordination plan;
+        # legacy tasks and plans without the flag retain pull-first behavior.
+        requested_auto_wake = payload.get("auto_wake")
+        if requested_auto_wake is not None and not isinstance(requested_auto_wake, bool):
+            raise ValueError("auto_wake_boolean_required")
+        configured_auto_wake = bool(
+            project_registry is not None and project_registry.project is not None
+            and project_registry.project.settings.get("auto_wake_multi_agent", False)
+        )
+        if requested_auto_wake is True and project_registry is not None and not configured_auto_wake:
+            raise ValueError("auto_wake_project_opt_in_required")
+        if requested_auto_wake is True and strict_runtime and project_registry is None:
+            raise ValueError("project_opt_in_required")
+        auto_wake = configured_auto_wake if requested_auto_wake is None else bool(requested_auto_wake)
+        deadline = float(payload.get("wake_deadline_seconds", 60))
+        if deadline <= 0:
+            raise ValueError("invalid_wake_deadline")
+        # Validate all worker identities before creating any task so a bad
+        # assignment cannot leave a partially published plan.
+        ready_workers = {
+            agent_id for agent_id, agent in authority.agents.items()
+            if agent_id != authority.main_agent_id and agent.status == "active"
+            and any(session.agent_id == agent_id and session.active and session.status == "ready"
+                    for session in authority.sessions.values())
+        }
+        normalized: list[dict[str, Any]] = []
+        assigned_workers: set[str] = set()
+        for item in raw_assignments:
+            if not isinstance(item, dict):
+                raise ValueError("invalid_assignment")
+            worker_id = _required_str(item, "assigned_worker_id")
+            if worker_id not in ready_workers:
+                raise ValueError("worker_not_ready")
+            if worker_id in assigned_workers:
+                raise ValueError("duplicate_assignment_worker")
+            assigned_workers.add(worker_id)
+            title = _required_str(item, "title")
+            task_objective = _required_str(item, "task_objective")
+            normalized.append({**item, "assigned_worker_id": worker_id, "title": title, "task_objective": task_objective})
+        # When three workers are available, a healthy auto-wake plan must cover
+        # all three.  With fewer ready workers the plan scales to what exists.
+        if auto_wake and len(normalized) < min(3, len(ready_workers)):
+            raise ValueError("worker_coverage_required")
+        created_tasks: list[Any] = []
+        try:
+            for item in normalized:
+                task = tasks.create_task(
+                    item["title"], item["task_objective"],
+                    parent_task_id=item.get("parent_task_id"),
+                    # Assignment dependencies are recorded by coordination;
+                    # task graph edges require IDs that already exist and are
+                    # added by a later Main command.
+                    blocks=set(),
+                    execution_scope=item.get("execution_scope") or {},
+                )
+                tasks.ready(task.task_id)
+                tasks.publish(task.task_id)
+                created_tasks.append(task)
+            assignment_specs = []
+            for task, item in zip(created_tasks, normalized, strict=True):
+                assignment_specs.append({
+                    "task_id": task.task_id,
+                    "assigned_worker_id": item["assigned_worker_id"],
+                    "dependencies": item.get("dependencies") or (),
+                    "acceptance_conditions": item.get("acceptance_conditions") or {},
+                    "workspace": item.get("workspace") or {},
+                    "resource_intent": item.get("resource_intent") or {},
+                    "auto_wake": auto_wake,
+                })
+            plan = coordination.create_plan(
+                main_agent_id=context["principal_id"], objective=objective,
+                assignments=assignment_specs, auto_wake=auto_wake,
+                wake_deadline_seconds=deadline,
+            )
+        except Exception:
+            # In-memory callers do not have dispatcher snapshot rollback. Remove
+            # only tasks created by this command if coordination registration
+            # fails before the command can be persisted.
+            for task in created_tasks:
+                tasks.tasks.pop(task.task_id, None)
+            raise
+        return {
+            "plan_id": plan.plan_id,
+            "objective": plan.objective,
+            "status": plan.status,
+            "assignments": [
+                {
+                    "assignment_id": item.assignment_id,
+                    "task_id": item.task_id,
+                    "assigned_worker_id": item.assigned_worker_id,
+                    "status": item.status,
+                    "wake_attempt_id": item.wake_attempt_id,
+                }
+                for item in (coordination.assignments[item_id] for item_id in plan.assignment_ids)
+            ],
+            "coverage": coordination.coverage(plan.plan_id),
+        }
+
+    def worker_ready(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        _authorize(context, "coordination.report")
+        assignment_id = _required_str(payload, "assignment_id")
+        wake = coordination.record_worker_ready(
+            assignment_id, worker_id=context["principal_id"],
+            wake_attempt_id=_required_str(payload, "wake_attempt_id"),
+        )
+        assignment = coordination.assignment(assignment_id)
+        coordination.record_event(
+            "worker.ready", actor_id=context["principal_id"],
+            assignment_id=assignment_id, task_id=assignment.task_id,
+            summary="worker bridge round confirmed", important=True,
+        )
+        return {
+            "assignment_id": assignment_id, "task_id": assignment.task_id,
+            "wake_attempt_id": wake.wake_attempt_id, "status": "ready",
+            "lease_guidance": _lease_guidance(assignment.claimed_attempt_id),
+        }
+
+    def coordination_takeover(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        _authorize(context, "coordination.write")
+        if context["principal_id"] != authority.main_agent_id:
+            raise PermissionError("main_authority_required")
+        assignment_id = _required_str(payload, "assignment_id")
+        assignment = coordination.assignment(assignment_id)
+        previous_attempt_id = assignment.claimed_attempt_id
+        if previous_attempt_id is not None:
+            previous = tasks.attempts.get(previous_attempt_id)
+            if previous is not None and previous.status not in {"completed", "submitted", "failed", "cancelled", "orphaned"}:
+                tasks.orphan(assignment.task_id, reason="coordination_takeover")
+                resources.release_for_attempt(previous_attempt_id, reason="coordination_takeover")
+                for grant_id, grant in list(authority.grants.items()):
+                    if grant.attempt_id == previous_attempt_id and grant.status == "active":
+                        authority.grants[grant_id] = type(grant)(
+                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
+                        )
+        assignment = coordination.takeover(
+            assignment_id, main_agent_id=context["principal_id"],
+            reason=_required_str(payload, "takeover_reason"),
+        )
+        coordination.record_event(
+            "coordination.takeover", actor_id=context["principal_id"],
+            assignment_id=assignment_id, task_id=assignment.task_id,
+            summary=assignment.takeover_reason or "", important=True,
+        )
+        attempt = tasks.claim(assignment.task_id, context["principal_id"])
+        assignment.claimed_attempt_id = attempt.attempt_id
+        return {
+            "assignment_id": assignment_id, "task_id": assignment.task_id,
+            "attempt_id": attempt.attempt_id, "status": assignment.status,
+            "takeover_reason": assignment.takeover_reason,
+        }
+
+    def coordination_host_accepted(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        """Internal adapter hook; host wake adapters call the service directly.
+
+        The D-principal registry entry is an internal daemon callback rather
+        than a worker-facing tool. Keeping the transition here gives adapters
+        and tests one idempotent state change.
+        """
+        if context.get("kind") != "D":
+            raise PermissionError("daemon_principal_required")
+        wake = coordination.record_host_accepted(
+            _required_str(payload, "assignment_id"),
+            host_turn_id=payload.get("host_turn_id"),
+            wake_attempt_id=_required_str(payload, "wake_attempt_id"),
+        )
+        assignment = coordination.assignment(_required_str(payload, "assignment_id"))
+        coordination.record_event(
+            "worker.host_accepted", assignment_id=assignment.assignment_id,
+            task_id=assignment.task_id, summary=wake.host_turn_id or "",
+            important=True,
+        )
+        return {"wake_attempt_id": wake.wake_attempt_id, "status": wake.status}
+
     def context_project_read(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         # A read-only, self-scoped project context snapshot. The actor is the
         # authenticated principal (never a payload field), capabilities come from
@@ -1257,6 +1634,31 @@ def build_handlers(
             if (attempt := tasks.attempts.get(task.current_attempt_id or "")) is not None
             and attempt.owner_agent_id == agent_id
         ]
+        visible_assignments = [
+            {
+                "assignment_id": assignment.assignment_id,
+                "plan_id": assignment.plan_id,
+                "task_id": assignment.task_id,
+                "assigned_worker_id": assignment.assigned_worker_id,
+                "status": assignment.status,
+                "wake_attempt_id": assignment.wake_attempt_id,
+                "takeover_agent_id": assignment.takeover_agent_id,
+                "takeover_reason": assignment.takeover_reason,
+            }
+            for assignment in coordination.assignments.values()
+            if agent_id == authority.main_agent_id or assignment.assigned_worker_id == agent_id
+        ]
+        visible_assignment_ids = {item["assignment_id"] for item in visible_assignments}
+        visible_events = [
+            {
+                "event_id": event.event_id, "kind": event.kind,
+                "assignment_id": event.assignment_id, "task_id": event.task_id,
+                "summary": event.summary, "important": event.important,
+                "created_at": event.created_at,
+            }
+            for event in coordination.events
+            if agent_id == authority.main_agent_id or event.assignment_id in visible_assignment_ids
+        ]
         return {
             **({"project_id": project_id} if project_id else {}),
             "agent_id": agent_id,
@@ -1264,6 +1666,15 @@ def build_handlers(
             "main_agent_id": authority.main_agent_id,
             "scope": {"capabilities": capabilities},
             "tasks": owned_tasks,
+            "coordination": {
+                "coverage": coordination.coverage(),
+                "assignments": visible_assignments,
+                "events": visible_events,
+                "auto_wake_multi_agent": bool(
+                    project_registry is not None and project_registry.project is not None
+                    and project_registry.project.settings.get("auto_wake_multi_agent", False)
+                ),
+            },
         }
 
     return {
@@ -1273,6 +1684,7 @@ def build_handlers(
         "agent.ticket.create.user": issue_user_ticket,
         "authority.appoint": appoint_main,
         "authority.revoke": revoke_main,
+        "project.configure": project_configure,
         "root.register": root_register,
         "root.bind": root_bind,
         "repository.register": repository_register,
@@ -1303,6 +1715,7 @@ def build_handlers(
         "workspace.select": workspace_select,
         "workspace.prepare": workspace_prepare,
         "workspace.result": workspace_result,
+        "workspace.integrate": workspace_integrate,
         "task.review.accept": lambda payload, context: task_review(payload, context, decision="accepted"),
         "task.review.request_changes": lambda payload, context: task_review(payload, context, decision="changes_requested"),
         "cognition.report": cognition_report,
@@ -1320,6 +1733,10 @@ def build_handlers(
         "inbox.ack": inbox_ack,
         "message.send": message_send,
         "message.respond": message_respond,
+        "coordination.plan": coordination_plan,
+        "worker.ready": worker_ready,
+        "coordination.takeover": coordination_takeover,
+        "coordination.wake.accepted": coordination_host_accepted,
         "context.project_read": context_project_read,
         "user_decision.propose": user_decision_propose,
         "user_decision.resolve": user_decision_resolve,

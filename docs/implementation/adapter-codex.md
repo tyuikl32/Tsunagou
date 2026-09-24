@@ -20,7 +20,7 @@ T02 当前唯一的本机证据是 `codex-cli 0.154.0-alpha.6.2` 的 disposable 
 
 2026-09-19 对本机 `codex-cli 0.155.0-alpha.9.2` 的复测结果与十项后续操作见 [Codex 单宿主试验](../acceptance/codex-pilot-2026-09-19.md)；新版本仍只证明原生会话隔离，真实 `agent enroll` 停在 `ticket_required`。
 
-生命周期事件只保留 `resume`、`compact`、`new`、`clear`、`fork`、`stop` 等统一语义，并携带来源 `codex_app_server` 或 `codex_cli`；适配器不把事件直接改写为领域状态。没有可验证的 native hook、wake、tool gate、presented evidence 或 managed stop 时，这些增强保持 unknown。
+生命周期事件只保留 `resume`、`compact`、`new`、`clear`、`fork`、`stop` 等统一语义，并携带来源 `codex_app_server` 或 `codex_cli`；适配器不把事件直接改写为领域状态。Codex 的 `HostWakeAdapter` 只有注入真实 App Server probe evidence 后才返回 `wake=supported`；默认是 `unsupported`，wake prompt 只携带 `wake_id/task_id/assignment_id` 和 inbox/`worker.ready` 指令，不携带任务正文或凭据。没有可验证的 native hook、wake、tool gate、presented evidence 或 managed stop 时，这些增强保持 unknown。
 
 ## 验证命令
 

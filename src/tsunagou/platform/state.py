@@ -26,6 +26,13 @@ from tsunagou.modules.cognition import (
     RiskRequest,
     RiskSubmission,
 )
+from tsunagou.modules.coordination import (
+    CoordinationAssignment,
+    CoordinationEvent,
+    CoordinationPlan,
+    CoordinationService,
+    WakeAttempt,
+)
 from tsunagou.modules.messaging import Delivery, Message, MessageStore, ResponseObligation
 from tsunagou.modules.resources import (
     LeaseSet,
@@ -96,6 +103,7 @@ class ServiceStateRuntime:
         resources: ResourceService | None = None,
         workspaces: WorkspaceService | None = None,
         lifecycle: LifecycleService | None = None,
+        coordination: CoordinationService | None = None,
     ) -> None:
         self.authority = authority
         self.tasks = tasks
@@ -104,12 +112,14 @@ class ServiceStateRuntime:
         self.resources = resources
         self.workspaces = workspaces
         self.lifecycle = lifecycle
+        self.coordination = coordination
         self.database = database
         self._modules = tuple(
             module for module, service in (
                 ("authority", authority), ("tasks", tasks), ("cognition", cognition),
                 ("messages", messages), ("resources", resources),
                 ("workspaces", workspaces), ("lifecycle", lifecycle),
+                ("coordination", coordination),
             ) if service is not None
         )
         self.restore_from_database()
@@ -123,6 +133,7 @@ class ServiceStateRuntime:
             "resources": self.resources,
             "workspaces": self.workspaces,
             "lifecycle": self.lifecycle,
+            "coordination": self.coordination,
         }[module]
         if services is None:
             raise KeyError(module)
@@ -182,6 +193,13 @@ class ServiceStateRuntime:
                 "operations": service.operations,
                 "succession": service.succession,
             }
+        if module == "coordination":
+            return {
+                "plans": service.plans,
+                "assignments": service.assignments,
+                "wake_attempts": service.wake_attempts,
+                "events": service.events,
+            }
         return {
             "messages": service.messages,
             "deliveries": service.deliveries,
@@ -194,7 +212,7 @@ class ServiceStateRuntime:
     def _replace(self, module: str, raw: dict[str, Any]) -> None:
         value = _plain(raw)
         service = self._service(module)
-        if module in {"resources", "workspaces", "lifecycle"}:
+        if module in {"resources", "workspaces", "lifecycle", "coordination"}:
             self._replace_optional(module, value)
             return
         if module == "authority":
@@ -350,6 +368,28 @@ class ServiceStateRuntime:
             service.operations = dict(value.get("operations", {}))
             service.succession = list(value.get("succession", []))
             return True
+        if module == "coordination":
+            service.plans = {
+                key: CoordinationPlan(
+                    **{**item, "assignment_ids": tuple(item.get("assignment_ids", ()))},
+                )
+                for key, item in value.get("plans", {}).items()
+            }
+            service.assignments = {
+                key: CoordinationAssignment(
+                    **{**item, "dependencies": tuple(item.get("dependencies", ()))},
+                )
+                for key, item in value.get("assignments", {}).items()
+            }
+            service.wake_attempts = {
+                key: WakeAttempt(**item)
+                for key, item in value.get("wake_attempts", {}).items()
+            }
+            service.events = [CoordinationEvent(**item) for item in value.get("events", [])]
+            service._task_index = {
+                item.task_id: item.assignment_id for item in service.assignments.values()
+            }
+            return True
         return False
 
     def restore_from_database(self) -> None:
@@ -395,6 +435,8 @@ class ServiceStateRuntime:
                 task.status = "open"
                 task.orphan_reason = "runtime_epoch_rotated"
                 task.revision += 1
+        if self.coordination is not None:
+            self.coordination.invalidate_execution_state()
 
     def persist(self, uow: UnitOfWork, *, actor_ref: str, command_kind: str) -> None:
         changed = False

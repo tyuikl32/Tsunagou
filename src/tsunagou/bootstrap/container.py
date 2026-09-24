@@ -18,6 +18,7 @@ from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.interfaces.runtime import CommandDispatcher
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.cognition import CognitionService
+from tsunagou.modules.coordination import CoordinationService
 from tsunagou.modules.evaluation import AuditProjector
 from tsunagou.modules.messaging import MessageStore
 from tsunagou.modules.projects import ProjectRegistry
@@ -52,6 +53,7 @@ def build_application() -> FastAPI:
     authority = AuthorityService(None)
     tasks = TaskService()
     cognition = CognitionService()
+    coordination = CoordinationService()
     messages = MessageStore(None)
     resources = ResourceService()
     workspaces = WorkspaceService()
@@ -81,13 +83,14 @@ def build_application() -> FastAPI:
         state_runtime = ServiceStateRuntime(
             authority=authority, tasks=tasks, cognition=cognition, messages=messages,
             database=database, resources=resources, workspaces=workspaces, lifecycle=lifecycle,
+            coordination=coordination,
         )
         state_runtime.invalidate_execution_state()
         with database.transaction("runtime-recovery") as uow:
             state_runtime.persist(uow, actor_ref="runtime", command_kind="runtime.recovery")
         maintenance = RuntimeMaintenance(
             database=database, state_runtime=state_runtime, resources=resources,
-            tasks=tasks, authority=authority,
+            tasks=tasks, authority=authority, coordination=coordination,
             interval_seconds=float(os.environ.get("TSUNAGOU_MAINTENANCE_INTERVAL", "1")),
         )
     dispatcher = CommandDispatcher(
@@ -96,6 +99,7 @@ def build_application() -> FastAPI:
     for command_kind, handler in build_handlers(
         authority=authority, tasks=tasks, cognition=cognition, messages=messages,
         resources=resources, workspaces=workspaces, lifecycle=lifecycle,
+        coordination=coordination,
         project_id=project_id, strict_runtime=database is not None,
         database=database, state_runtime=state_runtime,
         checkpoint_store=checkpoint_store, schema_bundle_digest=schema_bundle_digest,
@@ -112,6 +116,7 @@ def build_application() -> FastAPI:
             project_id=project_id, registry=state_runtime, database=database,
             authority=authority, tasks=tasks, cognition=cognition, messages=messages,
             resources=resources, workspaces=workspaces, lifecycle=lifecycle,
+            coordination=coordination,
             project_registry=project_registry,
             checkpoint_store=checkpoint_store,
         ),
@@ -138,6 +143,7 @@ def _query_provider(
     workspaces: WorkspaceService, lifecycle: LifecycleService | None,
     project_registry: ProjectRegistry | None,
     checkpoint_store: CheckpointStore | None,
+    coordination: CoordinationService,
 ) -> Any:
     def query(kind: str, requested_project_id: str) -> dict[str, Any]:
         if kind == "artifact":
@@ -192,6 +198,66 @@ def _query_provider(
                     for task in tasks.tasks.values()
                 ],
             }
+        if kind in {"coordination", "assignments", "wake_attempts", "events"}:
+            plans = [
+                {
+                    "plan_id": plan.plan_id, "objective": plan.objective,
+                    "main_agent_id": plan.main_agent_id, "status": plan.status,
+                    "assignment_ids": list(plan.assignment_ids),
+                }
+                for plan in coordination.plans.values()
+            ]
+            assignments = [
+                {
+                    "assignment_id": item.assignment_id, "plan_id": item.plan_id,
+                    "task_id": item.task_id, "assigned_worker_id": item.assigned_worker_id,
+                    "status": item.status, "wake_attempt_id": item.wake_attempt_id,
+                    "claimed_attempt_id": item.claimed_attempt_id,
+                    "takeover_agent_id": item.takeover_agent_id,
+                    "takeover_reason": item.takeover_reason,
+                }
+                for item in coordination.assignments.values()
+            ]
+            wakes = [
+                {
+                    "wake_attempt_id": item.wake_attempt_id, "assignment_id": item.assignment_id,
+                    "task_id": item.task_id, "worker_id": item.worker_id,
+                    "wake_id": item.wake_id, "retry_count": item.retry_count,
+                    "status": item.status, "host_accepted": item.host_accepted,
+                    "host_turn_id": item.host_turn_id,
+                    "worker_ready": item.worker_ready, "deadline": item.deadline,
+                    "failure_reason": item.failure_reason,
+                }
+                for item in coordination.wake_attempts.values()
+            ]
+            events = [
+                {
+                    "event_id": item.event_id, "kind": item.kind,
+                    "actor_id": item.actor_id, "assignment_id": item.assignment_id,
+                    "task_id": item.task_id, "summary": item.summary,
+                    "important": item.important, "created_at": item.created_at,
+                }
+                for item in coordination.events
+            ]
+            if kind == "assignments":
+                return {"project_id": requested_project_id, "items": assignments,
+                        "coverage": coordination.coverage(),
+                        "auto_wake_multi_agent": bool(
+                            project_registry is not None and project_registry.project is not None
+                            and project_registry.project.settings.get("auto_wake_multi_agent", False)
+                        )}
+            if kind == "wake_attempts":
+                return {"project_id": requested_project_id, "items": wakes}
+            if kind == "events":
+                return {"project_id": requested_project_id, "items": events}
+            return {"project_id": requested_project_id, "plans": plans,
+                    "assignments": assignments, "wake_attempts": wakes,
+                    "events": events,
+                    "coverage": coordination.coverage(),
+                    "auto_wake_multi_agent": bool(
+                        project_registry is not None and project_registry.project is not None
+                        and project_registry.project.settings.get("auto_wake_multi_agent", False)
+                    )}
         if kind == "attempts":
             return {
                 "project_id": requested_project_id,

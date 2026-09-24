@@ -85,7 +85,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | task.resume | `/tasks/{id}:resume` | B / task.coordinate_self | attempt_id,evidence_refs,input_digest,expected_revisions,expected_execution_epoch | Task claimed；blocked owner，不由main代办；再准备Lease/preflight/start |
 | task.progress | `/tasks/{id}:progress` | X / task.execute | summary,evidence_refs | ProgressRecord；running |
 | task.block | `/tasks/{id}:block` | B / task.coordinate_self | attempt_id,reason_code,dependency_refs,checkpoint_summary,evidence_refs | Suspension；current owner claimed/running |
-| task.submit | `/tasks/{id}:submit` | X / task.execute | summary,evidence_refs,artifact_refs,workspace_result_ref? | TaskResult+ReviewRound；running |
+| task.submit | `/tasks/{id}:submit` | X / task.execute | summary,evidence_refs,artifact_refs,workspace_result_ref? | TaskResult+ReviewRound；running；提交前重新检查 Lease，成功后释放当前 Attempt 的 Lease，过期 Lease 拒绝 |
 | task.review.accept | `/reviews/{id}:accept` | R / task.review | slot_id,result_digest,evidence_refs,reason | ReviewDecision；指定round/slot |
 | task.review.request_changes | `/reviews/{id}:request-changes` | R / task.review | slot_id,result_digest,evidence_refs,reason | ReviewDecision+Task changes_requested |
 | task.self_accept | `/reviews/{id}:self-accept` | B / task.coordinate_self | result_digest,evidence_refs,reason | ReviewDecision；原owner、policy low-risk self |
@@ -95,6 +95,15 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | task.recover | `/tasks/{id}:recover` | M / task.coordinate | expected_attempt_id,disposition:reopen\|cancel\|fail,residual_risk_refs,reason | Task；关闭旧Attempt再reopen |
 | task.scope.request | `/tasks/{id}/scope-requests` | B / task.coordinate_self | attempt_id,requested_scope,reason,expected_revisions | ScopeExpansionRequest；owner |
 | task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | choice:approve\|reject,proposal_digest,reason | ScopeRequest+Task；审批不超ceiling，执行先block |
+
+## Main 协调计划与 Worker 唤醒
+
+| command kind | URI后缀 | 权限 / capability | payload | result/谓词 |
+|---|---|---|---|---|
+| coordination.plan | `/coordination/plans` | M / coordination.write | objective,assignments,auto_wake?,wake_deadline_seconds? | 原子创建 Task、Assignment 和 WakeAttempt；auto-wake 需项目显式 opt-in，三名 ready worker 时优先覆盖三者 |
+| coordination.takeover | `/coordination/assignments/{id}:takeover` | M / coordination.write | assignment_id,takeover_reason | 显式 Main 接管；记录原 worker、失败状态证据和原因后才能 claim |
+| worker.ready | `/coordination/assignments/{id}:ready` | B / coordination.report | assignment_id,wake_attempt_id | Worker 首次 bridge 回合双确认；此门禁通过前禁止 acquire Lease |
+| coordination.wake.accepted | `/coordination/wakes/{id}:accepted` | D / — | assignment_id,wake_attempt_id,host_turn_id? | daemon/HostWakeAdapter 内部回调；仅代表宿主接受回合，不代表 worker.ready |
 
 ## 认知与契约
 

@@ -336,6 +336,51 @@ class WorkspaceService:
         if baseline.head_commit != current_head:
             raise ValueError("integration_target_head_changed")
 
+    def request_integration(
+        self, *, source_result_ref: str, target_repository_id: str,
+        target_baseline_digest: str, plan_digest: str, reason: str,
+        actor_main_id: str,
+    ) -> GitActionRequest:
+        """Record a Main-owned local integration request.
+
+        The domain records the exact source result and target baseline so a
+        host-side Git operation can be checked before it mutates the target.
+        It deliberately creates a pending request only: the daemon never
+        performs a push, and the caller must later attach Main-owned evidence.
+        """
+        if not source_result_ref or not target_repository_id or not target_baseline_digest:
+            raise ValueError("integration_reference_required")
+        result = self.results.get(source_result_ref)
+        if result is None:
+            result = next((item for item in self.results.values() if item.digest == source_result_ref), None)
+        if result is None:
+            raise KeyError("source_result_not_found")
+        workspace = self.workspaces.get(result.workspace_id)
+        if workspace is None or workspace.result_manifest_id != result.manifest_id:
+            raise ValueError("source_result_workspace_mismatch")
+        exact_input_digest = canonical_digest({
+            "source_result_ref": source_result_ref,
+            "source_result_digest": result.digest,
+            "target_repository_id": target_repository_id,
+            "target_baseline_digest": target_baseline_digest,
+            "plan_digest": plan_digest,
+            "reason": reason,
+        })
+        request = GitActionRequest(
+            new_id(), workspace.workspace_id, target_repository_id, "integrate",
+            actor_main_id, exact_input_digest,
+            {
+                "source_result_ref": source_result_ref,
+                "source_result_digest": result.digest,
+                "target_baseline_digest": target_baseline_digest,
+                "plan_digest": plan_digest,
+                "reason": reason,
+                "push_allowed": False,
+            },
+        )
+        self.git_requests[request.request_id] = request
+        return request
+
     def request_cleanup(
         self, workspace_id: str, *, actor_main_id: str | None, task_terminal: bool,
         checkpoint_ref: str | None, dirty: bool, user_force_approval: bool = False,

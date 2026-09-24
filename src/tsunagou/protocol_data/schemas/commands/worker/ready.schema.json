@@ -1,0 +1,12 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/worker.ready",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assignment_id": {"type": "string", "minLength": 1},
+    "wake_attempt_id": {"type": "string", "minLength": 1}
+  },
+  "required": ["assignment_id", "wake_attempt_id"],
+  "title": "WorkerReadyPayload",
+  "type": "object"
+}

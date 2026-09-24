@@ -144,6 +144,42 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
+    @app.get("/api/v1/projects/{project_id}/coordination")
+    def project_coordination(project_id: str) -> dict[str, Any]:
+        if query_provider is None:
+            return {"project_id": project_id, "plans": [], "assignments": [], "wake_attempts": [], "events": []}
+        try:
+            return query_provider("coordination", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/projects/{project_id}/assignments")
+    def project_assignments(project_id: str) -> dict[str, Any]:
+        if query_provider is None:
+            return {"project_id": project_id, "items": [], "coverage": {}}
+        try:
+            return query_provider("assignments", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/projects/{project_id}/wake-attempts")
+    def project_wake_attempts(project_id: str) -> dict[str, Any]:
+        if query_provider is None:
+            return {"project_id": project_id, "items": []}
+        try:
+            return query_provider("wake_attempts", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/projects/{project_id}/events")
+    def project_events(project_id: str) -> dict[str, Any]:
+        if query_provider is None:
+            return {"project_id": project_id, "items": []}
+        try:
+            return query_provider("events", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
     @app.get("/api/v1/projects/{project_id}/attempts")
     def project_attempts(project_id: str) -> dict[str, Any]:
         if query_provider is None:

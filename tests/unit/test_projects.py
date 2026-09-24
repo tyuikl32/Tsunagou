@@ -45,3 +45,20 @@ def test_unbound_root_is_diagnostic_only(tmp_path: Path) -> None:
     registry.unbind_root(root_id)
     report = registry.diagnose()
     assert report["roots"][root_id]["status"] == "unbound"
+
+
+def test_auto_wake_project_policy_is_explicit_and_persistent(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    registry = ProjectRegistry.initialize(repo, name="demo", objective="x")
+    assert registry.project is not None
+    assert registry.project.settings == {}
+    before = registry.project.policy_revision
+    registry.configure(policy_patch={"auto_wake_multi_agent": True}, reason="enable coordination")
+    assert registry.project.settings["auto_wake_multi_agent"] is True
+    assert registry.project.policy_revision == before + 1
+    reloaded = ProjectRegistry(repo)
+    assert reloaded.project is not None
+    assert reloaded.project.settings["auto_wake_multi_agent"] is True
+    with pytest.raises(ValueError, match="unsupported_policy_patch"):
+        reloaded.configure(policy_patch={"unknown": True}, reason="invalid")

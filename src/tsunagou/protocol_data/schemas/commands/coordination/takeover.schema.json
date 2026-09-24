@@ -1,0 +1,12 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/coordination.takeover",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assignment_id": {"type": "string", "minLength": 1},
+    "takeover_reason": {"type": "string", "minLength": 1, "maxLength": 4096}
+  },
+  "required": ["assignment_id", "takeover_reason"],
+  "title": "CoordinationTakeoverPayload",
+  "type": "object"
+}

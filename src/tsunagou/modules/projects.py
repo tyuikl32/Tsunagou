@@ -100,6 +100,7 @@ class Project:
     policy_revision: int = 1
     roots: dict[str, dict[str, Any]] = field(default_factory=dict)
     repositories: dict[str, dict[str, Any]] = field(default_factory=dict)
+    settings: dict[str, Any] = field(default_factory=dict)
     config: ConfigProvenance | None = None
 
 
@@ -218,6 +219,29 @@ class ProjectRegistry:
         self._save()
         return repository_id
 
+    def configure(self, *, policy_patch: dict[str, Any], reason: str) -> Project:
+        """Apply the small, explicit project policy surface owned by Main."""
+        project = self._require_project()
+        if not reason:
+            raise ValueError("configuration_reason_required")
+        if not isinstance(policy_patch, dict) or not policy_patch:
+            raise ValueError("policy_patch_required")
+        unknown = set(policy_patch) - {"auto_wake_multi_agent"}
+        if unknown:
+            raise ValueError("unsupported_policy_patch")
+        value = policy_patch.get("auto_wake_multi_agent")
+        if not isinstance(value, bool):
+            raise ValueError("auto_wake_multi_agent_boolean_required")
+        project.settings["auto_wake_multi_agent"] = value
+        project.policy_revision += 1
+        previous_revision = project.config.revision if project.config is not None else 0
+        project.config = ConfigProvenance(
+            "main", previous_revision + 1,
+            canonical_digest({"settings": project.settings, "reason": reason}),
+        )
+        self._save()
+        return project
+
     def effective_rules(
         self, rules: list[PathRule], ceiling: list[PathRule] | None = None
     ) -> list[PathRule]:
@@ -261,4 +285,7 @@ class ProjectRegistry:
                 "physical_identity": binding.get("physical_identity"),
                 "required": descriptor["required"],
             }
-        return {"project_id": project.project_id, "lifecycle": project.lifecycle, "roots": roots}
+        return {
+            "project_id": project.project_id, "lifecycle": project.lifecycle,
+            "roots": roots, "settings": dict(project.settings),
+        }

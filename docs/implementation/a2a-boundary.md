@@ -98,7 +98,7 @@ Project、Task、Attempt、Grant、Lease、Contract、Operation 和事件历史�
 - `tasks/retry` 是 Tsunagou 扩展，要求主 Agent authority，携带 `attemptId`，映射到 `task.recover` 的 `reopen` disposition；
 - 三个方法的返回值都是带 `transition` 和内部 revision 的 A2A Task 投影。重复 JSON-RPC request ID 使用同一内部 command id，改变语义会触发幂等冲突。
 
-`message/stream`、`tasks/resubscribe` 和推送端点仍未实现。没有真实 receiver 或 host wake API 时，取消/失败/重试也不会自动启动新一轮 LLM；目标 Agent 通过 inbox/`tasks/get` 看到持久状态。
+`message/stream`、`tasks/resubscribe` 和推送端点仍未实现。没有真实 receiver 或 host wake API 时，取消/失败/重试也不会自动启动新一轮 LLM；目标 Agent 通过 inbox/`tasks/get` 看到持久状态。项目显式开启 multi-agent auto-wake 后，新 `coordination.plan` 会保留 WakeAttempt，并要求 host acceptance 与 worker.ready 两层 evidence；未验证的 Codex App Server transport 仍导出 `wake=unsupported`。
 
 ## 4. 错误、重试和恢复
 

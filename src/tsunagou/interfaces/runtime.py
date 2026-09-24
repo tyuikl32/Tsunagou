@@ -19,6 +19,12 @@ Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 # identity other than the one the bearer credential resolved. The dispatcher
 # rejects these before any handler runs.
 PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
+    "coordination.plan": frozenset({
+        "objective", "assignments", "auto_wake", "wake_deadline_seconds",
+    }),
+    "coordination.takeover": frozenset({"assignment_id", "takeover_reason"}),
+    "coordination.wake.accepted": frozenset({"assignment_id", "wake_attempt_id", "host_turn_id"}),
+    "project.configure": frozenset({"policy_patch", "reason"}),
     "agent.enroll": frozenset({
         "installation_id", "conversation_evidence", "probe_payload", "client_nonce",
         "descriptor_ref", "negotiation",
@@ -118,6 +124,7 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
                                      "repository_id", "external_locator", "baseline"}),
     "workspace.result": frozenset({"workspace_id", "task_id", "attempt_id", "baseline_digest", "changed_paths",
                                     "commit_refs", "patch_artifact_ref", "untracked_summary", "validation_refs"}),
+    "worker.ready": frozenset({"assignment_id", "wake_attempt_id"}),
     "workspace.git.report": frozenset({"request_id", "evidence_refs", "exact_input_digest", "outcome", "result_manifest"}),
     "task.review.accept": frozenset({"task_id", "attempt_id", "result_id", "evidence_refs", "reason", "result_digest", "slot_id"}),
     "task.review.request_changes": frozenset({"task_id", "attempt_id", "result_id", "evidence_refs", "reason", "result_digest", "slot_id"}),
