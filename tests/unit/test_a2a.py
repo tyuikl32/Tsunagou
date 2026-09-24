@@ -83,8 +83,8 @@ def test_agent_card_declares_a2a_and_truthful_wake_capability(tmp_path: Path) ->
     assert card["protocolVersion"] == "1.0"
     assert card["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
     assert card["capabilities"]["streaming"] is False
-    assert card["capabilities"]["pushNotifications"] is False
-    assert card["x-tsunagou"]["wake"] == "unsupported"
+    assert card["capabilities"]["pushNotifications"] is True
+    assert card["x-tsunagou"]["wake"] == "push-notification"
 
 
 def test_a2a_message_send_uses_internal_message_store_and_idempotency(tmp_path: Path) -> None:
@@ -134,6 +134,41 @@ def test_a2a_message_send_uses_internal_message_store_and_idempotency(tmp_path: 
     assert stored.sender_agent_id == sender.agent_id
     assert stored.recipient_agent_id == recipient.agent_id
     assert stored.payload["a2a"]["message_id"] == "external-message-1"
+
+
+def test_a2a_message_send_pushes_standard_configuration_without_persisting_credentials(tmp_path: Path) -> None:
+    app, sender, recipient, messages = _app(tmp_path)
+    delivered: list[tuple[str, dict[str, object]]] = []
+    app.state.a2a_gateway.push_notifier = lambda config, event: (
+        delivered.append((config.url, event)) or {"http_status": 202}
+    )
+    endpoint = next(
+        route.endpoint for route in app.routes if getattr(route, "path", "") == "/api/v1/a2a/agents/{recipient_agent_id}"
+    )
+    body = json.loads((FIXTURES / "message-send.json").read_text(encoding="utf-8"))
+    body["params"]["message"]["messageId"] = "external-push-1"
+    body["params"]["message"]["metadata"]["tsunagou"]["recipient_agent_id"] = recipient.agent_id
+    body["params"]["configuration"] = {
+        "returnImmediately": True,
+        "taskPushNotificationConfig": {
+            "url": "http://127.0.0.1:9876/wake",
+            "token": "private-callback-token",
+            "authentication": {"scheme": "Bearer", "credentials": "private-auth"},
+        },
+    }
+    Draft202012Validator(json.loads((SCHEMAS / "message-send.schema.json").read_text(encoding="utf-8"))).validate(body)
+    response = endpoint(
+        recipient.agent_id, body,
+        authorization=f"Bearer {sender.secret_token}", session_id=sender.session_id,
+        connection_epoch=sender.connection_epoch,
+    )
+    push = response["result"]["message"]["metadata"]["tsunagou"]["push"]
+    assert push["status"] == "delivered"
+    assert response["result"]["message"]["metadata"]["tsunagou"]["wake"] == "requested"
+    assert delivered[0][0] == "http://127.0.0.1:9876/wake"
+    stored_payload = json.dumps([message.payload for message in messages.messages.values()])
+    assert "private-callback-token" not in stored_payload
+    assert "private-auth" not in stored_payload
 
 
 def test_a2a_task_query_maps_internal_task_without_new_truth_source(tmp_path: Path) -> None:

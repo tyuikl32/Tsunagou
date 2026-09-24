@@ -84,7 +84,8 @@ uv run python -m tsunagou project bootstrap `
 
 uv run python -m tsunagou daemon start `
   --coordination-root $env:TSUNAGOU_PROJECT_ROOT `
-  --port 0
+  --port 0 `
+  --host-wake managed
 uv run python -m tsunagou daemon status `
   --coordination-root $env:TSUNAGOU_PROJECT_ROOT
 uv run python -m tsunagou doctor
@@ -100,6 +101,7 @@ installer 会先执行一次 `project init`，再执行上面的 `project bootst
 - `control.token`：用户控制凭据。它由本机文件权限保护，不应复制到聊天、日志、URL 或 Git。
 - `state.sqlite3`：项目协作事实、事件、幂等和操作状态。
 - `daemon.log`：脱敏运行日志。
+- 启用 `--host-wake managed` 时还会有 adapter-owned 的 `host-bindings.json` 和 `host-wake-attempts.json`；它们只保存宿主绑定和 evidence 摘要，不属于项目公共事实。
 
 CLI 后续命令通过 `TSUNAGOU_PROJECT_ROOT` 或 `TSUNAGOU_STATE_DIR` 找到 endpoint manifest。新开终端时重新设置这两个环境变量，或者显式设置 `TSUNAGOU_DAEMON_URL` 和 `TSUNAGOU_CONTROL_TOKEN`。不要把 token 写入 PowerShell 历史或脚本仓库。
 
@@ -287,7 +289,83 @@ $agents | ConvertTo-Json -Depth 10
 
 ### 7.1.1 A2A 调用
 
-A2A 使用 Agent session token 和连接代次，不使用用户 `control.token`。首版支持同步 `message/send`、`tasks/get`、受权限约束的 `tasks/cancel`、`tasks/fail` 和 Tsunagou 扩展 `tasks/retry`；Agent Card 明确声明 streaming、push 和宿主 wake 为不支持。消息进入持久化 inbox 后由目标 Agent pull/fetch，不能把 JSON-RPC 成功响应解释为目标会话已经被唤醒。完整字段和幂等规则见 [A2A 边界实现](../implementation/a2a-boundary.md)。
+A2A 使用 Agent session token 和连接代次，不使用用户 `control.token`。首版支持同步 `message/send`、`tasks/get`、受权限约束的 `tasks/cancel`、`tasks/fail` 和 Tsunagou 扩展 `tasks/retry`；`message/send` 可选接受 A2A 1.0 `configuration.taskPushNotificationConfig` 并在 durable commit 后发 HTTP callback。Agent Card 的 push 能力只表示 callback notifier 已装配，generic host wake 仍需宿主适配器证据。不能把 JSON-RPC 成功响应或 callback 2xx 解释为目标会话已经开始新一轮。完整字段和幂等规则见 [A2A 边界实现](../implementation/a2a-boundary.md)。
+
+阶段 A 的 managed Codex host wake 是可选增强。启用 daemon 的 `TSUNAGOU_HOST_WAKE=managed` 后，用户可以通过控制凭据建立脱敏 binding 并检查探针：
+
+```powershell
+uv run python -m tsunagou host bind `
+  --agent-id <已入会的-agent-id> `
+  --profile codex-worker `
+  --cwd D:\YourProject `
+  --scope-digest sha256:<scope-digest> `
+  --policy-digest sha256:<policy-digest> `
+  --bridge-config D:\YourProject\.tsunagou\bridges\codex-worker\codex-codex-worker.json `
+  --approval-policy never `
+  --sandbox workspace-write
+
+uv run python -m tsunagou host probe <已入会的-agent-id>
+uv run python -m tsunagou host binding-show <已入会的-agent-id>
+uv run python -m tsunagou host wake-status <wake-attempt-id>
+```
+
+`--bridge-config` 应指向同一 Agent enrollment 生成的私有 bridge JSON；托管 app-server 会把其中的 command、args 和 env 转换为进程级 `mcp_servers.tsunagou.*` 覆盖，从而避免使用用户全局配置中的旧项目 bridge。文件本身和其中的 ticket/session 路径只由本机 adapter 读取，不会出现在项目事实、A2A payload 或公开响应中。没有私有 bridge 配置时只能做 transport probe，不能把真实 MCP presentation 视为已通过。
+
+这些命令只返回 binding、版本、能力、digest 和 evidence 摘要，不返回原始 Codex thread/session ID、token、endpoint 私有路径或模型转录。`host bind` 只建立宿主绑定，不创建 Agent、Grant 或主权限；`host probe` 返回 `supported`、`unknown`、`unsupported` 或 `degraded`。当前 Windows Codex 的真实 app-server 探针证据见 [managed app-server probe](../research/evidence/codex-app-server-managed-2026-09-23.json)。
+
+#### 7.1.2 手动附着已有 Codex Desktop 对话（阶段 B）
+
+阶段 B 面向用户已经手动创建、并且能从宿主取得公开 app-server Unix socket 的 Codex 对话。它不会从 Desktop 窗口、进程或私有文件猜测 endpoint；当前正在运行的 Windows Desktop 主进程是 stdio，自动 discovery 不可用。用户可以在同一 Codex 状态下显式启动官方 listener，再把已有 thread id 交给 `host attach`：
+
+```powershell
+$socket = Join-Path $env:USERPROFILE '.codex\app-server-control\tsunagou-public.sock'
+codex app-server --listen "unix://$socket"
+```
+
+保持这个 listener 进程运行，另开一个 PowerShell 窗口执行下面的 attach。`thread_id` 可以由 `thread/list` 的用户控制查询得到；Tsunagou 不会扫描、猜测或从 Desktop 私有存储提取它。若不能提供 listener 或 thread id，应继续使用阶段 A 的 managed provider，或让 Agent 通过 inbox pull 工作。
+
+先确认 daemon 以 host wake 运行，并准备已经 enrollment 的 `agent_id`、用户明确选择的现有 `thread_id` 和绝对本地 socket 路径。然后执行一条显式 attach 命令：
+
+```powershell
+$env:TSUNAGOU_HOST_WAKE = 'managed'
+uv run python -m tsunagou host attach `
+  --agent-id <已入会的-agent-id> `
+  --profile codex-desktop `
+  --cwd D:\YourProject `
+  --scope-digest sha256:<scope-digest> `
+  --policy-digest sha256:<policy-digest> `
+  --endpoint unix://D:\Path\to\codex.sock `
+  --thread-id <用户确认的已有-thread-id> `
+  --attach-confirmed `
+  --bridge-config D:\YourProject\.tsunagou\bridges\codex-desktop\codex-codex-desktop.json
+
+uv run python -m tsunagou host probe <已入会的-agent-id>
+uv run python -m tsunagou host binding-show <已入会的-agent-id>
+```
+
+`host attach` 只是 `provider=desktop_attach` 的易用别名；它要求目标 `agent_id` 已完成 enrollment 且状态为 `active`，并要求 `--attach-confirmed`。它不创建 Agent、不创建新 thread，也不会改变宿主的 Full Access、approval 或 sandbox 设置。probe 先执行 `initialize` 和只读 `thread/read`，只有指定 thread 身份完全匹配才会报告 thread confirmation。A2A 消息到达后，provider 只执行 `thread/resume` 与 `turn/start`；如果 socket 或 thread 不可用，消息仍保存在 durable inbox，`wake-status` 会显示失败或未知证据。
+
+等价的用户 HTTP U 入口是：
+
+```powershell
+$body = @{
+  agent_id = '<已入会的-agent-id>'
+  provider = 'desktop_attach'
+  adapter_profile = 'codex-desktop'
+  cwd = 'D:\YourProject'
+  scope_digest = 'sha256:<scope-digest>'
+  policy_digest = 'sha256:<policy-digest>'
+  endpoint = 'unix://D:\Path\to\codex.sock'
+  thread_id = '<用户确认的已有-thread-id>'
+  attach_confirmed = $true
+  bridge_config = 'D:\YourProject\.tsunagou\bridges\codex-desktop\codex-codex-desktop.json'
+} | ConvertTo-Json -Depth 10
+Invoke-RestMethod "$baseUrl/api/v1/host-wake/bindings" -Method Post `
+  -Headers @{ Authorization = "Bearer $controlToken" } `
+  -ContentType 'application/json' -Body $body
+```
+
+响应只包含 binding ref、digest、状态和 capability，不包含原始 endpoint、thread/session ID 或 token。首版拒绝 `ws://`、`wss://`、相对路径、网络 endpoint、自动端口扫描和隐式 `thread/start`。阶段 B 的实现边界和当前 Desktop 实测状态见 [Codex host wake](../implementation/codex-host-wake.md) 与 [Desktop attach probe](../research/evidence/codex-desktop-attach-2026-09-23.json)。
 
 ### 7.2 command dispatcher 示例
 

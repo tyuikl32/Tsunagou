@@ -1,0 +1,2 @@
+{"file":".trellis/tasks/09-23-codex-app-server-host-wake/prd.md","reason":"核对 R1/R2/R4/R5 要求和禁止泄漏项。"}
+{"file":"docs/implementation/adapter-codex.md","reason":"核对 identity digest、probe 和 unknown 语义。"}

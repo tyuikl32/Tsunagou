@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"会话 epoch、私有凭据与入口错误语义"}
+{"file":".trellis/spec/adapters/index.md","reason":"逐会话 bridge 和宿主能力降级边界"}
+{"file":"docs/implementation/a2a-boundary.md","reason":"A2A delivery/push/presentation/host wake 公共语义"}

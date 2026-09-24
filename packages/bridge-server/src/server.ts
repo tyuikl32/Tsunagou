@@ -394,9 +394,15 @@ class HttpTransport {
 
 function loadSession(path: string): PersistedSession | undefined {
   if (!existsSync(path)) return undefined;
-  const raw = JSON.parse(readFileSync(path, "utf-8")) as PersistedSession;
-  if (typeof raw.session_id !== "string" || typeof raw.secret_token !== "string") return undefined;
-  return raw;
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf-8")) as PersistedSession;
+    if (typeof raw.session_id !== "string" || typeof raw.secret_token !== "string") return undefined;
+    return raw;
+  } catch {
+    // A partially written private file is treated as absent; the next request
+    // can recover from the ticket or report a stable not-enrolled state.
+    return undefined;
+  }
 }
 
 function saveSession(
@@ -424,34 +430,56 @@ async function main(): Promise<void> {
   const projectDigest = cfg.projectRoot ? readProjectDigest(cfg.projectRoot) : undefined;
   const transport = new HttpTransport(readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl);
 
-  const ticketPresent = cfg.ticketFile !== "" && existsSync(cfg.ticketFile);
-  const bootstrapTicket = ticketPresent ? readTicketFile(cfg.ticketFile) : undefined;
+  // The MCP process may outlive the CLI operation that writes its ticket or
+  // session file.  Do not snapshot admission files only once at process boot:
+  // Codex keeps a stdio bridge alive across `mcp add`/re-enrollment.
+  let bootstrapTicket: TicketFile | undefined;
   // A bridge credential belongs to one host conversation. Never use a global
   // ~/.tsunagou/bridge-session.json: when Codex/OpenCode launches several
   // conversations from the same IDE, that file would silently make them one
   // worker. Explicit TSUNAGOU_SESSION_FILE remains supported for a caller
   // that deliberately provisions one private file per conversation.
-  const conversationBindingDigest = bootstrapTicket
-    ? hash(`conversation_id:${bootstrapTicket.conversation_id}`)
-    : hostDigest;
-  const sessionFile = cfg.sessionFile ?? (
+  let conversationBindingDigest = hostDigest;
+  let sessionFile = cfg.sessionFile ?? (
     conversationBindingDigest
       ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
       : undefined
   );
   let session: PersistedSession | undefined = sessionFile ? loadSession(sessionFile) : undefined;
-  if (bootstrapTicket && session && (
-      session.conversation_binding_digest !== undefined
-        ? session.conversation_binding_digest !== conversationBindingDigest
-        : session.host_conversation_id_digest !== conversationBindingDigest
-  )) {
-    session = undefined;
-  }
   let observedContinuity = continuityRefs(session?.host_conversation_id_digest, hostDigest);
 
-  if (ticketPresent) {
-    try {
-      const ticket = bootstrapTicket!;
+  async function attemptSessionRecovery(): Promise<void> {
+    bootstrapTicket = undefined;
+    if (cfg.ticketFile !== "" && existsSync(cfg.ticketFile)) {
+      try {
+        bootstrapTicket = readTicketFile(cfg.ticketFile);
+      } catch (error) {
+        process.stderr.write(`[tsunagou-bridge] ticket read failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
+    }
+    conversationBindingDigest = bootstrapTicket
+      ? hash(`conversation_id:${bootstrapTicket.conversation_id}`)
+      : hostDigest;
+    sessionFile = cfg.sessionFile ?? (
+      conversationBindingDigest
+        ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
+        : undefined
+    );
+    if (sessionFile !== undefined) {
+      const persisted = loadSession(sessionFile);
+      if (persisted !== undefined) session = persisted;
+    }
+    if (bootstrapTicket && session && (
+        session.conversation_binding_digest !== undefined
+          ? session.conversation_binding_digest !== conversationBindingDigest
+          : session.host_conversation_id_digest !== conversationBindingDigest
+    )) {
+      session = undefined;
+    }
+
+    if (bootstrapTicket) {
+      try {
+        const ticket = bootstrapTicket;
       // Codex does not expose its session id to spawned MCP servers (verified:
       // no CODEX_* env names are set), so the host conversation identity is the
       // ticket's bound conversation_id — a real host session id observed by the
@@ -476,13 +504,13 @@ async function main(): Promise<void> {
       session = { ...credential, host_conversation_id_digest: hostDigest };
       if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
       saveSession(sessionFile, credential, hostDigest, conversationBindingDigest);
-      unlinkSync(cfg.ticketFile); // single-use: consume the private ticket after redemption
-    } catch (error) {
-      session = undefined;
-      process.stderr.write(`[tsunagou-bridge] bootstrap failed: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-  } else if (session !== undefined) {
-    try {
+        if (existsSync(cfg.ticketFile)) unlinkSync(cfg.ticketFile); // single-use
+      } catch (error) {
+        session = undefined;
+        process.stderr.write(`[tsunagou-bridge] bootstrap failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
+    } else if (session !== undefined) {
+      try {
       // No ticket on restart: reconnect the persisted session (D principal) so the
       // credential rotates and the epoch advances — the bridge's own recovery path,
       // instead of silently reusing a possibly-stale credential. There is no new
@@ -496,13 +524,33 @@ async function main(): Promise<void> {
       session = { ...credential, host_conversation_id_digest: hostDigest };
       if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
       saveSession(sessionFile, credential, hostDigest, session.conversation_binding_digest);
-    } catch (error) {
-      session = undefined;
-      process.stderr.write(`[tsunagou-bridge] reconnect failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      } catch (error) {
+        session = undefined;
+        process.stderr.write(`[tsunagou-bridge] reconnect failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
     }
   }
 
-  const server = new Server({ name: "tsunagou", version: "0.1.0" }, { capabilities: { tools: {} } });
+  await attemptSessionRecovery();
+  let recoveryPromise: Promise<void> | undefined;
+  async function ensureSession(): Promise<void> {
+    if (session !== undefined) return;
+    recoveryPromise ??= attemptSessionRecovery().finally(() => { recoveryPromise = undefined; });
+    await recoveryPromise;
+  }
+
+  const server = new Server(
+    { name: "tsunagou", version: "0.1.0" },
+    {
+      capabilities: { tools: {} },
+      instructions: (
+        "Tsunagou is the coordination authority. When a host turn is started "
+        + "for coordination, call context__project_read first, then inbox__claim "
+        + "and inbox__fetch/presented for the relevant delivery. Do not use shell "
+        + "or infer project state when a typed Tsunagou tool is available."
+      ),
+    },
+  );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
@@ -514,15 +562,28 @@ async function main(): Promise<void> {
       return { content: [{ type: "text" as const, text: JSON.stringify({ error: "unknown_tool" }) }], isError: true };
     }
     try {
-      if (session === undefined) {
-        throw new Error("not_enrolled:no_ticket_or_session_file");
-      }
+      await ensureSession();
+      if (session === undefined) throw new Error("not_enrolled:no_ticket_or_session_file");
       const args = { ...((request.params.arguments ?? {}) as Record<string, unknown>) };
       const commandId = typeof args.command_id === "string" ? args.command_id : undefined;
       if ("command_id" in args) {
         delete args.command_id;
       }
-      const result = await transport.dispatch(tool.command_kind, args, session, commandId);
+      let result: unknown;
+      try {
+        result = await transport.dispatch(tool.command_kind, args, session, commandId);
+      } catch (error) {
+        // A daemon restart or an external rebind can invalidate the in-memory
+        // epoch while this stdio process remains alive. Re-read the private
+        // session/ticket files and retry once before surfacing the error.
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("authentication_failed") && !message.includes("stale_connection_epoch")
+            && !message.includes("session_not_found")) throw error;
+        session = undefined;
+        await ensureSession();
+        if (session === undefined) throw error;
+        result = await transport.dispatch(tool.command_kind, args, session, commandId);
+      }
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

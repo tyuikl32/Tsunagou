@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"公开协议错误、鉴权和幂等入口"}
+{"file":"docs/implementation/a2a-boundary.md","reason":"A2A 标准字段和 Tsunagou 扩展语义"}
+{"file":"protocol/schemas/a2a/message-send.schema.json","reason":"message/send configuration schema"}

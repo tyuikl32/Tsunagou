@@ -7,8 +7,13 @@ task store or treat a caller supplied actor field as identity.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
+from urllib.error import URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from tsunagou import __version__
 from tsunagou.api.auth import LocalCommandAuthenticator
@@ -30,6 +35,73 @@ class A2AProtocolError(ValueError):
         self.code = code
         self.message = message
         self.rpc_code = rpc_code
+
+
+@dataclass(frozen=True, slots=True)
+class PushNotificationConfig:
+    """A2A task push configuration kept only for the current send operation."""
+
+    url: str
+    token: str | None = None
+    auth_scheme: str | None = None
+    auth_credentials: str | None = None
+
+
+def http_push_notifier(config: PushNotificationConfig, event: dict[str, Any]) -> dict[str, Any]:
+    """Deliver one A2A push event without persisting callback credentials.
+
+    The daemon is local-first, but the A2A contract uses an ordinary HTTP
+    callback.  Credentials are read from the request, used for this call, and
+    never copied into the project message payload or logs.
+    """
+    headers = {"content-type": "application/json", "x-a2a-notification-token": config.token or ""}
+    if config.auth_scheme and config.auth_credentials:
+        headers["authorization"] = f"{config.auth_scheme} {config.auth_credentials}"
+    request = Request(config.url, data=json.dumps(event).encode("utf-8"), headers=headers, method="POST")
+    try:
+        with urlopen(request, timeout=2.0) as response:  # noqa: S310 - URL is an explicit A2A client input.
+            status = int(response.status)
+    except (OSError, URLError, TimeoutError) as exc:
+        raise RuntimeError("push_delivery_failed") from exc
+    if status < 200 or status >= 300:
+        raise RuntimeError("push_delivery_failed")
+    return {"http_status": status}
+
+
+def _push_config(params: dict[str, Any]) -> PushNotificationConfig | None:
+    configuration = params.get("configuration")
+    if configuration is None:
+        return None
+    if not isinstance(configuration, dict):
+        raise A2AProtocolError("configuration_invalid", "message/send configuration must be an object")
+    raw = configuration.get("taskPushNotificationConfig")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise A2AProtocolError("push_config_invalid", "taskPushNotificationConfig must be an object")
+    url = raw.get("url")
+    if not isinstance(url, str) or not url.strip() or len(url) > 2048:
+        raise A2AProtocolError("push_url_invalid", "taskPushNotificationConfig.url must be a valid URL")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        raise A2AProtocolError("push_url_invalid", "taskPushNotificationConfig.url must be an HTTP(S) URL")
+    token = raw.get("token")
+    if token is not None and (not isinstance(token, str) or len(token) > 512):
+        raise A2AProtocolError("push_token_invalid", "taskPushNotificationConfig.token is invalid")
+    authentication = raw.get("authentication")
+    if authentication is not None and not isinstance(authentication, dict):
+        raise A2AProtocolError("push_authentication_invalid", "push authentication must be an object")
+    scheme = credentials = None
+    if authentication is not None:
+        scheme = authentication.get("scheme")
+        credentials = authentication.get("credentials")
+        if not isinstance(scheme, str) or not scheme:
+            raise A2AProtocolError("push_authentication_invalid", "push authentication requires a scheme")
+        if credentials is not None and (not isinstance(credentials, str) or not credentials):
+            raise A2AProtocolError("push_authentication_invalid", "push authentication credentials are invalid")
+        if len(scheme) > 64 or (credentials is not None and len(credentials) > 2048):
+            raise A2AProtocolError("push_authentication_invalid", "push authentication is too long")
+    return PushNotificationConfig(url=url, token=token, auth_scheme=scheme, auth_credentials=credentials)
 
 
 def _rpc_error(request_id: Any, error: A2AProtocolError) -> dict[str, Any]:
@@ -100,11 +172,15 @@ class A2AGateway:
         *,
         project_id: str | None = None,
         query_provider: Callable[[str, str], dict[str, Any]] | None = None,
+        push_notifier: Callable[[PushNotificationConfig, dict[str, Any]], dict[str, Any]] | None = http_push_notifier,
+        wake_dispatcher: Any | None = None,
     ) -> None:
         self.dispatcher = dispatcher
         self.authenticator = authenticator
         self.project_id = project_id
         self.query_provider = query_provider
+        self.push_notifier = push_notifier
+        self.wake_dispatcher = wake_dispatcher
 
     def agent_card(self, endpoint: str) -> dict[str, Any]:
         """Return a truthful, secret-free A2A Agent Card."""
@@ -119,7 +195,7 @@ class A2AGateway:
             ],
             "capabilities": {
                 "streaming": False,
-                "pushNotifications": False,
+                "pushNotifications": self.push_notifier is not None,
                 "stateTransitionHistory": False,
             },
             "defaultInputModes": ["text/plain", "application/json"],
@@ -136,8 +212,9 @@ class A2AGateway:
             "x-tsunagou": {
                 "project_id": self.project_id,
                 "internal_source_of_truth": "project-runtime",
-                "wake": "unsupported",
-                "delivery": "durable-pull-or-client-poll",
+                "wake": "push-notification" if self.push_notifier is not None else "unsupported",
+                "host_wake": "managed" if self.wake_dispatcher is not None else "unsupported",
+                "delivery": "push-or-durable-pull" if self.push_notifier is not None else "durable-pull-or-client-poll",
                 "methods": sorted(_SUPPORTED_METHODS),
             },
         }
@@ -249,6 +326,7 @@ class A2AGateway:
         in_reply_to = metadata.get("in_reply_to")
         if in_reply_to is not None and not isinstance(in_reply_to, str):
             raise A2AProtocolError("in_reply_to_invalid", "metadata.tsunagou.in_reply_to must be a string")
+        push_config = _push_config(params)
         command_id = f"a2a:message:{message_id}"
         envelope = {
             "command_id": command_id,
@@ -266,7 +344,12 @@ class A2AGateway:
                         "context_id": context_id,
                         "role": message.get("role"),
                         "parts": message.get("parts"),
+                        # The callback token/credentials are deliberately not
+                        # copied into durable project state.
                         "metadata": metadata,
+                        **({"push_requested": True,
+                            "push_url_digest": canonical_digest({"url": push_config.url})}
+                           if push_config is not None else {}),
                     },
                 },
                 "priority": self._priority(metadata.get("priority", 0)),
@@ -282,13 +365,48 @@ class A2AGateway:
             "contextId": context_id or self.project_id,
             "role": "agent",
             "parts": [{"text": "Message accepted by Tsunagou durable delivery."}],
-            "metadata": {
-                "tsunagou": {
-                    "project_id": self.project_id,
-                    "message_id": internal_message_id,
-                    "delivery": "pending",
-                    "wake": "unsupported",
-                },
+        }
+        push_status: dict[str, Any] = {"requested": push_config is not None, "status": "not_requested"}
+        if push_config is not None:
+            if self.push_notifier is None:
+                push_status = {"requested": True, "status": "unsupported"}
+            else:
+                try:
+                    details = self.push_notifier(push_config, {
+                        "message": response_message,
+                        "tsunagou": {
+                            "event": "message.accepted",
+                            "message_id": internal_message_id,
+                            "project_id": self.project_id,
+                        },
+                    })
+                    push_status = {"requested": True, "status": "delivered", **details}
+                except Exception:
+                    # Durable pull remains the recovery path.  Do not turn a
+                    # callback outage into a lost message or expose credentials.
+                    push_status = {"requested": True, "status": "failed"}
+        host_wake: dict[str, Any] = {"status": "not_configured"}
+        if self.wake_dispatcher is not None:
+            try:
+                host_wake = self.wake_dispatcher.on_delivery(
+                    message_id=internal_message_id,
+                    recipient_agent_id=recipient,
+                    project_id=self.project_id,
+                    callback_status=push_status["status"] if push_config is not None else None,
+                )
+            except Exception:
+                # Host wake is an enhancement.  Durable delivery has already
+                # committed and remains the recovery path if the provider is
+                # unavailable or malformed.
+                host_wake = {"status": "failed", "error_code": "host_wake_dispatch_failed"}
+        response_message["metadata"] = {
+            "tsunagou": {
+                "project_id": self.project_id,
+                "message_id": internal_message_id,
+                "delivery": "pushed" if push_status["status"] == "delivered" else "pending",
+                "wake": "requested" if push_config is not None else "not_requested",
+                "push": push_status,
+                "host_wake": host_wake,
             },
         }
         return {"message": response_message}

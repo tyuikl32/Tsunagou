@@ -22,6 +22,48 @@
     "product_implemented": true
   },
   "dependency_semantics": "meta.depends_on is the execution dependency; parent/children only group tasks. Validate predecessor acceptance before start.",
+  "follow_on_tasks": [
+    {
+      "id": "F1",
+      "slug": "bridge-session-self-healing",
+      "title": "Bridge 会话延迟恢复与旧进程自愈",
+      "depends_on": ["R5"],
+      "status": "in_progress",
+      "trellis_path": ".trellis/tasks/09-23-bridge-session-self-healing",
+      "acceptance": [
+        "已启动 bridge 在 ticket/session 晚到时可由下一次 tool call 自愈",
+        "旧 epoch 只恢复一次并复用原 command id 重试",
+        "不同 conversation 的私有 session 文件继续隔离"
+      ]
+    },
+    {
+      "id": "F2",
+      "slug": "a2a-message-wake",
+      "title": "A2A message/send push notification 与宿主唤醒边界",
+      "depends_on": ["F1"],
+      "status": "in_progress",
+      "trellis_path": ".trellis/tasks/09-23-a2a-message-wake",
+      "acceptance": [
+        "接受 A2A 1.0 taskPushNotificationConfig 并在 durable commit 后投递 callback",
+        "callback 失败不丢消息且凭据不落盘",
+        "Agent Card、delivery、presentation、host wake 的证据含义一致"
+      ]
+    },
+    {
+      "id": "F3",
+      "slug": "codex-app-server-host-wake",
+      "title": "Codex app-server 宿主唤醒：先 managed 再 Desktop attach",
+      "depends_on": ["F2"],
+      "status": "completed",
+      "trellis_path": ".trellis/tasks/09-23-codex-app-server-host-wake",
+      "acceptance": [
+        "阶段 A 用 Tsunagou-managed app-server 建立并验证 R1-R7、host-neutral port、binding、evidence、幂等和权限边界",
+        "阶段 A 的真实 A2A E2E 能观察 durable message、callback、thread resume/start、turn start、Agent inbox pull 和 presentation",
+        "阶段 B 只在阶段 A 完成后探测并接入已有 Codex Desktop 对话；显式 Unix listener attach/wake 已通过，运行中的 Desktop stdio 自动 discovery 保持 unknown/unsupported",
+        "Desktop attach 不改变 A2A、任务、权限和项目持久化语义，也不使用未记录的内部 RPC 或 UI 自动化"
+      ]
+    }
+  ],
   "tasks": [
     {
       "id": "R1",

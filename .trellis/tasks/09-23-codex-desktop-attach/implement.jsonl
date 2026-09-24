@@ -1,0 +1,10 @@
+{"file":".trellis/tasks/09-23-codex-app-server-host-wake/design.md","reason":"阶段 B discovery、显式 attach、降级和权限边界设计。"}
+{"file":".trellis/tasks/09-23-codex-wake-e2e-recovery/prd.md","reason":"阶段 B 必须依赖阶段 A 真实验收。"}
+{"file":"docs/implementation/adapter-codex.md","reason":"复用 Codex identity digest 和 capability unknown 规则。"}
+{"file": "src/tsunagou/hostwake/codex_app_server.py", "reason": "Desktop attach provider and shared registry implementation"}
+{"file": "tests/unit/test_hostwake.py", "reason": "Explicit endpoint, probe and no-implicit-thread tests"}
+{"file": "docs/research/evidence/codex-desktop-attach-2026-09-23.json", "reason": "Current Desktop endpoint observation and capability conclusion"}
+{"file": ".trellis/tasks/09-23-codex-desktop-attach/design.md", "reason": "WebSocket Unix transport and explicit attach dataflow"}
+{"file": "docs/implementation/codex-host-wake.md", "reason": "A/B host wake implementation contract and evidence"}
+{"file": "docs/overview/cli-http-manual.md", "reason": "CLI host attach and HTTP U operation"}
+{"file": "docs/decisions/2026-09-23-staged-codex-host-attach.md", "reason": "阶段 C 的 A/B 顺序和 Unix WebSocket transport 决策"}

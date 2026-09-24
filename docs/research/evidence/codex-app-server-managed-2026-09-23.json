@@ -1,0 +1,121 @@
+{
+  "evidence_kind": "managed_codex_app_server_probe",
+  "observed_at": "2026-09-23",
+  "host": "codex",
+  "provider": "managed_app_server",
+  "codex_version": "0.155.0-alpha.16",
+  "transport": "stdio_jsonl",
+  "executable_identity": "local_codex_desktop_installation",
+  "secret_free": true,
+  "verification": {
+    "python_tests": "uv run pytest -q: passed",
+    "python_lint": "uv run ruff check (changed Python paths): passed",
+    "python_types": "uv run mypy src/tsunagou/hostwake: passed",
+    "bridge_build": "corepack pnpm --dir packages/bridge-server build: passed",
+    "docs_validation": "python tools/docs/validate_docs.py: passed"
+  },
+  "initialize": {
+    "status": "supported",
+    "response_keys": ["codexHome", "platformFamily", "platformOs", "userAgent"],
+    "method_catalogue_returned": false
+  },
+  "thread_start": {
+    "status": "supported",
+    "thread_id_observed": true,
+    "session_id_observed": true,
+    "sandbox_value": "workspace-write",
+    "sandbox_camel_case_value": "rejected_as_unknown_variant"
+  },
+  "turn_start": {
+    "status": "supported",
+    "turn_id_observed": true,
+    "initial_status": "inProgress",
+    "terminal_event": "turn/completed",
+    "terminal_status": "completed",
+    "probe_instruction": "read-only response probe; no file mutation requested",
+    "model_response_digest": "redacted"
+  },
+  "daemon_cli_path": {
+    "status": "supported",
+    "commands": ["daemon start --host-wake managed", "host bind", "host probe", "host binding-show", "daemon stop"],
+    "probe_status": "unknown",
+    "probe_capabilities": {
+      "thread/start": "supported",
+      "thread/resume": "supported",
+      "turn/start": "unknown"
+    },
+    "raw_thread_and_session_ids_exposed": false
+  },
+  "a2a_wake_path": {
+    "status": "supported_phase_a_managed_app_server",
+    "message_send_durable": true,
+    "host_wake_state": "running",
+    "initial_evidence": ["thread_started", "turn_started"],
+    "final_attempt_state": "completed",
+    "final_evidence": ["thread_started", "turn_started", "turn_completed", "agent_presented"],
+    "turn_completed_observed": true,
+    "agent_presented_observed": true,
+    "mcp_tools_observed": ["context__project_read", "inbox__claim", "inbox__fetch", "inbox__presented"],
+    "callback_evidence": "verified_loopback_http_and_unit",
+    "live_callback": {
+      "status": "delivered",
+      "receiver": "127.0.0.1 loopback HTTP test receiver",
+      "event": "message.accepted",
+      "body_digest": "sha256:0aaa9cb6d7a907678a89f5ad794ca3c9bf9385b614a835dc2e198d51c2b212c3",
+      "credentials_in_body": false,
+      "host_wake_evidence": ["callback_received", "thread_resumed", "turn_started", "agent_presented"]
+    },
+    "restart_recovery": {
+      "status": "supported_inflight_marked_unknown_and_retried",
+      "running_before_stop": true,
+      "unknown_after_restart": true,
+      "error_code_after_restart": "host_wake_process_restarted",
+      "same_message_retry": "accepted_when_message_semantics_were_identical",
+      "retry_final_state": "completed",
+      "retry_evidence": ["thread_resumed", "turn_started", "agent_presented", "turn_completed"],
+      "durable_inbox_preserved": true,
+      "idempotency_guard_observed": "changed_body_with_same_message_id_rejected_as_idempotency_conflict"
+    },
+    "durable_pull_remains_available": true,
+    "note": "A disposable managed daemon with two freshly enrolled local sessions accepted message/send, started a Codex turn, and the worker called the typed context/inbox tools. The HTTP response returned before model completion; the private attempt journal was later updated by the background watcher. A daemon restart marked an in-flight attempt unknown, preserved durable pull, and an identical message retry completed a new managed turn. Live callback configuration, old-epoch behavior, and Desktop attach remain open."
+  },
+  "private_bridge_configuration": {
+    "status": "supported",
+    "configuration_source": "enrollment_generated_private_bridge_json",
+    "loading": ["app_server_process_mcp_overrides", "thread_start_config_override", "thread_resume_config_override"],
+    "parent_codex_identity_environment_removed": true,
+    "global_codex_config_modified": false
+  },
+  "event_methods_observed": [
+    "configWarning",
+    "remoteControl/status/changed",
+    "thread/started",
+    "warning",
+    "mcpServer/startupStatus/updated",
+    "thread/status/changed",
+    "turn/started",
+    "item/started",
+    "item/completed",
+    "item/agentMessage/delta",
+    "thread/tokenUsage/updated",
+    "account/rateLimits/updated",
+    "turn/completed"
+  ],
+  "conclusions": {
+    "initialize_handshake": "supported",
+    "thread_lifecycle": "supported",
+    "turn_lifecycle": "supported",
+    "method_catalogue": "unknown",
+    "a2a_context_pull": "supported_in_disposable_managed_e2e",
+    "a2a_presentation": "supported_in_disposable_managed_e2e",
+    "daemon_restart_recovery": "supported_inflight_unknown_and_same_message_retry",
+    "old_epoch_rejection": "supported_rejected_with_authentication_failed",
+    "live_callback_configuration": "supported_loopback_http",
+    "desktop_attach": "not_tested",
+    "full_phase_a_acceptance": "complete_managed_app_server_phase"
+  },
+  "references": [
+    "docs/implementation/codex-host-wake.md",
+    "https://learn.chatgpt.com/docs/app-server"
+  ]
+}

@@ -1,0 +1,6 @@
+{"file":"docs/implementation/a2a-boundary.md","reason":"检查 delivery、callback、presentation 与 host wake 证据是否保持四段语义。"}
+{"file":"docs/implementation/adapter-codex.md","reason":"检查 Codex 版本与能力状态是否没有把未知能力写成 supported。"}
+{"file":"docs/decisions/2026-09-23-a2a-push-and-bridge-recovery.md","reason":"检查本轮 live callback 成功但 generic bridge 未唤醒的事实没有被回归。"}
+{"file":"tools/docs/validate_docs.py","reason":"最终运行项目文档语义校验。"}
+{"file": "docs/implementation/codex-host-wake.md", "reason": "阶段 A 运行边界、私有 bridge 配置、异步 watcher 与当前未完成项"}
+{"file": "docs/research/evidence/codex-app-server-managed-2026-09-23.json", "reason": "最终阶段 A evidence：loopback callback、旧 epoch、restart retry 和 managed E2E"}
