@@ -1,0 +1,9 @@
+{"file":".trellis/tasks/09-23-codex-app-server-host-wake/prd.md","reason":"已确认采用先 A 后 B 的阶段边界、R1-R7 和验收条件。"}
+{"file":".trellis/tasks/09-23-codex-app-server-host-wake/design.md","reason":"A/B 共用 port、binding、evidence、幂等、权限和降级设计。"}
+{"file":".trellis/tasks/09-23-codex-app-server-host-wake/implement.md","reason":"实施顺序、预期目录、接口、验证和完成标准。"}
+{"file":"docs/implementation/a2a-boundary.md","reason":"复用 durable message、callback、delivery/presentation/host-wake 术语和边界。"}
+{"file":"docs/implementation/adapter-codex.md","reason":"复用 Codex adapter 的版本、身份摘要、probe 和 unknown 语义。"}
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"实现公共 CLI/API 时遵守入口、错误和返回约定。"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"实现 binding/evidence/attempt 持久化时遵守数据库事务与单 writer 约定。"}
+{"file": "docs/research/evidence/codex-app-server-managed-2026-09-23.json", "reason": "真实 Windows Codex managed A2A E2E：thread/turn/MCP/presentation/终态 evidence"}
+{"file": "docs/implementation/codex-host-wake.md", "reason": "host wake 重启、重试和公开边界"}

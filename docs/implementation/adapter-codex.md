@@ -4,7 +4,7 @@
 
 ## 版本和接入面
 
-T02 当前唯一的本机证据是 `codex-cli 0.154.0-alpha.6.2` 的 disposable app-server stdio 探针。目标接入面是 app-server stdio、thread lifecycle 和 MCP；官方 CLI 入口与版本变化必须以运行时 probe 为准。相关官方入口：[Codex CLI features](https://developers.openai.com/codex/cli/features/)、[Codex CLI reference](https://developers.openai.com/codex/cli/reference/)。
+T02 的历史证据包含 `codex-cli 0.154.0-alpha.6.2`；本轮阶段 A 在 Windows `codex-cli 0.155.0-alpha.16` 上取得 managed app-server stdio、thread lifecycle、turn lifecycle 和 typed MCP presentation 证据。目标接入面是 app-server stdio、thread lifecycle 和 MCP；官方 CLI 入口与版本变化必须以运行时 probe 为准。相关官方入口：[Codex CLI features](https://developers.openai.com/codex/cli/features/)、[Codex CLI reference](https://developers.openai.com/codex/cli/reference/)。
 
 ## 安装与卸载边界
 
@@ -16,7 +16,7 @@ T02 当前唯一的本机证据是 `codex-cli 0.154.0-alpha.6.2` 的 disposable 
 
 `CodexAdapter.getIdentity` 只接受 probe 已产生的 `host_conversation_id_digest`。缺少可靠 digest 返回 `undefined`，不能使用 PID、cwd、显示名或模型自报身份。`probeCapabilities` 对 11 项基线逐项返回 `supported`、`unsupported` 或 `unknown`；`evaluateConformance` 只有在全部有证据且为 `supported` 时才返回 `ready=true`。
 
-当前 T02 证据：`identity.session_isolation` 有双 thread digest；resume/fork 是空 thread 的失败前置条件，compact/clear/profile identity 仍 unknown；任务、认知、契约、inbox、响应、重连和去重需要 bridge 真机测试。因此当前 Codex 适配器是 diagnostic-only，不能报告为正式共同基线支持。
+当前 T02 证据：`identity.session_isolation` 有双 thread digest；resume/fork 是空 thread 的失败前置条件，compact/clear/profile identity 仍 unknown；任务、认知、契约、inbox、响应、重连和去重需要 bridge 真机测试。阶段 A 的 managed app-server 已取得当前 Windows Codex 版本的真实 initialize、thread/start、turn/start、`turn/completed` 和 disposable A2A context/inbox presentation 证据，并已验证 daemon restart 将未决 attempt 标为 `unknown`、同语义消息可重试完成、loopback callback 和旧 epoch 拒绝，见 [managed app-server probe](../research/evidence/codex-app-server-managed-2026-09-23.json)；method catalogue 仍保持 unknown。阶段 B 已实现显式 `desktop_attach` provider、Unix socket proxy、thread/read probe、CLI/HTTP 登记、bridge 配置随 `thread/resume` 与 `turn/start` 传递，以及无隐式 thread/start 约束；官方公开 Unix endpoint 已真实恢复 Desktop-originated thread 并由 A2A 观察到 `thread_resumed`/`turn_started`。运行中的 Desktop stdio 进程仍没有自动可发现 endpoint，不能把 B 写成无需用户提供 endpoint 的任意新对话自动唤醒能力。
 
 2026-09-19 对本机 `codex-cli 0.155.0-alpha.9.2` 的复测结果与十项后续操作见 [Codex 单宿主试验](../acceptance/codex-pilot-2026-09-19.md)；新版本仍只证明原生会话隔离，真实 `agent enroll` 停在 `ticket_required`。
 

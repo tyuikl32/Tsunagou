@@ -2,16 +2,17 @@
 
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from tsunagou import __version__
-from tsunagou.api.a2a import A2AGateway
+from tsunagou.api.a2a import A2AGateway, http_push_notifier
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.interfaces.runtime import CommandDispatcher
 from tsunagou.shared_kernel.errors import IdempotencyConflict, LockUnavailable, RevisionConflict
+from tsunagou.shared_kernel.ids import new_id
 
 
 class HealthResponse(BaseModel):
@@ -30,10 +31,33 @@ class CommandRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class HostBindingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str
+    provider: Literal["managed_app_server", "desktop_attach"] = "managed_app_server"
+    adapter_profile: str
+    cwd: str
+    scope_digest: str
+    policy_digest: str
+    executable: str | None = None
+    model: str | None = None
+    approval_policy: str | None = None
+    sandbox: str | None = None
+    sandbox_policy: dict[str, Any] | None = None
+    bridge_config: str | None = None
+    endpoint: str | None = None
+    thread_id: str | None = None
+    attach_confirmed: bool = False
+
+
 def create_app(
     dispatcher: CommandDispatcher | None = None,
     *, authenticator: LocalCommandAuthenticator | None = None,
     query_provider: Any | None = None,
+    push_notifier: Any | None = http_push_notifier,
+    wake_dispatcher: Any | None = None,
+    hostwake_provider: Any | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Tsunagou", version=__version__, docs_url=None, redoc_url=None)
     if dispatcher is None:
@@ -46,8 +70,12 @@ def create_app(
         authenticator,
         project_id=getattr(getattr(dispatcher, "database", None), "project_id", None),
         query_provider=query_provider,
+        push_notifier=push_notifier,
+        wake_dispatcher=wake_dispatcher,
     )
     app.state.a2a_gateway = a2a_gateway
+    app.state.wake_dispatcher = wake_dispatcher
+    app.state.hostwake_provider = hostwake_provider
 
     @app.on_event("shutdown")
     def release_runtime_lock() -> None:
@@ -112,6 +140,20 @@ def create_app(
             dispatched = dispatcher.dispatch(
                 command_kind, request.model_dump(), principal=principal,
             )
+            if command_kind == "inbox.presented" and wake_dispatcher is not None:
+                payload = request.payload
+                try:
+                    wake_dispatcher.record_presented(
+                        agent_id=principal.principal_id,
+                        message_id=str(payload.get("message_id", "")),
+                        evidence_digest=payload.get("evidence_digest"),
+                        evidence_kind=payload.get("evidence_kind"),
+                    )
+                except Exception:
+                    # Presentation evidence is an enhancement record.  The
+                    # committed inbox command must remain successful even if
+                    # the private host-wake journal is temporarily unavailable.
+                    pass
         except PermissionError as exc:
             code = str(exc)
             raise HTTPException(
@@ -134,6 +176,151 @@ def create_app(
             raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
         response.headers["ETag"] = dispatched.command_hash
         return {"command_hash": dispatched.command_hash, "result": dispatched.result}
+
+    @app.post("/api/v1/host-wake/bindings")
+    def host_wake_bind(
+        request: HostBindingRequest,
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        session_id: str | None = Header(default=None, alias="Tsunagou-Session-Id"),
+        connection_epoch: int | None = Header(default=None, alias="Tsunagou-Connection-Epoch"),
+    ) -> dict[str, Any]:
+        try:
+            authenticator.authenticate("U", authorization, session_id=session_id, connection_epoch=connection_epoch)
+            if query_provider is not None:
+                project_id = str(getattr(getattr(dispatcher, "database", None), "project_id", ""))
+                agent_view = query_provider("agents", project_id)
+                enrolled = any(
+                    isinstance(item, dict)
+                    and item.get("agent_id") == request.agent_id
+                    and item.get("status") == "active"
+                    for item in agent_view.get("items", [])
+                ) if isinstance(agent_view, dict) else False
+                if not enrolled:
+                    raise PermissionError("host_agent_not_enrolled")
+            provider = getattr(app.state, "hostwake_provider", None)
+            if provider is None or not hasattr(provider, "register_binding"):
+                raise RuntimeError("host_wake_not_configured")
+            ref = provider.register_binding(
+                provider=request.provider,
+                agent_id=request.agent_id,
+                binding_id=f"binding:{new_id()}",
+                adapter_profile=request.adapter_profile,
+                cwd=request.cwd,
+                scope_digest=request.scope_digest,
+                policy_digest=request.policy_digest,
+                executable=request.executable,
+                model=request.model,
+                approval_policy=request.approval_policy,
+                sandbox=request.sandbox,
+                sandbox_policy=request.sandbox_policy,
+                bridge_config=request.bridge_config,
+                endpoint=request.endpoint,
+                thread_id=request.thread_id,
+                attach_confirmed=request.attach_confirmed,
+            )
+            return {"binding": ref.__dict__ if hasattr(ref, "__dict__") else {
+                "binding_id": ref.binding_id, "agent_id": ref.agent_id,
+                "provider": ref.provider, "adapter_profile": ref.adapter_profile,
+                "thread_id_digest": ref.thread_id_digest, "session_id_digest": ref.session_id_digest,
+                "endpoint_kind": ref.endpoint_kind, "cwd_digest": ref.cwd_digest,
+                "scope_digest": ref.scope_digest, "policy_digest": ref.policy_digest,
+                "status": ref.status, "binding_revision": ref.binding_revision,
+                "connection_epoch": ref.connection_epoch, "capabilities": ref.capabilities,
+                "last_probe": ref.last_probe,
+            }}
+        except PermissionError as exc:
+            code = str(exc)
+            raise HTTPException(status_code=401 if code == "authentication_failed" else 403,
+                                detail={"code": code}) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/host-wake/bindings/{agent_id}")
+    def host_wake_binding(
+        agent_id: str,
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        session_id: str | None = Header(default=None, alias="Tsunagou-Session-Id"),
+        connection_epoch: int | None = Header(default=None, alias="Tsunagou-Connection-Epoch"),
+    ) -> dict[str, Any]:
+        try:
+            authenticator.authenticate("U", authorization, session_id=session_id, connection_epoch=connection_epoch)
+            provider = getattr(app.state, "hostwake_provider", None)
+            if provider is None:
+                raise RuntimeError("host_wake_not_configured")
+            store = getattr(provider, "store", None)
+            item = store.get(agent_id) if store is not None else None
+            if item is None:
+                raise KeyError("host_binding_not_found")
+            ref, _record = item
+            return {"binding": {
+                "binding_id": ref.binding_id, "agent_id": ref.agent_id,
+                "provider": ref.provider, "adapter_profile": ref.adapter_profile,
+                "thread_id_digest": ref.thread_id_digest, "session_id_digest": ref.session_id_digest,
+                "endpoint_kind": ref.endpoint_kind, "cwd_digest": ref.cwd_digest,
+                "scope_digest": ref.scope_digest, "policy_digest": ref.policy_digest,
+                "status": ref.status, "binding_revision": ref.binding_revision,
+                "connection_epoch": ref.connection_epoch, "capabilities": ref.capabilities,
+                "last_probe": ref.last_probe,
+            }}
+        except PermissionError as exc:
+            code = str(exc)
+            raise HTTPException(status_code=401 if code == "authentication_failed" else 403,
+                                detail={"code": code}) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+    @app.post("/api/v1/host-wake/bindings/{agent_id}:probe")
+    def host_wake_probe(
+        agent_id: str,
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        session_id: str | None = Header(default=None, alias="Tsunagou-Session-Id"),
+        connection_epoch: int | None = Header(default=None, alias="Tsunagou-Connection-Epoch"),
+    ) -> dict[str, Any]:
+        try:
+            authenticator.authenticate("U", authorization, session_id=session_id, connection_epoch=connection_epoch)
+            provider = getattr(app.state, "hostwake_provider", None)
+            if provider is None:
+                raise RuntimeError("host_wake_not_configured")
+            store = getattr(provider, "store", None)
+            item = store.get(agent_id) if store is not None else None
+            if item is None:
+                raise KeyError("host_binding_not_found")
+            ref, _record = item
+            report = provider.probe(ref)
+            return {"provider": report.provider, "status": report.status, "version": report.version,
+                    "transport": report.transport, "methods": list(report.methods),
+                    "capabilities": report.capabilities, "evidence_digest": report.evidence_digest,
+                    "reason": report.reason, "observed_at": report.observed_at}
+        except PermissionError as exc:
+            code = str(exc)
+            raise HTTPException(status_code=401 if code == "authentication_failed" else 403,
+                                detail={"code": code}) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/host-wake/attempts/{attempt_id}")
+    def host_wake_attempt(
+        attempt_id: str,
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        session_id: str | None = Header(default=None, alias="Tsunagou-Session-Id"),
+        connection_epoch: int | None = Header(default=None, alias="Tsunagou-Connection-Epoch"),
+    ) -> dict[str, Any]:
+        try:
+            authenticator.authenticate("U", authorization, session_id=session_id, connection_epoch=connection_epoch)
+            dispatcher_state = getattr(app.state, "wake_dispatcher", None)
+            attempts = getattr(dispatcher_state, "attempts", {})
+            for item in attempts.values():
+                if item.get("wake_attempt_id") == attempt_id:
+                    return {"attempt": item}
+            raise KeyError("host_wake_attempt_not_found")
+        except PermissionError as exc:
+            code = str(exc)
+            raise HTTPException(status_code=401 if code == "authentication_failed" else 403,
+                                detail={"code": code}) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
     @app.get("/api/v1/projects/{project_id}/tasks")
     def project_tasks(project_id: str) -> dict[str, Any]:

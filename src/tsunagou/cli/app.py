@@ -86,12 +86,14 @@ if typer is not None:
     operation_app = typer.Typer(help="Durable operation queries.")
     checkpoint_app = typer.Typer(help="Checkpoint creation and queries.")
     daemon_app = typer.Typer(help="Local daemon lifecycle commands.")
+    host_app = typer.Typer(help="Host wake binding and capability commands.")
     app.add_typer(project_app, name="project")
     app.add_typer(agent_app, name="agent")
     app.add_typer(decision_app, name="decision")
     app.add_typer(operation_app, name="operation")
     app.add_typer(checkpoint_app, name="checkpoint")
     app.add_typer(daemon_app, name="daemon")
+    app.add_typer(host_app, name="host")
 
     @app.callback()
     def callback(
@@ -261,9 +263,12 @@ if typer is not None:
         port: int = typer.Option(0, "--port", min=0, max=65535),
         name: str = typer.Option("Tsunagou project", "--name"),
         objective: str = typer.Option("Coordinate local agents", "--objective"),
+        host_wake: str = typer.Option("disabled", "--host-wake"),
     ) -> None:
         from tsunagou.modules.projects import ProjectRegistry
 
+        if host_wake not in {"disabled", "managed"}:
+            raise typer.BadParameter("host-wake must be disabled or managed")
         root = coordination_root.expanduser().resolve()
         try:
             registry = ProjectRegistry.initialize(root, name=name, objective=objective)
@@ -300,6 +305,7 @@ if typer is not None:
             "TSUNAGOU_PROJECT_ID": registry.project.project_id,
             "TSUNAGOU_STATE_DIR": str(state_dir),
             "TSUNAGOU_CONTROL_TOKEN": token,
+            "TSUNAGOU_HOST_WAKE": host_wake,
             "PYTHONPATH": os.pathsep.join(
                 [str(Path(__file__).resolve().parents[2]), child_env.get("PYTHONPATH", "")]
             ).rstrip(os.pathsep),
@@ -321,7 +327,7 @@ if typer is not None:
             raise typer.Exit(1) from exc
         manifest = {
             "url": url, "pid": process.pid, "project_id": registry.project.project_id,
-            "state_dir": str(state_dir), "started_at": int(time.time()),
+            "state_dir": str(state_dir), "host_wake": host_wake, "started_at": int(time.time()),
         }
         manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         print(json.dumps({"status": "started", **manifest}, sort_keys=True))
@@ -462,8 +468,44 @@ if typer is not None:
         }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         return bridge_config_path
 
+    def _resolve_codex_executable() -> str | None:
+        r"""Find the Codex CLI even when the host GUI did not export its PATH.
+
+        Codex Desktop launches its helpers with a versioned executable under
+        ``%LOCALAPPDATA%\OpenAI\Codex\bin``.  A PowerShell process started by
+        the user (or by an Agent) does not necessarily inherit that directory,
+        so relying on ``shutil.which`` makes ``agent connect`` issue a ticket
+        without registering the bridge.  The host-provided ``CODEX_CLI_PATH``
+        wins when present; the Windows installation fallback is deliberately
+        narrow and only accepts an actual ``codex.exe`` file.
+        """
+        configured = os.environ.get("CODEX_CLI_PATH", "").strip().strip('"')
+        if configured:
+            configured_path = Path(configured).expanduser()
+            if configured_path.is_file():
+                return str(configured_path)
+
+        discovered = shutil.which("codex")
+        if discovered:
+            return discovered
+
+        if os.name == "nt":
+            local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+            if local_app_data:
+                candidates = sorted(
+                    (
+                        path for path in
+                        (Path(local_app_data) / "OpenAI" / "Codex" / "bin").glob("*/codex.exe")
+                        if path.is_file()
+                    ),
+                    reverse=True,
+                )
+                if candidates:
+                    return str(candidates[0])
+        return None
+
     def _register_codex_mcp(*, profile: str, bridge_config_path: Path) -> str:
-        codex = shutil.which("codex")
+        codex = _resolve_codex_executable()
         if codex is None:
             return "codex_not_found"
         config = json.loads(bridge_config_path.read_text(encoding="utf-8"))
@@ -483,6 +525,136 @@ if typer is not None:
         if result.returncode != 0:
             return "codex_registration_failed"
         return f"registered:{name}"
+
+    @host_app.command("bind")
+    def host_bind(
+        agent_id: str = typer.Option(..., "--agent-id"),
+        provider: str = typer.Option("managed_app_server", "--provider"),
+        adapter_profile: str = typer.Option("codex-current", "--profile"),
+        cwd: Path | None = typer.Option(None, "--cwd"),  # noqa: B008
+        scope_digest: str = typer.Option(..., "--scope-digest"),
+        policy_digest: str = typer.Option(..., "--policy-digest"),
+        executable: str | None = typer.Option(None, "--executable"),
+        model: str | None = typer.Option(None, "--model"),
+        approval_policy: str | None = typer.Option(None, "--approval-policy"),
+        sandbox: str | None = typer.Option(None, "--sandbox"),
+        bridge_config: Path | None = typer.Option(None, "--bridge-config"),  # noqa: B008
+        endpoint: str | None = typer.Option(None, "--endpoint"),
+        thread_id: str | None = typer.Option(None, "--thread-id"),
+        attach_confirmed: bool = typer.Option(False, "--attach-confirmed/--no-attach-confirmed"),
+    ) -> None:
+        """Register a managed or explicitly confirmed Desktop host binding."""
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
+        try:
+            result = _daemon_request(
+                "POST", "/api/v1/host-wake/bindings",
+                {
+                    "agent_id": agent_id,
+                    "provider": provider,
+                    "adapter_profile": adapter_profile,
+                    "cwd": str((cwd or _project_root()).expanduser().resolve()),
+                    "scope_digest": scope_digest,
+                    "policy_digest": policy_digest,
+                    "executable": executable,
+                    "model": model,
+                    "approval_policy": approval_policy,
+                    "sandbox": sandbox,
+                    "bridge_config": str(bridge_config.expanduser().resolve()) if bridge_config else None,
+                    "endpoint": endpoint,
+                    "thread_id": thread_id,
+                    "attach_confirmed": attach_confirmed,
+                },
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+    @host_app.command("attach")
+    def host_attach(
+        agent_id: str = typer.Option(..., "--agent-id"),
+        adapter_profile: str = typer.Option("codex-desktop", "--profile"),
+        cwd: Path | None = typer.Option(None, "--cwd"),  # noqa: B008
+        scope_digest: str = typer.Option(..., "--scope-digest"),
+        policy_digest: str = typer.Option(..., "--policy-digest"),
+        endpoint: str = typer.Option(..., "--endpoint"),
+        thread_id: str = typer.Option(..., "--thread-id"),
+        executable: str | None = typer.Option(None, "--executable"),
+        model: str | None = typer.Option(None, "--model"),
+        approval_policy: str | None = typer.Option(None, "--approval-policy"),
+        sandbox: str | None = typer.Option(None, "--sandbox"),
+        bridge_config: Path | None = typer.Option(None, "--bridge-config"),  # noqa: B008
+        attach_confirmed: bool = typer.Option(False, "--attach-confirmed/--no-attach-confirmed"),
+    ) -> None:
+        """Attach an existing Codex thread through an explicit local app-server socket."""
+        host_bind(
+            agent_id=agent_id,
+            provider="desktop_attach",
+            adapter_profile=adapter_profile,
+            cwd=cwd,
+            scope_digest=scope_digest,
+            policy_digest=policy_digest,
+            executable=executable,
+            model=model,
+            approval_policy=approval_policy,
+            sandbox=sandbox,
+            bridge_config=bridge_config,
+            endpoint=endpoint,
+            thread_id=thread_id,
+            attach_confirmed=attach_confirmed,
+        )
+
+    @host_app.command("probe")
+    def host_probe(agent_id: str = typer.Argument(...)) -> None:
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
+        try:
+            result = _daemon_request(
+                "POST", f"/api/v1/host-wake/bindings/{agent_id}:probe",
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+    @host_app.command("binding-show")
+    def host_binding_show(agent_id: str = typer.Argument(...)) -> None:
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
+        try:
+            result = _daemon_request(
+                "GET", f"/api/v1/host-wake/bindings/{agent_id}",
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+    @host_app.command("wake-status")
+    def host_wake_status(attempt_id: str = typer.Argument(...)) -> None:
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
+        try:
+            result = _daemon_request(
+                "GET", f"/api/v1/host-wake/attempts/{attempt_id}",
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
     def _profile_identity(output_dir: Path, adapter: str, profile: str) -> tuple[str, str]:
         """Return a stable local fallback identity when the host hides its ID.

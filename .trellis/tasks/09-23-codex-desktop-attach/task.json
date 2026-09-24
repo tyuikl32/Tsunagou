@@ -1,0 +1,42 @@
+{
+  "id": "codex-desktop-attach",
+  "name": "codex-desktop-attach",
+  "title": "已有 Codex Desktop 对话发现与 attach",
+  "description": "在 A 阶段完成后，实现阶段 B 的公开 endpoint discovery、认证、现有 thread 显式绑定和 Desktop 唤醒；没有稳定接口时保持 unknown/unsupported。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-23",
+  "completedAt": "2026-09-23",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-23-codex-app-server-host-wake",
+  "relatedFiles": [
+    "src/tsunagou/hostwake/codex_app_server.py",
+    "src/tsunagou/hostwake/port.py",
+    "src/tsunagou/api/app.py",
+    "src/tsunagou/cli/app.py",
+    "tests/unit/test_hostwake.py",
+    "docs/implementation/codex-host-wake.md",
+    "docs/overview/cli-http-manual.md",
+    "docs/research/evidence/codex-desktop-attach-2026-09-23.json"
+  ],
+  "notes": "阶段 B 已完成首版验收：显式 desktop_attach provider、Unix WebSocket Upgrade（Windows 通过 codex app-server proxy 传递 frame）、initialize/thread-read probe、thread/resume + turn/start 唤醒、共享 dispatcher/私有 store 路由、CLI host attach、HTTP U 入口和 bridge 配置随 resume/turn 传递均已实现。官方 Unix listener 已真实读取并恢复 Codex Desktop-originated thread，独立 probe 观察到 turn/completed；真实 Tsunagou A2A probe 观察到 thread_resumed/turn_started。当前 Desktop 主进程仍为 stdio，自动 discovery 不支持；附着 thread 的终态依赖其 MCP、插件和审批环境，保持 truthful running/unknown。",
+  "meta": {
+    "integration_mode": "staged_dual_path",
+    "phase_a_gate": "completed_managed_app_server",
+    "phase_b_transport": "explicit_unix_websocket_proxy_only",
+    "desktop_discovery": "automatic_discovery_unknown_explicit_public_endpoint_supported",
+    "raw_identity_storage": "adapter_private_store_only",
+    "depends_on": ["09-23-codex-app-server-host-wake"]
+  }
+}

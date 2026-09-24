@@ -15,6 +15,13 @@ from tsunagou.api.app import create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.application.handlers import build_handlers
 from tsunagou.application.workflows.lifecycle import LifecycleService
+from tsunagou.hostwake import (
+    DesktopAttachProvider,
+    HostWakeProviderRegistry,
+    ManagedCodexProvider,
+    PrivateBindingStore,
+    WakeDispatcher,
+)
 from tsunagou.interfaces.runtime import CommandDispatcher
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.cognition import CognitionService
@@ -70,6 +77,8 @@ def build_application() -> FastAPI:
     state_runtime = None
     checkpoint_store = None
     maintenance = None
+    wake_dispatcher = None
+    hostwake_provider = None
     schema_bundle_digest = ""
     try:
         schema_bundle_digest = json.loads(_REGISTRY_RESOURCE.read_text(encoding="utf-8"))["schema_bundle_digest"]
@@ -93,6 +102,16 @@ def build_application() -> FastAPI:
             tasks=tasks, authority=authority, coordination=coordination,
             interval_seconds=float(os.environ.get("TSUNAGOU_MAINTENANCE_INTERVAL", "1")),
         )
+        if os.environ.get("TSUNAGOU_HOST_WAKE", "").casefold() == "managed":
+            binding_store = PrivateBindingStore(state_path / "host-bindings.json")
+            hostwake_provider = HostWakeProviderRegistry(
+                ManagedCodexProvider(binding_store),
+                DesktopAttachProvider(binding_store),
+            )
+            wake_dispatcher = WakeDispatcher(
+                hostwake_provider,
+                attempts_path=state_path / "host-wake-attempts.json",
+            )
     dispatcher = CommandDispatcher(
         _registry_path(), database=database, state_runtime=state_runtime,
     )
@@ -120,11 +139,14 @@ def build_application() -> FastAPI:
             project_registry=project_registry,
             checkpoint_store=checkpoint_store,
         ),
+        wake_dispatcher=wake_dispatcher,
+        hostwake_provider=hostwake_provider,
     )
     application.state.project_database = database
     application.state.state_runtime = state_runtime
     application.state.checkpoint_store = checkpoint_store
     application.state.maintenance = maintenance
+    application.state.hostwake_provider = hostwake_provider
     if maintenance is not None:
         @application.on_event("startup")
         def start_runtime_maintenance() -> None:

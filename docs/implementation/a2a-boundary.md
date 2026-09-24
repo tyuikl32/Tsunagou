@@ -16,10 +16,10 @@ Agent Card 当前声明：
 
 - `protocolVersion=1.0`、`protocolBinding=JSONRPC`；
 - skill `agent-coordination`，覆盖消息发送、任务进度查询和受授权的任务状态转换；
-- `streaming=false`、`pushNotifications=false`、`stateTransitionHistory=false`；
-- `x-tsunagou.wake=unsupported`，`delivery=durable-pull-or-client-poll`。
+- `streaming=false`、`stateTransitionHistory=false`；`pushNotifications` 取决于当前 app 是否装配 push notifier（真实 daemon 默认装配短超时 HTTP notifier）；
+- `x-tsunagou.wake=push-notification` 只表示可以发 A2A callback，`delivery=push-or-durable-pull`；没有 notifier 时仍声明 `unsupported` 和 `durable-pull-or-client-poll`。
 
-这些值是能力声明，不是占位符。generic Codex bridge 没有经过验证的反向唤醒 API，因此 daemon 不会把 inbox 写入误报为唤醒对话。消息先持久化为内部 Delivery，目标 Agent 下次 pull/fetch 或客户端轮询时可见。
+这些值是能力声明，不是占位符。generic Codex bridge 没有经过验证的反向唤醒 API，因此 daemon 不会把普通 bridge 的 inbox 写入误报为唤醒对话。阶段 A 的 managed app-server provider 是可选增强路径：它只有在存在私有 binding、probe 和 thread/turn 证据时才写入 `host_wake` 状态；没有 provider 或 binding 时，消息先持久化为内部 Delivery，目标 Agent 下次 pull/fetch 或客户端轮询时可见。
 
 ## 2. 认证和内部真相
 
@@ -72,7 +72,20 @@ Project、Task、Attempt、Grant、Lease、Contract、Operation 和事件历史�
 }
 ```
 
-成功返回的 `result.message.metadata.tsunagou` 会说明内部消息 ID、`delivery=pending` 和 `wake=unsupported`。它表示 daemon 已接受并持久化，不表示目标宿主已经阅读或继续执行。响应 Agent 只需要使用自己的 session 再发送一条 `message/send`，并在 metadata 中设置 `in_reply_to`；消息 ACK、业务响应和契约接受仍是不同内部动作。
+成功返回的 `result.message.metadata.tsunagou` 会说明内部消息 ID，以及 `delivery`、`wake` 和 `push` 状态。A2A 1.0 的异步回调放在 `params.configuration.taskPushNotificationConfig`：
+
+```json
+"configuration": {
+  "returnImmediately": true,
+  "taskPushNotificationConfig": {
+    "url": "http://127.0.0.1:9876/wake",
+    "token": "per-request-token",
+    "authentication": {"scheme": "Bearer", "credentials": "per-request-credential"}
+  }
+}
+```
+
+daemon 先提交 durable message，再以有界超时投递一个 `message.accepted` HTTP 事件；当前 notifier 是提交后的同步 callback，不是主动 Job runner。callback 失败不会回滚消息，目标 Agent 仍可 pull/fetch；持久重试队列属于后续 durability 任务。token、credentials 不写入消息 payload、SQLite 或日志，只在当前 HTTP 请求中使用。`delivery=pushed` 只证明 callback 收到 2xx，`wake=requested` 只证明请求了异步通知，不能证明宿主已经阅读或开始新一轮 LLM。若配置了 managed host adapter，响应还会返回脱敏的 `host_wake` attempt，其中 `callback_received`、`turn_started`、`turn_completed` 和 `agent_presented` 是彼此独立的 evidence；后台 watcher 会在 HTTP 有界等待结束后继续收取终态事件。`agent_presented` 仍需要 Agent 通过 context/inbox 工具完成呈现。
 
 ### `tasks/get`
 
@@ -98,7 +111,7 @@ Project、Task、Attempt、Grant、Lease、Contract、Operation 和事件历史�
 - `tasks/retry` 是 Tsunagou 扩展，要求主 Agent authority，携带 `attemptId`，映射到 `task.recover` 的 `reopen` disposition；
 - 三个方法的返回值都是带 `transition` 和内部 revision 的 A2A Task 投影。重复 JSON-RPC request ID 使用同一内部 command id，改变语义会触发幂等冲突。
 
-`message/stream`、`tasks/resubscribe` 和推送端点仍未实现。没有真实 receiver 或 host wake API 时，取消/失败/重试也不会自动启动新一轮 LLM；目标 Agent 通过 inbox/`tasks/get` 看到持久状态。项目显式开启 multi-agent auto-wake 后，新 `coordination.plan` 会保留 WakeAttempt，并要求 host acceptance 与 worker.ready 两层 evidence；未验证的 Codex App Server transport 仍导出 `wake=unsupported`。
+`message/stream`、`tasks/resubscribe` 和任务 push config CRUD 端点仍未实现；`message/send` 的标准 inline push config 已支持。没有真实 receiver 或 host wake API 时，取消/失败/重试也不会自动启动新一轮 LLM；目标 Agent 通过 inbox/`tasks/get` 看到持久状态。项目显式开启 multi-agent auto-wake 后，新 `coordination.plan` 会保留 WakeAttempt，并要求 host acceptance 与 worker.ready 两层 evidence；generic bridge 没有经过验证的反向唤醒 API 时仍报告 `wake=unsupported`。
 
 ## 4. 错误、重试和恢复
 
@@ -128,6 +141,15 @@ Invoke-RestMethod "$baseUrl/api/v1/a2a/agents/$recipientAgentId" `
   -Method Post -Headers $headers -ContentType 'application/json' -Body $body
 ```
 
-验收必须分别记录：daemon 接收并持久化（delivery）、目标 Agent pull/fetch（presentation）以及宿主是否真的开始新一轮（host wake）。没有宿主证据时最后一项必须是 `unsupported` 或 `unknown`。
+验收必须分别记录：daemon 接收并持久化（delivery）、callback 是否返回 2xx（push delivery）、目标 Agent pull/fetch（presentation）以及宿主是否真的开始新一轮（host wake）。没有宿主证据时最后一项必须是 `unsupported` 或 `unknown`。这四种状态不能互相替代。
 
 官方概念和字段背景：[A2A specification](https://a2a-protocol.org/latest/specification/)、[A2A and MCP](https://a2a-protocol.org/latest/topics/a2a-and-mcp/)、[Life of a task](https://a2a-protocol.org/latest/topics/life-of-a-task/)。
+
+bridge 晚到凭据的最小进程验收可在仓库根目录执行：
+
+```powershell
+corepack pnpm --dir packages/bridge-server build
+node packages/bridge-server/scripts/smoke-late-ticket.mjs
+```
+
+该 smoke 会先启动没有 ticket 的 bridge，再写入 ticket，最后只调用一次 `context__project_read`；输出 `late_ticket_recovery=true` 才表示旧进程自愈成立。

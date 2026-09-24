@@ -91,6 +91,13 @@ uv run python -m tsunagou agent connect `
 
 命令不会把 ticket secret、session token 或 nonce 打印到 stdout。低层 `agent enroll` 仅用于恢复和诊断；普通流程不要求用户再执行 `agent appoint`。
 
+如果输出中的 `host_registration` 是 `registered:<name>`，说明用户控制端已经
+写入 Codex MCP 配置；已经运行的 Codex Desktop 进程可能仍持有旧的 MCP inventory。
+新 profile 必须让宿主重新加载 MCP 后再调用 `context__project_read`，否则会误调用
+旧 profile 的 bridge。若输出为 `codex_not_found`，不要继续用旧 ticket；确认
+`CODEX_CLI_PATH` 或 Windows 的 Codex Desktop 安装路径可见后重新执行同一个 profile
+的 `agent connect`。daemon 应在独立终端/进程中运行，避免重启宿主时连带结束 daemon。
+
 ### 5. 验证 Agent 已加入
 
 让宿主启动 bridge，然后让当前 Agent 调用 `context__project_read`。必须看到自己的 `agent_id`、`session_id`、项目上下文和非 degraded 状态，才能继续工作。仅有宿主窗口、配置文件或 `ticket_issued` 都不算加入。

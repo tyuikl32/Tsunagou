@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/09-23-codex-app-server-host-wake/implement.md","reason":"执行阶段 A 的 probe、E2E、故障恢复和文档产物。"}
+{"file":"docs/standalone/debugging-runbook.md","reason":"复用 Windows daemon、CLI、bridge 和验收操作。"}
+{"file":"docs/implementation/validation.md","reason":"复用项目验证层级与证据记录约定。"}
+{"file": "docs/research/evidence/codex-app-server-managed-2026-09-23.json", "reason": "真实 daemon restart：running attempt 标记 unknown、同语义 messageId 重试并完成"}
+{"file": "docs/decisions/2026-09-23-managed-app-server-live-probe.md", "reason": "记录 restart recovery 和幂等冲突负例"}

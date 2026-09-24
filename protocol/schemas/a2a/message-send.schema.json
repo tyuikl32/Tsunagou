@@ -14,6 +14,35 @@
       "additionalProperties": false,
       "required": ["message"],
       "properties": {
+        "configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "acceptedOutputModes": {"type": "array", "items": {"type": "string"}},
+            "historyLength": {"type": "integer", "minimum": 0},
+            "returnImmediately": {"type": "boolean"},
+            "taskPushNotificationConfig": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["url"],
+              "properties": {
+                "id": {"type": "string"},
+                "taskId": {"type": "string"},
+                "url": {"type": "string", "format": "uri"},
+                "token": {"type": "string"},
+                "authentication": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["scheme"],
+                  "properties": {
+                    "scheme": {"type": "string"},
+                    "credentials": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
         "message": {
           "type": "object",
           "additionalProperties": true,

@@ -42,7 +42,7 @@ Full Access 宿主中的文件和命令行为，可能只能通过自然语言�
 
 用户通过adapter把多个会话接入同一project；worker票据和独立session由系统/bridge管理，不需要把秘密粘贴给模型。ready代表可以协调，claim代表领到任务，start才代表可以在当前范围执行。用户任命main后，普通委派和协商尽量由main与子Agent自行完成。
 
-消息发送会先持久化到 daemon 收件箱，连接中的 Agent 在下一次 `inbox__claim`/黑板读取时可见。generic stdio bridge 没有让 daemon 反向启动或唤醒休眠 Codex 对话的通用通道；宿主支持 wake 时才可由对应 adapter 增强。没有 wake 不会丢消息，但用户或宿主需要重新打开/触发该对话，Agent 才能 pull 到新消息。
+消息发送会先持久化到 daemon 收件箱，连接中的 Agent 在下一次 `inbox__claim`/黑板读取时可见。A2A `message/send` 还可携带标准 `taskPushNotificationConfig`，让 daemon 在提交后向宿主 adapter 的 HTTP receiver 发异步通知；这证明的是 callback 投递，不等于 generic stdio bridge 已能反向启动或唤醒休眠 Codex 对话。阶段 A 先通过 Tsunagou-managed app-server 验证真实唤醒，阶段 B 再允许用户显式提供已有 Codex thread 和公开 Unix socket 进行 attach。官方 listener 已实测能够恢复一个由 Codex Desktop 创建的既有 thread，并由 Tsunagou A2A 产生 `thread_resumed`/`turn_started`；运行中的 Desktop stdio 进程仍不提供自动 discovery，缺少显式 endpoint 时继续保持 pull-first，不丢消息。
 
 具体接入步骤、主子职责与恢复情形见[子Agent指南](subagent-guide.md)，操作命令见[简明手册](cli-http-manual.md)。
 

@@ -1,0 +1,38 @@
+{
+  "id": "codex-app-server-host-wake",
+  "name": "codex-app-server-host-wake",
+  "title": "Codex app-server 宿主唤醒",
+  "description": "通过 Codex app-server 将 Tsunagou A2A push 转化为目标 Agent 的真实 Codex turn，并建立可验收的身份、权限和唤醒证据链。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-23",
+  "completedAt": "2026-09-24",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-23-codex-wake-port-and-binding",
+    "09-23-codex-managed-app-server",
+    "09-23-codex-a2a-wake-dispatch",
+    "09-23-codex-wake-e2e-recovery",
+    "09-23-codex-desktop-attach"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "阶段 A 已完成并验收：managed app-server、私有 bridge 配置、异步 evidence watcher、父 Codex 身份隔离、A2A durable/callback/wake、真实 context/inbox/presentation/turn completion、daemon restart unknown/retry、loopback callback 和旧 epoch 拒绝均有证据。阶段 B 的显式 Desktop attach provider、CLI/HTTP、Unix WebSocket proxy、thread/read probe 和共享 dispatcher 已完成；官方用户启动的 Unix listener 已真实读取并恢复 Codex Desktop-originated thread，独立 probe 观察到 turn/completed，真实 Tsunagou A2A 观察到 thread_resumed/turn_started。运行中的 Desktop stdio 进程仍没有可依赖的自动 discovery，附着 thread 的终态依赖其 MCP/插件/审批环境，因此保留 truthful running/unknown。",
+  "meta": {
+    "integration_mode": "staged_dual_path",
+    "phase_a": "managed_app_server",
+    "phase_b": "desktop_attach",
+    "phase_a_gate": "R1-R7_and_infrastructure_verified_before_phase_b",
+    "depends_on": ["F2"]
+  }
+}

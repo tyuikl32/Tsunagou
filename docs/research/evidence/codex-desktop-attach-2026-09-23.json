@@ -1,0 +1,83 @@
+{
+  "evidence_kind": "codex_desktop_attach_probe",
+  "observed_at": "2026-09-23",
+  "host": "codex",
+  "provider": "desktop_attach",
+  "codex_version": "0.155.0-alpha.16",
+  "secret_free": true,
+  "official_reference": "https://learn.chatgpt.com/docs/app-server",
+  "cli_surface": {
+    "app_server_proxy": "documented: codex app-server proxy --sock <path>",
+    "unix_listener": "documented: codex app-server --listen unix://<path>",
+    "desktop_discovery": "not documented as a stable public endpoint"
+  },
+  "disposable_unix_transport_attempt": {
+    "listener_socket_created": true,
+    "websocket_upgrade": "supported_via_codex_proxy_on_windows",
+    "initialize_thread_start": "supported",
+    "thread_read": "supported",
+    "thread_resume": "supported",
+    "turn_start": "supported",
+    "turn_terminal": "not_observed_within_30_second_probe_window",
+    "interpretation": "This was a transport experiment against a separately launched app-server, not the Desktop process. It proves the Windows proxy/WebSocket transport and provider lifecycle up to turn/start; it is not evidence that the Desktop process exposes an attach endpoint. The model turn remained running at the bounded probe end and the disposable process was then stopped."
+  },
+  "desktop_originated_thread_public_endpoint_attempt": {
+    "status": "supported",
+    "endpoint_source": "user_started_documented_codex_app_server_listen_unix",
+    "endpoint_digest": "sha256:b0e087c7d0c28650567b8e2be9c0bfbd11bc6733ac524db0bf302f385878d319",
+    "thread_id_digest": "sha256:19f1245bcbe0944b00c11329d686f46a247e6ace535c36e1405203a1b40e3e25",
+    "thread_originator": "Codex Desktop",
+    "operations": ["thread/list", "thread/read", "thread/resume", "turn/start"],
+    "turn_terminal": "turn/completed",
+    "response_digest": "sha256:94b5cc3881b1e29256a5ec340b040fd7d944074eed2b7f1c2fb3c500c6412981",
+    "interpretation": "A documented public Unix app-server endpoint, launched separately from the Desktop stdio process but using the same Codex state, listed and resumed an existing thread whose originator was Codex Desktop. A bounded probe sent a no-file-mutation prompt and observed the exact probe response and turn/completed. This proves explicit attach of a Desktop-originated thread through a user-supplied public endpoint; it does not claim that the Desktop stdio process itself exposes a socket or that its UI process was the executor."
+  },
+  "tsunagou_a2a_wake_through_desktop_originated_thread": {
+    "status": "thread_resumed_and_turn_started",
+    "thread_id_digest": "sha256:57ff9b2e4508ddfd41d4e36b56c6966791f59a4d36d6a103c67af552483ac104",
+    "operations": ["host_attach", "host_probe", "message/send", "thread/resume", "turn/start"],
+    "binding_public_ref_secret_free": true,
+    "wake_evidence": ["thread_resumed", "turn_started"],
+    "durable_message": true,
+    "turn_terminal": "not_observed_in_20_second_probe_window",
+    "reason_terminal_not_observed": "The persisted Desktop thread referenced stale host MCP server paths; app-server kept the turn running after reporting missing tool output. Tsunagou retained running state and did not fabricate turn_completed.",
+    "interpretation": "The real Tsunagou daemon accepted an A2A message for an explicitly attached Desktop-originated thread and produced the expected resume/start evidence through the documented public endpoint. Completion depends on the attached thread's own MCP/plugin environment and approval state; this probe therefore proves wake dispatch, not universal Desktop turn completion."
+  },
+  "current_desktop_observation": {
+    "process_transport": "stdio",
+    "external_attach_endpoint_observed": false,
+    "process_owned_loopback_ports": "observed but did not accept the documented app-server WebSocket handshake; no endpoint identity inferred",
+    "private_desktop_database_read": false,
+    "window_or_pid_identity_inferred": false,
+    "remote_control_cli_attempt": "incomplete_local_package",
+    "status": "stdio_only_for_running_desktop_process",
+    "reason": "the running Desktop app-server is launched with stdio by the Desktop host; a separate documented app-server listener can nevertheless expose the persisted Desktop-originated thread when the user explicitly supplies that endpoint"
+  },
+  "implemented_explicit_path": {
+    "status": "supported_when_user_supplies_public_local_endpoint",
+    "transports": ["unix_proxy"],
+    "registration": ["agent_id", "existing_thread_id", "unix_endpoint", "attach_confirmation"],
+    "probe": ["initialize", "thread/read", "exact_thread_identity"],
+    "wake": ["thread/resume", "turn/start"],
+    "implicit_thread_start": false,
+    "auto_port_scan": false,
+    "network_endpoint": false,
+    "public_binding_contains_raw_endpoint_or_thread": false
+  },
+  "authorization_boundary": {
+    "binding_creator": "user_control_only",
+    "agent_must_be_enrolled_and_active": true,
+    "worker_can_create_binding": false,
+    "private_control_pipe_used": false
+  },
+  "verification": {
+    "unit_tests": "uv run pytest -q tests/unit/test_hostwake.py: passed (20 host-wake tests)",
+    "full_regression": "uv run pytest -q: passed",
+    "python_lint": "uv run ruff check src/tsunagou/hostwake tests/unit/test_hostwake.py: passed",
+    "python_types": "uv run mypy src/tsunagou/hostwake: passed",
+    "disposable_unix_transport": "initialize -> thread/start -> thread/read -> thread/resume -> turn/start observed; terminal turn event not observed within bounded probe",
+    "real_desktop_thread_wake": "desktop_originated_thread_resumed_through_public_endpoint",
+    "managed_phase_a_regression": "covered by codex-app-server-managed-2026-09-23.json"
+  },
+  "conclusion": "A manually created Codex Desktop conversation is attachable and wakeable when the user supplies a documented local app-server endpoint and the existing thread id. The running Desktop stdio process still has no public socket and is not inferred through private IPC; without the explicit endpoint, keep durable inbox pull and managed app-server phase A available."
+}

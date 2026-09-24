@@ -42,7 +42,7 @@ def test_a2a_http_loopback_card_message_and_task(tmp_path: Path) -> None:
         with urlopen(f"{base_url}/.well-known/agent-card.json", timeout=5) as response:
             card = json.load(response)
         assert card["protocolVersion"] == "1.0"
-        assert card["capabilities"]["pushNotifications"] is False
+        assert card["capabilities"]["pushNotifications"] is True
 
         body = json.loads((ROOT / "tests" / "fixtures" / "a2a" / "message-send.json").read_text(encoding="utf-8"))
         body["params"]["message"]["metadata"]["tsunagou"]["recipient_agent_id"] = recipient.agent_id
