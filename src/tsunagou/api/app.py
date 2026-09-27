@@ -1,18 +1,22 @@
 """Side-effect-free HTTP application factory."""
 
+from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import Body, FastAPI, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from tsunagou import __version__
 from tsunagou.api.a2a import A2AGateway, http_push_notifier
 from tsunagou.api.auth import LocalCommandAuthenticator
+from tsunagou.generated.protocol.audit import AuditPageModel
+from tsunagou.generated.protocol.delivery import CredentialDeliveryModel
 from tsunagou.interfaces.runtime import CommandDispatcher
 from tsunagou.shared_kernel.errors import IdempotencyConflict, LockUnavailable, RevisionConflict
 from tsunagou.shared_kernel.ids import new_id
+from tsunagou.shared_kernel.time import format_timestamp
 
 
 class HealthResponse(BaseModel):
@@ -51,10 +55,21 @@ class HostBindingRequest(BaseModel):
     attach_confirmed: bool = False
 
 
+def _delivery_timestamps(result: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(result.get("delivery_ref"), str):
+        return result
+    return {
+        key: format_timestamp(value) if key in {
+            "created_at", "expires_at", "delivered_at", "consumed_at", "revoked_at", "recovery_expires_at",
+        } and isinstance(value, int) else value
+        for key, value in result.items()
+    }
+
+
 def create_app(
     dispatcher: CommandDispatcher | None = None,
     *, authenticator: LocalCommandAuthenticator | None = None,
-    query_provider: Any | None = None,
+    query_provider: Callable[..., dict[str, Any]] | None = None,
     push_notifier: Any | None = http_push_notifier,
     wake_dispatcher: Any | None = None,
     hostwake_provider: Any | None = None,
@@ -79,6 +94,12 @@ def create_app(
 
     @app.on_event("shutdown")
     def release_runtime_lock() -> None:
+        maintenance = getattr(app.state, "maintenance", None)
+        if maintenance is not None:
+            maintenance.stop()
+            thread = getattr(maintenance, "_thread", None)
+            if thread is not None and thread.is_alive():
+                return  # Keep the lock until process exit if a writer is still draining.
         database = getattr(dispatcher, "database", None)
         if database is not None:
             database.release_process_lock()
@@ -133,10 +154,18 @@ def create_app(
             policy = dispatcher.registry.get(command_kind)
             if policy is None:
                 raise KeyError("unknown_command")
-            principal = authenticator.authenticate(
-                policy["principal"], authorization,
-                session_id=session_id, connection_epoch=connection_epoch,
-            )
+            try:
+                principal = authenticator.authenticate(
+                    policy["principal"], authorization,
+                    session_id=session_id, connection_epoch=connection_epoch,
+                )
+            except PermissionError as auth_error:
+                if command_kind != "session.reconnect" or str(auth_error) != "authentication_failed":
+                    raise
+                principal = authenticator.authenticate_reconnect_replay(
+                    dispatcher.database, command_kind=command_kind, command_id=request.command_id, payload=request.payload,
+                    authorization=authorization, session_id=session_id, connection_epoch=connection_epoch,
+                )
             dispatched = dispatcher.dispatch(
                 command_kind, request.model_dump(), principal=principal,
             )
@@ -175,7 +204,40 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
         response.headers["ETag"] = dispatched.command_hash
-        return {"command_hash": dispatched.command_hash, "result": dispatched.result}
+        if isinstance(dispatched.result.get("delivery_ref"), str):
+            response.headers["Cache-Control"] = "no-store"
+        return {"command_hash": dispatched.command_hash, "result": _delivery_timestamps(dispatched.result)}
+
+    @app.post("/api/v1/credential-deliveries/{delivery_ref}/ack", response_model=CredentialDeliveryModel)
+    def credential_delivery_ack(
+        delivery_ref: str,
+        response: Response,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+        body: Annotated[dict[str, Any] | None, Body()] = None,
+    ) -> dict[str, Any]:
+        try:
+            if body:
+                raise ValueError("credential_ack_body_must_be_empty")
+            principal = authenticator.authenticate_delivery_ack(
+                authorization, session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if dispatcher.database is None:
+                raise RuntimeError("credential_delivery_unavailable")
+            result = dispatcher.database.acknowledge_credential_delivery(
+                delivery_ref, principal_kind=principal.kind, principal_id=principal.principal_id,
+                session_id=principal.session_id, connection_epoch=principal.connection_epoch,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+        response.headers["Cache-Control"] = "no-store"
+        return _delivery_timestamps(result)
 
     @app.post("/api/v1/host-wake/bindings")
     def host_wake_bind(
@@ -466,14 +528,38 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
-    @app.get("/api/v1/projects/{project_id}/audit")
-    def project_audit(project_id: str) -> dict[str, Any]:
-        if query_provider is None:
-            return {"project_id": project_id, "items": [], "next_cursor": None}
+    @app.get("/api/v1/projects/{project_id}/audit", response_model=AuditPageModel)
+    def project_audit(
+        project_id: str,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        from_timestamp: Annotated[str | None, Query(alias="from")] = None,
+        to_timestamp: Annotated[str | None, Query(alias="to")] = None,
+        actor_ref: Annotated[str | None, Query()] = None,
+        subject_ref: Annotated[str | None, Query()] = None,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
         try:
-            return query_provider("audit", project_id)
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                return {"project_id": project_id, "items": [], "next_cursor": None,
+                        "projection_version": "v1", "as_of_event_seq": 0, "snapshot_event_seq": 0}
+            return query_provider(
+                "audit", project_id, cursor=cursor, limit=limit,
+                from_timestamp=from_timestamp, to_timestamp=to_timestamp,
+                actor_ref=actor_ref, subject_ref=subject_ref, viewer=viewer,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401, detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
 
     @app.get("/api/v1/decisions")
     def decisions() -> dict[str, Any]:
@@ -488,7 +574,7 @@ def create_app(
         result = query_provider("operations", "")
         for item in result.get("items", []):
             if item.get("id") == operation_id:
-                return item
+                return dict(item)
         raise HTTPException(status_code=404, detail={"code": "operation_not_found"})
 
     @app.get("/api/v1/checkpoints")
@@ -498,13 +584,26 @@ def create_app(
         return query_provider("checkpoints", "")
 
     @app.get("/api/v1/artifacts/{artifact_ref:path}")
-    def artifact(artifact_ref: str) -> dict[str, Any]:
+    def artifact(
+        artifact_ref: str,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
         if query_provider is None:
             raise HTTPException(status_code=404, detail={"code": "artifact_not_found"})
         try:
-            return query_provider("artifact", artifact_ref)
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            return query_provider("artifact", artifact_ref, viewer=viewer)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403, detail={"code": str(exc)}) from exc
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=409, detail={"code": "artifact_unavailable_or_corrupt"}) from exc
 
     @app.get("/api/v1/recovery")
     def recovery() -> dict[str, Any]:

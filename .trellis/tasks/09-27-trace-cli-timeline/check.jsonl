@@ -1,0 +1,2 @@
+{"file":"docs/implementation/cli-contract.md","reason":"用户可直接执行的命令名、参数和权限必须保持一致。"}
+{"file":"docs/overview/cli-http-manual.md","reason":"实施完成后同步操作说明，不能把待实现命令写成已实现。"}

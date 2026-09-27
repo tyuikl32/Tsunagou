@@ -1,0 +1,138 @@
+{
+  "format_version": 1,
+  "plan_id": "persistence-traceability",
+  "title": "P0 持久化、溯源与责任留痕修复",
+  "created_at": "2026-09-27T14:39:38Z",
+  "updated_at": "2026-09-27T19:44:32.466Z",
+  "status": "in_progress",
+  "awaiting_user_instruction": false,
+  "developer": "tyuikl32",
+  "platform": "codex",
+  "source": "docs/implementation/persistence-traceability-plan.md",
+  "trellis_parent": ".trellis/tasks/09-27-persistence-traceability",
+  "execution_rule": "meta.depends_on is the execution dependency; parent/children only group tasks",
+  "tasks": [
+    {
+      "id": "PT1",
+      "slug": "trace-audit-time",
+      "title": "时间戳、责任主体与审计契约",
+      "trellis_path": ".trellis/tasks/09-27-trace-audit-time",
+      "depends_on": [],
+      "status": "completed",
+      "owner": "tyuikl32",
+      "deliverable": "统一事件包络、实体时间、actor/subject/causation、证据引用、游标和旧数据 unknown 语义",
+      "acceptance": [
+        "新事件使用服务端 UTC 毫秒并保留真实 actor/subject",
+        "相同命令重试不产生新业务事件",
+        "旧记录未知时间不伪造，CLI/HTTP 时间和分页契约一致"
+      ]
+    },
+    {
+      "id": "PT2",
+      "slug": "trace-secret-receipts",
+      "title": "秘密交付与安全幂等迁移",
+      "trellis_path": ".trellis/tasks/09-27-trace-secret-receipts",
+      "depends_on": [
+        "PT1"
+      ],
+      "status": "completed",
+      "owner": "tyuikl32",
+      "deliverable": "脱敏 command receipt、私有一次交付、响应恢复、旧库 credential 撤销和 WAL 迁移演练",
+      "acceptance": [
+        "SQLite、checkpoint、artifact、日志和 API 不出现可用 token/nonce",
+        "丢响应重试复用同一身份和 receipt",
+        "旧库 dry-run/backup/rotate/scrub/integrity 流程可验证"
+      ],
+      "completed_at": "2026-09-27T17:56:30Z"
+    },
+    {
+      "id": "PT3",
+      "slug": "trace-workspace-evidence",
+      "title": "工作区差异与验证证据",
+      "trellis_path": ".trellis/tasks/09-27-trace-workspace-evidence",
+      "depends_on": [
+        "PT1"
+      ],
+      "status": "completed",
+      "owner": "tyuikl32",
+      "deliverable": "scope 限定的内容 digest、非递归 ArtifactRef、证据等级、工具回执和提交/观察归因",
+      "acceptance": [
+        "同路径内容改变可检测且范围外不可采集",
+        "patch 不递归嵌套，引用按 domain/owner/scope 授权",
+        "agent_asserted/host_observed/system_verified/user_confirmed 可区分"
+      ],
+      "started_at": "2026-09-27T17:57:00Z",
+      "completed_at": "2026-09-27T19:44:32.466Z"
+    },
+    {
+      "id": "PT4",
+      "slug": "trace-checkpoint-recovery",
+      "title": "项目真相、checkpoint 与恢复",
+      "trellis_path": ".trellis/tasks/09-27-trace-checkpoint-recovery",
+      "depends_on": [
+        "PT2",
+        "PT3"
+      ],
+      "status": "in_progress",
+      "owner": "tyuikl32",
+      "deliverable": "genesis、白名单 checkpoint DTO、提交后幂等物化、真实 Git anchor、preview/confirm clone 恢复",
+      "acceptance": [
+        "共享快照不含 secret/runtime grant/绝对路径",
+        "事务后文件失败可重试且不伪造回滚",
+        "Git refs/tree 内容实际验证，恢复不继承活动权限"
+      ],
+      "started_at": "2026-09-27T19:44:32.466Z"
+    },
+    {
+      "id": "PT5",
+      "slug": "trace-cli-timeline",
+      "title": "CLI 查询与责任时间线",
+      "trellis_path": ".trellis/tasks/09-27-trace-cli-timeline",
+      "depends_on": [
+        "PT4"
+      ],
+      "status": "planning",
+      "owner": "tyuikl32",
+      "deliverable": "项目/任务 history、audit event、checkpoint verify、游标时间筛选和 HTTP 等价只读查询",
+      "acceptance": [
+        "用户不读 SQLite 即可查全量历史",
+        "分页无重复/缺页且权限/私有消息边界保持",
+        "CLI/HTTP 显示 evidence level、as_of_event_seq、unknown time"
+      ]
+    },
+    {
+      "id": "PT6",
+      "slug": "trace-runtime-noise",
+      "title": "运行降噪与后续工作留痕",
+      "trellis_path": ".trellis/tasks/09-27-trace-runtime-noise",
+      "depends_on": [
+        "PT5"
+      ],
+      "status": "planning",
+      "owner": "tyuikl32",
+      "deliverable": "领域/诊断分层、bridge rebind 降噪、A2A delivery/wake/pull/turn 证据关联和修复关联",
+      "acceptance": [
+        "稳定连接 no-op 不推进领域 revision",
+        "callback/wake/pull/turn 不互相冒充",
+        "旧验收后的新修复有新 task/result 和因果关联"
+      ]
+    },
+    {
+      "id": "PT7",
+      "slug": "trace-acceptance-docs",
+      "title": "迁移、整体验收与用户操作指南",
+      "trellis_path": ".trellis/tasks/09-27-trace-acceptance-docs",
+      "depends_on": [
+        "PT6"
+      ],
+      "status": "planning",
+      "owner": "tyuikl32",
+      "deliverable": "脱敏 fixture/临时项目/真实项目分层演练、Windows 操作单、迁移报告、最终证据和文档同步",
+      "acceptance": [
+        "覆盖两 Agent 协作、故障注入、秘密扫描、工作区、Git 恢复和时间权限",
+        "每个结论带版本/命令/时间/退出码/证据",
+        "只在用户明确下令后作用于真实库，整体通过才关闭父任务"
+      ]
+    }
+  ]
+}

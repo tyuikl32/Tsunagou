@@ -1,0 +1,2 @@
+{"file":"docs/implementation/modules/02-agents.md","reason":"不同 conversation/subagent 的身份、session、消息和 bridge 状态。"}
+{"file":"docs/implementation/modules/08-evaluation.md","reason":"不删除历史噪声，不把诊断能力写成产品成功。"}

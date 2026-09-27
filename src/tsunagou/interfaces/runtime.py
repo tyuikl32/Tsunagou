@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -101,6 +102,8 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "contract.reject": frozenset({"proposal_id", "proposal_digest", "reason", "evidence_refs"}),
     "contract.withdraw": frozenset({"proposal_id", "reason"}),
     "durability.reconcile": frozenset({"scope_refs", "reason"}),
+    "checkpoint.create.user": frozenset({"reason", "retry_operation_id", "minimum_event_seq"}),
+    "checkpoint.create": frozenset({"reason", "minimum_event_seq"}),
     "inbox.claim": frozenset({"limit", "max_bytes"}),
     "inbox.fetch": frozenset({"message_id", "delivery_lease_id"}),
     "inbox.presented": frozenset({"message_id", "evidence_digest", "evidence_kind"}),
@@ -123,7 +126,8 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "workspace.prepare": frozenset({"task_id", "attempt_id", "decision_id", "input_digest", "root_binding_refs",
                                      "repository_id", "external_locator", "baseline"}),
     "workspace.result": frozenset({"workspace_id", "task_id", "attempt_id", "baseline_digest", "changed_paths",
-                                    "commit_refs", "patch_artifact_ref", "untracked_summary", "validation_refs"}),
+                                    "commit_refs", "patch_artifact_ref", "untracked_summary", "validation_refs",
+                                    "validation_metadata"}),
     "worker.ready": frozenset({"assignment_id", "wake_attempt_id"}),
     "workspace.git.report": frozenset({"request_id", "evidence_refs", "exact_input_digest", "outcome", "result_manifest"}),
     "task.review.accept": frozenset({"task_id", "attempt_id", "result_id", "evidence_refs", "reason", "result_digest", "slot_id"}),
@@ -141,6 +145,8 @@ class PrincipalContext:
     principal_id: str
     session_id: str | None = None
     connection_epoch: int | None = None
+    credential_proof_hash: str | None = None
+    replay_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +160,7 @@ class CommandDispatcher:
     def __init__(
         self, registry_path: str | Path, *, database: Any | None = None,
         state_runtime: Any | None = None,
+        checkpoint_worker: Any | None = None,
     ) -> None:
         raw = json.loads(Path(registry_path).read_text(encoding="utf-8"))
         self.registry: dict[str, dict[str, Any]] = raw["commands"]
@@ -161,6 +168,7 @@ class CommandDispatcher:
         self.schema_bundle_digest = str(raw.get("schema_bundle_digest", ""))
         self.database = database
         self.state_runtime = state_runtime
+        self.checkpoint_worker = checkpoint_worker
         self.handlers: dict[str, Handler] = {}
 
     def register(self, command_kind: str, handler: Handler) -> None:
@@ -200,10 +208,14 @@ class CommandDispatcher:
             unknown = set(envelope["payload"]) - allowed_fields
             if unknown:
                 raise ValueError("unknown_payload_field")
+        durable_principal_id = (
+            "ticket-sha256:" + hashlib.sha256(principal.principal_id.encode("utf-8")).hexdigest()
+            if principal.kind == "T" else principal.principal_id
+        )
         semantic = {
             "command_kind": command_kind,
             "principal_kind": principal.kind,
-            "principal_id": principal.principal_id,
+            "principal_id": durable_principal_id,
             "payload": envelope["payload"],
         }
         command_hash = canonical_digest(semantic)
@@ -216,32 +228,59 @@ class CommandDispatcher:
             "command_id": envelope["command_id"],
         }
         if self.database is None:
+            if principal.replay_only:
+                raise PermissionError("authentication_failed")
             result = handler(envelope["payload"], context)
         else:
-            snapshot = self.state_runtime.capture() if self.state_runtime is not None else None
+            snapshot = None
 
             def execute(uow: Any) -> dict[str, Any]:
+                nonlocal snapshot
+                # Capture under the SQLite writer lock. A concurrent command
+                # must not roll this command back to a pre-lock memory snapshot.
+                snapshot = self.state_runtime.capture() if self.state_runtime is not None else None
                 context["_uow"] = uow
                 result = handler(envelope["payload"], context)
                 if self.state_runtime is not None:
                     self.state_runtime.persist(
-                        uow, actor_ref=principal.principal_id, command_kind=command_kind,
+                        uow, actor_ref=self.state_runtime.audit_actor(context), command_kind=command_kind,
+                        before=snapshot, command_payload=envelope["payload"], result=result,
+                        session_id=principal.session_id or (result.get("session_id") if principal.kind == "T" else None),
                     )
+                checkpoint_request = context.get("_checkpoint_request")
+                if checkpoint_request is not None and self.checkpoint_worker is not None:
+                    self.checkpoint_worker.stage(uow, **checkpoint_request)
                 return result
 
-            try:
-                stored = self.database.dispatch(
-                    principal_id=principal.principal_id,
-                    command_kind=command_kind,
-                    command_id=envelope["command_id"],
-                    payload=envelope["payload"],
-                    handler=execute,
-                )
-            except BaseException:
-                if snapshot is not None:
+            def restore_rolled_back_state() -> None:
+                if snapshot is not None and self.state_runtime is not None:
                     self.state_runtime.restore(snapshot)
-                raise
-            return DispatchResponse(command_kind, command_hash, stored.result)
+
+            stored = self.database.dispatch(
+                principal_id=durable_principal_id,
+                command_kind=command_kind,
+                command_id=envelope["command_id"],
+                payload=envelope["payload"],
+                handler=execute,
+                principal_kind=principal.kind,
+                auth_session_id=principal.session_id,
+                auth_connection_epoch=principal.connection_epoch,
+                auth_proof_hash=principal.credential_proof_hash,
+                replay_only=principal.replay_only,
+                on_rollback=restore_rolled_back_state,
+            )
+            response_result = stored.result
+            if self.checkpoint_worker is not None:
+                # This is beyond the commit/rollback boundary. Filesystem
+                # errors must not restore a pre-command in-memory snapshot.
+                try:
+                    self.checkpoint_worker.reconcile_project_projection()
+                except OSError:
+                    pass  # Rebuilt from SQLite by maintenance / restart.
+                if response_result.get("operation_id"):
+                    self.checkpoint_worker.run_once(response_result["operation_id"])
+                    response_result = self.checkpoint_worker.decorate_result(response_result)
+            return DispatchResponse(command_kind, command_hash, response_result)
         return DispatchResponse(command_kind, command_hash, result)
 
     def mcp_tools(self) -> list[dict[str, Any]]:

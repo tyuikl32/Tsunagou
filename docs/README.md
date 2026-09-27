@@ -24,7 +24,7 @@
 
 [决策追溯表](decisions/traceability.md) 将本轮每项决定映射到当前规范和具体实施任务。
 
-2026-09-20 用户要求关闭旧 Trellis 任务，当前执行索引为 [M1 / R1–R6](implementation/roadmap.md)。27 个历史任务（含此前已归档的 bootstrap 与文档任务）已按 20 项完成、7 项放弃归档，见[迁移清单](standalone/trellis-transition-2026-09-20.json)；旧任务和路线图仅保留追溯，不再参与当前依赖调度。
+2026-09-20 用户要求关闭旧 Trellis 任务，当前执行索引为 [M1 / R1–R6](implementation/roadmap.md)。27 个历史任务（含此前已归档的 bootstrap 与文档任务）已按 20 项完成、7 项放弃归档，见[迁移清单](standalone/trellis-transition-2026-09-20.json)；旧任务和路线图仅保留追溯，不再参与当前依赖调度。2026-09-27 新增的 PT 持久化溯源计划已获用户后续实施授权，PT1 已验收、PT2 正在进行，详见[修复方案](implementation/persistence-traceability-plan.md)和[机器任务索引](implementation/persistence-traceability-tasks.json)；PT1–PT7 尚未整体验收。
 
 文档以中文说明、英文标识符组成。一个概念只使用一个规范英文名；界面可以显示中文。术语、状态和跨模块字段见[数据模型](implementation/data-model.md)，命令名字、权限和 URI 见[命令目录](implementation/command-catalog.md)。同一命令不在适配器中另起名字或更改权限语义。
 

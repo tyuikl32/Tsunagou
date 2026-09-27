@@ -1,0 +1,38 @@
+{
+  "id": "persistence-traceability",
+  "name": "persistence-traceability",
+  "title": "P0 持久化溯源与留痕修复",
+  "description": "按用户后续开始指令实施 PT1–PT7，修复秘密留存、证据归因、时间与责任记录、checkpoint 和可查询性。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-27",
+  "completedAt": null,
+  "branch": "codex/persistence-traceability",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-27-trace-audit-time",
+    "09-27-trace-secret-receipts",
+    "09-27-trace-workspace-evidence",
+    "09-27-trace-checkpoint-recovery",
+    "09-27-trace-cli-timeline",
+    "09-27-trace-runtime-noise",
+    "09-27-trace-acceptance-docs"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "persistence-traceability",
+    "depends_on": [],
+    "awaiting_user_instruction": false
+  }
+}

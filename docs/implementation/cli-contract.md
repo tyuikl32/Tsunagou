@@ -55,6 +55,8 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 
 ## 3. 请求、环境与输出契约
 
+PT2 已加入离线命令 `daemon migrate-credentials --coordination-root <path> [--dry-run] [--confirm-plan-digest <digest>]`：默认只读预览，显式 digest 才撤销旧权限并清理可见秘密；不能同时传 dry-run 与 confirm。活跃 daemon 锁或过期计划拒绝执行，输出只含安全报告；失败退出 4，输入错误退出 2。中断后重跑原 digest，完成后重新 enrollment/appoint。操作步骤见 [用户手册](../overview/cli-http-manual.md#11-旧库凭据迁移pt2)，数据契约见 [凭据交付](credential-delivery.md)。
+
 `--request-file`只包含命令目录payload，不含token、actor、command_id或envelope。不能一会儿接受裸payload、一会儿接受全请求而由CLI猜。CLI用生成DTO验证并提示字段路径；文件内未知字段拒绝。用户可以用非秘密文件准备复杂scope/ceiling，不在命令行拼几十个参数。
 
 每次mutation生成UUIDv7 command_id；支持显式`--command-id <uuidv7>`用于重试同一操作。timeout/network错误自动重试时保留同一ID和规范输入；改choice/payload/revision视为新命令，使用新ID。更新对象要求`--expected-revision`，CLI转为If-Match；交互向导可先读展示再绑定当前版本，不能自动接受后续版本。
@@ -64,6 +66,8 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 `project complete`只提交用户明确审阅的CompletionProposal：命令行中的proposal_id、`--expected-project-revision`和`--digest`必须指向同一版本。CLI不得从“最新提案”补值，也不得由`decision resolve`、`project archive`或其他成功动作自动触发确认；缺字段返回输入错误，竞争变化由服务器拒绝并要求重新审阅。
 
 CLI从platformdirs私有目录读取control token；不提供`--token`，不把秘密写环境变量、request-file、日志或JSON。T01固定普通运行参数的配置键；本手册不引入未登记的`TSUNAGOU_*`环境开关。endpoint由daemon发现文件读取并核对instance，不能凭过期PID连接别的服务。
+
+当前 PT1 的 `project history <project_id>` 从本项目 `.tsunagou/local/control.token` 读取已有控制凭据，通过 daemon 查询 `P/audit`。支持 `--from/--to/--actor/--subject/--limit/--cursor`；根级或命令级 `--json` 输出同一 AuditPage。查询不写 SQLite，拒绝无凭据、过期游标和变更过滤条件的游标；未知历史时间显示 `unknown_time`。未来全局凭据目录迁移不改变这一只读权限模型。
 
 `--json`输出生成DTO/Problem，日志只在stderr。`--wait <seconds>`仅对返回Operation的命令有效；超时退出6，打印operation_id和最近状态，不取消业务操作。没有wait则202受理退出0，用户后续show。普通操作的退出码沿用catalog的0/2/3/4/5/6。
 

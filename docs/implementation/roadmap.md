@@ -61,3 +61,21 @@ python tools/docs/validate_docs.py
 ## M1 总关闭标准
 
 六项全部验收通过后，R6 从源码树外的独立安装产物执行完整流程：初始化 → 两个独立会话 → 任务/认知协商 → 资源与真实文件执行 → 提交审查 → 用户确认 → 重启恢复。必须同时通过越权拒绝、事务回滚、幂等、旧 epoch 和文件变更检查，且用户操作单逐条可执行。当前任务整理完成不等于 M1 产品完成。
+
+## 后续规划：持久化溯源与留痕修复
+
+2026-09-27 建立 [PT 总体方案](persistence-traceability-plan.md) 和 [PT 机器任务索引](persistence-traceability-tasks.json)。它针对审计发现的秘密结果留存、时间/责任字段不统一、工作区证据归因、checkpoint 物化/Git 锚点、CLI 查询和 bridge/A2A 诊断噪声，按 PT1→PT7 排序。用户已下令实施。当前 PT1 已验收、PT2 为 `in_progress`，其余任务尚待依赖验收；不改变 M1/R1–R6 的历史状态。局部测试不代表整体实现，真实外部项目数据库不自动迁移。
+
+父任务与子任务：
+
+| 任务 | 主题 | 前置 |
+|---|---|---|
+| [PT1](../../.trellis/tasks/09-27-trace-audit-time/prd.md) | 时间戳、actor/subject、因果和游标 | 无 |
+| [PT2](../../.trellis/tasks/09-27-trace-secret-receipts/prd.md) | 安全 receipt、一次交付、旧库迁移 | PT1 |
+| [PT3](../../.trellis/tasks/09-27-trace-workspace-evidence/prd.md) | 内容 digest、scope、ArtifactRef、证据等级 | PT1 |
+| [PT4](../../.trellis/tasks/09-27-trace-checkpoint-recovery/prd.md) | genesis、checkpoint、Git anchor、clone 恢复 | PT2、PT3 |
+| [PT5](../../.trellis/tasks/09-27-trace-cli-timeline/prd.md) | history/audit/checkpoint 查询和导出 | PT4 |
+| [PT6](../../.trellis/tasks/09-27-trace-runtime-noise/prd.md) | domain/diagnostic、A2A wake 证据和修复关联 | PT5 |
+| [PT7](../../.trellis/tasks/09-27-trace-acceptance-docs/prd.md) | 分层迁移、验收和用户操作单 | PT6 |
+
+用户下令后仍需先在脱敏 fixture 和临时项目演练，再由用户单独授权真实库的凭据撤销、迁移和恢复。

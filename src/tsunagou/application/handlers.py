@@ -16,15 +16,17 @@ surface lands, the bridge sends them in the payload and each handler fails with 
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from tsunagou import __version__
 from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.application.workflows.task_execution import TaskExecutionWorkflow
+from tsunagou.application.workspace_evidence import WorkspaceEvidence
+from tsunagou.modules.artifacts import ArtifactService
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.cognition import Claim, CognitionService
 from tsunagou.modules.coordination import CoordinationService
@@ -33,7 +35,9 @@ from tsunagou.modules.projects import ProjectRegistry, physical_identity
 from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceService
 from tsunagou.modules.tasks import TaskService
 from tsunagou.modules.workspaces import WorkspaceService
+from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore
+from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
@@ -186,10 +190,12 @@ def build_handlers(
     project_id: str | None = None, strict_runtime: bool = False,
     database: Any | None = None, state_runtime: Any | None = None,
     checkpoint_store: CheckpointStore | None = None,
+    checkpoint_worker: CheckpointWorker | None = None,
     schema_bundle_digest: str = "",
     project_root: str | None = None, artifact_root: str | None = None,
     project_registry: ProjectRegistry | None = None,
     coordination: CoordinationService | None = None,
+    artifacts: ArtifactService | None = None,
 ) -> dict[str, Handler]:
     tasks = tasks if tasks is not None else TaskService()
     cognition = cognition if cognition is not None else CognitionService()
@@ -970,16 +976,20 @@ def build_handlers(
             raise ValueError("workspace_decision_attempt_mismatch")
         if attempt.owner_agent_id != context["principal_id"]:
             raise PermissionError("attempt_owner_required")
+        evidence = WorkspaceEvidence(workspaces, project_registry, project_root) if project_root else None
+        scope_roots = evidence.resolve_scope(tasks.tasks[task_id], list(payload.get("root_binding_refs") or ())) if evidence else []
+        scope_paths = evidence.virtual_paths(scope_roots) if evidence else None
         workspace = workspaces.request_workspace(
-            decision_id, root_binding_refs=list(payload.get("root_binding_refs") or ()),
+            decision_id, root_binding_refs=[root["root_id"] for root in scope_roots] or list(payload.get("root_binding_refs") or ()),
             repository_id=payload.get("repository_id"), external_locator=payload.get("external_locator"),
             current_main_id=authority.main_agent_id,
+            scope_paths=scope_paths, scope_roots=scope_roots,
         )
         baseline = payload.get("baseline") or {}
         if not isinstance(baseline, dict):
             raise ValueError("invalid_baseline")
-        if strict_runtime and project_root and decision.driver_kind == "shared":
-            observed = workspaces.scan_root(project_root)
+        if strict_runtime and evidence and decision.driver_kind == "shared":
+            observed = evidence.scan(workspace, tasks.tasks[task_id])
             baseline = {**baseline, **observed}
         manifest = workspaces.record_baseline(
             workspace.workspace_id, head_commit=baseline.get("head_commit"), branch=baseline.get("branch"),
@@ -987,9 +997,12 @@ def build_handlers(
             tracked_state_digest=str(baseline.get("tracked_state_digest") or ""),
             untracked_summary=list(baseline.get("untracked_summary") or ()),
             root_identities=list(baseline.get("root_identities") or ()), dirty=bool(baseline.get("dirty", False)),
+            root_observations=list(baseline.get("root_observations") or ()),
         )
         return {"workspace_id": workspace.workspace_id, "status": workspace.status,
-                "baseline_manifest_id": manifest.manifest_id, "baseline_digest": manifest.digest}
+                "baseline_manifest_id": manifest.manifest_id, "baseline_digest": manifest.digest,
+                "scope_digest": workspace.scope_digest, "scope_roots": list(workspace.scope_roots),
+                "observed_state_digest": manifest.tracked_state_digest}
 
     def workspace_result(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         task_id = _required_str(payload, "task_id")
@@ -1000,11 +1013,39 @@ def build_handlers(
         if workspace is None or workspace.attempt_id != attempt_id:
             raise ValueError("workspace_attempt_mismatch")
         observed: dict[str, Any] = {}
+        started_at = now_ms()
         if strict_runtime and project_root and workspace.driver_kind == "shared":
-            observed = workspaces.scan_root(project_root, artifact_root=artifact_root)
-        changed_paths = sorted(set(payload.get("changed_paths") or ()) | set(observed.get("changed_paths", ())))
-        untracked_summary = sorted(set(payload.get("untracked_summary") or ()) | set(observed.get("untracked_summary", ())))
-        patch_artifact_ref = payload.get("patch_artifact_ref") or observed.get("patch_artifact_ref")
+            observed = WorkspaceEvidence(workspaces, project_registry, project_root).scan(
+                workspace, tasks.tasks[task_id], include_patch=True,
+            )
+        # Caller supplied paths are evidence claims, never an authorization
+        # expansion.  record_result re-checks every path against the persisted
+        # scope; observed paths are the daemon's independent facts.
+        changed_paths = list(observed["changed_paths"] if observed else payload.get("changed_paths") or ())
+        untracked_summary = list(observed["untracked_summary"] if observed else payload.get("untracked_summary") or ())
+        if observed and not set(payload.get("changed_paths") or ()).issubset(changed_paths):
+            raise ValueError("workspace_changed_paths_mismatch")
+        supplied_patch_ref = payload.get("patch_artifact_ref")
+        patch_artifact_ref = supplied_patch_ref
+        if supplied_patch_ref is not None:
+            if artifacts is None or state_runtime is None:
+                raise PermissionError("artifact_service_required")
+            supplied_bytes = artifacts.validate_workspace_ref(
+                supplied_patch_ref, workspace_id=workspace_id, actor=context["principal_id"],
+                project_id=project_id or "local-project", lineage_id=state_runtime.lineage_id,
+                scope_digest=workspace.scope_digest or "",
+            )
+            if observed and supplied_bytes != observed["patch_bytes"]:
+                raise ValueError("workspace_patch_artifact_mismatch")
+        if observed.get("patch_bytes") and supplied_patch_ref is None:
+            if artifacts is None or state_runtime is None:
+                raise RuntimeError("artifact_service_required")
+            reference = artifacts.record_workspace_patch(
+                observed["patch_bytes"], workspace_id=workspace_id, actor=context["principal_id"],
+                project_id=project_id or "local-project", lineage_id=state_runtime.lineage_id,
+                scope_digest=workspace.scope_digest or "",
+            )
+            patch_artifact_ref = reference.artifact_ref
         baseline = workspaces.baselines.get(workspace.baseline_manifest_id or "")
         observed_state_digest = observed.get("tracked_state_digest")
         baseline_conflict = bool(observed_state_digest and baseline and observed_state_digest != baseline.tracked_state_digest)
@@ -1016,11 +1057,33 @@ def build_handlers(
             validation_refs=list(payload.get("validation_refs") or ()),
             observed_state_digest=observed_state_digest,
             baseline_conflict=baseline_conflict,
+            submitted_by=context["principal_id"],
+            root_observations=list(observed.get("root_observations") or ()),
+            evidence_level="system_verified" if observed else "agent_asserted",
+            validation_metadata=list(payload.get("validation_metadata") or ()),
+            observed_validation_metadata=([
+                {
+                    "started_at": format_timestamp(started_at),
+                    "finished_at": format_timestamp(now_ms()),
+                    "command": "workspace.scan",
+                    "exit_code": 0,
+                    "tool": "tsunagou",
+                    "tool_version": __version__,
+                    "workspace_digest": observed.get("tracked_state_digest") or "unknown",
+                    "evidence_level": "system_verified",
+                }
+            ] if observed else None),
         )
         return {"result_manifest_id": result.manifest_id, "digest": result.digest,
                 "workspace_id": workspace_id, "status": workspace.status,
                 "baseline_conflict": result.baseline_conflict,
                 "observed_state_digest": result.observed_state_digest,
+                "scope_digest": result.scope_digest,
+                "submitted_by": result.submitted_by, "observed_at": format_timestamp(result.observed_at),
+                "evidence_level": result.evidence_level,
+                "observed_by": "daemon" if observed else None,
+                "evidence_subject": "workspace_filesystem_observation" if observed else "agent_assertion",
+                "validation_metadata": list(result.validation_metadata),
                 **({"patch_artifact_ref": result.patch_artifact_ref} if result.patch_artifact_ref else {})}
 
     def workspace_integrate(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -1158,121 +1221,60 @@ def build_handlers(
         )
         project.lifecycle = "completed"
         project.policy_revision += 1
-        checkpoint_digest: str | None = None
-        operation_id: str | None = None
-        try:
-            if strict_runtime and (database is None or state_runtime is None or checkpoint_store is None):
-                raise RuntimeError("checkpoint_not_available")
-            if database is not None and state_runtime is not None and checkpoint_store is not None:
-                snapshot = state_runtime.capture()
-                domains = {module: [value] for module, value in snapshot.items()}
-                domains["project"] = [asdict(project)]
-                manifest = checkpoint_store.materialize(
-                    lineage_id=project.current_lineage_id,
-                    through_event_seq=database.last_event_seq() + 1,
-                    schema_bundle_digest=schema_bundle_digest,
-                    domains=domains,
-                )
-                checkpoint_digest = manifest.digest
-                uow = context.get("_uow")
-                if uow is not None:
-                    operation_id = uow.create_operation(
-                        kind="checkpoint.create",
-                        requested_by=context["principal_id"],
-                        payload={"checkpoint_digest": checkpoint_digest, "reason": "project_completion"},
-                        status="succeeded",
-                    )
-            lifecycle.registry._save()
-        except Exception:
-            # The user's completion decision is durable even when checkpoint
-            # materialization fails. Record a failed operation in the same UoW
-            # so the CLI can report/retry the storage work without reopening the
-            # already-confirmed project decision.
-            uow = context.get("_uow")
-            if uow is not None:
-                operation_id = uow.create_operation(
-                    kind="checkpoint.create",
-                    requested_by=context["principal_id"],
-                    payload={"reason": "project_completion", "status": "failed"},
-                    status="failed",
-                )
-                uow.conn.execute(
-                    "UPDATE operations SET error_code=?,revision=revision+1,updated_at=? WHERE id=?",
-                    ("checkpoint_materialization_failed", int(time.time() * 1000), operation_id),
-                )
-            lifecycle.registry._save()
-            return {
-                "proposal_id": proposal_id, "project_id": project.project_id,
-                "status": project.lifecycle, "revision": project.policy_revision,
-                "checkpoint_status": "failed",
-                "error_code": "checkpoint_materialization_failed",
-                **({"operation_id": operation_id} if operation_id else {}),
-            }
-        return {"proposal_id": proposal_id, "project_id": project.project_id,
-                "status": project.lifecycle, "revision": project.policy_revision,
-                **({"checkpoint_digest": checkpoint_digest} if checkpoint_digest else {}),
-                **({"operation_id": operation_id} if operation_id else {})}
+        result = {"proposal_id": proposal_id, "project_id": project.project_id,
+                  "status": project.lifecycle, "revision": project.policy_revision}
+        if checkpoint_worker is not None:
+            result.update(request_checkpoint(context, "project_completion"))
+        elif strict_runtime:
+            raise RuntimeError("checkpoint_not_available")
+        return result
+
+    def request_checkpoint(context: dict[str, Any], reason: str, minimum_event_seq: Any = None) -> dict[str, Any]:
+        uow = context.get("_uow")
+        if checkpoint_worker is None or uow is None:
+            raise RuntimeError("checkpoint_not_available")
+        if minimum_event_seq is not None:
+            if not isinstance(minimum_event_seq, int) or isinstance(minimum_event_seq, bool) or minimum_event_seq < 0:
+                raise ValueError("checkpoint_minimum_event_seq_invalid")
+            latest = uow.conn.execute("SELECT COALESCE(MAX(event_seq),0) FROM events WHERE project_id=?",
+                                      (uow.project_id,)).fetchone()[0]
+            if minimum_event_seq > latest:
+                raise ValueError("checkpoint_minimum_event_seq_not_reached")
+        operation_id = uow.create_operation(
+            kind="checkpoint.create", requested_by=context["principal_id"], payload={"reason": reason},
+        )
+        context["_checkpoint_request"] = {"operation_id": operation_id,
+                                          "created_by": context["principal_id"], "reason": reason}
+        return {"operation_id": operation_id, "checkpoint_status": "pending"}
 
     def checkpoint_create_user(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        if context["kind"] != "U" or database is None or state_runtime is None or checkpoint_store is None:
+        if context["kind"] != "U":
             raise PermissionError("user_only")
-        project = lifecycle.registry.project if lifecycle is not None else None
-        if project is None:
+        if lifecycle is None or lifecycle.registry.project is None:
             raise RuntimeError("project_not_initialized")
-        snapshot = state_runtime.capture()
-        domains = {module: [value] for module, value in snapshot.items()}
-        domains["project"] = [asdict(project)]
-        manifest = checkpoint_store.materialize(
-            lineage_id=project.current_lineage_id,
-            through_event_seq=database.last_event_seq() + 1,
-            schema_bundle_digest=schema_bundle_digest,
-            domains=domains,
-        )
-        uow = context.get("_uow")
-        operation_id = uow.create_operation(
-            kind="checkpoint.create",
-            requested_by=context["principal_id"],
-            payload={"checkpoint_digest": manifest.digest, "reason": payload.get("reason", "user_requested")},
-            status="succeeded",
-        ) if uow is not None else None
-        return {"checkpoint_digest": manifest.digest, "through_event_seq": manifest.through_event_seq,
-                **({"operation_id": operation_id} if operation_id else {})}
+        if payload.get("retry_operation_id"):
+            if checkpoint_worker is None:
+                raise RuntimeError("checkpoint_not_available")
+            operation_id = checkpoint_worker.retry(
+                context["_uow"], actor=context["principal_id"], operation_id=payload["retry_operation_id"],
+            )
+            return {"operation_id": operation_id, "checkpoint_status": "pending"}
+        return request_checkpoint(context, str(payload.get("reason", "user_requested")), payload.get("minimum_event_seq"))
+
+    def checkpoint_create_main(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        _authorize(context, "durability.checkpoint")
+        return request_checkpoint(context, str(payload.get("reason", "main_milestone")), payload.get("minimum_event_seq"))
 
     def durability_reconcile(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "durability.checkpoint")
-        if database is None or state_runtime is None or checkpoint_store is None or lifecycle is None:
+        if checkpoint_worker is None or context.get("_uow") is None:
             raise RuntimeError("checkpoint_not_available")
-        project = lifecycle.registry.project if lifecycle.registry is not None else None
-        if project is None or project.lifecycle != "completed":
-            raise ValueError("project_completion_required")
-        uow = context.get("_uow")
-        if uow is None:
-            raise RuntimeError("transaction_required")
-        row = uow.conn.execute(
-            """SELECT id FROM operations WHERE project_id=? AND kind='checkpoint.create'
-               AND status='failed' ORDER BY updated_at DESC LIMIT 1""",
-            (database.project_id,),
-        ).fetchone()
-        if row is None:
-            raise KeyError("checkpoint_operation_not_found")
-        operation_id = str(row["id"])
-        snapshot = state_runtime.capture()
-        domains = {module: [value] for module, value in snapshot.items()}
-        domains["project"] = [asdict(project)]
-        manifest = checkpoint_store.materialize(
-            lineage_id=project.current_lineage_id,
-            through_event_seq=database.last_event_seq() + 1,
-            schema_bundle_digest=schema_bundle_digest,
-            domains=domains,
-        )
-        now = int(time.time() * 1000)
-        uow.conn.execute(
-            """UPDATE operations SET status='succeeded',result_json=?,error_code=NULL,
-               revision=revision+1,updated_at=? WHERE id=?""",
-            (json.dumps({"checkpoint_digest": manifest.digest}, sort_keys=True), now, operation_id),
-        )
-        return {"operation_id": operation_id, "checkpoint_digest": manifest.digest,
-                "status": "succeeded", "through_event_seq": manifest.through_event_seq}
+        refs = payload.get("scope_refs") or []
+        if not isinstance(refs, list) or len(refs) > 1 or any(not isinstance(ref, str) for ref in refs):
+            raise ValueError("checkpoint_single_operation_required")
+        operation_id = checkpoint_worker.retry(context["_uow"], actor=context["principal_id"],
+                                               operation_id=refs[0] if refs else None)
+        return {"operation_id": operation_id, "checkpoint_status": "pending"}
 
     def cognition_report(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "cognition.report")
@@ -1743,5 +1745,6 @@ def build_handlers(
         "project.completion.propose.main": completion_propose,
         "project.completion.confirm": completion_confirm,
         "checkpoint.create.user": checkpoint_create_user,
+        "checkpoint.create": checkpoint_create_main,
         "durability.reconcile": durability_reconcile,
     }

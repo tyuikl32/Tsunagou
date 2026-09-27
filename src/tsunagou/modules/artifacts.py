@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tsunagou.shared_kernel.ids import new_id
+from tsunagou.shared_kernel.time import now_ms
 
 
 @dataclass(slots=True)
@@ -44,6 +45,10 @@ class ArtifactRef:
     owner_actor: str
     recipient_agent_id: str | None
     storage_scope: str = "local"
+    project_id: str | None = None
+    lineage_id: str | None = None
+    scope_digest: str | None = None
+    created_at: int | None = None
 
 
 class ArtifactService:
@@ -101,6 +106,8 @@ class ArtifactService:
             destination = self.blob_dir / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists():
+                if destination.is_symlink() or hashlib.sha256(destination.read_bytes()).hexdigest() != actual_digest:
+                    raise ValueError("artifact_existing_blob_corrupt")
                 self._remove_temp(intent)
             else:
                 os.replace(intent.temp_path, destination)
@@ -134,7 +141,37 @@ class ArtifactService:
         blob = self.blobs.get(ref.digest)
         if blob is None:
             raise FileNotFoundError("artifact_unavailable")
-        return (self.storage_dir / blob.local_relative_path).read_bytes()
+        path = self.storage_dir / blob.local_relative_path
+        if path.is_symlink() or not path.resolve().is_relative_to(self.storage_dir.resolve()):
+            raise PermissionError("artifact_storage_path_denied")
+        content = path.read_bytes()
+        if len(content) != blob.size_bytes or hashlib.sha256(content).hexdigest() != ref.digest:
+            raise ValueError("artifact_content_digest_mismatch")
+        return content
+
+    def record_workspace_patch(
+        self, content: bytes, *, workspace_id: str, actor: str,
+        project_id: str, lineage_id: str, scope_digest: str,
+    ) -> ArtifactRef:
+        intent = self.begin_upload(domain_ref=f"workspace/{workspace_id}", actor=actor, size_limit=max(len(content), 1))
+        self.write_chunk(intent.intent_id, content)
+        ref = self.finalize(intent.intent_id, media_type="text/x-diff")
+        ref.project_id = project_id
+        ref.lineage_id = lineage_id
+        ref.scope_digest = scope_digest
+        ref.created_at = now_ms()
+        return ref
+
+    def validate_workspace_ref(
+        self, artifact_ref: str, *, workspace_id: str, actor: str,
+        project_id: str, lineage_id: str, scope_digest: str,
+    ) -> bytes:
+        ref = self.refs.get(artifact_ref)
+        if ref is None or (ref.domain_ref, ref.owner_actor, ref.project_id, ref.lineage_id, ref.scope_digest) != (
+            f"workspace/{workspace_id}", actor, project_id, lineage_id, scope_digest,
+        ):
+            raise PermissionError("artifact_workspace_binding_mismatch")
+        return self.read(artifact_ref, actor=actor, domain_authorized=lambda *_: True)
 
     def promote(
         self, artifact_ref: str, *, actor_kind: str, actor_id: str,
@@ -145,8 +182,9 @@ class ArtifactService:
         ref = self.refs.get(artifact_ref)
         if ref is None or not project_shared_allowed(ref.domain_ref, artifact_ref):
             raise PermissionError("artifact_promotion_denied")
+        if ref.recipient_agent_id is not None:
+            raise PermissionError("artifact_recipient_promotion_denied")
         ref.storage_scope = "project_shared"
-        ref.owner_actor = actor_id
         blob = self.blobs[ref.digest]
         blob.storage_state = "promoted"
         return ref

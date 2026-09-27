@@ -8,12 +8,15 @@ ProjectDatabase transaction as the command idempotency record and event.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import time
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from tsunagou.application.workflows.lifecycle import LifecycleService, OperationResolution, UserDecision
+from tsunagou.modules.artifacts import ArtifactBlob, ArtifactRef, ArtifactService
 from tsunagou.modules.authority import Agent, AuthorityService, EnrollmentTicket, Grant, Session
 from tsunagou.modules.cognition import (
     Claim,
@@ -34,6 +37,7 @@ from tsunagou.modules.coordination import (
     WakeAttempt,
 )
 from tsunagou.modules.messaging import Delivery, Message, MessageStore, ResponseObligation
+from tsunagou.modules.projects import ConfigProvenance, Project, ProjectRegistry
 from tsunagou.modules.resources import (
     LeaseSet,
     ResourceIntent,
@@ -61,15 +65,44 @@ from tsunagou.modules.workspaces import (
     WorkspaceService,
 )
 from tsunagou.platform.db.sqlite import UnitOfWork
+from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.time import now_ms
+
+# These are projections of module-owned entities, not another state machine.
+# The explicit map prevents secret map keys (notably hashed ticket lookup keys)
+# and arbitrary payload dictionaries from becoming public subject identities.
+_ENTITIES: dict[str, dict[str, tuple[str, str]]] = {
+    "authority": {"tickets": ("ticket", "ticket_id"), "agents": ("agent", "agent_id"),
+                  "sessions": ("session", "session_id"), "grants": ("grant", "grant_id")},
+    "tasks": {"tasks": ("task", "task_id"), "attempts": ("attempt", "attempt_id"),
+              "results": ("result", "result_id"), "reviews": ("review", ""),
+              "scope_requests": ("scope_request", "scope_request_id"),
+              "preflights": ("preflight", "preflight_id"), "progress_records": ("progress", "progress_id")},
+    "cognition": {"reports": ("report", "report_id"), "discrepancies": ("discrepancy", "discrepancy_id"),
+                  "proposals": ("contract", "proposal_id"), "acceptances": ("contract_acceptance", ""),
+                  "risk_requests": ("risk_request", "request_id"), "risk_submissions": ("risk_submission", "submission_id"),
+                  "risk_acceptances": ("risk_acceptance", "")},
+    "messages": {"messages": ("message", "message_id"), "deliveries": ("delivery", "message_id"),
+                 "obligations": ("obligation", "obligation_id")},
+    "resources": {"intents": ("resource_intent", "intent_id"), "lease_sets": ("lease", "lease_set_id"),
+                  "observations": ("resource_observation", "")},
+    "workspaces": {"decisions": ("isolation_decision", "decision_id"), "workspaces": ("workspace", "workspace_id"),
+                   "git_requests": ("git_request", "request_id"), "baselines": ("baseline", "manifest_id"),
+                   "results": ("workspace_result", "manifest_id")},
+    "artifacts": {"refs": ("artifact", "artifact_ref")},
+    "lifecycle": {"decisions": ("decision", "decision_id"), "resolutions": ("resolution", "")},
+    "coordination": {"plans": ("plan", "plan_id"), "assignments": ("assignment", "assignment_id"),
+                     "wake_attempts": ("wake_attempt", "wake_attempt_id"), "events": ("coordination_event", "event_id")},
+}
 
 
 def _jsonable(value: Any) -> Any:
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return {key: _jsonable(item) for key, item in asdict(value).items()}
     if isinstance(value, tuple):
         return {"__tuple__": [_jsonable(item) for item in value]}
     if isinstance(value, (set, frozenset)):
-        return {"__set__": [_jsonable(item) for item in value]}
+        return {"__set__": sorted((_jsonable(item) for item in value), key=lambda item: json.dumps(item, sort_keys=True))}
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -104,6 +137,8 @@ class ServiceStateRuntime:
         workspaces: WorkspaceService | None = None,
         lifecycle: LifecycleService | None = None,
         coordination: CoordinationService | None = None,
+        project_registry: ProjectRegistry | None = None,
+        artifacts: ArtifactService | None = None,
     ) -> None:
         self.authority = authority
         self.tasks = tasks
@@ -113,6 +148,8 @@ class ServiceStateRuntime:
         self.workspaces = workspaces
         self.lifecycle = lifecycle
         self.coordination = coordination
+        self.project_registry = project_registry
+        self.artifacts = artifacts
         self.database = database
         self._modules = tuple(
             module for module, service in (
@@ -120,6 +157,8 @@ class ServiceStateRuntime:
                 ("messages", messages), ("resources", resources),
                 ("workspaces", workspaces), ("lifecycle", lifecycle),
                 ("coordination", coordination),
+                ("projects", project_registry),
+                ("artifacts", artifacts),
             ) if service is not None
         )
         self.restore_from_database()
@@ -134,6 +173,8 @@ class ServiceStateRuntime:
             "workspaces": self.workspaces,
             "lifecycle": self.lifecycle,
             "coordination": self.coordination,
+            "projects": self.project_registry,
+            "artifacts": self.artifacts,
         }[module]
         if services is None:
             raise KeyError(module)
@@ -141,6 +182,10 @@ class ServiceStateRuntime:
 
     def _export(self, module: str) -> dict[str, Any]:
         service = self._service(module)
+        if module == "artifacts":
+            return {"refs": service.refs, "blobs": service.blobs}
+        if module == "projects":
+            return {"project": service.project, "bindings": service.local_bindings}
         if module == "authority":
             return {
                 "tickets": service.tickets,
@@ -212,6 +257,18 @@ class ServiceStateRuntime:
     def _replace(self, module: str, raw: dict[str, Any]) -> None:
         value = _plain(raw)
         service = self._service(module)
+        if module == "artifacts":
+            service.refs = {key: ArtifactRef(**item) for key, item in value.get("refs", {}).items()}
+            service.blobs = {key: ArtifactBlob(**item) for key, item in value.get("blobs", {}).items()}
+            return
+        if module == "projects":
+            project = value.get("project")
+            if project is not None:
+                project = dict(project)
+                config = project.pop("config", None)
+                service.project = Project(**project, config=ConfigProvenance(**config) if config else None)
+            service.local_bindings = value.get("bindings", {})
+            return
         if module in {"resources", "workspaces", "lifecycle", "coordination"}:
             self._replace_optional(module, value)
             return
@@ -344,18 +401,38 @@ class ServiceStateRuntime:
                                          "evidence_refs": tuple(item.get("evidence_refs", ()))})
                 for key, item in value.get("decisions", {}).items()
             }
-            service.workspaces = {key: Workspace(**item) for key, item in value.get("workspaces", {}).items()}
+            service.workspaces = {
+                key: Workspace(**{
+                    **item,
+                    "root_binding_refs": tuple(item.get("root_binding_refs", ())),
+                    "scope_roots": tuple(item.get("scope_roots", ())),
+                    "scope_paths": tuple(item["scope_paths"]) if isinstance(item.get("scope_paths"), list) else item.get("scope_paths"),
+                }) for key, item in value.get("workspaces", {}).items()
+            }
             service.git_requests = {key: GitActionRequest(**item) for key, item in value.get("git_requests", {}).items()}
             service.baselines = {
                 key: BaselineManifest(**{**item, "untracked_summary": tuple(item.get("untracked_summary", ())),
-                                         "root_identities": tuple(item.get("root_identities", ()))})
+                                         "root_identities": tuple(item.get("root_identities", ())),
+                                         "root_observations": tuple(item.get("root_observations", ())),
+                                         "scope_paths": (
+                                             tuple(item["scope_paths"])
+                                             if isinstance(item.get("scope_paths"), list)
+                                             else item.get("scope_paths")
+                                         )})
                 for key, item in value.get("baselines", {}).items()
             }
             service.results = {
                 key: ResultManifest(**{**item, "commit_refs": tuple(item.get("commit_refs", ())),
                                       "changed_paths": tuple(item.get("changed_paths", ())),
                                       "untracked_summary": tuple(item.get("untracked_summary", ())),
-                                      "validation_refs": tuple(item.get("validation_refs", ()))})
+                                      "validation_refs": tuple(item.get("validation_refs", ())),
+                                      "validation_metadata": tuple(item.get("validation_metadata", ())),
+                                      "root_observations": tuple(item.get("root_observations", ())),
+                                      "scope_paths": (
+                                          tuple(item["scope_paths"])
+                                          if isinstance(item.get("scope_paths"), list)
+                                          else item.get("scope_paths")
+                                      )})
                 for key, item in value.get("results", {}).items()
             }
             return True
@@ -411,6 +488,54 @@ class ServiceStateRuntime:
         for module, value in snapshot.items():
             self._replace(module, value)
 
+    def import_shared(self, domains: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+        """Import owner-validated public history into an empty local replica.
+
+        This is a recovery port, never a live authority restore. Runtime-only
+        collections remain empty and unfinished tasks require main review.
+        """
+        project_records = domains.get("project", [])
+        if len(project_records) != 1 or self.project_registry is None:
+            raise ValueError("checkpoint_project_required")
+        from tsunagou.shared_kernel.ids import new_id
+
+        project = {**project_records[0], "current_replica_id": new_id(), "runtime_epoch": new_id()}
+        self._replace("projects", {"project": project, "bindings": {}})
+        for module in ("tasks", "cognition", "workspaces", "lifecycle", "artifacts"):
+            records = domains.get(module, [])
+            if len(records) > 1:
+                raise ValueError("checkpoint_module_duplicate")
+            if records and module in self._modules:
+                self._replace(module, records[0])
+        # Historic authors remain visible but cannot authenticate or reclaim
+        # their former role through imported installation/conversation IDs.
+        for key, item in domains.get("authority", [{}])[0].get("agents", {}).items():
+            self.authority.agents[key] = Agent(item["agent_id"], "", status="retired")
+        self.authority.main_agent_id = None
+        self.authority.sessions.clear()
+        self.authority.grants.clear()
+        self.authority.tickets.clear()
+        imported_before = self.capture()
+        for task in self.tasks.tasks.values():
+            task.current_attempt_id = None
+            task.suspension_snapshot = None
+            if task.status not in {"completed", "cancelled", "failed"}:
+                task.status, task.block_reason = "blocked", "recovery_review"
+                task.revision += 1
+        for attempt in self.tasks.attempts.values():
+            if attempt.status in {"claimed", "running"}:
+                attempt.status = "orphaned"
+                attempt.ended_at = time.time()
+                attempt.execution_epoch += 1
+                attempt.revision += 1
+        for workspace in self.workspaces.workspaces.values() if self.workspaces is not None else ():
+            workspace.status = "recovery_review"
+        if self.lifecycle is not None:
+            for decision in self.lifecycle.decisions.values():
+                if decision.status == "pending":
+                    decision.status = "superseded"
+        return imported_before
+
     def invalidate_execution_state(self) -> None:
         """Fence work owned by a previous daemon process before serving requests."""
         for key, grant in list(self.authority.grants.items()):
@@ -438,17 +563,155 @@ class ServiceStateRuntime:
         if self.coordination is not None:
             self.coordination.invalidate_execution_state()
 
-    def persist(self, uow: UnitOfWork, *, actor_ref: str, command_kind: str) -> None:
-        changed = False
-        for module in self._modules:
-            payload = json.dumps(_jsonable(self._export(module)), ensure_ascii=False, sort_keys=True)
-            uow.put_module_state(module, payload)
-            changed = True
-        if changed:
-            uow.append_event(
-                lineage_id="local-lineage",
-                event_type=f"command.{command_kind}",
-                aggregate_ref=f"project/{uow.project_id}",
-                actor_ref=actor_ref,
-                payload={"command_kind": command_kind},
+    @property
+    def lineage_id(self) -> str:
+        if self.project_registry is not None and self.project_registry.project is not None:
+            return self.project_registry.project.current_lineage_id
+        return str(self.database.lineage_id)
+
+    def audit_actor(self, context: dict[str, Any]) -> str:
+        if context.get("kind") == "T":
+            secret_hash = hashlib.sha256(str(context["principal_id"]).encode()).hexdigest()
+            ticket = self.authority.tickets.get(secret_hash)
+            if ticket is None:
+                raise ValueError("audit_ticket_identity_missing")
+            return f"ticket/{ticket.ticket_id}"
+        return str(context["principal_id"])
+
+    @staticmethod
+    def _entities(module: str, snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        plain = _plain(snapshot)
+        entities: dict[str, dict[str, Any]] = {}
+        if module == "projects":
+            project = plain.get("project")
+            if project:
+                entities[f"project/{project['project_id']}"] = project
+                for root_id, root in project.get("roots", {}).items():
+                    entities[f"root/{root_id}"] = {**root, "binding": plain.get("bindings", {}).get(root_id)}
+                for repository_id, repository in project.get("repositories", {}).items():
+                    entities[f"repository/{repository_id}"] = repository
+            return entities
+        for collection, (kind, identity_field) in _ENTITIES.get(module, {}).items():
+            items = plain.get(collection, {})
+            pairs = items.items() if isinstance(items, dict) else enumerate(items)
+            for key, item in pairs:
+                if isinstance(item, dict):
+                    # Lists without IDs already have append-only positional
+                    # identity within their owning aggregate; keep that index.
+                    identity = item.get(identity_field, key) if identity_field else key
+                    entities[f"{kind}/{identity}"] = item
+        return entities
+
+    @staticmethod
+    def _domain_revision(item: dict[str, Any] | None) -> int | None:
+        if item is None:
+            return None
+        value = item.get("revision", item.get("policy_revision"))
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    @staticmethod
+    def _subject(command_kind: str, payload: dict[str, Any], result: dict[str, Any], changes: list[dict[str, Any]]) -> str | None:
+        # Command family decides the primary target. Related changes remain
+        # separately attributable in the change list, e.g. task.claim -> Attempt.
+        candidates: list[tuple[str, str]] = []
+        family = command_kind.split(".")[0]
+        if family == "task":
+            candidates = [("task_id", "task"), ("source_task_id", "task")]
+        elif family in {"message", "inbox"}:
+            candidates = [("message_id", "message"), ("obligation_id", "obligation")]
+        elif family == "contract":
+            candidates = [("proposal_id", "contract")]
+        elif family == "cognition":
+            candidates = [("report_id", "report")]
+        elif family == "workspace":
+            candidates = [("workspace_id", "workspace"), ("decision_id", "isolation_decision"), ("request_id", "git_request")]
+        elif family == "resource":
+            candidates = [("lease_set_id", "lease"), ("intent_id", "resource_intent"), ("attempt_id", "attempt")]
+        else:
+            candidates = [("decision_id", "decision"), ("discrepancy_id", "discrepancy"),
+                          ("root_id", "root"), ("repository_id", "repository"), ("session_id", "session"),
+                          ("agent_id", "agent"), ("main_agent_id", "agent"), ("plan_id", "plan"),
+                          ("assignment_id", "assignment"), ("ticket_id", "ticket"), ("project_id", "project")]
+        refs = {change["subject_ref"] for change in changes}
+        for field, kind in candidates:
+            value = result.get(field) or payload.get(field)
+            if isinstance(value, str) and f"{kind}/{value}" in refs:
+                return f"{kind}/{value}"
+        return str(changes[0]["subject_ref"]) if changes else None
+
+    def persist(
+        self, uow: UnitOfWork, *, actor_ref: str, command_kind: str,
+        before: dict[str, Any] | None = None, command_payload: dict[str, Any] | None = None,
+        result: dict[str, Any] | None = None, session_id: str | None = None,
+    ) -> None:
+        payload = command_payload or {}
+        result = result or {}
+        uow.recorded_at = now_ms()
+        changes: list[dict[str, Any]] = []
+        modules_changed: list[str] = []
+        for module, current in self.capture().items():
+            stored = uow.conn.execute(
+                "SELECT payload_json FROM module_state WHERE project_id=? AND module=?", (uow.project_id, module),
+            ).fetchone()
+            previous = before.get(module, {}) if before is not None else (json.loads(stored[0]) if stored else {})
+            if stored is None or json.loads(stored[0]) != current:
+                uow.put_module_state(module, json.dumps(current, ensure_ascii=False, sort_keys=True))
+            if previous == current:
+                continue
+            modules_changed.append(module)
+            old_entities, new_entities = self._entities(module, previous), self._entities(module, current)
+            for ref in sorted(old_entities.keys() | new_entities.keys()):
+                old, new = old_entities.get(ref), new_entities.get(ref)
+                if old == new:
+                    continue
+                change = uow.record_entity_change(
+                    lineage_id=self.lineage_id, subject_ref=ref, existed=old is not None,
+                    revision_before=self._domain_revision(old), revision_after=self._domain_revision(new),
+                )
+                change.update({"change_kind": "created" if old is None else "deleted" if new is None else "updated",
+                               "state_before": old.get("status") if old else None,
+                               "state_after": new.get("status") if new else None})
+                changes.append(change)
+        if not modules_changed:
+            return
+        subject = self._subject(command_kind, payload, result, changes) or f"project/{uow.project_id}"
+        primary = next((change for change in changes if change["subject_ref"] == subject), {})
+        reason = payload.get("reason_code") or result.get("reason_code")
+        if not isinstance(reason, str) or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,79}", reason):
+            # Free-form reasons belong to the owning domain; audit indexes only
+            # a registered/mechanical category and never private request text.
+            reason = "user_decision" if command_kind in {"user_decision.resolve", "project.completion.confirm"} else None
+            if reason is None and any(part in command_kind for part in ("block", "revoke", "cancel", "fail", "recover", "expired")):
+                reason = command_kind.replace(".", "_")
+        refs = []
+        for field in ("evidence_refs", "artifact_refs", "validation_refs"):
+            for ref in payload.get(field) or ():
+                if isinstance(ref, str):
+                    refs.append(ref)
+        for field in ("workspace_result_ref", "checkpoint_digest", "patch_artifact_ref"):
+            result_ref = result.get(field) or payload.get(field)
+            if isinstance(result_ref, str):
+                refs.append(result_ref)
+        # No raw request, response, credential or message text is copied.
+        evidence_level = "agent_asserted" if refs else "system_verified"
+        if actor_ref == "user_control":
+            evidence_level = "user_confirmed"
+        elif result.get("evidence_level") in {"agent_asserted", "host_observed", "system_verified"}:
+            # Only a domain-handler output may attest observation/verification;
+            # an arbitrary client payload cannot upgrade evidence provenance.
+            evidence_level = str(result["evidence_level"])
+        event_payload = {"command_kind": command_kind, "modules_changed": modules_changed,
+                         "changes": changes, "session_id": session_id,
+                         "evidence_level": evidence_level,
+                         "request_digest": canonical_digest(payload)}
+        seq = uow.append_event(
+            lineage_id=self.lineage_id, event_type=command_kind, aggregate_ref=subject, actor_ref=actor_ref,
+            payload=event_payload, subject_ref=subject, reason_code=reason,
+            revision_before=primary.get("revision_before"), revision_after=primary.get("revision_after"),
+            evidence_refs=tuple(dict.fromkeys(refs)),
+        )
+        for change in changes:
+            uow.conn.execute(
+                "UPDATE entity_audit_metadata SET last_event_seq=? WHERE project_id=? AND lineage_id=? AND subject_ref=?",
+                (seq, uow.project_id, self.lineage_id, change["subject_ref"]),
             )

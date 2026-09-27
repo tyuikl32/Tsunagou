@@ -15,7 +15,13 @@ def test_stream_finalize_hash_access_and_explicit_promotion(tmp_path: Path) -> N
     assert service.read(ref.artifact_ref, actor="worker", domain_authorized=lambda domain, actor, ref_id: domain == "task/1") == b"hello"
     with pytest.raises(PermissionError, match="promotion"):
         service.promote(ref.artifact_ref, actor_kind="worker", actor_id="worker", project_shared_allowed=lambda *_: True)
+    with pytest.raises(PermissionError, match="recipient"):
+        service.promote(ref.artifact_ref, actor_kind="main", actor_id="main", project_shared_allowed=lambda *_: True)
+    public = service.begin_upload(domain_ref="task/1", actor="worker")
+    service.write_chunk(public.intent_id, b"hello")
+    ref = service.finalize(public.intent_id)
     service.promote(ref.artifact_ref, actor_kind="main", actor_id="main", project_shared_allowed=lambda *_: True)
+    assert ref.owner_actor == "worker"
     assert [item.artifact_ref for item in service.checkpoint_export([ref.artifact_ref])] == [ref.artifact_ref]
 
 
@@ -44,3 +50,20 @@ def test_unknown_hash_is_not_a_read_capability(tmp_path: Path) -> None:
     ref = service.finalize(intent.intent_id)
     with pytest.raises(PermissionError):
         service.read(ref.digest, actor="worker", domain_authorized=lambda *_: True)
+
+
+def test_same_blob_has_independent_domain_refs_and_integrity(tmp_path: Path) -> None:
+    service = ArtifactService(tmp_path / "artifacts")
+    first = service.record_workspace_patch(b"patch", workspace_id="one", actor="worker1",
+        project_id="project", lineage_id="lineage", scope_digest="scope1")
+    second = service.record_workspace_patch(b"patch", workspace_id="two", actor="worker2",
+        project_id="project", lineage_id="lineage", scope_digest="scope2")
+    assert first.artifact_ref != second.artifact_ref and first.digest == second.digest
+    with pytest.raises(PermissionError, match="binding"):
+        service.validate_workspace_ref(first.artifact_ref, workspace_id="two", actor="worker2",
+            project_id="project", lineage_id="lineage", scope_digest="scope2")
+    assert service.validate_workspace_ref(second.artifact_ref, workspace_id="two", actor="worker2",
+        project_id="project", lineage_id="lineage", scope_digest="scope2") == b"patch"
+    (service.storage_dir / service.blobs[first.digest].local_relative_path).write_bytes(b"tamper")
+    with pytest.raises(ValueError, match="digest"):
+        service.read(first.artifact_ref, actor="worker1", domain_authorized=lambda *_: True)

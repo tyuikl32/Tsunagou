@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/queries/audit-page",
+  "title": "AuditPage",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/AuditEvent"
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2048
+    },
+    "projection_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "as_of_event_seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "snapshot_event_seq": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "project_id",
+    "items",
+    "next_cursor",
+    "projection_version",
+    "as_of_event_seq",
+    "snapshot_event_seq"
+  ],
+  "$defs": {
+    "AuditChange": {
+      "title": "AuditChange",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subject_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "change_kind": {
+          "type": "string",
+          "enum": [
+            "created",
+            "updated",
+            "deleted"
+          ]
+        },
+        "state_before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state_after": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision_before": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "revision_after": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "revision_source": {
+          "type": "string",
+          "enum": [
+            "domain",
+            "audit_observation"
+          ]
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "$ref": "../common/timestamp.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "anyOf": [
+            {
+              "$ref": "../common/timestamp.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "subject_ref",
+        "change_kind",
+        "state_before",
+        "state_after",
+        "revision_before",
+        "revision_after",
+        "revision_source",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "AuditEvent": {
+      "title": "AuditEvent",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event_seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_event_seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lineage_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projection_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actor_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actor_session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subject_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "occurred_at": {
+          "anyOf": [
+            {
+              "$ref": "../common/timestamp.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recorded_at": {
+          "anyOf": [
+            {
+              "$ref": "../common/timestamp.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "caused_by_command_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision_before": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "revision_after": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "evidence_level": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "agent_asserted",
+            "host_observed",
+            "system_verified",
+            "user_confirmed",
+            null
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuditChange"
+          }
+        }
+      },
+      "required": [
+        "event_id",
+        "event_seq",
+        "source_event_id",
+        "source_event_seq",
+        "project_id",
+        "lineage_id",
+        "schema_version",
+        "projection_version",
+        "actor_ref",
+        "actor_session_id",
+        "subject_ref",
+        "action",
+        "outcome",
+        "reason_code",
+        "evidence_refs",
+        "occurred_at",
+        "recorded_at",
+        "caused_by_command_id",
+        "revision_before",
+        "revision_after",
+        "evidence_level",
+        "changes"
+      ]
+    }
+  }
+}

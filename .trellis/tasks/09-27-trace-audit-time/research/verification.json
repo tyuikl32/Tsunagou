@@ -1,0 +1,95 @@
+{
+  "task": "PT1",
+  "recorded_at": "2026-09-27T16:44:11.587Z",
+  "status": "passed",
+  "base_commit": "a3954ae20961583be9171be1f9f441af6177a126",
+  "branch": "codex/persistence-traceability",
+  "uncommitted": true,
+  "platform": "Windows",
+  "python": "3.13 (uv project environment)",
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "note": "Full repository Python suite before final reviewer boundary fixes; focused checks repeated by reviewer afterward."
+    },
+    {
+      "command": "uv run python tools/dev/smoke_standalone.py --skip-build",
+      "exit_code": 0,
+      "note": "Fresh temporary Git project; real daemon, CLI and two MCP bridge processes; cleaned up by runner."
+    },
+    {
+      "command": "uv run ruff check src tests tools",
+      "exit_code": 0
+    },
+    {
+      "command": "uv run mypy src",
+      "exit_code": 0,
+      "checked_source_files": 55
+    },
+    {
+      "command": "corepack pnpm --filter @tsunagou/protocol-ts run check",
+      "exit_code": 0
+    },
+    {
+      "command": "uv run python tools/codegen/validate_protocol.py",
+      "exit_code": 0,
+      "commands": 111,
+      "schemas": 123
+    },
+    {
+      "command": "python tools/docs/validate_docs.py",
+      "exit_code": 0,
+      "note": "Before final user-manual additions; run again before task closure."
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "smoke_result": {
+    "status": "passed",
+    "bridge_sessions": 2,
+    "project_id": "ac32a2d0-00b8-40f0-9f38-87d86da6306f",
+    "task_id": "233b88b3-9375-4b20-b234-d70c24921217",
+    "checkpoint_digest": "sha256:68cfb77416f053910bcd45d17118be4f3e7ece5482a86c8b9ff9e8d2f109a506",
+    "checkpoint_failure_retry": "passed",
+    "review_status": "completed",
+    "recovery_status": "ready",
+    "stale_execution": "rejected",
+    "worker_user_only_commands": "rejected",
+    "restart_audit_via_cli": true
+  },
+  "source_files": {
+    "src/tsunagou/platform/audit_cursor.py": "sha256:74cb739331cbbdb3b038b6415d7112a7beb17b673a0ffadd6ccf589afe2e08d0",
+    "src/tsunagou/shared_kernel/time.py": "sha256:e90bf795bf51a0c981155bf5f278b4d2d5d291365572e71a4c32ebb92d6b1fa6",
+    "src/tsunagou/platform/state.py": "sha256:2163a4689f4564f9b9fd7afc2893fbe75ac11423f0b4e3eefe6cd68f56ccfa97",
+    "src/tsunagou/platform/db/sqlite.py": "sha256:c307d66a569111a702f9006d76abde8c8cdcd0fcbe5b36184e9741b72df532db",
+    "src/tsunagou/interfaces/runtime.py": "sha256:dd491a65134a4a8f34ff15b7ae7096431db3ed81b30bf13ab6d1ba401d887594",
+    "src/tsunagou/bootstrap/container.py": "sha256:d9dc50433aec7c94ed67a9b9f52ce39138b125fbb8311803752858844f3c221f",
+    "src/tsunagou/api/app.py": "sha256:0b075b10e761fbca7c87aeb25db555640b5b482b31d6b9afb3fcc8305cdcf97e",
+    "src/tsunagou/modules/evaluation.py": "sha256:cffb1cbf28104849f2177cb2743ffd52310d0a601d8c3371cfb8a338d3bb7d3f",
+    "src/tsunagou/cli/app.py": "sha256:ce16d35d50c8f08a8e0e94fb612b207a7247bb45d54bf41aef02fb3c582d466e",
+    "protocol/schemas/queries/audit-page.schema.json": "sha256:142d80556f752d3792664d1751c0e311da3178149cff00c7e096e5597614aae0",
+    "src/tsunagou/generated/protocol/audit.py": "sha256:71d3c34e122846d841e4c4586b0018243798e08132c0b595b7c087e6cab8879b",
+    "packages/protocol-ts/src/generated/audit.ts": "sha256:dc807769b2ebd47ecb9b125fc0c6f6c50f078c16e1c9248170ce2242b8039b43"
+  },
+  "limitations": [
+    "No production project migration or active user daemon restart.",
+    "PT2 credential lifecycle, PT3 artifact reference authorization and PT4 operation/job audit remain later integration work.",
+    "Two bridge processes do not assert that two actual IDE conversation turns were woken."
+  ],
+  "review": {
+    "agent": "pt1_trace_review",
+    "focused_tests_passed": 42,
+    "fixed": [
+      "legacy private evidence visibility",
+      "invalid RFC3339 offset and UTC range overflow",
+      "audit read connection closure"
+    ],
+    "full_ruff": true,
+    "full_mypy": true,
+    "full_pnpm_check": true,
+    "protocol_and_docs": true
+  }
+}

@@ -12,33 +12,11 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any, cast
-
-
-def _restrict_file_access(path: Path) -> None:
-    """Restrict a ticket file to its creator, with a real ACL on Windows.
-
-    ``chmod 0o600`` is only meaningful on POSIX. On Windows it merely toggles the
-    read-only attribute: ``st_mode`` stays ``0o666`` and the file inherits its
-    parent directory ACL, so a ticket written next to the repo ends up readable by
-    ``Authenticated Users`` / ``Users``. Here we strip inherited ACEs and grant
-    full control to ``CREATOR OWNER`` (``S-1-3-0``), which resolves to the account
-    that just created the file (this process). Fails closed: if the ACL cannot be
-    restricted, the secret-bearing file is removed rather than left world-readable.
-    """
-    if os.name != "nt":
-        os.chmod(path, 0o600)
-        return
-    proc = subprocess.run(
-        ["icacls", str(path), "/inheritance:r", "/grant:r", "*S-1-3-0:(F)"],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        path.unlink(missing_ok=True)
-        raise RuntimeError(f"failed to restrict ticket file ACL: {proc.stderr.strip()}")
 
 
 def _write_ticket_private(
@@ -60,15 +38,16 @@ def _write_ticket_private(
     else:
         path = ticket_file
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        json.dump({
+    from tsunagou.platform.private_file_lock import private_file_lock
+    from tsunagou.platform.private_files import write_private_bytes
+
+    with private_file_lock(path):
+        write_private_bytes(path, (json.dumps({
             "installation_id": installation_id,
             "conversation_id": conversation_id,
             "secret": secret,
             "requested_role": requested_role,
-        }, handle, sort_keys=True)
-        handle.write("\n")
-    _restrict_file_access(path)
+        }, sort_keys=True) + "\n").encode("utf-8"))
     return path
 
 
@@ -140,6 +119,31 @@ if typer is not None:
         assert registry.project is not None
         print(json.dumps({"project_id": registry.project.project_id, "status": "active"}, sort_keys=True))
 
+    @daemon_app.command("migrate-credentials")
+    def migrate_credentials(
+        coordination_root: Path = typer.Option(..., "--coordination-root"),  # noqa: B008
+        confirm_plan_digest: str | None = typer.Option(None, "--confirm-plan-digest"),
+        dry_run: bool = typer.Option(False, "--dry-run"),
+    ) -> None:
+        """Preview by default; explicit digest confirms an offline credential revocation."""
+        import sqlite3
+
+        from tsunagou.platform.credential_migration import CredentialMigration
+        from tsunagou.shared_kernel.errors import TsunagouError
+
+        if dry_run and confirm_plan_digest:
+            raise typer.BadParameter("--dry-run cannot be combined with --confirm-plan-digest")
+        try:
+            migration = CredentialMigration(coordination_root)
+            result = migration.apply(confirm_plan_digest) if confirm_plan_digest else migration.preview()
+        except (ValueError, RuntimeError, OSError, sqlite3.Error, TsunagouError) as exc:
+            # Error classes/codes only: never echo SQLite rows or old credentials.
+            code = (exc.code if isinstance(exc, TsunagouError) else str(exc) if isinstance(exc, (ValueError, RuntimeError))
+                    else "migration_storage_error")
+            print(json.dumps({"status": "error", "code": code}, ensure_ascii=False))
+            raise typer.Exit(4) from exc
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
     @project_app.command("bootstrap")
     def project_bootstrap(
         ctx: typer.Context,
@@ -173,6 +177,29 @@ if typer is not None:
             print(f"{item['status']}: {item['path']}")
         print("No credentials or runtime secrets were written.")
 
+    @project_app.command("restore")
+    def project_restore(
+        coordination_root: Path = typer.Option(..., "--coordination-root"),  # noqa: B008
+        checkpoint_digest: str = typer.Option(..., "--checkpoint-digest"),
+        confirm_plan_digest: str | None = typer.Option(None, "--confirm-plan-digest"),
+    ) -> None:
+        """Preview clean-clone recovery; confirm the exact preview as local user control."""
+        import sqlite3
+
+        from tsunagou.platform.clone_recovery import CloneRecovery
+        from tsunagou.shared_kernel.errors import TsunagouError
+
+        try:
+            recovery = CloneRecovery(coordination_root)
+            result = (recovery.confirm(checkpoint_digest, confirm_plan_digest) if confirm_plan_digest
+                      else recovery.preview(checkpoint_digest))
+        except (OSError, ValueError, RuntimeError, sqlite3.Error, TsunagouError) as exc:
+            code = (exc.code if isinstance(exc, TsunagouError) else str(exc)
+                    if isinstance(exc, (ValueError, RuntimeError)) else "restore_storage_error")
+            print(json.dumps({"status": "error", "code": code}, ensure_ascii=False))
+            raise typer.Exit(4) from exc
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
     @project_app.command("complete")
     def project_complete(
         proposal_id: str = typer.Argument(...),
@@ -199,6 +226,56 @@ if typer is not None:
             print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
             raise typer.Exit(1) from exc
         print(json.dumps(result, sort_keys=True))
+
+    @project_app.command("history")
+    def project_history(
+        ctx: typer.Context,
+        project_id: str = typer.Argument(...),
+        from_timestamp: str | None = typer.Option(None, "--from"),
+        to_timestamp: str | None = typer.Option(None, "--to"),
+        actor: str | None = typer.Option(None, "--actor"),
+        subject: str | None = typer.Option(None, "--subject"),
+        limit: int = typer.Option(50, "--limit", min=1, max=200),
+        cursor: str | None = typer.Option(None, "--cursor"),
+        json_output: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Read one authenticated audit page without modifying project state."""
+        from tsunagou.generated.protocol.audit import AuditPageModel
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}))
+            raise typer.Exit(3)
+        filters = {"limit": str(limit), **{
+            key: value for key, value in {
+                "from": from_timestamp, "to": to_timestamp, "actor_ref": actor,
+                "subject_ref": subject, "cursor": cursor,
+            }.items() if value is not None
+        }}
+        path = f"/api/v1/projects/{urllib.parse.quote(project_id, safe='')}/audit?{urllib.parse.urlencode(filters)}"
+        try:
+            page = AuditPageModel.model_validate(_daemon_request("GET", path, authorization=f"Bearer {token}"))
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
+            cause = exc.__cause__
+            status = cause.code if isinstance(cause, urllib.error.HTTPError) else None
+            raise typer.Exit(3 if status in {401, 403} else 2 if status in {400, 422} else 5) from exc
+        except ValueError as exc:
+            # Never echo unvalidated server data (or a Pydantic input dump).
+            print(json.dumps({"status": "error", "error": "invalid_audit_response"}))
+            raise typer.Exit(5) from exc
+        if json_output or ctx.obj.get("json"):
+            print(page.model_dump_json())
+            return
+        print(f"Project {page.project_id} — as_of_event_seq={page.as_of_event_seq}")
+        for item in page.items:
+            when = item.occurred_at or "unknown_time"
+            level = item.evidence_level or "unknown"
+            print(f"{item.event_seq}\t{when}\t{item.actor_ref}\t{item.action}\t{item.subject_ref}\t{item.outcome}\t{level}")
+        if not page.items:
+            print("No visible events match this query.")
+        if page.next_cursor:
+            print(f"next_cursor: {page.next_cursor}")
 
     def _coordination_state_dir(coordination_root: Path) -> Path:
         return coordination_root.expanduser().resolve() / ".tsunagou" / "local"
@@ -277,6 +354,10 @@ if typer is not None:
             raise typer.Exit(1) from exc
         assert registry.project is not None
         state_dir = _coordination_state_dir(root)
+        if not (state_dir / "state.sqlite3").exists() and (root / ".tsunagou/checkpoints/current.json").is_file():
+            print(json.dumps({"status": "error", "error": "checkpoint_restore_required",
+                              "next": "project restore --coordination-root <clone> --checkpoint-digest <digest>"}))
+            raise typer.Exit(4)
         state_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = state_dir / "endpoint.json"
         if manifest_path.is_file():
@@ -290,12 +371,14 @@ if typer is not None:
             except (OSError, urllib.error.URLError, json.JSONDecodeError):
                 pass
         token_path = state_dir / "control.token"
+        from tsunagou.platform.private_files import restrict_access, write_private_bytes
+
         if token_path.is_file():
+            restrict_access(token_path)
             token = token_path.read_text(encoding="utf-8").strip()
         else:
             token = secrets.token_urlsafe(32)
-            token_path.write_text(token + "\n", encoding="utf-8", newline="\n")
-            _restrict_file_access(token_path)
+            write_private_bytes(token_path, (token + "\n").encode("utf-8"))
         selected_port = port or _choose_port(host)
         url = f"http://{host}:{selected_port}"
         log_path = state_dir / "daemon.log"
@@ -441,6 +524,21 @@ if typer is not None:
             },
             authorization=authorization,
         )
+
+    def _ack_private_delivery(result: dict[str, Any], token: str) -> None:
+        """The ticket is already durably saved; a lost ACK cannot invalidate it."""
+        ref = result.get("delivery_ref")
+        if not isinstance(ref, str):
+            return  # Older daemon responses did not have delivery receipts.
+        try:
+            _daemon_request(
+                "POST", f"/api/v1/credential-deliveries/{urllib.parse.quote(ref, safe='')}/ack",
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError:
+            # The encrypted daemon escrow expires independently. The usable
+            # ticket is now in the private bridge input, not in CLI output.
+            pass
 
     def _write_bridge_config(
         *, adapter: str, mode: str, installation_id: str, output_dir: Path,
@@ -728,6 +826,7 @@ if typer is not None:
         ticket_path = _write_ticket_private(
             installation_id, conversation_id, result["secret"], ticket_file, role,
         )
+        _ack_private_delivery(result, token)
         bridge_config_path = _write_bridge_config(
             adapter=adapter, mode=mode, installation_id=installation_id,
             output_dir=destination, ticket_path=ticket_path,
@@ -780,6 +879,7 @@ if typer is not None:
         )
         secret = result["secret"]
         path = _write_ticket_private(installation_id, conversation_id, secret, ticket_file)
+        _ack_private_delivery(result, token)
         bridge_config_path = None
         if output_dir is not None:
             output_dir = output_dir.expanduser().resolve()
@@ -881,15 +981,22 @@ if typer is not None:
         print(json.dumps(result, sort_keys=True))
 
     @checkpoint_app.command("retry")
-    def checkpoint_retry() -> None:
+    def checkpoint_retry(operation_id: str | None = typer.Argument(None)) -> None:
         """Retry checkpoint materialization after a recorded failed operation."""
         token = _control_token()
         if not token:
             print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
             raise typer.Exit(5)
         try:
+            if operation_id is None:
+                operations = _daemon_request("GET", "/api/v1/operations")["items"]
+                failed = [item for item in operations if item["kind"] == "checkpoint.create"
+                          and item["status"] in {"failed", "retry_wait"}]
+                if not failed:
+                    raise RuntimeError("checkpoint_operation_not_found")
+                operation_id = str(failed[-1]["id"])
             result = _invoke_command(
-                "checkpoint.create.user", {"reason": "user_retry_after_failure"},
+                "checkpoint.create.user", {"reason": "user_retry_after_failure", "retry_operation_id": operation_id},
                 authorization=f"Bearer {token}",
             )
         except RuntimeError as exc:

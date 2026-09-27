@@ -1,0 +1,3 @@
+{"file":"docs/implementation/a2a-boundary.md","reason":"bridge/A2A enrollment 和 wake 只保存凭据引用，不持久化可用秘密。"}
+{"file":"docs/implementation/validation.md","reason":"秘密扫描、故障窗口和迁移证据必须可复查。"}
+{"file": "docs/implementation/credential-delivery.md", "reason": "Exact delivery ACK, retry and offline migration contract"}

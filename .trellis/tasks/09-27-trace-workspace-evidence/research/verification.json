@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-09-27T19:44:32.466Z",
+  "result": "passed",
+  "checks": [
+    "uv run pytest -q --disable-warnings",
+    "uv run ruff check src tests tools",
+    "uv run mypy src",
+    "corepack pnpm run check",
+    "uv run python tools/codegen/validate_protocol.py",
+    "uv run python tools/docs/validate_docs.py",
+    "uv run python tools/dev/check_architecture.py",
+    "uv run python .trellis/scripts/task.py validate 09-27-trace-workspace-evidence"
+  ],
+  "review": "research/review-pt3.md",
+  "limitations": [
+    "3 POSIX-only tests skipped on Windows; Windows junction and HTTP/SQLite restart tests passed",
+    "No real user project data changed"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "trace-audit-time",
+  "name": "trace-audit-time",
+  "title": "PT1 时间戳、责任主体与审计契约",
+  "description": "统一业务事件与实体时间语义、actor/subject/因果和分页契约，保留旧数据未知状态。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-27",
+  "completedAt": "2026-09-27T16:44:11.587Z",
+  "branch": "codex/persistence-traceability",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-27-persistence-traceability",
+  "relatedFiles": [],
+  "notes": "PT1 审计合同、查询与元数据基础验收通过；后续领域集成缺口分别由 PT2–PT6 跟踪，不代表 PT 总计划完成。",
+  "meta": {
+    "plan_id": "persistence-traceability",
+    "depends_on": []
+  }
+}

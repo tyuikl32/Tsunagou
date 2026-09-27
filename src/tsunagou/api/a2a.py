@@ -360,7 +360,7 @@ class A2AGateway:
         dispatched = self.dispatcher.dispatch("message.send", envelope, principal=principal)
         result = dispatched.result
         internal_message_id = str(result["message_id"])
-        response_message = {
+        response_message: dict[str, Any] = {
             "messageId": internal_message_id,
             "contextId": context_id or self.project_id,
             "role": "agent",

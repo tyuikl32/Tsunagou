@@ -14,10 +14,12 @@ try {
     uv run --locked pytest
     if ($LASTEXITCODE -ne 0) { throw 'pytest failed' }
     if (-not $SkipNode) {
-        npx --yes pnpm@12.4.2 build
+        npx --yes pnpm@12.4.2 -r --if-present run build
         if ($LASTEXITCODE -ne 0) { throw 'TS build failed' }
         npx --yes pnpm@12.4.2 check
         if ($LASTEXITCODE -ne 0) { throw 'TS checks failed' }
+        npx --yes pnpm@12.4.2 --filter @tsunagou/bridge-server run test:credentials
+        if ($LASTEXITCODE -ne 0) { throw 'Credential handoff tests failed' }
     }
     python tools/docs/validate_docs.py
     if ($LASTEXITCODE -ne 0) { throw 'Documentation check failed' }

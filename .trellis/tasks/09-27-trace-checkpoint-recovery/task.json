@@ -1,0 +1,32 @@
+{
+  "id": "trace-checkpoint-recovery",
+  "name": "trace-checkpoint-recovery",
+  "title": "PT4 项目真相、checkpoint 与恢复",
+  "description": "接通项目内共享快照、提交后物化、实际 Git 锚点和受控 clone 恢复。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-27",
+  "completedAt": null,
+  "branch": "codex/persistence-traceability",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-27-persistence-traceability",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "persistence-traceability",
+    "depends_on": [
+      "trace-secret-receipts",
+      "trace-workspace-evidence"
+    ]
+  }
+}

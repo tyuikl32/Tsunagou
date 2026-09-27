@@ -1,0 +1,69 @@
+{
+  "project_id": "project-1",
+  "items": [
+    {
+      "event_id": "event-1",
+      "event_seq": 1,
+      "source_event_id": "event-1",
+      "source_event_seq": 1,
+      "project_id": "project-1",
+      "lineage_id": "lineage-1",
+      "schema_version": "v1",
+      "projection_version": "v1",
+      "actor_ref": "agent/worker-1",
+      "actor_session_id": "session-1",
+      "subject_ref": "task/task-1",
+      "action": "task.claim",
+      "outcome": "committed",
+      "reason_code": null,
+      "evidence_refs": [],
+      "occurred_at": "2026-09-27T16:00:00.123Z",
+      "recorded_at": "2026-09-27T16:00:00.123Z",
+      "caused_by_command_id": "command-1",
+      "revision_before": 2,
+      "revision_after": 3,
+      "evidence_level": "system_verified",
+      "changes": [
+        {
+          "subject_ref": "task/task-1",
+          "change_kind": "updated",
+          "state_before": "open",
+          "state_after": "claimed",
+          "revision_before": 2,
+          "revision_after": 3,
+          "revision_source": "domain",
+          "created_at": null,
+          "updated_at": "2026-09-27T16:00:00.123Z"
+        }
+      ]
+    },
+    {
+      "event_id": "event-2",
+      "event_seq": 2,
+      "source_event_id": "event-2",
+      "source_event_seq": 2,
+      "project_id": "project-1",
+      "lineage_id": "lineage-1",
+      "schema_version": "v1",
+      "projection_version": "v1",
+      "actor_ref": "unknown",
+      "actor_session_id": null,
+      "subject_ref": "unknown",
+      "action": "task.claim",
+      "outcome": "committed",
+      "reason_code": null,
+      "evidence_refs": [],
+      "occurred_at": null,
+      "recorded_at": null,
+      "caused_by_command_id": null,
+      "revision_before": null,
+      "revision_after": null,
+      "evidence_level": null,
+      "changes": []
+    }
+  ],
+  "next_cursor": null,
+  "projection_version": "v1",
+  "as_of_event_seq": 2,
+  "snapshot_event_seq": 2
+}

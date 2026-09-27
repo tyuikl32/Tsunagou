@@ -1,0 +1,29 @@
+{
+  "id": "trace-runtime-noise",
+  "name": "trace-runtime-noise",
+  "title": "PT6 运行降噪与后续工作留痕",
+  "description": "分离传输噪声，复用 bridge 会话，关联现有唤醒状态并覆盖验收后修复。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-27",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-27-persistence-traceability",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "persistence-traceability",
+    "depends_on": ["trace-cli-timeline"]
+  }
+}

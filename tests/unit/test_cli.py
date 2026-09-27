@@ -26,7 +26,7 @@ def test_ticket_file_is_owner_only(tmp_path: Path) -> None:
     path = _write_ticket_private("install-a", "conversation-a", "s3cret-token", tmp_path / "ticket.json")
     if os.name == "nt":
         # chmod is a no-op for Windows ACLs; the fix strips inherited ACEs and
-        # grants only CREATOR OWNER. Assert the world-readable ACEs are gone.
+        # grants only the current user SID. Assert the world-readable ACEs are gone.
         out = subprocess.run(["icacls", str(path)], capture_output=True, text=True).stdout
         assert "Authenticated Users" not in out
         assert r"\Users:" not in out
