@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from tsunagou.modules.evaluation import SecretRedactor
+
 # These lists are a compatibility contract. Adding a runtime dataclass field
 # does not silently publish it in Git. Public semantic documents are named
 # explicitly (payload, scope, claims), then stripped of local/secret values.
@@ -70,6 +72,27 @@ _PRIVATE = frozenset({
     "private_message", "grant", "grants", "lease", "leases", "lease_set_id", "lease_sets", "job_claim",
     "lease_owner", "lease_until", "lease_epoch", "worker_id", "job_id", "root_identities",
 })
+_SECRET_REDACTOR = SecretRedactor()
+_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/](?:[^\\/\s<>\"|?*]+[\\/])*[^\\/\s<>\"|?*]+")
+_UNC_PATH = re.compile(r"(?<![A-Za-z0-9_])(?:\\\\|//)[^\\/\s]+(?:[\\/][^\\/\s]+)+")
+_POSIX_PATH = re.compile(r"(?<![\w:/])/(?:[A-Za-z0-9._~+-]+/)*[A-Za-z0-9._~+-]+(?:/[A-Za-z0-9._~+-]+)*")
+
+
+def _public_text(value: str) -> str:
+    value = _SECRET_REDACTOR.text(value)
+    urls: list[str] = []
+
+    def preserve_url(match: re.Match[str]) -> str:
+        urls.append(match.group(0))
+        return f"\u0000CHECKPOINT_URL_{len(urls) - 1}\u0000"
+
+    value = re.sub(r"https?://[^\s]+", preserve_url, value, flags=re.IGNORECASE)
+    value = _WINDOWS_PATH.sub("[REDACTED_PATH]", value)
+    value = _UNC_PATH.sub("[REDACTED_PATH]", value)
+    value = _POSIX_PATH.sub("[REDACTED_PATH]", value)
+    for index, url in enumerate(urls):
+        value = value.replace(f"\u0000CHECKPOINT_URL_{index}\u0000", url)
+    return value
 
 
 def public_document(value: Any) -> Any:
@@ -83,8 +106,8 @@ def public_document(value: Any) -> Any:
         }
     if isinstance(value, (list, tuple)):
         return [public_document(item) for item in value]
-    if isinstance(value, str) and (re.match(r"^[A-Za-z]:[\\/]", value) or value.startswith(("/", "\\\\"))):
-        return None
+    if isinstance(value, str):
+        return _public_text(value)
     return value
 
 
@@ -117,5 +140,11 @@ def export_shared(snapshot: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         for key, item in refs.items() if item.get("storage_scope") == "project_shared" and not item.get("recipient_agent_id")
     }
     if public_refs:
-        result["artifacts"] = [{"refs": public_refs}]
+        public_digests = {item["digest"] for item in public_refs.values() if isinstance(item.get("digest"), str)}
+        blobs = snapshot.get("artifacts", {}).get("blobs", {})
+        public_blobs = {
+            digest: select_fields(blob, "digest size_bytes media_type local_relative_path storage_state verified_at")
+            for digest, blob in blobs.items() if digest in public_digests
+        }
+        result["artifacts"] = [{"refs": public_refs, "blobs": public_blobs}]
     return result

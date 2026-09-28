@@ -1,7 +1,7 @@
 # PT 执行顺序与启动门槛
 
 created_at: 2026-09-27T14:39:38Z
-status: in_progress / implementation_authorized
+status: completed / implementation_authorized
 
 用户已下令开始实施。以下步骤现为执行顺序；保留初次规划检查结果作为历史记录。
 
@@ -40,3 +40,11 @@ git diff --check
 ## 实施状态（2026-09-27T16:14:31Z）
 
 用户已授权 PT1–PT7。分支为 `codex/persistence-traceability`，未提交。PT1 后端由 `pt1_audit_implementation` 实施，主 Agent 同步协议和验收。已有局部存储/工作区/checkpoint 测试通过，但实体归因、权限分页、秘密交付和 Git 内容验证仍有缺口，任何子任务均未据此标记完成。后续结果继续记录到各子任务 implement.md。
+
+## 最终完成记录
+
+- completed_at: 2026-09-28T02:39:54Z
+- PT1–PT7: all child tasks completed; machine plan status is `completed`.
+- runtime evidence: standalone audit 24/24 and A2A 8/8; acceptance runner 10/10 gates, every enabled command exit code 0.
+- evidence files: `docs/standalone/persistence-traceability-2026-09-28.json` and `docs/standalone/persistence-traceability-acceptance-2026-09-28.json`.
+- safety boundary: no real project was touched; no credential migration or restore confirmation was performed; no automatic Git commit or push.

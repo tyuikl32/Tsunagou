@@ -3,8 +3,8 @@
   "plan_id": "persistence-traceability",
   "title": "P0 持久化、溯源与责任留痕修复",
   "created_at": "2026-09-27T14:39:38Z",
-  "updated_at": "2026-09-27T19:44:32.466Z",
-  "status": "in_progress",
+  "updated_at": "2026-09-28T02:39:54Z",
+  "status": "completed",
   "awaiting_user_instruction": false,
   "developer": "tyuikl32",
   "platform": "codex",
@@ -73,7 +73,7 @@
         "PT2",
         "PT3"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "owner": "tyuikl32",
       "deliverable": "genesis、白名单 checkpoint DTO、提交后幂等物化、真实 Git anchor、preview/confirm clone 恢复",
       "acceptance": [
@@ -81,7 +81,8 @@
         "事务后文件失败可重试且不伪造回滚",
         "Git refs/tree 内容实际验证，恢复不继承活动权限"
       ],
-      "started_at": "2026-09-27T19:44:32.466Z"
+      "started_at": "2026-09-27T19:44:32.466Z",
+      "completed_at": "2026-09-28T00:32:48Z"
     },
     {
       "id": "PT5",
@@ -91,9 +92,11 @@
       "depends_on": [
         "PT4"
       ],
-      "status": "planning",
+      "status": "completed",
       "owner": "tyuikl32",
       "deliverable": "项目/任务 history、audit event、checkpoint verify、游标时间筛选和 HTTP 等价只读查询",
+      "started_at": "2026-09-28T00:32:48Z",
+      "completed_at": "2026-09-28T01:26:49Z",
       "acceptance": [
         "用户不读 SQLite 即可查全量历史",
         "分页无重复/缺页且权限/私有消息边界保持",
@@ -108,9 +111,11 @@
       "depends_on": [
         "PT5"
       ],
-      "status": "planning",
+      "status": "completed",
       "owner": "tyuikl32",
+      "started_at": "2026-09-28T01:26:49Z",
       "deliverable": "领域/诊断分层、bridge rebind 降噪、A2A delivery/wake/pull/turn 证据关联和修复关联",
+      "completed_at": "2026-09-28T01:48:27Z",
       "acceptance": [
         "稳定连接 no-op 不推进领域 revision",
         "callback/wake/pull/turn 不互相冒充",
@@ -125,8 +130,10 @@
       "depends_on": [
         "PT6"
       ],
-      "status": "planning",
+      "status": "completed",
       "owner": "tyuikl32",
+      "started_at": "2026-09-28T01:48:27Z",
+      "completed_at": "2026-09-28T02:39:54Z",
       "deliverable": "脱敏 fixture/临时项目/真实项目分层演练、Windows 操作单、迁移报告、最终证据和文档同步",
       "acceptance": [
         "覆盖两 Agent 协作、故障注入、秘密扫描、工作区、Git 恢复和时间权限",

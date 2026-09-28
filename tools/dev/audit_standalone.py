@@ -183,8 +183,8 @@ class Audit:
             card_status == 200
             and card.get("protocolVersion") == "1.0"
             and card.get("capabilities", {}).get("streaming") is False
-            and card.get("capabilities", {}).get("pushNotifications") is False
-            and card.get("x-tsunagou", {}).get("wake") == "unsupported",
+            and card.get("capabilities", {}).get("pushNotifications") is True
+            and card.get("x-tsunagou", {}).get("wake") == "push-notification",
             http_status=card_status,
         )
         doctor = self.cli("--json", "doctor")
@@ -196,7 +196,7 @@ class Audit:
             "doctor_reports_a2a_boundary",
             doctor.returncode == 0
             and doctor_body.get("a2a", {}).get("protocol_version") == "1.0"
-            and doctor_body.get("a2a", {}).get("wake") == "unsupported",
+            and doctor_body.get("a2a", {}).get("wake") == "push-notification",
             exit_code=doctor.returncode,
         )
         main, worker = self.enroll("main"), self.enroll("worker")
@@ -265,7 +265,8 @@ class Audit:
             a2a_status == 200
             and bool(first_message_id)
             and first_message_id == second_message_id
-            and a2a_first.get("result", {}).get("message", {}).get("metadata", {}).get("tsunagou", {}).get("wake") == "unsupported",
+            and a2a_first.get("result", {}).get("message", {}).get("metadata", {}).get("tsunagou", {}).get("wake") == "not_requested"
+            and a2a_first.get("result", {}).get("message", {}).get("metadata", {}).get("tsunagou", {}).get("delivery") == "pending",
             http_status=a2a_status,
         )
         task_status, a2a_task = self.a2a(
@@ -345,9 +346,10 @@ class Audit:
         )
         self.stop()
         self.start()
-        context = self.ok("context.project_read", {}, worker)
-        self.record("task_survives_restart", any(t["task_id"] == durable["task_id"] for t in context["tasks"]),
-                    owned_tasks_after_restart=len(context["tasks"]))
+        status, task_page = self.http("GET", f"/api/v1/projects/{project_id}/tasks")
+        self.record("task_survives_restart", status == 200 and any(
+            t["task_id"] == durable["task_id"] for t in task_page.get("items", [])
+        ), http_status=status, persisted_tasks=len(task_page.get("items", [])))
         status, _ = self.command("contract.accept", {
             "proposal_id": proposal["proposal_id"], "participant_slot": "main",
             "proposal_digest": proposal["digest"],

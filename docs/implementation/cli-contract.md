@@ -1,6 +1,6 @@
 # CLI 外壳与已有领域命令的精确映射
 
-本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/bootstrap/complete、agent connect/enroll/appoint、decision、operation、checkpoint 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
+本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/bootstrap/complete/history、agent connect/enroll/appoint、task history、audit event、decision、operation、checkpoint create/retry/list/verify 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
 
 ## 1. 适用范围
 
@@ -38,7 +38,13 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 | `decision list` / `show <decision_id>` | GET P/decisions[/{id}] | 精确proposal摘要与版本 |
 | `decision resolve <id> --choice <choice> --expected-revision <n> --digest <digest> [--reason <text>]` | `user_decision.resolve`；先读该版本decision绑定的expected_revisions并原样提交 | Decision与关联结果 |
 | `checkpoint create --request-file <json>` | `checkpoint.create.user`；reason、minimum_event_seq? | Operation |
-| `checkpoint list` / `show <checkpoint_id>` | GET checkpoint列表/详情 | manifest状态与覆盖水位 |
+| `checkpoint list <project_id> [--verify]` | GET `/api/v1/projects/{project_id}/checkpoints` | manifest状态与覆盖水位；`--verify` 实际校验文件摘要 |
+| `checkpoint verify <checkpoint_id>` | GET `/api/v1/checkpoints/{checkpoint_id}/verify` | manifest、文件摘要和本地 Git anchor |
+| `project history <project_id> [--from] [--to] [--actor] [--subject] [--limit] [--cursor] [--json] [--export]` | GET project history 或 history/export | AuditPage 或脱敏导出，不写状态 |
+| `project diagnostics <project_id> [--json]` | GET project diagnostics | callback、wake、presentation、turn 的脱敏诊断证据；不写 domain event |
+| `task history <task_id> [--project-id] [--from] [--to] [--actor] [--limit] [--cursor] [--json]` | GET task history | 任务及其可见关联实体的 AuditPage |
+| `audit event <event_id> [--project-id] [--include-evidence] [--json]` | GET single audit event | 因果、证据、变更详情；越权拒绝 |
+| `project restore --coordination-root <clone> --checkpoint-digest <digest>` | 本地只读 `preview`；加 `--confirm-plan-digest <preview.plan_digest>` 才导入 | 仅 clean clone；检查本地 Git 可达 heads/tags 的完整 manifest/tree；不覆盖既有数据库、凭据、bridge 或 root binding；恢复后 authority unassigned、根 unbound、非终态任务需 recovery review |
 | `operation list` / `show <id>` | GET P/operations[/{id}] | 原始status、Resolution、effective_outcome |
 | `operation resolve <id> --request-file <json> --expected-revision <n>` | `operation.resolve.user` | 追加Resolution |
 | `project archive --request-file <json> --expected-revision <n>` | `project.archive.user` | barrier Operation |
@@ -67,7 +73,7 @@ PT2 已加入离线命令 `daemon migrate-credentials --coordination-root <path>
 
 CLI从platformdirs私有目录读取control token；不提供`--token`，不把秘密写环境变量、request-file、日志或JSON。T01固定普通运行参数的配置键；本手册不引入未登记的`TSUNAGOU_*`环境开关。endpoint由daemon发现文件读取并核对instance，不能凭过期PID连接别的服务。
 
-当前 PT1 的 `project history <project_id>` 从本项目 `.tsunagou/local/control.token` 读取已有控制凭据，通过 daemon 查询 `P/audit`。支持 `--from/--to/--actor/--subject/--limit/--cursor`；根级或命令级 `--json` 输出同一 AuditPage。查询不写 SQLite，拒绝无凭据、过期游标和变更过滤条件的游标；未知历史时间显示 `unknown_time`。未来全局凭据目录迁移不改变这一只读权限模型。
+PT5 的只读查询从本项目 `.tsunagou/local/control.token` 读取已有控制凭据，通过 daemon 查询。`project history` 支持 `--from/--to/--actor/--subject/--limit/--cursor` 和脱敏 `--export`；`task history` 展开任务关联实体；`audit event` 查询单条责任记录；`checkpoint list/verify` 验证本地持久化。根级或命令级 `--json` 输出同一投影，查询不写 SQLite，拒绝无凭据、过期游标和变更过滤条件的游标；未知历史时间显示 `unknown_time`。未来全局凭据目录迁移不改变这一只读权限模型。
 
 `--json`输出生成DTO/Problem，日志只在stderr。`--wait <seconds>`仅对返回Operation的命令有效；超时退出6，打印operation_id和最近状态，不取消业务操作。没有wait则202受理退出0，用户后续show。普通操作的退出码沿用catalog的0/2/3/4/5/6。
 

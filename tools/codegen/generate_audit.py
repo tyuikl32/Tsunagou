@@ -80,7 +80,13 @@ def render_models(source: Path = SOURCE) -> tuple[str, str]:
 
 
 def main() -> None:
-    for name, source in (("audit", SOURCE), ("delivery", SOURCE.with_name("credential-delivery.schema.json"))):
+    query_sources = (
+        ("audit", SOURCE),
+        ("delivery", SOURCE.with_name("credential-delivery.schema.json")),
+        ("checkpoint", SOURCE.with_name("checkpoint-page.schema.json")),
+        ("checkpoint_verification", SOURCE.with_name("checkpoint-verification.schema.json")),
+    )
+    for name, source in query_sources:
         py, ts = render_models(source)
         (ROOT / f"src/tsunagou/generated/protocol/{name}.py").write_text(py, encoding="utf-8")
         (ROOT / f"packages/protocol-ts/src/generated/{name}.ts").write_text(ts, encoding="utf-8")

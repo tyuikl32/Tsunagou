@@ -8,18 +8,22 @@ import shutil
 import subprocess
 import sys
 from contextlib import closing
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from tsunagou.modules.artifacts import ArtifactService
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.resources import ResourceService
 from tsunagou.modules.tasks import TaskService
 from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore, GitAnchorScanner
+from tsunagou.platform.clone_recovery import CloneRecovery
 from tsunagou.platform.db.sqlite import ProjectDatabase
 from tsunagou.platform.maintenance import RuntimeMaintenance
+from tsunagou.platform.shared_checkpoint import public_document
 from tsunagou.shared_kernel.digests import canonical_bytes, canonical_digest
 from tsunagou.shared_kernel.errors import RevisionConflict
 
@@ -64,6 +68,24 @@ def stage(database, worker, *, reason="milestone") -> str:
 def operation(database, identity: str) -> dict:
     with closing(database._connect()) as connection:
         return dict(connection.execute("SELECT * FROM operations WHERE id=?", (identity,)).fetchone())
+
+
+def add_promoted_artifact(state: State, storage_dir: Path) -> tuple[ArtifactService, str]:
+    service = ArtifactService(storage_dir)
+    intent = service.begin_upload(domain_ref="task/task", actor="main")
+    content = b"promoted project artifact"
+    service.write_chunk(intent.intent_id, content)
+    ref = service.finalize(intent.intent_id, media_type="application/octet-stream")
+    service.promote(ref.artifact_ref, actor_kind="main", actor_id="main",
+                    project_shared_allowed=lambda *_: True)
+    ref.project_id = "local-project"
+    ref.lineage_id = "lineage"
+    state.artifacts = service
+    state.snapshot["artifacts"] = {
+        "refs": {ref.artifact_ref: asdict(ref)},
+        "blobs": {ref.digest: asdict(service.blobs[ref.digest])},
+    }
+    return service, ref.digest
 
 
 def test_rollback_has_no_effect_and_postcommit_reuses_frozen_input(runtime, monkeypatch) -> None:
@@ -162,6 +184,89 @@ def test_corrupt_job_input_is_never_materialized(runtime) -> None:
     worker.run_once(identity)
     assert operation(database, identity)["status"] == "failed"
     assert not store.pointer.exists()
+
+
+def test_promoted_artifact_is_copied_and_git_anchor_checks_its_bytes(runtime, tmp_path: Path) -> None:
+    database, store, state, worker = runtime
+    service, raw_digest = add_promoted_artifact(state, tmp_path / "artifact-storage")
+    identity = stage(database, worker)
+    assert worker.run_once(identity) == 1
+    manifest = store.load(json.loads(operation(database, identity)["result_json"])["checkpoint_digest"])
+    checkpoint_dir = store._directory(manifest["digest"])
+    artifact_entry = manifest["artifact_files"][0]
+    assert artifact_entry == {
+        "path": f"artifacts/sha256/{raw_digest}", "size": len(b"promoted project artifact"),
+        "digest": f"sha256:{raw_digest}",
+    }
+    assert (checkpoint_dir / artifact_entry["path"]).read_bytes() == b"promoted project artifact"
+
+    subprocess.run(["git", "init", "--quiet", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(["git", "config", "user.name", "PT4 test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "pt4@example.invalid"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "-c", "core.longpaths=true", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "promoted checkpoint"], cwd=tmp_path, check=True)
+    manifest_path = (checkpoint_dir / "manifest.json").relative_to(tmp_path).as_posix()
+    anchors = GitAnchorScanner().scan(tmp_path, {manifest["digest"]}, {manifest["digest"]: manifest_path})
+    assert len(anchors) == 1 and anchors[0].checkpoint_digest == manifest["digest"]
+
+    (checkpoint_dir / artifact_entry["path"]).write_bytes(b"corrupted archived artifact")
+    with pytest.raises(ValueError, match="checkpoint_file_digest_mismatch"):
+        store.verify(manifest["digest"])
+
+
+def test_corrupted_promoted_artifact_fails_after_commit_without_checkpoint(runtime, tmp_path: Path) -> None:
+    database, store, state, worker = runtime
+    service, raw_digest = add_promoted_artifact(state, tmp_path / "artifact-storage")
+    identity = stage(database, worker)
+    source = service.storage_dir / service.blobs[raw_digest].local_relative_path
+    source.write_bytes(b"tampered after commit")
+    assert worker.run_once(identity) == 1
+    assert operation(database, identity)["status"] == "failed"
+    assert not store.pointer.exists()
+    assert list(store.checkpoints.glob("sha256_*/manifest.json")) == []
+
+
+def test_public_checkpoint_text_redacts_embedded_paths_and_bearer_sentinels() -> None:
+    public = public_document({
+        "reason": (
+            r"Windows C:\Users\alice\private.txt; UNC \\server\share\secret.db; "
+            "POSIX /home/alice/private.db; bearer top-secret-token; retry after failure"
+        ),
+        "normal_prose": "keep HTTPS https://example.invalid/api/v1 available",
+    })
+    text = public["reason"]
+    assert r"C:\Users" not in text and r"server\share" not in text and "/home/alice" not in text
+    assert "top-secret-token" not in text and "[REDACTED]" in text
+    assert "retry after failure" in text
+    assert public["normal_prose"] == "keep HTTPS https://example.invalid/api/v1 available"
+
+
+def test_clone_preview_is_byte_for_byte_read_only_for_legacy_store(tmp_path: Path) -> None:
+    root = tmp_path / "legacy-clone"
+    shared = root / ".tsunagou"
+    shared.mkdir(parents=True)
+    (shared / "project.json").write_text(json.dumps({"project_id": "local-project"}), encoding="utf-8")
+    store = CheckpointStore(shared / "checkpoints")
+    manifest = store.materialize(
+        lineage_id="lineage", through_event_seq=1, schema_bundle_digest="schema",
+        domains={"project": [{"project_id": "local-project", "current_lineage_id": "lineage"}]},
+        project_id="local-project",
+    )
+    # Simulate an existing clone created before checkpoint Git metadata was managed.
+    (store.root / ".gitattributes").unlink()
+    (store.root / ".gitignore").unlink()
+    subprocess.run(["git", "init", "--quiet", "-b", "main", str(root)], check=True)
+    subprocess.run(["git", "config", "user.name", "PT4 test"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "pt4@example.invalid"], cwd=root, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "legacy shared history"], cwd=root, check=True)
+    before = {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+    preview = CloneRecovery(root).preview(manifest.digest)
+
+    after = {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    assert preview["status"] == "preview"
+    assert before == after
 
 
 def test_parent_is_frozen_from_completed_operation_and_metadata_is_hashed(runtime) -> None:

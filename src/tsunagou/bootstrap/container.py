@@ -37,11 +37,11 @@ from tsunagou.modules.tasks import TaskService
 from tsunagou.modules.workspaces import WorkspaceService
 from tsunagou.platform.audit_cursor import AuditCursorCodec
 from tsunagou.platform.checkpoint_worker import CheckpointWorker
-from tsunagou.platform.checkpoints import CheckpointStore
+from tsunagou.platform.checkpoints import CheckpointStore, GitAnchorScanner
 from tsunagou.platform.db.sqlite import ProjectDatabase, ProjectLock
 from tsunagou.platform.maintenance import RuntimeMaintenance
 from tsunagou.platform.state import ServiceStateRuntime
-from tsunagou.shared_kernel.time import format_timestamp, parse_timestamp
+from tsunagou.shared_kernel.time import format_timestamp, now_ms, parse_timestamp
 
 _REGISTRY_RESOURCE = files("tsunagou.protocol_data").joinpath("registry", "commands.json")
 
@@ -152,6 +152,7 @@ def _build_application() -> FastAPI:
             wake_dispatcher = WakeDispatcher(
                 hostwake_provider,
                 attempts_path=state_path / "host-wake-attempts.json",
+                diagnostics_path=state_path / "diagnostic-events.json",
             )
     dispatcher = CommandDispatcher(
         _registry_path(), database=database, state_runtime=state_runtime,
@@ -183,6 +184,8 @@ def _build_application() -> FastAPI:
             project_registry=project_registry,
             checkpoint_store=checkpoint_store,
             artifacts=artifacts,
+            project_root=project_root,
+            wake_dispatcher=wake_dispatcher,
         ),
         wake_dispatcher=wake_dispatcher,
         hostwake_provider=hostwake_provider,
@@ -213,6 +216,8 @@ def _query_provider(
     checkpoint_store: CheckpointStore | None,
     coordination: CoordinationService,
     artifacts: ArtifactService | None = None,
+    project_root: str | None = None,
+    wake_dispatcher: Any | None = None,
 ) -> Any:
     cursor_codec = AuditCursorCodec()
 
@@ -251,6 +256,61 @@ def _query_provider(
                 return False
         return True
 
+    def task_subject_refs(task_id: str) -> set[str]:
+        """Build the persisted entity refs that form one task's timeline."""
+        refs = {f"task/{task_id}"}
+        attempt_ids = {
+            attempt.attempt_id for attempt in tasks.attempts.values()
+            if attempt.task_id == task_id
+        }
+        refs.update(f"attempt/{attempt_id}" for attempt_id in attempt_ids)
+        refs.update(
+            f"result/{result.result_id}" for result in tasks.results.values()
+            if result.task_id == task_id
+        )
+        refs.update(
+            f"preflight/{preflight.preflight_id}" for preflight in tasks.preflights.values()
+            if preflight.task_id == task_id
+        )
+        refs.update(
+            f"progress/{progress.progress_id}" for progress in tasks.progress_records.values()
+            if progress.task_id == task_id
+        )
+        refs.update(
+            f"report/{report.report_id}" for report in cognition.reports.values()
+            if report.task_id == task_id
+        )
+        refs.update(
+            f"workspace/{workspace.workspace_id}" for workspace in workspaces.workspaces.values()
+            if workspace.attempt_id in attempt_ids
+        )
+        refs.update(
+            f"isolation_decision/{decision.decision_id}"
+            for decision in workspaces.decisions.values()
+            if decision.task_id == task_id
+        )
+        refs.update(
+            f"message/{message.message_id}" for message in messages.messages.values()
+            if message.subject_ref in refs
+        )
+        refs.update(
+            f"obligation/{obligation.obligation_id}"
+            for obligation in messages.obligations.values()
+            if obligation.message_id in {ref.removeprefix("message/") for ref in refs}
+        )
+        return refs
+
+    def event_matches_subject_refs(event: dict[str, Any], refs: set[str]) -> bool:
+        if event.get("subject_ref") in refs or event.get("aggregate_ref") in refs:
+            return True
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            return False
+        return any(
+            isinstance(change, dict) and change.get("subject_ref") in refs
+            for change in payload.get("changes", [])
+        )
+
     def query(
         kind: str,
         requested_project_id: str,
@@ -262,6 +322,9 @@ def _query_provider(
         actor_ref: str | None = None,
         subject_ref: str | None = None,
         viewer: PrincipalContext | None = None,
+        task_id: str | None = None,
+        project_filter: str | None = None,
+        verify: bool = False,
     ) -> dict[str, Any]:
         if kind == "artifact":
             if artifacts is None or viewer is None:
@@ -306,7 +369,16 @@ def _query_provider(
                 "domain_ref": selected.patch_artifact_domain,
                 "owner_actor": selected.patch_artifact_owner,
             }
-        if project_id is not None and requested_project_id and requested_project_id != project_id:
+        # Some read endpoints use a resource identity (event/checkpoint
+        # digest) as requested_project_id.  They validate project ownership in
+        # their own branch after loading the resource; comparing the resource
+        # key to the configured project id here would reject valid reads.
+        if (
+            kind not in {"audit_event", "checkpoint_verify"}
+            and project_id is not None
+            and requested_project_id
+            and requested_project_id != project_id
+        ):
             raise KeyError("project_not_found")
         if kind == "roots":
             if project_registry is None or project_registry.project is None:
@@ -532,6 +604,92 @@ def _query_provider(
                     for workspace in workspaces.workspaces.values()
                 ],
             }
+        def project_audit_event(event: dict[str, Any]) -> dict[str, Any]:
+            """Project one event through the same public fields as AuditPage."""
+            raw_payload = event.get("payload")
+            audit_payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
+            view = AuditProjector().project({
+                "event_id": event["event_id"], "event_seq": event["event_seq"],
+                "actor_ref": event["actor_ref"], "action": event["event_type"].removeprefix("command."),
+                "subject_ref": event.get("subject_ref") or event["aggregate_ref"],
+                "outcome": event.get("outcome") or audit_payload.get("outcome", "committed"),
+                "reason_code": event.get("reason_code") or audit_payload.get("reason_code"),
+                "evidence_refs": event.get("evidence_refs") or audit_payload.get("evidence_refs", []),
+                "occurred_at": event.get("occurred_at"), "recorded_at": event.get("recorded_at"),
+                "caused_by_command_id": event.get("caused_by_command_id"),
+                "revision_before": event.get("revision_before"), "revision_after": event.get("revision_after"),
+                "projection_version": event.get("projection_version", "v1"),
+                "evidence_level": audit_payload.get("evidence_level"),
+            }, can_read_subject=True)
+            return {
+                "event_id": view.source_event_id, "event_seq": view.source_event_seq,
+                "project_id": event["project_id"], "lineage_id": event["lineage_id"],
+                "schema_version": event["schema_version"], "source_event_id": view.source_event_id,
+                "source_event_seq": view.source_event_seq, "actor_ref": view.actor_ref,
+                "action": view.action, "subject_ref": view.subject_ref, "outcome": view.outcome,
+                "reason_code": view.reason_code, "evidence_refs": list(view.evidence_refs),
+                "occurred_at": format_timestamp(view.occurred_at),
+                "recorded_at": format_timestamp(view.recorded_at),
+                "caused_by_command_id": view.caused_by_command_id,
+                "revision_before": view.revision_before, "revision_after": view.revision_after,
+                "evidence_level": view.evidence_level, "projection_version": view.projection_version,
+                "actor_session_id": audit_payload.get("session_id"),
+                "changes": [
+                    {**change, "created_at": format_timestamp(change.get("created_at")),
+                     "updated_at": format_timestamp(change.get("updated_at"))}
+                    for change in audit_payload.get("changes", [])
+                ],
+            }
+
+        if kind == "audit_event":
+            if viewer is None or database is None:
+                raise PermissionError("authentication_failed")
+            if project_filter is not None and project_filter != database.project_id:
+                raise KeyError("project_not_found")
+            event = database.get_event(requested_project_id)
+            if event is None:
+                raise KeyError("audit_event_not_found")
+            if not can_read_event(event, viewer):
+                raise PermissionError("audit_event_access_denied")
+            return project_audit_event(event)
+
+        if kind == "audit_export":
+            if viewer is None:
+                raise PermissionError("authentication_failed")
+            page = query(
+                "audit", requested_project_id, cursor=cursor, limit=limit,
+                from_timestamp=from_timestamp, to_timestamp=to_timestamp,
+                actor_ref=actor_ref, subject_ref=subject_ref, viewer=viewer,
+            )
+            lineage = registry.lineage_id if registry is not None else (database.lineage_id if database else None)
+            return {
+                "schema": "tsunagou.audit-export.v1", "exported_at": format_timestamp(now_ms()),
+                "source": {"project_id": requested_project_id, "lineage_id": lineage},
+                "projection_version": page["projection_version"], "as_of_event_seq": page["as_of_event_seq"],
+                "next_cursor": page["next_cursor"], "items": page["items"],
+            }
+
+        if kind == "task_history":
+            if viewer is None:
+                raise PermissionError("authentication_failed")
+            if not task_id or tasks is None or task_id not in tasks.tasks:
+                raise KeyError("task_not_found")
+            return query(
+                "audit", requested_project_id, cursor=cursor, limit=limit,
+                from_timestamp=from_timestamp, to_timestamp=to_timestamp,
+                actor_ref=actor_ref, task_id=task_id, viewer=viewer,
+            )
+
+        if kind == "diagnostics":
+            if viewer is None:
+                raise PermissionError("authentication_failed")
+            if wake_dispatcher is None:
+                return {"project_id": requested_project_id, "items": []}
+            return {
+                "project_id": requested_project_id,
+                "items": wake_dispatcher.diagnostics(project_id=requested_project_id),
+            }
+
         if kind == "audit":
             if viewer is None:
                 raise PermissionError("authentication_failed")
@@ -550,24 +708,30 @@ def _query_provider(
                 "project_id": database.project_id, "lineage_id": registry.lineage_id if registry else database.lineage_id,
                 "viewer": {"kind": viewer.kind, "id": viewer.principal_id,
                            "session_id": viewer.session_id, "connection_epoch": viewer.connection_epoch},
-                "from_ms": from_ms, "to_ms": to_ms, "actor_ref": actor_ref, "subject_ref": subject_ref,
+                "from_ms": from_ms, "to_ms": to_ms, "actor_ref": actor_ref,
+                "subject_ref": subject_ref, "task_id": task_id,
                 "limit": limit, "sort": "event_seq_asc",
             }
             after, watermark = cursor_codec.decode(cursor, context=cursor_context) if cursor else (0, database.last_event_seq())
             audit_events: list[dict[str, Any]] = []
             scanned = after
+            related_refs = task_subject_refs(task_id) if task_id else None
             # Apply visibility before pagination and continue over hidden rows;
             # otherwise a private message page can hide the next public event.
             while len(audit_events) <= bounded:
                 batch = database.list_events(
                     limit=201, cursor=scanned, from_ms=from_ms, to_ms=to_ms,
-                    actor_ref=actor_ref, subject_ref=subject_ref, through_event_seq=watermark,
+                    actor_ref=actor_ref,
+                    subject_ref=subject_ref if related_refs is None else None,
+                    through_event_seq=watermark,
                 )
                 if not batch:
                     break
                 for event in batch:
                     scanned = event["event_seq"]
-                    if can_read_event(event, viewer):
+                    if can_read_event(event, viewer) and (
+                        related_refs is None or event_matches_subject_refs(event, related_refs)
+                    ):
                         audit_events.append(event)
                     if len(audit_events) > bounded:
                         break
@@ -643,10 +807,65 @@ def _query_provider(
                     "WHERE project_id=? ORDER BY created_at", (database.project_id,),
                 ).fetchall()
             return {"items": [dict(row) for row in rows]}
-        if kind == "checkpoints" and checkpoint_store is not None:
+        if kind in {"checkpoints", "checkpoint_verify"} and checkpoint_store is not None:
+            if viewer is None:
+                raise PermissionError("authentication_failed")
+            if kind == "checkpoint_verify":
+                digest = requested_project_id
+                manifest = checkpoint_store.load(digest)
+                if manifest.get("project_id") not in {None, project_id}:
+                    raise KeyError("checkpoint_not_found")
+                manifest_relative = (
+                    checkpoint_store._directory(digest) / "manifest.json"
+                ).relative_to(Path(project_root).resolve()).as_posix() if project_root else ""
+                anchors = GitAnchorScanner().scan(
+                    Path(project_root).resolve() if project_root else Path.cwd(),
+                    {digest}, {digest: manifest_relative} if manifest_relative else {},
+                )
+                return {
+                    "digest": digest, "status": "verified", "project_id": manifest.get("project_id"),
+                    "lineage_id": manifest["lineage_id"], "through_event_seq": manifest["through_event_seq"],
+                    "created_at": format_timestamp(manifest.get("created_at")),
+                    "verified_at": format_timestamp(manifest.get("verified_at")),
+                    "git_anchors": [
+                        {"ref_name": anchor.ref_name, "commit_oid": anchor.commit_oid}
+                        for anchor in anchors if anchor.checkpoint_digest == digest
+                    ],
+                }
+            if requested_project_id and project_id is not None and requested_project_id != project_id:
+                raise KeyError("project_not_found")
             pointer = checkpoint_store.pointer
             current = json.loads(pointer.read_text(encoding="utf-8")) if pointer.is_file() else None
-            return {"current": current, "items": [current] if current else []}
+            items: list[dict[str, Any]] = []
+            for manifest_file in sorted(checkpoint_store.checkpoints.glob("sha256_*/manifest.json")):
+                try:
+                    raw = json.loads(manifest_file.read_text(encoding="utf-8"))
+                    digest = raw.get("digest")
+                    if not isinstance(digest, str) or raw.get("project_id") not in {None, project_id}:
+                        continue
+                    if verify:
+                        checkpoint_store.verify(digest)
+                    items.append({
+                        "digest": digest, "parent_digest": raw.get("parent_digest"),
+                        "project_id": raw.get("project_id"), "lineage_id": raw.get("lineage_id"),
+                        "through_event_seq": raw.get("through_event_seq"),
+                        "format_version": raw.get("format_version"),
+                        "schema_bundle_digest": raw.get("schema_bundle_digest"),
+                        "created_at": format_timestamp(raw.get("created_at")),
+                        "created_by": raw.get("created_by"), "reason": raw.get("reason"),
+                        "projection_version": raw.get("projection_version"),
+                        "verified_at": format_timestamp(raw.get("verified_at")),
+                        "status": "verified" if verify else raw.get("status", "sealed"),
+                        "artifact_digests": list(raw.get("artifact_digests", [])),
+                    })
+                except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                    if verify:
+                        raise ValueError("checkpoint_verification_failed") from exc
+            items.sort(key=lambda item: (int(item.get("through_event_seq") or 0), item["digest"]))
+            return {
+                "project_id": project_id, "current": current, "items": items,
+                "projection_version": "v1", "as_of_event_seq": database.last_event_seq() if database else 0,
+            }
         if kind == "decisions":
             # Decision persistence is introduced with the lifecycle task. Keep
             # this endpoint explicit so a CLI query never fabricates success.

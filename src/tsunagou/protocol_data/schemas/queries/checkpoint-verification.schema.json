@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/queries/checkpoint-verification",
+  "title": "CheckpointVerification",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "digest": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "const": "verified" },
+    "project_id": { "type": ["string", "null"] },
+    "lineage_id": { "type": "string", "minLength": 1 },
+    "through_event_seq": { "type": "integer", "minimum": 0 },
+    "created_at": { "anyOf": [{ "$ref": "../common/timestamp.schema.json" }, { "type": "null" }] },
+    "verified_at": { "anyOf": [{ "$ref": "../common/timestamp.schema.json" }, { "type": "null" }] },
+    "git_anchors": { "type": "array", "items": { "$ref": "#/$defs/GitAnchor" } }
+  },
+  "required": ["digest", "status", "project_id", "lineage_id", "through_event_seq", "created_at", "verified_at", "git_anchors"],
+  "$defs": {
+    "GitAnchor": {
+      "title": "GitAnchor",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref_name": { "type": "string", "minLength": 1 },
+        "commit_oid": { "type": "string", "minLength": 1 }
+      },
+      "required": ["ref_name", "commit_oid"]
+    }
+  }
+}

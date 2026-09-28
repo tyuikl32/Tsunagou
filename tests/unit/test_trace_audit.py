@@ -26,6 +26,11 @@ from tsunagou.modules.tasks import TaskResult
 from tsunagou.platform.db.sqlite import ProjectDatabase
 from tsunagou.shared_kernel.baseline import ADMISSION_CAPABILITIES
 from tsunagou.shared_kernel.ids import new_id
+from tsunagou.shared_kernel.query_models import (
+    AuditExportModel,
+    CheckpointPageModel,
+    CheckpointVerificationModel,
+)
 from tsunagou.shared_kernel.time import format_timestamp, parse_timestamp
 
 
@@ -352,3 +357,85 @@ def test_audit_http_query_validation_and_schema(runtime: Runtime) -> None:
         server.should_exit = True
         thread.join(timeout=10)
         assert not thread.is_alive()
+
+
+def test_task_event_checkpoint_and_export_queries_share_public_projection(runtime: Runtime) -> None:
+    main, _ = runtime.enroll("timeline-main")
+    runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
+    task = runtime.call("task.create", {"title": "timeline", "objective": "query me"}, main)
+    task_page_route = runtime.endpoint("/api/v1/projects/{project_id}/tasks/{task_id}/history")
+    page = task_page_route(
+        runtime.project_id, task["task_id"], authorization="Bearer control", limit=50,
+    )
+    AuditPageModel.model_validate(page)
+    assert page["items"] and any(item["subject_ref"] == f"task/{task['task_id']}" for item in page["items"])
+
+    event_id = page["items"][0]["event_id"]
+    event_route = runtime.endpoint("/api/v1/audit/events/{event_id}")
+    event = event_route(event_id, project_id=runtime.project_id, authorization="Bearer control")
+    assert event["event_id"] == event_id
+    assert event["caused_by_command_id"]
+
+    export_route = runtime.endpoint("/api/v1/projects/{project_id}/history/export")
+    exported = export_route(runtime.project_id, authorization="Bearer control")
+    AuditExportModel.model_validate(exported)
+    assert exported["schema"] == "tsunagou.audit-export.v1"
+    assert exported["source"] == {"project_id": runtime.project_id, "lineage_id": page["items"][0]["lineage_id"]}
+    assert isinstance(exported["exported_at"], str) and exported["items"]
+
+    before = runtime.db.last_event_seq()
+    checkpoint = runtime.call("checkpoint.create.user", {"reason": "timeline query"})
+    checkpoints_route = runtime.endpoint("/api/v1/projects/{project_id}/checkpoints")
+    checkpoints = checkpoints_route(runtime.project_id, authorization="Bearer control", verify=True)
+    CheckpointPageModel.model_validate(checkpoints)
+    assert checkpoints["current"]["digest"] == checkpoint["checkpoint_digest"]
+    assert any(item["digest"] == checkpoint["checkpoint_digest"] and item["status"] == "verified"
+               for item in checkpoints["items"])
+    verify_route = runtime.endpoint("/api/v1/checkpoints/{checkpoint_digest:path}/verify")
+    verified = verify_route(checkpoint["checkpoint_digest"], authorization="Bearer control")
+    CheckpointVerificationModel.model_validate(verified)
+    assert verified["status"] == "verified"
+    assert runtime.db.last_event_seq() > before
+
+
+def test_task_history_includes_related_entities_without_writing(runtime: Runtime) -> None:
+    main, _ = runtime.enroll("timeline-main")
+    worker, _ = runtime.enroll("timeline-worker")
+    runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
+    task = runtime.call("task.create", {"title": "related", "objective": "trace relations"}, main)
+    runtime.call("task.ready", {"task_id": task["task_id"]}, main)
+    runtime.call("task.publish", {"task_id": task["task_id"]}, main)
+    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+    task_ref = f"task/{task['task_id']}"
+    message = runtime.call(
+        "message.send",
+        {"recipient_agent_id": main["agent_id"], "summary": "task evidence", "subject_ref": task_ref},
+        worker,
+    )
+    before = runtime.db.last_event_seq()
+    route = runtime.endpoint("/api/v1/projects/{project_id}/tasks/{task_id}/history")
+    page = route(runtime.project_id, task["task_id"], limit=200, **runtime.credentials(worker))
+    AuditPageModel.model_validate(page)
+    after = runtime.db.last_event_seq()
+    assert after == before
+    refs = {change["subject_ref"] for event in page["items"] for change in event["changes"]}
+    assert f"attempt/{claim['attempt_id']}" in refs
+    assert f"message/{message['message_id']}" in refs
+    assert all(item["project_id"] == runtime.project_id for item in page["items"])
+
+
+def test_timeline_queries_fail_closed_without_user_authentication(runtime: Runtime) -> None:
+    task_route = runtime.endpoint("/api/v1/projects/{project_id}/tasks/{task_id}/history")
+    with pytest.raises(HTTPException) as task_error:
+        task_route(runtime.project_id, "missing-task")
+    assert task_error.value.status_code == 401
+    checkpoint_route = runtime.endpoint("/api/v1/projects/{project_id}/checkpoints")
+    with pytest.raises(HTTPException) as checkpoint_error:
+        checkpoint_route(runtime.project_id)
+    assert checkpoint_error.value.status_code == 401
+    diagnostics_route = runtime.endpoint("/api/v1/projects/{project_id}/diagnostics")
+    diagnostics = diagnostics_route(runtime.project_id, authorization="Bearer control")
+    assert diagnostics == {"project_id": runtime.project_id, "items": []}
+    with pytest.raises(HTTPException) as diagnostics_error:
+        diagnostics_route(runtime.project_id)
+    assert diagnostics_error.value.status_code == 401

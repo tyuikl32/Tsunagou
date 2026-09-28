@@ -3,7 +3,7 @@
   "name": "trace-cli-timeline",
   "title": "PT5 CLI 查询与责任时间线",
   "description": "提供受权限约束的只读查询、完整分页、时间筛选、单任务追溯与安全导出。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-27",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-28T01:26:49Z",
+  "branch": "codex/persistence-traceability",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -24,6 +24,8 @@
   "notes": "",
   "meta": {
     "plan_id": "persistence-traceability",
-    "depends_on": ["trace-checkpoint-recovery"]
+    "depends_on": [
+      "trace-checkpoint-recovery"
+    ]
   }
 }

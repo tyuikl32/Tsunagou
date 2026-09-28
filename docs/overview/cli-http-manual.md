@@ -209,7 +209,8 @@ uv run python -m tsunagou project complete COMPLETION_PROPOSAL_ID `
 
 ```powershell
 uv run python -m tsunagou operation show OPERATION_ID
-uv run python -m tsunagou checkpoint list
+uv run python -m tsunagou checkpoint list $projectId --verify
+uv run python -m tsunagou checkpoint verify CHECKPOINT_DIGEST
 uv run python -m tsunagou checkpoint retry
 uv run python -m tsunagou recover
 ```
@@ -246,11 +247,18 @@ Invoke-RestMethod "$baseUrl/api/v1/health"
 | GET | `/api/v1/projects/{project_id}/coordination` | 计划、分工、WakeAttempt、重要事件和覆盖率 |
 | GET | `/api/v1/projects/{project_id}/assignments` | 分工状态和 worker 覆盖率 |
 | GET | `/api/v1/projects/{project_id}/wake-attempts` | 唤醒双确认、重试、deadline 和失败原因 |
+| GET | `/api/v1/projects/{project_id}/diagnostics` | callback、wake、Agent presentation/pull、turn 的独立诊断证据 |
 | GET | `/api/v1/projects/{project_id}/events` | 协调事件与 Main 可见汇总 |
-| GET | `/api/v1/projects/{project_id}/audit` | 脱敏事件审计 |
+| GET | `/api/v1/projects/{project_id}/audit` | 兼容入口：脱敏事件审计 |
+| GET | `/api/v1/projects/{project_id}/history` | 项目责任时间线；AuditPage，支持时间/actor/subject/cursor |
+| GET | `/api/v1/projects/{project_id}/history/export` | 脱敏审计导出；带 schema、source、lineage_id、exported_at |
+| GET | `/api/v1/projects/{project_id}/tasks/{task_id}/history` | 任务及其 Attempt/Result/Workspace/认知和可见消息关联时间线 |
+| GET | `/api/v1/audit/events/{event_id}` | 单事件因果、证据和变更详情 |
 | GET | `/api/v1/decisions` | 用户决定列表 |
 | GET | `/api/v1/operations/{operation_id}` | Operation 状态 |
-| GET | `/api/v1/checkpoints` | checkpoint 列表和 current 指针 |
+| GET | `/api/v1/checkpoints` | 兼容入口：当前项目 checkpoint 列表 |
+| GET | `/api/v1/projects/{project_id}/checkpoints?verify=true` | checkpoint 列表/current 指针；可选实际校验文件摘要 |
+| GET | `/api/v1/checkpoints/{checkpoint_digest}/verify` | 校验单个 manifest、内容摘要和本地 Git heads/tags anchor |
 | GET | `/api/v1/artifacts/{artifact_ref}` | 已授权附件内容摘要/读取 |
 | GET | `/api/v1/recovery` | 当前恢复状态 |
 | GET | `/.well-known/agent-card.json` | A2A Agent Card；不含秘密 |
@@ -313,7 +321,20 @@ if ($page.next_cursor) {
 }
 ```
 
-可加 `--actor <agent_id>` 或 `--subject 'task/<task_id>'`。`as_of_event_seq` 是首屏固定的高水位，新事件需重新查询；游标 15 分钟后或 daemon 重启后失效。旧记录无法证明的时间为 `null`，人类输出显示 `unknown_time`，带时间范围的查询不包含这些旧记录。用户和 main 均不能借审计接口读取其他成员的私信事件。完整任务因果展开、单事件查询和 checkpoint 验证命令仍按 PT5 实施进度提供。
+可加 `--actor <agent_id>` 或 `--subject 'task/<task_id>'`。`as_of_event_seq` 是首屏固定的高水位，新事件需重新查询；游标 15 分钟后或 daemon 重启后失效。旧记录无法证明的时间为 `null`，人类输出显示 `unknown_time`，带时间范围的查询不包含这些旧记录。用户和 main 均不能借审计接口读取其他成员的私信事件。
+
+任务时间线、单事件和导出命令：
+
+```powershell
+uv run python -m tsunagou task history TASK_ID --project-id $projectId --limit 100 --json
+uv run python -m tsunagou audit event EVENT_ID --project-id $projectId --include-evidence
+uv run python -m tsunagou project history $projectId --export --limit 200 --json > audit-export.json
+uv run python -m tsunagou project diagnostics $projectId --json
+```
+
+`task history` 的关联范围由已持久化的 task/attempt/result/workspace/report/contract/message 引用决定；不会把同一项目的无关事件拼入时间线。`audit event` 和 `checkpoint verify` 在服务端再次检查项目归属及私信可见性。所有这些查询是只读的，不创建 event、operation 或 revision；无 Git 仓库时 checkpoint 仍可验证，但 `git_anchors` 为空。
+
+诊断记录只表达传输和宿主观察：`wake_requested`、`callback_received`、`thread_resumed`、`turn_started`、`turn_completed`、`agent_presented` 和 `wake_unknown` 各自带 `diagnostic_id`、`message_id`、`wake_attempt_id`、时间和 evidence digest。callback 2xx、宿主接受 wake 或 Agent presentation 都不能单独证明 Agent 已执行 turn；必须看到独立的 `turn_started`/`turn_completed` 证据。
 
 ### 7.1.1 A2A 调用
 

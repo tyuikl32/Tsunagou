@@ -1,0 +1,29 @@
+{
+  "verified_at": "2026-09-28T00:32:48Z",
+  "task": "PT4",
+  "environment": {
+    "os": "Windows",
+    "shell": "PowerShell",
+    "workspace": "D:\\Tsunagou",
+    "branch": "codex/persistence-traceability",
+    "real_user_projects_touched": false,
+    "commit_or_push": false
+  },
+  "checks": [
+    {"command": "uv run pytest -q --disable-warnings", "status": "passed", "notes": "repository suite; 3 platform-conditional skips"},
+    {"command": "uv run pytest -q tests/integration/test_clone_recovery.py tests/unit/test_checkpoint_materialization.py tests/unit/test_checkpoints.py", "status": "passed", "count": 23},
+    {"command": "uv run ruff check src tests tools", "status": "passed"},
+    {"command": "uv run mypy src", "status": "passed", "source_files": 63},
+    {"command": "uv run python tools/docs/validate_docs.py", "status": "passed"},
+    {"command": "git diff --check", "status": "passed", "notes": "only LF/CRLF advisory warnings"}
+  ],
+  "acceptance": {
+    "allowlisted_shared_checkpoint": true,
+    "post_commit_idempotent_materialization": true,
+    "artifact_bytes_verified_and_restored": true,
+    "git_anchor_tree_verified": true,
+    "clean_clone_preview_confirm": true,
+    "active_authority_not_inherited": true,
+    "windows_autocrlf_and_path_length_covered": true
+  }
+}

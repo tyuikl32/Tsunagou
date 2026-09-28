@@ -11,11 +11,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from tsunagou import __version__
 from tsunagou.api.a2a import A2AGateway, http_push_notifier
 from tsunagou.api.auth import LocalCommandAuthenticator
-from tsunagou.generated.protocol.audit import AuditPageModel
+from tsunagou.generated.protocol.audit import AuditEventModel, AuditPageModel
 from tsunagou.generated.protocol.delivery import CredentialDeliveryModel
 from tsunagou.interfaces.runtime import CommandDispatcher
 from tsunagou.shared_kernel.errors import IdempotencyConflict, LockUnavailable, RevisionConflict
 from tsunagou.shared_kernel.ids import new_id
+from tsunagou.shared_kernel.query_models import (
+    AuditExportModel,
+    CheckpointPageModel,
+    CheckpointVerificationModel,
+    DiagnosticPageModel,
+)
 from tsunagou.shared_kernel.time import format_timestamp
 
 
@@ -420,6 +426,27 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
+    @app.get("/api/v1/projects/{project_id}/diagnostics", response_model=DiagnosticPageModel)
+    def project_diagnostics(
+        project_id: str,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                return {"project_id": project_id, "items": []}
+            return query_provider("diagnostics", project_id, viewer=viewer)
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
     @app.get("/api/v1/projects/{project_id}/events")
     def project_events(project_id: str) -> dict[str, Any]:
         if query_provider is None:
@@ -561,6 +588,120 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
 
+    @app.get("/api/v1/projects/{project_id}/history", response_model=AuditPageModel)
+    def project_history(
+        project_id: str,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        from_timestamp: Annotated[str | None, Query(alias="from")] = None,
+        to_timestamp: Annotated[str | None, Query(alias="to")] = None,
+        actor_ref: Annotated[str | None, Query()] = None,
+        subject_ref: Annotated[str | None, Query()] = None,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        return project_audit(
+            project_id, cursor, limit, from_timestamp, to_timestamp, actor_ref, subject_ref,
+            authorization, session_id, connection_epoch,
+        )
+
+    @app.get("/api/v1/projects/{project_id}/history/export", response_model=AuditExportModel)
+    def project_history_export(
+        project_id: str,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        from_timestamp: Annotated[str | None, Query(alias="from")] = None,
+        to_timestamp: Annotated[str | None, Query(alias="to")] = None,
+        actor_ref: Annotated[str | None, Query()] = None,
+        subject_ref: Annotated[str | None, Query()] = None,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                raise KeyError("project_not_found")
+            return query_provider(
+                "audit_export", project_id, cursor=cursor, limit=limit,
+                from_timestamp=from_timestamp, to_timestamp=to_timestamp,
+                actor_ref=actor_ref, subject_ref=subject_ref, viewer=viewer,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/projects/{project_id}/tasks/{task_id}/history", response_model=AuditPageModel)
+    def task_history(
+        project_id: str, task_id: str,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        from_timestamp: Annotated[str | None, Query(alias="from")] = None,
+        to_timestamp: Annotated[str | None, Query(alias="to")] = None,
+        actor_ref: Annotated[str | None, Query()] = None,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                raise KeyError("project_not_found")
+            return query_provider(
+                "task_history", project_id, task_id=task_id, cursor=cursor, limit=limit,
+                from_timestamp=from_timestamp, to_timestamp=to_timestamp,
+                actor_ref=actor_ref, viewer=viewer,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/audit/events/{event_id}", response_model=AuditEventModel)
+    def audit_event(
+        event_id: str,
+        project_id: Annotated[str | None, Query()] = None,
+        include_evidence: Annotated[bool, Query()] = True,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                raise KeyError("audit_event_not_found")
+            result = query_provider(
+                "audit_event", event_id, project_filter=project_id,
+                viewer=viewer,
+            )
+            if not include_evidence:
+                result = {**result, "evidence_refs": []}
+            return result
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+
     @app.get("/api/v1/decisions")
     def decisions() -> dict[str, Any]:
         if query_provider is None:
@@ -577,11 +718,71 @@ def create_app(
                 return dict(item)
         raise HTTPException(status_code=404, detail={"code": "operation_not_found"})
 
+    @app.get("/api/v1/projects/{project_id}/checkpoints", response_model=CheckpointPageModel)
+    def project_checkpoints(
+        project_id: str,
+        verify: Annotated[bool, Query()] = False,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                raise KeyError("project_not_found")
+            return query_provider("checkpoints", project_id, viewer=viewer, verify=verify)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+
     @app.get("/api/v1/checkpoints")
-    def checkpoints() -> dict[str, Any]:
-        if query_provider is None:
-            return {"items": []}
-        return query_provider("checkpoints", "")
+    def checkpoints(
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                return {"items": []}
+            runtime_project_id = getattr(getattr(dispatcher, "database", None), "project_id", "")
+            return query_provider("checkpoints", runtime_project_id, viewer=viewer)
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/checkpoints/{checkpoint_digest:path}/verify", response_model=CheckpointVerificationModel)
+    def checkpoint_verify(
+        checkpoint_digest: str,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                raise KeyError("checkpoint_not_found")
+            return query_provider("checkpoint_verify", checkpoint_digest, viewer=viewer)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=409, detail={"code": "checkpoint_verification_failed"}) from exc
 
     @app.get("/api/v1/artifacts/{artifact_ref:path}")
     def artifact(

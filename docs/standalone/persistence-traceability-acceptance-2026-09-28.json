@@ -1,0 +1,107 @@
+{
+  "report_kind": "tsunagou.persistence-acceptance.v1",
+  "started_at": "2026-09-28T02:39:09.856Z",
+  "finished_at": "2026-09-28T02:39:54.745Z",
+  "repository": "D:\\Tsunagou",
+  "head": "68444ba714b4bf3c981500d253db900b16baff86",
+  "daemon_version": "0.1.0",
+  "schema_bundle_digest": "sha256:99326365c16718548299351917cb384d740858ae2b42551c5b308d996bbcef92",
+  "real_project_touched": false,
+  "credential_migration_or_restore_confirmed": false,
+  "working_tree_dirty": true,
+  "gates": [
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe tools/codegen/generate_openapi.py",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "generated protocol\\openapi.json"
+      ]
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe tools/codegen/generate_audit.py",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "generated audit/delivery Python/TypeScript DTOs and packaged schemas"
+      ]
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe tools/codegen/validate_protocol.py",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "validated 111 command policies and 126 schemas"
+      ]
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe tools/dev/check_architecture.py",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "architecture check passed"
+      ]
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe -m ruff check src tests tools",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe -m mypy src",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "Success: no issues found in 66 source files"
+      ]
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe -m pytest -q --disable-warnings",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "........................................................................ [ 64%]",
+        "........................................................................ [ 85%]",
+        "........................s........s.s...........                          [100%]"
+      ]
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe tools/docs/validate_docs.py",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "PASS: 48 unchanged archived sources; 314 Markdown files; 789 local links; 6 implementation tasks; 1048 context entries; acyclic dependencies; D161-D182 present."
+      ]
+    },
+    {
+      "command": "corepack.cmd pnpm -r --if-present run build",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "Scope: 7 of 8 workspace projects",
+        "$ node scripts/copy-protocol.mjs && tsc -p tsconfig.json"
+      ]
+    },
+    {
+      "command": "corepack.cmd pnpm check",
+      "exit_code": 0,
+      "passed": true,
+      "last_output": [
+        "packages/adapter-deepseek check: Done",
+        "packages/adapter-codex check: Done",
+        "$ corepack pnpm -r run check"
+      ]
+    }
+  ],
+  "runtime_audit": {
+    "source": "docs\\standalone\\persistence-traceability-2026-09-28.json",
+    "passed": true,
+    "passed_checks": 24,
+    "failed_checks": 0,
+    "a2a_passed": 8,
+    "a2a_failed": 0
+  }
+}

@@ -64,6 +64,8 @@ if typer is not None:
     decision_app = typer.Typer(help="User decision commands.")
     operation_app = typer.Typer(help="Durable operation queries.")
     checkpoint_app = typer.Typer(help="Checkpoint creation and queries.")
+    task_app = typer.Typer(help="Task history queries.")
+    audit_app = typer.Typer(help="Audit event queries.")
     daemon_app = typer.Typer(help="Local daemon lifecycle commands.")
     host_app = typer.Typer(help="Host wake binding and capability commands.")
     app.add_typer(project_app, name="project")
@@ -71,6 +73,8 @@ if typer is not None:
     app.add_typer(decision_app, name="decision")
     app.add_typer(operation_app, name="operation")
     app.add_typer(checkpoint_app, name="checkpoint")
+    app.add_typer(task_app, name="task")
+    app.add_typer(audit_app, name="audit")
     app.add_typer(daemon_app, name="daemon")
     app.add_typer(host_app, name="host")
 
@@ -238,9 +242,11 @@ if typer is not None:
         limit: int = typer.Option(50, "--limit", min=1, max=200),
         cursor: str | None = typer.Option(None, "--cursor"),
         json_output: bool = typer.Option(False, "--json"),
+        export_output: bool = typer.Option(False, "--export"),
     ) -> None:
         """Read one authenticated audit page without modifying project state."""
         from tsunagou.generated.protocol.audit import AuditPageModel
+        from tsunagou.shared_kernel.query_models import AuditExportModel
 
         token = _control_token()
         if not token:
@@ -252,9 +258,14 @@ if typer is not None:
                 "subject_ref": subject, "cursor": cursor,
             }.items() if value is not None
         }}
-        path = f"/api/v1/projects/{urllib.parse.quote(project_id, safe='')}/audit?{urllib.parse.urlencode(filters)}"
+        route = "history/export" if export_output else "history"
+        path = f"/api/v1/projects/{urllib.parse.quote(project_id, safe='')}/{route}?{urllib.parse.urlencode(filters)}"
         try:
-            page = AuditPageModel.model_validate(_daemon_request("GET", path, authorization=f"Bearer {token}"))
+            raw_page = _daemon_request("GET", path, authorization=f"Bearer {token}")
+            if export_output:
+                print(AuditExportModel.model_validate(raw_page).model_dump_json(by_alias=True))
+                return
+            page = AuditPageModel.model_validate(raw_page)
         except RuntimeError as exc:
             print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
             cause = exc.__cause__
@@ -277,6 +288,116 @@ if typer is not None:
         if page.next_cursor:
             print(f"next_cursor: {page.next_cursor}")
 
+    @project_app.command("diagnostics")
+    def project_diagnostics(
+        ctx: typer.Context,
+        project_id: str = typer.Argument(...),
+        json_output: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Read host-wake/A2A transport evidence without changing domain history."""
+        from tsunagou.shared_kernel.query_models import DiagnosticPageModel
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(3)
+        try:
+            path = f"/api/v1/projects/{urllib.parse.quote(project_id, safe='')}/diagnostics"
+            page = DiagnosticPageModel.model_validate(
+                _daemon_request("GET", path, authorization=f"Bearer {token}")
+            )
+        except (RuntimeError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc) if isinstance(exc, RuntimeError)
+                              else "invalid_diagnostic_response"}, sort_keys=True))
+            raise typer.Exit(2) from exc
+        if json_output or ctx.obj.get("json"):
+            print(page.model_dump_json())
+            return
+        print(f"Project {page.project_id} — diagnostic_events={len(page.items)}")
+        for item in page.items:
+            print(f"{item.observed_at}\t{item.kind}\t{item.agent_id}\t{item.message_id}\t"
+                  f"{item.wake_attempt_id or '-'}\t{item.evidence_digest or '-'}")
+
+    @task_app.command("history")
+    def task_history(
+        ctx: typer.Context,
+        task_id: str = typer.Argument(...),
+        project_id: str | None = typer.Option(None, "--project-id"),
+        from_timestamp: str | None = typer.Option(None, "--from"),
+        to_timestamp: str | None = typer.Option(None, "--to"),
+        actor: str | None = typer.Option(None, "--actor"),
+        limit: int = typer.Option(50, "--limit", min=1, max=200),
+        cursor: str | None = typer.Option(None, "--cursor"),
+        json_output: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Read the responsibility timeline for one task."""
+        from tsunagou.generated.protocol.audit import AuditPageModel
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(3)
+        try:
+            resolved_project = _cli_project_id(project_id)
+            filters = {"limit": str(limit), **{
+                key: value for key, value in {
+                    "from": from_timestamp, "to": to_timestamp, "actor_ref": actor, "cursor": cursor,
+                }.items() if value is not None
+            }}
+            path = (
+                f"/api/v1/projects/{urllib.parse.quote(resolved_project, safe='')}/tasks/"
+                f"{urllib.parse.quote(task_id, safe='')}/history?{urllib.parse.urlencode(filters)}"
+            )
+            page = AuditPageModel.model_validate(_daemon_request("GET", path, authorization=f"Bearer {token}"))
+        except (RuntimeError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc) if isinstance(exc, RuntimeError)
+                              else "invalid_audit_response"}, ensure_ascii=False, sort_keys=True))
+            raise typer.Exit(2) from exc
+        if json_output or ctx.obj.get("json"):
+            print(page.model_dump_json())
+            return
+        print(f"Task {task_id} — as_of_event_seq={page.as_of_event_seq}")
+        for item in page.items:
+            print(f"{item.event_seq}\t{item.occurred_at or 'unknown_time'}\t{item.actor_ref}\t"
+                  f"{item.action}\t{item.subject_ref}\t{item.outcome}\t{item.evidence_level or 'unknown'}")
+        if page.next_cursor:
+            print(f"next_cursor: {page.next_cursor}")
+
+    @audit_app.command("event")
+    def audit_event(
+        ctx: typer.Context,
+        event_id: str = typer.Argument(...),
+        project_id: str | None = typer.Option(None, "--project-id"),
+        include_evidence: bool = typer.Option(True, "--include-evidence/--no-include-evidence"),
+        json_output: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Read one event and its causal/evidence references."""
+        from tsunagou.generated.protocol.audit import AuditEventModel
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(3)
+        try:
+            resolved_project = _cli_project_id(project_id)
+            path = f"/api/v1/audit/events/{urllib.parse.quote(event_id, safe='')}?" + urllib.parse.urlencode({
+                "project_id": resolved_project, "include_evidence": str(include_evidence).lower(),
+            })
+            event = AuditEventModel.model_validate(_daemon_request("GET", path, authorization=f"Bearer {token}"))
+        except (RuntimeError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc) if isinstance(exc, RuntimeError)
+                              else "invalid_audit_response"}, ensure_ascii=False, sort_keys=True))
+            raise typer.Exit(2) from exc
+        if json_output or ctx.obj.get("json"):
+            print(event.model_dump_json())
+        else:
+            print(f"{event.event_id}\t{event.event_seq}\t{event.occurred_at or 'unknown_time'}\t"
+                  f"{event.actor_ref}\t{event.action}\t{event.subject_ref}\t{event.outcome}")
+            if event.caused_by_command_id:
+                print(f"caused_by_command_id: {event.caused_by_command_id}")
+            if event.evidence_refs:
+                print("evidence_refs: " + ",".join(event.evidence_refs))
+
     def _coordination_state_dir(coordination_root: Path) -> Path:
         return coordination_root.expanduser().resolve() / ".tsunagou" / "local"
 
@@ -285,6 +406,22 @@ if typer is not None:
         if configured:
             return Path(configured).expanduser().resolve()
         return Path.cwd().resolve()
+
+    def _cli_project_id(explicit: str | None = None) -> str:
+        if explicit:
+            return explicit
+        configured = os.environ.get("TSUNAGOU_PROJECT_ID")
+        if configured:
+            return configured
+        root = _project_root()
+        project_file = root / ".tsunagou" / "project.json"
+        try:
+            value = json.loads(project_file.read_text(encoding="utf-8")).get("project_id")
+        except (OSError, json.JSONDecodeError):
+            value = None
+        if isinstance(value, str) and value:
+            return value
+        raise RuntimeError("project_id_required")
 
     def _state_dir_from_environment() -> Path | None:
         value = os.environ.get("TSUNAGOU_STATE_DIR")
@@ -1005,12 +1142,46 @@ if typer is not None:
         print(json.dumps(result, sort_keys=True))
 
     @checkpoint_app.command("list")
-    def checkpoint_list() -> None:
+    def checkpoint_list(
+        project_id: str = typer.Argument(...),
+        verify: bool = typer.Option(False, "--verify"),
+    ) -> None:
+        """List public checkpoint metadata; optionally verify every file."""
+        from tsunagou.shared_kernel.query_models import CheckpointPageModel
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
         try:
-            result = _daemon_request("GET", "/api/v1/checkpoints")
-        except RuntimeError as exc:
-            print(json.dumps({"status": "unavailable", "error": str(exc)}, sort_keys=True))
-            raise typer.Exit(5) from exc
+            path = f"/api/v1/projects/{urllib.parse.quote(project_id, safe='')}/checkpoints?verify={str(verify).lower()}"
+            result = CheckpointPageModel.model_validate(
+                _daemon_request("GET", path, authorization=f"Bearer {token}")
+            ).model_dump(mode="json", by_alias=True)
+        except (RuntimeError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc) if isinstance(exc, RuntimeError)
+                              else "invalid_checkpoint_response"}, sort_keys=True))
+            raise typer.Exit(2) from exc
+        print(json.dumps(result, sort_keys=True))
+
+    @checkpoint_app.command("verify")
+    def checkpoint_verify(checkpoint_id: str = typer.Argument(...)) -> None:
+        """Verify one checkpoint manifest, files and local Git anchor."""
+        from tsunagou.shared_kernel.query_models import CheckpointVerificationModel
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(5)
+        try:
+            path = f"/api/v1/checkpoints/{urllib.parse.quote(checkpoint_id, safe='')}/verify"
+            result = CheckpointVerificationModel.model_validate(
+                _daemon_request("GET", path, authorization=f"Bearer {token}")
+            ).model_dump(mode="json", by_alias=True)
+        except (RuntimeError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc) if isinstance(exc, RuntimeError)
+                              else "invalid_checkpoint_response"}, sort_keys=True))
+            raise typer.Exit(2) from exc
         print(json.dumps(result, sort_keys=True))
 
     @app.command("recover")

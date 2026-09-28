@@ -307,6 +307,86 @@
         "title": "AuditEventModel",
         "type": "object"
       },
+      "AuditExportModel": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of_event_seq": {
+            "minimum": 0.0,
+            "title": "As Of Event Seq",
+            "type": "integer"
+          },
+          "exported_at": {
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+            "title": "Exported At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventModel"
+            },
+            "maxItems": 200,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "projection_version": {
+            "minLength": 1,
+            "title": "Projection Version",
+            "type": "string"
+          },
+          "schema": {
+            "const": "tsunagou.audit-export.v1",
+            "title": "Schema",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AuditExportSourceModel"
+          }
+        },
+        "required": [
+          "schema",
+          "exported_at",
+          "source",
+          "projection_version",
+          "as_of_event_seq",
+          "next_cursor",
+          "items"
+        ],
+        "title": "AuditExportModel",
+        "type": "object"
+      },
+      "AuditExportSourceModel": {
+        "additionalProperties": false,
+        "properties": {
+          "lineage_id": {
+            "minLength": 1,
+            "title": "Lineage Id",
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "lineage_id"
+        ],
+        "title": "AuditExportSourceModel",
+        "type": "object"
+      },
       "AuditPageModel": {
         "additionalProperties": false,
         "properties": {
@@ -360,6 +440,297 @@
           "snapshot_event_seq"
         ],
         "title": "AuditPageModel",
+        "type": "object"
+      },
+      "CheckpointPageModel": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of_event_seq": {
+            "minimum": 0.0,
+            "title": "As Of Event Seq",
+            "type": "integer"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckpointPointerModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckpointSummaryModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "project_id": {
+            "minLength": 1,
+            "title": "Project Id",
+            "type": "string"
+          },
+          "projection_version": {
+            "const": "v1",
+            "title": "Projection Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "current",
+          "items",
+          "projection_version",
+          "as_of_event_seq"
+        ],
+        "title": "CheckpointPageModel",
+        "type": "object"
+      },
+      "CheckpointPointerModel": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "minLength": 1,
+            "title": "Digest",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "sealed",
+              "verified"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "through_event_seq": {
+            "minimum": 0.0,
+            "title": "Through Event Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "digest",
+          "status",
+          "through_event_seq"
+        ],
+        "title": "CheckpointPointerModel",
+        "type": "object"
+      },
+      "CheckpointSummaryModel": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_digests": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artifact Digests",
+            "type": "array"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "digest": {
+            "minLength": 1,
+            "title": "Digest",
+            "type": "string"
+          },
+          "format_version": {
+            "minimum": 1.0,
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "lineage_id": {
+            "minLength": 1,
+            "title": "Lineage Id",
+            "type": "string"
+          },
+          "parent_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Digest"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "projection_version": {
+            "minLength": 1,
+            "title": "Projection Version",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "schema_bundle_digest": {
+            "minLength": 1,
+            "title": "Schema Bundle Digest",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "sealed",
+              "verified"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "through_event_seq": {
+            "minimum": 0.0,
+            "title": "Through Event Seq",
+            "type": "integer"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "digest",
+          "parent_digest",
+          "project_id",
+          "lineage_id",
+          "through_event_seq",
+          "format_version",
+          "schema_bundle_digest",
+          "created_at",
+          "created_by",
+          "reason",
+          "projection_version",
+          "verified_at",
+          "status",
+          "artifact_digests"
+        ],
+        "title": "CheckpointSummaryModel",
+        "type": "object"
+      },
+      "CheckpointVerificationModel": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "digest": {
+            "minLength": 1,
+            "title": "Digest",
+            "type": "string"
+          },
+          "git_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/GitAnchorModel"
+            },
+            "title": "Git Anchors",
+            "type": "array"
+          },
+          "lineage_id": {
+            "minLength": 1,
+            "title": "Lineage Id",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "status": {
+            "const": "verified",
+            "title": "Status",
+            "type": "string"
+          },
+          "through_event_seq": {
+            "minimum": 0.0,
+            "title": "Through Event Seq",
+            "type": "integer"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "digest",
+          "status",
+          "project_id",
+          "lineage_id",
+          "through_event_seq",
+          "created_at",
+          "verified_at",
+          "git_anchors"
+        ],
+        "title": "CheckpointVerificationModel",
         "type": "object"
       },
       "CommandRequest": {
@@ -486,6 +857,143 @@
           "revoked_at"
         ],
         "title": "CredentialDeliveryModel",
+        "type": "object"
+      },
+      "DiagnosticEventModel": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "minLength": 1,
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Details",
+            "type": "object"
+          },
+          "diagnostic_id": {
+            "minLength": 1,
+            "title": "Diagnostic Id",
+            "type": "string"
+          },
+          "evidence_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Digest"
+          },
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "message_id": {
+            "minLength": 1,
+            "title": "Message Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "wake_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wake Attempt Id"
+          }
+        },
+        "required": [
+          "diagnostic_id",
+          "kind",
+          "project_id",
+          "agent_id",
+          "message_id",
+          "wake_attempt_id",
+          "evidence_digest",
+          "observed_at",
+          "details"
+        ],
+        "title": "DiagnosticEventModel",
+        "type": "object"
+      },
+      "DiagnosticPageModel": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticEventModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "project_id": {
+            "minLength": 1,
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "items"
+        ],
+        "title": "DiagnosticPageModel",
+        "type": "object"
+      },
+      "GitAnchorModel": {
+        "additionalProperties": false,
+        "properties": {
+          "commit_oid": {
+            "minLength": 1,
+            "title": "Commit Oid",
+            "type": "string"
+          },
+          "ref_name": {
+            "minLength": 1,
+            "title": "Ref Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref_name",
+          "commit_oid"
+        ],
+        "title": "GitAnchorModel",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1007,9 +1515,172 @@
         "summary": "Artifact"
       }
     },
+    "/api/v1/audit/events/{event_id}": {
+      "get": {
+        "operationId": "audit_event_api_v1_audit_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_evidence",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Evidence",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit Event"
+      }
+    },
     "/api/v1/checkpoints": {
       "get": {
         "operationId": "checkpoints_api_v1_checkpoints_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1022,9 +1693,106 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Checkpoints"
+      }
+    },
+    "/api/v1/checkpoints/{checkpoint_digest}/verify": {
+      "get": {
+        "operationId": "checkpoint_verify_api_v1_checkpoints__checkpoint_digest__verify_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "checkpoint_digest",
+            "required": true,
+            "schema": {
+              "title": "Checkpoint Digest",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointVerificationModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Checkpoint Verify"
       }
     },
     "/api/v1/commands/{command_kind}": {
@@ -1970,6 +2738,103 @@
         "summary": "Project Audit"
       }
     },
+    "/api/v1/projects/{project_id}/checkpoints": {
+      "get": {
+        "operationId": "project_checkpoints_api_v1_projects__project_id__checkpoints_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "verify",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Verify",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointPageModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Checkpoints"
+      }
+    },
     "/api/v1/projects/{project_id}/cognition": {
       "get": {
         "operationId": "project_cognition_api_v1_projects__project_id__cognition_get",
@@ -2093,6 +2958,93 @@
         "summary": "Project Coordination"
       }
     },
+    "/api/v1/projects/{project_id}/diagnostics": {
+      "get": {
+        "operationId": "project_diagnostics_api_v1_projects__project_id__diagnostics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticPageModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Diagnostics"
+      }
+    },
     "/api/v1/projects/{project_id}/events": {
       "get": {
         "operationId": "project_events_api_v1_projects__project_id__events_get",
@@ -2132,6 +3084,366 @@
           }
         },
         "summary": "Project Events"
+      }
+    },
+    "/api/v1/projects/{project_id}/history": {
+      "get": {
+        "operationId": "project_history_api_v1_projects__project_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Ref"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPageModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project History"
+      }
+    },
+    "/api/v1/projects/{project_id}/history/export": {
+      "get": {
+        "operationId": "project_history_export_api_v1_projects__project_id__history_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Ref"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditExportModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project History Export"
       }
     },
     "/api/v1/projects/{project_id}/jobs": {
@@ -2419,6 +3731,179 @@
           }
         },
         "summary": "Project Tasks"
+      }
+    },
+    "/api/v1/projects/{project_id}/tasks/{task_id}/history": {
+      "get": {
+        "operationId": "task_history_api_v1_projects__project_id__tasks__task_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Ref"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPageModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Task History"
       }
     },
     "/api/v1/projects/{project_id}/wake-attempts": {

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
+import re
 import threading
+from pathlib import Path
 from typing import Any
 
 from tsunagou.platform.checkpoints import CheckpointStore
@@ -25,6 +28,7 @@ class CheckpointWorker:
     ) -> None:
         """Called after domain persistence, in the same command transaction."""
         domains = export_shared(self.state_runtime.capture())
+        artifact_inputs, artifact_digests = self._artifact_inputs(domains)
         row = uow.conn.execute(
             "SELECT MAX(event_seq) FROM events WHERE project_id=?", (self.database.project_id,),
         ).fetchone()
@@ -43,6 +47,7 @@ class CheckpointWorker:
             "schema_bundle_digest": self.schema_digest, "domains": domains,
             "created_by": created_by, "created_at": uow.recorded_at, "reason": reason,
             "project_id": self.database.project_id, "parent_digest": parent,
+            "artifact_inputs": artifact_inputs, "artifact_digests": artifact_digests,
         }
         uow.enqueue_job(operation_id=operation_id, handler_kind="checkpoint.materialize", payload=payload)
         uow.stage_outbox(kind="checkpoint.materialize", target_ref=operation_id, payload=payload)
@@ -104,6 +109,78 @@ class CheckpointWorker:
             operations.append(public_document(record))
         return {"audit_events": events, "entity_times": times, "operation_history": operations}
 
+    @staticmethod
+    def _artifact_inputs(domains: dict[str, list[dict[str, Any]]]) -> tuple[list[dict[str, Any]], list[str]]:
+        records = domains.get("artifacts", [])
+        if not records:
+            return [], []
+        if len(records) != 1:
+            raise ValueError("checkpoint_artifact_domain_invalid")
+        record = records[0]
+        refs = record.get("refs", {})
+        blobs = record.get("blobs", {})
+        if not isinstance(refs, dict) or not isinstance(blobs, dict):
+            raise ValueError("checkpoint_artifact_domain_invalid")
+        by_digest: dict[str, dict[str, Any]] = {}
+        for ref in refs.values():
+            digest_value = ref.get("digest") if isinstance(ref, dict) else None
+            if not isinstance(digest_value, str) or not re.fullmatch(r"[0-9a-f]{64}", digest_value):
+                raise ValueError("checkpoint_artifact_digest_invalid")
+            blob = blobs.get(digest_value)
+            if not isinstance(blob, dict) or blob.get("digest") != digest_value:
+                raise ValueError("checkpoint_artifact_blob_missing")
+            size = blob.get("size_bytes")
+            media_type = blob.get("media_type")
+            local_path = blob.get("local_relative_path")
+            if type(size) is not int or size < 0 or not isinstance(media_type, str) or not isinstance(local_path, str):
+                raise ValueError("checkpoint_artifact_metadata_invalid")
+            digest = f"sha256:{digest_value}"
+            item = {"digest": digest, "size_bytes": size, "media_type": media_type,
+                    "local_relative_path": local_path}
+            prior = by_digest.setdefault(digest, item)
+            if prior != item:
+                raise ValueError("checkpoint_artifact_metadata_conflict")
+        digests = sorted(by_digest)
+        return [by_digest[digest] for digest in digests], digests
+
+    def _read_artifact_inputs(self, inputs: object) -> dict[str, bytes]:
+        if not isinstance(inputs, list):
+            raise ValueError("checkpoint_artifact_inputs_invalid")
+        if not inputs:
+            return {}
+        artifacts = getattr(self.state_runtime, "artifacts", None)
+        if artifacts is None:
+            raise ValueError("checkpoint_artifact_storage_unavailable")
+        root = Path(artifacts.storage_dir).resolve(strict=True)
+        contents: dict[str, bytes] = {}
+        for item in inputs:
+            if not isinstance(item, dict):
+                raise ValueError("checkpoint_artifact_input_invalid")
+            digest = item.get("digest")
+            size = item.get("size_bytes")
+            relative = item.get("local_relative_path")
+            if (not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                    or type(size) is not int or size < 0 or not isinstance(relative, str)):
+                raise ValueError("checkpoint_artifact_input_invalid")
+            hex_digest = digest[7:]
+            canonical_relative = f"blobs/sha256/{hex_digest[:2]}/{hex_digest[2:]}"
+            if relative.replace("\\", "/") != canonical_relative:
+                raise ValueError("checkpoint_artifact_path_invalid")
+            path = root
+            for part in canonical_relative.split("/"):
+                path = path / part
+                if path.is_symlink() or path.is_junction():
+                    raise ValueError("checkpoint_artifact_path_invalid")
+            if not path.is_file() or not path.resolve(strict=True).is_relative_to(root):
+                raise ValueError("checkpoint_artifact_path_invalid")
+            content = path.read_bytes()
+            if len(content) != size or f"sha256:{hashlib.sha256(content).hexdigest()}" != digest:
+                raise ValueError("checkpoint_artifact_digest_mismatch")
+            contents[digest] = content
+        if len(contents) != len(inputs):
+            raise ValueError("checkpoint_artifact_inputs_duplicate")
+        return contents
+
     def request_genesis(self) -> None:
         with self.database.transaction("checkpoint-genesis") as uow:
             exists = uow.conn.execute(
@@ -153,7 +230,13 @@ class CheckpointWorker:
                 if canonical_digest(payload) != job["input_digest"]:
                     raise ValueError("checkpoint_input_digest_mismatch")
                 self.store.recover_staging()
-                manifest = self.store.materialize(**payload)
+                inputs = payload.pop("artifact_inputs", [])
+                artifact_contents = self._read_artifact_inputs(inputs)
+                materialize_payload = {key: value for key, value in payload.items() if key != "artifact_digests"}
+                manifest = self.store.materialize(
+                    **materialize_payload, artifact_digests=payload.get("artifact_digests", []),
+                    artifact_contents=artifact_contents,
+                )
                 result = {"checkpoint_digest": manifest.digest, "through_event_seq": manifest.through_event_seq,
                           "verified_at": manifest.verified_at, "checkpoint_status": "sealed"}
             except (OSError, ValueError, KeyError, TypeError):

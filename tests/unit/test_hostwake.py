@@ -376,7 +376,8 @@ def test_wake_dispatcher_replays_same_delivery_without_second_turn(tmp_path: Pat
         cwd=tmp_path, scope_digest="sha256:scope", policy_digest="sha256:policy",
     )
     provider.probe(binding)
-    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json")
+    diagnostics = tmp_path / "diagnostics.json"
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json", diagnostics_path=diagnostics)
     first = dispatcher.on_delivery(message_id="message-1", recipient_agent_id="agent-1", project_id="project-1")
     second = dispatcher.on_delivery(message_id="message-1", recipient_agent_id="agent-1", project_id="project-1")
     assert first == second
@@ -393,6 +394,18 @@ def test_wake_dispatcher_replays_same_delivery_without_second_turn(tmp_path: Pat
         callback_status="delivered",
     )
     assert callback["evidence"][0]["kind"] == "callback_received"
+    kinds = [item["kind"] for item in dispatcher.diagnostics(project_id="project-1")]
+    assert "wake_requested" in kinds
+    assert "callback_received" in kinds
+    assert "thread_resumed" in kinds
+    assert "turn_started" in kinds
+    assert "turn_completed" in kinds
+    count = len(dispatcher.diagnostics(project_id="project-1"))
+    assert dispatcher.on_delivery(message_id="message-1", recipient_agent_id="agent-1", project_id="project-1") == first
+    assert len(dispatcher.diagnostics(project_id="project-1")) == count
+    restarted = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json", diagnostics_path=diagnostics)
+    assert len(restarted.diagnostics(project_id="project-1")) >= count
+    assert any(item["kind"] == "wake_unknown" for item in restarted.diagnostics(project_id="project-1"))
 
 
 def test_wake_dispatcher_finishes_running_turn_in_background(tmp_path: Path) -> None:

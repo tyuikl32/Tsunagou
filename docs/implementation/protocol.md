@@ -58,15 +58,19 @@ GET 单对象返回 `ETag: "rev-N"`。共享协调对象对就绪项目成员可
 
 列表 `{items,next_cursor,snapshot_event_seq}`；limit 默认 50、最大 200；keyset 默认 `(created_at,id)` 升序，可注册固定排序，不支持任意 SQL。HMAC cursor 有效期 15 分钟、最长 2 KiB，绑定 principal/project/lineage/query/filter/sort；换 principal 或 filters 失效。cursor 不保证跨页面长事务一致，客户端按 revision 去重；要稳定导出使用 checkpoint。
 
-### PT1 审计时间线的具体契约
+### PT5 审计时间线与持久化查询契约
 
-`GET P/audit` 使用已认证的 user_control 或当前项目 Agent session。它返回 [AuditPage Schema](../../protocol/schemas/queries/audit-page.schema.json)，由 `tools/codegen/generate_audit.py` 生成 Python/TypeScript DTO 和安装包内的 Schema。生成 OpenAPI 的命令为 `uv run python tools/codegen/generate_openapi.py`；当前实际产物是 `protocol/openapi.json` 和安装包内同名镜像。
+`GET P/audit`、`GET P/{id}/history` 和 `GET P/tasks/{task_id}/history` 使用已认证的 user_control 或当前项目 Agent session，并共享 [AuditPage Schema](../../protocol/schemas/queries/audit-page.schema.json)。CLI、HTTP 通过同一 query dispatcher 和 `AuditPageModel`；生成 OpenAPI 的命令为 `uv run python tools/codegen/generate_openapi.py`，实际产物是 `protocol/openapi.json` 和安装包内同名镜像。`GET P/{id}/history/export` 额外包装为 `tsunagou.audit-export.v1`，包括 `source.project_id`、`source.lineage_id`、`exported_at`、`projection_version`、`as_of_event_seq` 和当前可见事件。
 
 请求参数为 `limit`（1–200，默认 50）、`cursor`、`from`、`to`、`actor_ref`、`subject_ref`。时间输入必须带时区；返回统一为 UTC 毫秒 `.sssZ`。首屏冻结 `as_of_event_seq` 高水位，`snapshot_event_seq` 是值相同的兼容字段。按 `event_seq` 升序翻页，服务端签名游标绑定项目、lineage、当前认证身份、过滤条件、排序、页长和高水位；新事件留待重新查询。游标过期或 daemon 重启后重新查询，不把游标当凭据，也不接受数字偏移替代它。
 
 事件中 `event_id/event_seq` 是规范字段，`source_event_id/source_event_seq` 是兼容别名。`changes` 仅描述相关实体的状态和版本前后值、创建/更新时间；不附私信正文、秘密或状态快照。`revision_source=domain` 表示领域拥有的 CAS 版本，`audit_observation` 表示该实体没有领域 CAS 时的审计观察次数，不能拿后者提交业务写入。`actor_session_id` 是已登记的运行时会话 ID，不公开原始宿主 conversation 内容。
 
-私信关联事件仅供发送者/收件人查询；main 和 user_control 不因此成为收件箱超级用户。无关调用者无法按私信 subject/actor 筛选获取隐藏行。领域读取失败或无变化的查询不新增事件、实体更新时间或版本。未知旧时间保持 `null`，不落入有界时间筛选；没有可靠旧证据时 `evidence_level=null`，不得自动声称 `system_verified`。
+`GET P/audit/events/{event_id}` 返回同一 `AuditEventModel`，按 event 所属 project、lineage 和可见性重新授权；`include_evidence=false` 只省略证据引用，不改变事件身份。任务历史以 task、attempt、result、preflight、progress、workspace、report、contract 和可见 message 的已持久化引用组成关联集合，不把同项目无关事件加入结果。私信关联事件仍仅供发送者/收件人查询；main 和 user_control 不因此成为收件箱超级用户。领域读取失败或无变化的查询不新增事件、实体更新时间或版本。未知旧时间保持 `null`，不落入有界时间筛选；没有可靠旧证据时 `evidence_level=null`，不得自动声称 `system_verified`。
+
+`GET P/checkpoints/{digest}/verify` 和 `GET P/{id}/checkpoints?verify=true` 是只读 checkpoint 投影：前者返回 `CheckpointVerificationModel`（manifest 内容摘要、through_event_seq、verified_at、允许的本地 heads/tags Git anchor），后者返回 current 指针与 `CheckpointSummaryModel` 列表。没有 Git 仓库时校验仍可成功，`git_anchors=[]`；remote ref、reflog、裸 OID 或内容不匹配不会被接受。两者不产生 event、operation 或 revision。
+
+`GET P/{id}/diagnostics` 返回独立的 `DiagnosticPage`：`diagnostic_id`、`kind`、`agent_id`、`message_id`、`wake_attempt_id`、`evidence_digest`、UTC `observed_at` 和白名单 `details`。它读取 `.tsunagou/local/diagnostic-events.json`，不是 SQLite domain audit；稳定 delivery 重放不追加记录，重启造成的不可观察状态只追加 `wake_unknown`。诊断查询可由 U 或当前 B session 读取，不能用它反推隐藏私信正文或宿主 turn 内容。
 
 事件查询 `P/events?after_seq=N&limit=...` 返回脱敏可见事件和 `through_event_seq`；过滤不能泄露隐藏消息。SSE `P/events:stream` 只推高水位提示 `{event_seq,inbox_revision,blocker_revision}`，连接后先 REST sync。15 秒 comment keepalive、30 秒 send timeout；断流重连不保证 replay，无单独 SSE replay 表。
 

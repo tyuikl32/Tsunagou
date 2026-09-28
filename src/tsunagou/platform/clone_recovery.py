@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -33,12 +35,19 @@ class CloneRecovery:
     """Never overwrites an initialized local DB, credentials, or bindings."""
 
     def __init__(self, root: str | Path) -> None:
-        self.root = Path(root).resolve(strict=True)
+        requested_root = Path(root).expanduser().absolute()
+        if requested_root.is_symlink() or requested_root.is_junction():
+            raise ValueError("recovery_project_path_invalid")
+        self.root = requested_root.resolve(strict=True)
         self.shared = self.root / ".tsunagou"
         self.local = self.shared / "local"
-        if not self.shared.is_dir() or self.shared.is_symlink() or self.local.is_symlink():
+        if (not self.shared.is_dir() or self.shared.is_symlink() or self.shared.is_junction()
+                or self.local.is_symlink() or self.local.is_junction()):
             raise ValueError("recovery_project_path_invalid")
-        self.store = CheckpointStore(self.shared / "checkpoints")
+        if not ((self.root / ".git").exists() or ((self.root / "HEAD").is_file() and (self.root / "objects").is_dir())):
+            raise ValueError("recovery_git_repository_required")
+        # A preview must not initialize directories or Git rules in the clone.
+        self.store = CheckpointStore(self.shared / "checkpoints", write_git_metadata=False)
 
     def _domains(self, manifest: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         directory = self.store._directory(manifest["digest"])
@@ -51,9 +60,11 @@ class CloneRecovery:
         return result
 
     def _assert_clean(self) -> None:
-        if self.local.is_dir() and any(self.local.iterdir()):
-            raise ValueError("restore_requires_clean_local_state")
-        if (self.shared / "bridges").exists():
+        if self.local.exists():
+            if not self.local.is_dir() or any(self.local.iterdir()):
+                raise ValueError("restore_requires_clean_local_state")
+        bridges = self.shared / "bridges"
+        if bridges.exists() or bridges.is_symlink() or bridges.is_junction():
             raise ValueError("restore_requires_clean_bridge_state")
 
     def preview(self, digest: str) -> dict[str, Any]:
@@ -125,11 +136,16 @@ class CloneRecovery:
 
     def _install(self, domains: dict[str, list[dict[str, Any]]], manifest: dict[str, Any], plan_digest: str) -> dict[str, Any]:
         project_id = domains["project"][0]["project_id"]
-        self.local.mkdir(exist_ok=True)
-        # Build and verify in an isolated directory. Only the complete DB is
-        # published; old source checkpoints and Git remain untouched.
+        # Build the database and content-addressed blobs under one sibling
+        # directory. Publishing the whole local directory is the single
+        # recovery commit point, so a crash cannot leave a database referring
+        # to missing artifact bytes (or make an otherwise clean clone look
+        # initialized after only half of the restore).
         with tempfile.TemporaryDirectory(prefix="restore-", dir=self.shared) as temporary:
-            database = ProjectDatabase(Path(temporary) / "state.sqlite3", project_id=project_id)
+            staged_local = Path(temporary) / "local"
+            staged_local.mkdir()
+            import_domains = self._stage_artifacts(domains, manifest, staged_local / "artifacts")
+            database = ProjectDatabase(staged_local / "state.sqlite3", project_id=project_id)
             registry = ProjectRegistry(self.root)
             registry.managed_by_database = True
             authority = AuthorityService(None)
@@ -138,9 +154,9 @@ class CloneRecovery:
                 tasks=TaskService(), cognition=CognitionService(), messages=MessageStore(None),
                 resources=ResourceService(), workspaces=WorkspaceService(), coordination=CoordinationService(),
                 lifecycle=LifecycleService(registry=registry, authority=authority),
-                artifacts=ArtifactService(self.local / "artifacts"),
+                artifacts=ArtifactService(staged_local / "artifacts"),
             )
-            imported_before = state.import_shared(domains)
+            imported_before = state.import_shared(import_domains)
             command_id = new_id()
             with database.transaction(command_id) as uow:
                 uow.conn.execute("UPDATE runtime_meta SET value=? WHERE key=?",
@@ -169,14 +185,85 @@ class CloneRecovery:
                     raise ValueError("restore_integrity_failed")
                 if conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] != 0:
                     raise ValueError("restore_wal_busy")
-            # Atomic install is the recovery commit point. Following projection
-            # writes are disposable and will be retried on daemon startup.
-            os.replace(database.path, self.local / "state.sqlite3")
+            # Atomic install is the recovery commit point. The destination was
+            # proven empty by preview, but remove an empty local directory so
+            # directory replacement also works on Windows.
+            if self.local.exists():
+                self.local.rmdir()
+            os.replace(staged_local, self.local)
+            # The project.json projection is disposable and will be retried on
+            # daemon startup if this write fails.
             try:
                 registry.materialize_projection()
             except OSError:
                 receipt["projection_status"] = "pending_reconcile"
             return receipt
+
+    def _stage_artifacts(
+        self, domains: dict[str, list[dict[str, Any]]], manifest: dict[str, Any], artifact_root: Path,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Verify and stage every explicitly promoted public artifact blob."""
+        artifact_records = domains.get("artifacts", [])
+        if len(artifact_records) > 1:
+            raise ValueError("checkpoint_artifact_record_duplicate")
+        refs = artifact_records[0].get("refs", {}) if artifact_records else {}
+        if not isinstance(refs, dict):
+            raise ValueError("checkpoint_artifact_refs_invalid")
+
+        entries = {entry["digest"]: entry for entry in manifest.get("artifact_files", [])}
+        expected = set(manifest.get("artifact_digests", []))
+        referenced: set[str] = set()
+        blobs: dict[str, dict[str, Any]] = {}
+        for ref_id, ref in refs.items():
+            if not isinstance(ref, dict) or ref.get("artifact_ref") != ref_id:
+                raise ValueError("checkpoint_artifact_ref_invalid")
+            raw_digest = ref.get("digest")
+            if not isinstance(raw_digest, str) or len(raw_digest) != 64 or any(
+                char not in "0123456789abcdef" for char in raw_digest
+            ):
+                raise ValueError("checkpoint_artifact_ref_invalid")
+            digest = f"sha256:{raw_digest}"
+            if ref.get("storage_scope") != "project_shared":
+                raise ValueError("checkpoint_artifact_scope_invalid")
+            if ref.get("project_id") not in {None, manifest.get("project_id")}:
+                raise ValueError("checkpoint_artifact_project_mismatch")
+            if ref.get("lineage_id") not in {None, manifest.get("lineage_id")}:
+                raise ValueError("checkpoint_artifact_lineage_mismatch")
+            # Recipient-only references never enter a shared checkpoint. Make
+            # the absent private field explicit for the ArtifactRef dataclass
+            # during import.
+            ref["recipient_agent_id"] = None
+            entry = entries.get(digest)
+            if entry is None:
+                raise ValueError("checkpoint_artifact_bytes_missing")
+            if digest in referenced:
+                # Multiple public references may share the same CAS blob.
+                continue
+            data = self.store._verified_file_bytes(self.store._directory(manifest["digest"]), entry)
+            expected_path = Path("blobs") / "sha256" / raw_digest[:2] / raw_digest[2:]
+            destination = artifact_root / expected_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with destination.open("xb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if len(data) != entry["size"] or hashlib.sha256(data).hexdigest() != raw_digest:
+                raise ValueError("checkpoint_artifact_digest_mismatch")
+            referenced.add(digest)
+            blobs[raw_digest] = {
+                "digest": raw_digest,
+                "size_bytes": len(data),
+                "media_type": "application/octet-stream",
+                "local_relative_path": expected_path.as_posix(),
+                "storage_state": "promoted",
+                "verified_at": time.time(),
+            }
+        if referenced != expected:
+            raise ValueError("checkpoint_artifact_manifest_mismatch")
+        if artifact_records:
+            artifact_records = [{**artifact_records[0], "blobs": blobs}]
+            return {**domains, "artifacts": artifact_records}
+        return domains
 
     @staticmethod
     def _import_history(uow: UnitOfWork, domains: dict[str, list[dict[str, Any]]], manifest: dict[str, Any]) -> None:

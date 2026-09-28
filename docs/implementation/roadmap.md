@@ -64,7 +64,7 @@ python tools/docs/validate_docs.py
 
 ## 后续规划：持久化溯源与留痕修复
 
-2026-09-27 建立 [PT 总体方案](persistence-traceability-plan.md) 和 [PT 机器任务索引](persistence-traceability-tasks.json)。它针对审计发现的秘密结果留存、时间/责任字段不统一、工作区证据归因、checkpoint 物化/Git 锚点、CLI 查询和 bridge/A2A 诊断噪声，按 PT1→PT7 排序。用户已下令实施。当前 PT1 已验收、PT2 为 `in_progress`，其余任务尚待依赖验收；不改变 M1/R1–R6 的历史状态。局部测试不代表整体实现，真实外部项目数据库不自动迁移。
+2026-09-27 建立 [PT 总体方案](persistence-traceability-plan.md) 和 [PT 机器任务索引](persistence-traceability-tasks.json)。它针对审计发现的秘密结果留存、时间/责任字段不统一、工作区证据归因、checkpoint 物化/Git 锚点、CLI 查询和 bridge/A2A 诊断噪声，按 PT1→PT7 排序。用户已下令实施，PT1–PT7 已于 2026-09-28T02:39:54Z 完成非破坏性整体验收；运行审计 24/24、A2A 8/8、Python/协议/文档/Node 门禁 10/10。证据见 [运行审计](../standalone/persistence-traceability-2026-09-28.json)、[整体验收](../standalone/persistence-traceability-acceptance-2026-09-28.json) 和 [操作单](../standalone/persistence-traceability-runbook.md)。这不改变 M1/R1–R6 的历史状态，也不代表真实外部项目数据库已自动迁移。
 
 父任务与子任务：
 

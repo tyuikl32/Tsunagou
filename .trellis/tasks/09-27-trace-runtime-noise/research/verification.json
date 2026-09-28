@@ -1,0 +1,27 @@
+{
+  "task": "PT6",
+  "verified_at": "2026-09-28T01:48:27Z",
+  "branch": "codex/persistence-traceability",
+  "commands": [
+    {"command": "uv run pytest -q tests/unit/test_hostwake.py tests/unit/test_trace_audit.py tests/unit/test_history_cli.py", "exit_code": 0, "evidence": "41 tests passed"},
+    {"command": "uv run pytest -q --disable-warnings", "exit_code": 0, "evidence": "full suite passed; 3 platform conditional skips"},
+    {"command": "uv run ruff check src tests", "exit_code": 0, "evidence": "lint passed"},
+    {"command": "uv run mypy src", "exit_code": 0, "evidence": "66 source files checked"},
+    {"command": "uv run python tools/codegen/generate_openapi.py", "exit_code": 0, "evidence": "diagnostic query route included in protocol mirrors"},
+    {"command": "uv run python tools/codegen/validate_protocol.py", "exit_code": 0, "evidence": "111 command policies and 126 schemas validated"},
+    {"command": "uv run python tools/dev/check_architecture.py", "exit_code": 0, "evidence": "architecture check passed"},
+    {"command": "uv run python tools/docs/validate_docs.py", "exit_code": 0, "evidence": "311 Markdown files and 783 local links validated"}
+  ],
+  "acceptance": {
+    "stable_delivery_noop_is_idempotent": true,
+    "domain_revision_unchanged_by_diagnostic_query": true,
+    "callback_wake_presentation_turn_separate": true,
+    "restart_unknown_is_recorded": true,
+    "diagnostics_secret_free_and_correlated": true,
+    "durable_pull_remains_recovery_path": true
+  },
+  "notes": [
+    "Managed wake is optional. When it is disabled, the diagnostics endpoint returns an empty page and durable A2A/inbox pull remains the supported path.",
+    "No claim is made that callback 2xx or host acceptance proves a completed Agent turn."
+  ]
+}

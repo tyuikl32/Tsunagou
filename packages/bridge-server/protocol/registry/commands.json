@@ -224,14 +224,16 @@
         "reason"
       ],
       "principal": "M",
-      "required_fields": [
-        "reason"
-      ],
+      "required_fields": [],
       "schema": "commands/checkpoint/create.schema.json",
       "uri": "/checkpoints"
     },
     "checkpoint.create.user": {
-      "payload_fields": [],
+      "payload_fields": [
+        "minimum_event_seq",
+        "reason",
+        "retry_operation_id"
+      ],
       "principal": "U",
       "required_fields": [],
       "schema": "commands/checkpoint/create/user.schema.json",
@@ -1684,6 +1686,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:3b7afaa495816e3fdf36472762b0328e1c5d5a9ff1250bcfb48fccb9ee663807",
+  "schema_bundle_digest": "sha256:99326365c16718548299351917cb384d740858ae2b42551c5b308d996bbcef92",
   "supported_previous_version": "0.9"
 }

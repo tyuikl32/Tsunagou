@@ -228,7 +228,7 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     tasks = query(ProjectRegistry(tmp_path).project.project_id)  # type: ignore[union-attr]
     assert tasks["items"][0]["status"] == "completed"
     checkpoints = next(route.endpoint for route in rebuilt.routes if getattr(route, "path", "") == "/api/v1/checkpoints")
-    checkpoint_view = checkpoints()
+    checkpoint_view = checkpoints(authorization="Bearer control")
     assert checkpoint_view["current"]["digest"] == confirmed["checkpoint_digest"]
     checkpoint_dir = tmp_path / ".tsunagou" / "checkpoints" / confirmed["checkpoint_digest"].replace(":", "_")
     checkpoint_text = "\n".join(path.read_text(encoding="utf-8") for path in checkpoint_dir.glob("*.ndjson"))

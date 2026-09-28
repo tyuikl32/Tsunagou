@@ -17,6 +17,7 @@ from tsunagou.bootstrap.container import build_application
 from tsunagou.cli.app import app as cli
 from tsunagou.modules.projects import ProjectRegistry
 from tsunagou.platform.clone_recovery import CloneRecovery
+from tsunagou.shared_kernel.ids import new_id
 
 
 @pytest.fixture
@@ -40,6 +41,24 @@ def clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         runtime.call("task.ready", {"task_id": task["task_id"]}, main)
         runtime.call("task.publish", {"task_id": task["task_id"]}, main)
         claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+        state = server.state.state_runtime
+        before_artifact = state.capture()
+        artifact_bytes = b"promoted artifact survives clean-clone recovery\n"
+        upload = state.artifacts.begin_upload(domain_ref=f"task/{task['task_id']}", actor=worker["agent_id"])
+        state.artifacts.write_chunk(upload.intent_id, artifact_bytes)
+        artifact = state.artifacts.finalize(upload.intent_id, media_type="text/plain")
+        state.artifacts.promote(
+            artifact.artifact_ref, actor_kind="main", actor_id=main["agent_id"],
+            project_shared_allowed=lambda *_: True,
+        )
+        artifact.project_id = registry.project.project_id
+        artifact.lineage_id = state.lineage_id
+        with runtime.db.transaction(new_id()) as uow:
+            state.persist(
+                uow, actor_ref=main["agent_id"], command_kind="artifact.promote",
+                before=before_artifact, command_payload={"domain_ref": artifact.domain_ref},
+                result={"artifact_ref": artifact.artifact_ref},
+            )
         checkpoint = runtime.call("checkpoint.create.user", {"reason": "clone_fixture"})
         assert checkpoint["checkpoint_status"] == "sealed"
     finally:
@@ -51,7 +70,8 @@ def clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     subprocess.run(["git", "clone", "--quiet", "--no-local", str(source), str(target)], check=True)
     return {"root": target, "project_id": registry.project.project_id, "task_id": task["task_id"],
             "attempt_id": claim["attempt_id"], "checkpoint": checkpoint,
-            "worker": worker, "main": main}
+            "worker": worker, "main": main, "artifact_ref": artifact.artifact_ref,
+            "artifact_bytes": artifact_bytes, "artifact_digest": artifact.digest}
 
 
 def test_clean_clone_preview_confirm_and_restart(clone: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,6 +99,12 @@ def test_clean_clone_preview_confirm_and_restart(clone: dict[str, Any], monkeypa
         assert task.status == "blocked" and task.block_reason == "recovery_review" and task.current_attempt_id is None
         assert state.tasks.attempts[clone["attempt_id"]].status == "orphaned"
         assert state.authority.agents[clone["worker"]["agent_id"]].status == "retired"
+        artifact = state.artifacts.refs[clone["artifact_ref"]]
+        assert artifact.storage_scope == "project_shared" and artifact.recipient_agent_id is None
+        assert state.artifacts.blobs[clone["artifact_digest"]].storage_state == "promoted"
+        assert state.artifacts.read(
+            clone["artifact_ref"], actor="restored-reader", domain_authorized=lambda *_: True,
+        ) == clone["artifact_bytes"]
         events = restored.state.project_database.list_events(limit=200)
         assert any(row["event_type"] == "task.create" for row in events)
         activation = next(row for row in events if row["event_type"] == "project.replica.activated")

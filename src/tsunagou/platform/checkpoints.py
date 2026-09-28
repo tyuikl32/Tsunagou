@@ -77,6 +77,7 @@ class CheckpointManifest:
     schema_bundle_digest: str
     files: tuple[dict[str, Any], ...]
     artifact_digests: tuple[str, ...]
+    artifact_files: tuple[dict[str, Any], ...] = ()
     created_at: int | None = None
     created_by: str | None = None
     reason: str | None = None
@@ -98,18 +99,29 @@ class GitAnchor:
 
 
 class CheckpointStore:
-    def __init__(self, root: str | Path, *, format_version: int = 1) -> None:
+    def __init__(
+        self, root: str | Path, *, format_version: int = 1, write_git_metadata: bool = True,
+    ) -> None:
         self.root = Path(root)
         self.format_version = format_version
         self.staging = self.root / "staging"
-        self.checkpoints = self.root / "checkpoints"
+        # ``root`` is already the project checkpoint directory (the bootstrap
+        # passes ``.tsunagou/checkpoints``). Keeping a second ``checkpoints``
+        # component unnecessarily lengthens every Git path and breaks normal
+        # Windows clones once promoted artifact bytes are included.
+        self.checkpoints = self.root
         self.pointer = self.root / "current.json"
         self._publish_lock = threading.RLock()
-        self.root.mkdir(parents=True, exist_ok=True)
-        # These files travel with a clone. Immutable NDJSON/manifest bytes must
-        # not depend on a user's global core.autocrlf setting.
-        self._write_managed_file(".gitattributes", b"/checkpoints/** -text\n/current.json -text\n")
-        self._write_managed_file(".gitignore", b"/staging/\n/.current.*\n")
+        if write_git_metadata:
+            self.root.mkdir(parents=True, exist_ok=True)
+            # These files travel with a clone. Immutable NDJSON/manifest and
+            # promoted blob bytes must not depend on global core.autocrlf.
+            self._write_managed_file(
+                ".gitattributes", b"* -text\n**/* -text\n",
+            )
+            self._write_managed_file(".gitignore", b"/staging/\n/.current.*\n")
+        elif not self.root.is_dir():
+            raise FileNotFoundError("checkpoint_store_missing")
 
     def _write_managed_file(self, filename: str, content: bytes) -> None:
         destination = self.root / filename
@@ -132,12 +144,14 @@ class CheckpointStore:
         parent_digest: str | None = None, artifact_digests: list[str] | None = None,
         created_by: str | None = None, reason: str | None = None,
         created_at: int | None = None, project_id: str | None = None,
+        artifact_contents: dict[str, bytes] | None = None,
     ) -> CheckpointManifest:
         with self._publish_lock:
             return self._materialize(
                 lineage_id=lineage_id, through_event_seq=through_event_seq, schema_bundle_digest=schema_bundle_digest,
                 domains=domains, parent_digest=parent_digest, artifact_digests=artifact_digests,
                 created_by=created_by, reason=reason, created_at=created_at, project_id=project_id,
+                artifact_contents=artifact_contents,
             )
 
     def _materialize(
@@ -147,6 +161,7 @@ class CheckpointStore:
         created_by: str | None = None, reason: str | None = None,
         created_at: int | None = None,
         project_id: str | None = None,
+        artifact_contents: dict[str, bytes] | None = None,
     ) -> CheckpointManifest:
         # The process smoke harness can place a one-shot marker outside the
         # application state.  Consuming it before staging proves that the
@@ -162,6 +177,7 @@ class CheckpointStore:
         self.staging.mkdir(parents=True, exist_ok=True)
         staging_dir = Path(tempfile.mkdtemp(prefix="checkpoint-", dir=self.staging))
         files: list[dict[str, Any]] = []
+        artifact_files: list[dict[str, Any]] = []
         try:
             for domain, records in sorted(domains.items()):
                 if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", domain):
@@ -173,11 +189,27 @@ class CheckpointStore:
                 digest = hashlib.sha256(data).hexdigest()
                 files.append({"path": path.name, "size": len(data), "digest": f"sha256:{digest}"})
             files_tuple = tuple(files)
+            digests = tuple(sorted(artifact_digests or []))
+            supplied_artifacts = artifact_contents or {}
+            if set(supplied_artifacts) != set(digests):
+                raise ValueError("checkpoint_artifact_inputs_mismatch")
+            for artifact_digest in digests:
+                if not re.fullmatch(r"sha256:[0-9a-f]{64}", artifact_digest):
+                    raise ValueError("checkpoint_artifact_digest_invalid")
+                content = supplied_artifacts[artifact_digest]
+                if not isinstance(content, bytes) or canonical_file_digest(content) != artifact_digest:
+                    raise ValueError("checkpoint_artifact_digest_mismatch")
+                relative_path = f"artifacts/sha256/{artifact_digest[7:]}"
+                path = staging_dir / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+                artifact_files.append({"path": relative_path, "size": len(content), "digest": artifact_digest})
+            artifact_files_tuple = tuple(artifact_files)
             body = {
                 "parent_digest": parent_digest, "lineage_id": lineage_id,
                 "through_event_seq": through_event_seq, "format_version": self.format_version,
                 "schema_bundle_digest": schema_bundle_digest, "files": files_tuple,
-                "artifact_digests": tuple(sorted(artifact_digests or [])),
+                "artifact_digests": digests, "artifact_files": artifact_files_tuple,
                 "projection_version": "shared-v1",
                 "created_at": created_at, "created_by": created_by, "reason": reason,
                 "project_id": project_id, "status": "sealed", "metadata_integrity": 1,
@@ -204,7 +236,7 @@ class CheckpointStore:
             destination = self._directory(digest)
             manifest = CheckpointManifest(
                 digest, parent_digest, lineage_id, through_event_seq, self.format_version,
-                schema_bundle_digest, files_tuple, tuple(sorted(artifact_digests or [])),
+                schema_bundle_digest, files_tuple, digests, artifact_files_tuple,
                 created_at, created_by, reason,
                 "shared-v1", verified_at, "sealed", project_id, 1, request_digest,
             )
@@ -214,6 +246,13 @@ class CheckpointStore:
             # Publish the complete directory in one rename. A crash must never
             # expose a destination that contains only some of its files.
             with self._publish_lock:
+                if destination.exists():
+                    # New checkpoints use a compact directory key for Windows
+                    # path-length headroom. A prefix collision must never
+                    # overwrite an already sealed checkpoint.
+                    self.verify(digest)
+                    shutil.rmtree(staging_dir)
+                    return self._manifest(self.load(digest, read_only_future=False))
                 os.replace(staging_dir, destination)
                 _fsync_directory(destination.parent)
                 self.verify(digest)
@@ -226,7 +265,8 @@ class CheckpointStore:
     @staticmethod
     def _manifest(raw: dict[str, Any]) -> CheckpointManifest:
         return CheckpointManifest(
-            **{**raw, "files": tuple(raw["files"]), "artifact_digests": tuple(raw.get("artifact_digests", []))},
+            **{**raw, "files": tuple(raw["files"]), "artifact_digests": tuple(raw.get("artifact_digests", [])),
+               "artifact_files": tuple(raw.get("artifact_files", []))},
         )
 
     def _advance_pointer(self, manifest: dict[str, Any]) -> None:
@@ -252,6 +292,29 @@ class CheckpointStore:
             manifest.update(created_at=None, created_by=None, reason=None, verified_at=None, project_id=None)
         return {str(key): value for key, value in manifest.items()}
 
+    def _verified_file_bytes(self, directory: Path, entry: dict[str, Any]) -> bytes:
+        relative = entry["path"]
+        if not isinstance(relative, str) or relative.startswith("/") or "\\" in relative:
+            raise ValueError("checkpoint_file_path_invalid")
+        parts = relative.split("/")
+        if any(part in {"", ".", ".."} for part in parts):
+            raise ValueError("checkpoint_file_path_invalid")
+        path = directory
+        for part in parts:
+            path = path / part
+            if path.is_symlink() or path.is_junction():
+                raise ValueError("checkpoint_file_path_invalid")
+        if not path.is_file() or not path.resolve(strict=True).is_relative_to(directory.resolve(strict=True)):
+            raise ValueError("checkpoint_file_path_invalid")
+        data = path.read_bytes()
+        if len(data) != entry["size"] or canonical_file_digest(data) != entry["digest"]:
+            raise ValueError("checkpoint_file_digest_mismatch")
+        return data
+
+    @staticmethod
+    def _manifest_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+        return [*manifest["files"], *manifest.get("artifact_files", [])]
+
     def verify(self, digest: str) -> None:
         directory = self._directory(digest)
         if directory.is_symlink() or directory.is_junction() or not directory.is_dir():
@@ -261,20 +324,15 @@ class CheckpointStore:
             raise ValueError("checkpoint_file_path_invalid")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.verify_manifest(manifest, digest)
-        for entry in manifest["files"]:
-            path = directory / entry["path"]
-            if path.is_symlink() or not path.is_file() or path.resolve().parent != directory.resolve():
-                raise ValueError("checkpoint_file_path_invalid")
-            data = path.read_bytes()
-            if len(data) != entry["size"] or f"sha256:{hashlib.sha256(data).hexdigest()}" != entry["digest"]:
-                raise ValueError("checkpoint_file_digest_mismatch")
+        for entry in self._manifest_entries(manifest):
+            self._verified_file_bytes(directory, entry)
 
     @staticmethod
     def verify_manifest(manifest: dict[str, Any], expected_digest: str) -> None:
         required = {"digest", "parent_digest", "lineage_id", "through_event_seq", "format_version",
                     "schema_bundle_digest", "files", "artifact_digests"}
         optional = {"projection_version", "created_at", "created_by", "reason", "verified_at", "status",
-                    "project_id", "metadata_integrity", "request_digest"}
+                    "project_id", "metadata_integrity", "request_digest", "artifact_files"}
         if not isinstance(manifest, dict) or not required.issubset(manifest) or set(manifest) - required - optional:
             raise ValueError("checkpoint_manifest_invalid")
         if manifest.get("digest") != expected_digest:
@@ -289,7 +347,7 @@ class CheckpointStore:
         artifacts = manifest["artifact_digests"]
         if not isinstance(artifacts, list | tuple) or any(
             not isinstance(item, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", item) for item in artifacts
-        ) or len(set(artifacts)) != len(artifacts):
+        ) or len(set(artifacts)) != len(artifacts) or list(artifacts) != sorted(artifacts):
             raise ValueError("checkpoint_manifest_invalid")
         for field in ("through_event_seq", "format_version"):
             if type(manifest[field]) is not int or manifest[field] < (1 if field == "format_version" else 0):
@@ -304,14 +362,37 @@ class CheckpointStore:
         paths = [entry["path"] for entry in manifest["files"]]
         if len(paths) != len(set(paths)) or any(not re.fullmatch(r"[a-z][a-z0-9_]{0,63}\.ndjson", p) for p in paths):
             raise ValueError("checkpoint_file_path_invalid")
+        if "artifact_files" in manifest:
+            artifact_files = manifest["artifact_files"]
+            if not isinstance(artifact_files, list | tuple) or any(
+                not isinstance(entry, dict) or set(entry) != {"path", "size", "digest"}
+                or type(entry["size"]) is not int or entry["size"] < 0
+                or not isinstance(entry["digest"], str)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", entry["digest"])
+                or entry["path"] != f"artifacts/sha256/{entry['digest'][7:]}"
+                for entry in artifact_files
+            ):
+                raise ValueError("checkpoint_artifact_path_invalid")
+            artifact_paths = [entry["path"] for entry in artifact_files]
+            artifact_file_digests = [entry["digest"] for entry in artifact_files]
+            if (len(artifact_paths) != len(set(artifact_paths)) or artifact_file_digests != sorted(artifact_file_digests)
+                    or artifact_file_digests != list(artifacts)):
+                raise ValueError("checkpoint_artifact_manifest_mismatch")
+        elif artifacts:
+            # Hash-only references are not enough to prove the saved project
+            # contains the promoted artifact bytes.
+            raise ValueError("checkpoint_artifact_files_missing")
         body = {key: manifest[key] for key in (
             "parent_digest", "lineage_id", "through_event_seq", "format_version",
             "schema_bundle_digest", "files", "artifact_digests",
         )}
+        if "artifact_files" in manifest:
+            body["artifact_files"] = manifest["artifact_files"]
         if "projection_version" in manifest:
             body["projection_version"] = manifest["projection_version"]
         if manifest.get("metadata_integrity") is not None:
-            if manifest["metadata_integrity"] != 1 or not optional.issubset(manifest):
+            metadata_fields = optional - {"artifact_files"}
+            if manifest["metadata_integrity"] != 1 or not metadata_fields.issubset(manifest):
                 raise ValueError("checkpoint_metadata_integrity_invalid")
             if manifest["status"] != "sealed" or manifest["projection_version"] != "shared-v1":
                 raise ValueError("checkpoint_metadata_integrity_invalid")
@@ -342,13 +423,8 @@ class CheckpointStore:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 digest = manifest["digest"]
                 self.verify_manifest(manifest, digest)
-                for entry in manifest["files"]:
-                    path = directory / entry["path"]
-                    if path.is_symlink() or not path.is_file():
-                        raise ValueError("checkpoint_file_path_invalid")
-                    data = path.read_bytes()
-                    if len(data) != entry["size"] or canonical_file_digest(data) != entry["digest"]:
-                        raise ValueError("checkpoint_file_digest_mismatch")
+                for entry in self._manifest_entries(manifest):
+                    self._verified_file_bytes(directory, entry)
                 destination = self._directory(digest)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 with self._publish_lock:
@@ -366,7 +442,12 @@ class CheckpointStore:
     def _directory(self, digest: str) -> Path:
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
             raise ValueError("checkpoint_digest_invalid")
-        return self.checkpoints / digest.replace(":", "_")
+        compact = self.checkpoints / f"sha256_{digest[7:39]}"
+        legacy = self.checkpoints / digest.replace(":", "_")
+        # Read pre-PT4 full-key directories without rewriting them. New
+        # materialization always targets the compact key to keep clone paths
+        # usable on default Windows Git installations.
+        return legacy if legacy.exists() and not compact.exists() else compact
 
     def _atomic_pointer(self, value: dict[str, Any]) -> None:
         fd, name = tempfile.mkstemp(prefix=".current.", dir=self.root)
@@ -408,7 +489,12 @@ class GitAnchorScanner:
         checkpoint_paths: dict[str, str] | None = None,
     ) -> list[GitAnchor]:
         root = Path(repository)
-        refs = self._git(root, ["for-each-ref", "refs/heads", "refs/tags", "--format=%(refname) %(objectname)"])
+        try:
+            refs = self._git(root, ["for-each-ref", "refs/heads", "refs/tags", "--format=%(refname) %(objectname)"])
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            # A project can use checkpoints before it has a Git repository.
+            # The checkpoint remains verifiable; it simply has no Git anchor.
+            return []
         anchors: list[GitAnchor] = []
         for line in refs.stdout.decode("utf-8").splitlines():
             ref_name, object_oid = line.split(" ", 1)
@@ -431,6 +517,11 @@ class GitAnchorScanner:
                         CheckpointStore.verify_manifest(candidate, digest)
                         prefix = path.rpartition("/")[0]
                         for entry in candidate["files"]:
+                            blob_path = f"{prefix}/{entry['path']}" if prefix else entry["path"]
+                            content = self._regular_blob(root, commit_oid, blob_path)
+                            if len(content) != entry["size"] or canonical_file_digest(content) != entry["digest"]:
+                                raise ValueError("checkpoint_tree_mismatch")
+                        for entry in candidate.get("artifact_files", []):
                             blob_path = f"{prefix}/{entry['path']}" if prefix else entry["path"]
                             content = self._regular_blob(root, commit_oid, blob_path)
                             if len(content) != entry["size"] or canonical_file_digest(content) != entry["digest"]:

@@ -3,7 +3,7 @@
   "name": "trace-acceptance-docs",
   "title": "PT7 迁移、验收与用户操作指南",
   "description": "验证七项修复共同工作，覆盖旧库、故障、时间和权限，并同步文档与任务证据。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "tyuikl32",
   "assignee": "tyuikl32",
   "createdAt": "2026-09-27",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-09-28T02:39:54Z",
+  "branch": "codex/persistence-traceability",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -24,6 +24,8 @@
   "notes": "",
   "meta": {
     "plan_id": "persistence-traceability",
-    "depends_on": ["trace-runtime-noise"]
+    "depends_on": [
+      "trace-runtime-noise"
+    ]
   }
 }

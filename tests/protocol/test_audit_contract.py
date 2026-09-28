@@ -9,6 +9,8 @@ from referencing import Registry, Resource
 from tools.codegen.generate_audit import render_models
 
 from tsunagou.generated.protocol.audit import AuditPageModel
+from tsunagou.generated.protocol.checkpoint import CheckpointPageModel
+from tsunagou.generated.protocol.checkpoint_verification import CheckpointVerificationModel
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -69,3 +71,27 @@ def test_audit_openapi_uses_canonical_dto_and_limits() -> None:
     assert params["limit"]["maximum"] == 200
     assert params["limit"]["minimum"] == 1
     assert params["cursor"]["anyOf"][0]["type"] == "string"
+
+
+def test_checkpoint_query_models_are_generated_and_strict() -> None:
+    page = {
+        "project_id": "project-1", "current": None, "items": [],
+        "projection_version": "v1", "as_of_event_seq": 0,
+    }
+    assert CheckpointPageModel.model_validate(page).model_dump() == page
+    verification = {
+        "digest": "sha256:checkpoint", "status": "verified", "project_id": "project-1",
+        "lineage_id": "lineage-1", "through_event_seq": 0,
+        "created_at": None, "verified_at": None, "git_anchors": [],
+    }
+    assert CheckpointVerificationModel.model_validate(verification).model_dump() == verification
+    for source, generated_py, generated_ts in (
+        ("checkpoint-page.schema.json", "checkpoint.py", "checkpoint.ts"),
+        ("checkpoint-verification.schema.json", "checkpoint_verification.py", "checkpoint_verification.ts"),
+    ):
+        py, ts = render_models(ROOT / "protocol/schemas/queries" / source)
+        assert py == (ROOT / "src/tsunagou/generated/protocol" / generated_py).read_text(encoding="utf-8")
+        assert ts == (ROOT / "packages/protocol-ts/src/generated" / generated_ts).read_text(encoding="utf-8")
+        assert (ROOT / "src/tsunagou/protocol_data/schemas/queries" / source).read_bytes() == (
+            ROOT / "protocol/schemas/queries" / source
+        ).read_bytes()

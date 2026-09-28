@@ -645,6 +645,36 @@ class ProjectDatabase:
             ).fetchone()
             return int(row[0]) if row is not None else 0
 
+    def get_event(self, event_id: str) -> dict[str, Any] | None:
+        """Read one audit event without exposing the raw SQLite connection."""
+        with contextlib.closing(self._connect()) as conn:
+            row = conn.execute(
+                """SELECT project_id,lineage_id,schema_version,event_id,event_seq,event_type,aggregate_ref,actor_ref,command_id,
+                          occurred_at,recorded_at,subject_ref,outcome,reason_code,
+                          caused_by_command_id,revision_before,revision_after,
+                          evidence_refs_json,projection_version,payload_json,digest
+                   FROM events WHERE project_id=? AND event_id=?""",
+                (self.project_id, event_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "event_id": str(row["event_id"]), "event_seq": int(row["event_seq"]),
+            "project_id": str(row["project_id"]), "lineage_id": str(row["lineage_id"]),
+            "schema_version": str(row["schema_version"]), "event_type": str(row["event_type"]),
+            "aggregate_ref": str(row["aggregate_ref"]), "actor_ref": str(row["actor_ref"]),
+            "command_id": str(row["command_id"]),
+            "occurred_at": int(row["occurred_at"]) if row["occurred_at"] is not None else None,
+            "recorded_at": int(row["recorded_at"]) if row["recorded_at"] is not None else None,
+            "subject_ref": str(row["subject_ref"]) if row["subject_ref"] is not None else None,
+            "outcome": str(row["outcome"]), "reason_code": row["reason_code"],
+            "caused_by_command_id": row["caused_by_command_id"],
+            "revision_before": row["revision_before"], "revision_after": row["revision_after"],
+            "evidence_refs": json.loads(str(row["evidence_refs_json"] or "[]")),
+            "projection_version": str(row["projection_version"] or "v1"),
+            "payload": json.loads(str(row["payload_json"])), "digest": str(row["digest"]),
+        }
+
     def list_events(
         self,
         *,

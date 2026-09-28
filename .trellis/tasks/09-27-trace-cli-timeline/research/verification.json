@@ -1,0 +1,30 @@
+{
+  "task": "PT5",
+  "verified_at": "2026-09-28T01:26:49Z",
+  "branch": "codex/persistence-traceability",
+  "commands": [
+    {"command": "uv run pytest -q --disable-warnings", "exit_code": 0, "evidence": "all tests passed; 3 platform conditional skips"},
+    {"command": "uv run pytest -q tests/unit/test_trace_audit.py tests/protocol/test_audit_contract.py tests/unit/test_history_cli.py", "exit_code": 0, "evidence": "query, DTO, permission and CLI regression suite passed"},
+    {"command": "uv run ruff check src tests tools", "exit_code": 0, "evidence": "lint passed"},
+    {"command": "uv run mypy src", "exit_code": 0, "evidence": "64 source files checked"},
+    {"command": "uv run python tools/codegen/generate_openapi.py", "exit_code": 0, "evidence": "HTTP OpenAPI and packaged mirror regenerated"},
+    {"command": "uv run python tools/codegen/validate_protocol.py", "exit_code": 0, "evidence": "111 command policies and 126 schemas validated"},
+    {"command": "uv run python tools/dev/check_architecture.py", "exit_code": 0, "evidence": "architecture check passed"},
+    {"command": "uv run python tools/docs/validate_docs.py", "exit_code": 0, "evidence": "310 Markdown files and 783 local links validated"},
+    {"command": "uv run python -m tsunagou project/task/audit/checkpoint ... --help", "exit_code": 0, "evidence": "all PT5 CLI help surfaces rendered"}
+  ],
+  "acceptance": {
+    "authenticated_history": true,
+    "task_related_entities": true,
+    "cursor_and_time_filters": true,
+    "private_message_visibility": true,
+    "shared_http_cli_models": true,
+    "checkpoint_file_and_git_verification": true,
+    "read_only_no_revision_change": true,
+    "export_source_lineage_timestamp": true
+  },
+  "notes": [
+    "Git anchors are empty when the project has no local Git repository; checkpoint verification still succeeds.",
+    "The existing /api/v1/projects/{project_id}/audit and /api/v1/checkpoints routes remain compatibility reads; new canonical routes are documented in command-catalog.md."
+  ]
+}

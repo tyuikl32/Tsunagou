@@ -16,3 +16,9 @@ GitAnchorScanner 解析允许的本地 `refs/heads/*`/`refs/tags/*` 并读取 tr
 - 此入口只接受未初始化本地数据库且没有 bridge/credential/binding 残留的 clean clone。确认锁定 bootstrap，重新验证 Git anchor、manifest、预览摘要与目标物理身份；暂存完整 SQLite 并原子安装。已有运行库不覆盖，回退/清空另循原 lineage reset 设计。
 - 导入保留公共历史的原 actor/时间/序列，恢复动作另追加用户事件。非终态任务 blocked/recovery_review，旧 claimed/running Attempt orphaned，根目录 unbound，历史 Agent retired，Authority unassigned；所有 session/grant/lease/preflight/job claim/ticket 都不导入。
 - 未确认 clone 不得自动创建空数据库或生成新的 genesis 覆盖历史。确认后正常启动，再由用户接入/任命主 Agent、绑定根目录并审阅未完成任务。
+
+## 文件布局与附件字节（2026-09-28）
+
+`CheckpointStore(root)` 的 `root` 就是 checkpoint 目录本身，例如 `.tsunagou/checkpoints`；不会再追加第二层 `checkpoints`。新 checkpoint 目录采用 `sha256_<digest-prefix>` 紧凑键，读取时兼容旧的完整 digest 目录。目录内 `manifest.json` 和各领域 `.ndjson` 使用固定 LF/二进制 Git 属性；显式提升的附件仍按 manifest 的 `artifact_files` 保存并由完整 SHA-256 校验。
+
+恢复确认在 `.tsunagou` 下的临时目录构造完整 `local`，包括 SQLite、WAL 清理后的数据库和 `artifacts/blobs/sha256/<prefix>/<hex>`；数据库与附件一起发布，随后才重建可丢弃的 `project.json` 投影。这样数据库不会引用尚未发布的附件字节。
