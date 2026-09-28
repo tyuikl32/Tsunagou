@@ -52,6 +52,16 @@ python epoch-test.py <bridge-session.json> 1 2   # stale -> 401, current -> 200
 1. 从 MCP 工具调用 `_meta["ai.opencode/sessionID"]` 提取宿主会话身份（OpenCode 不提供会话环境变量），digest 前缀与 ticket 路径统一为 `conversation_id:`，保证同一会话跨调用身份一致。
 2. 多会话宿主下按会话分配私有 session 文件（`<stateDir>/sessions/bridge-session-<digest>.json`），单会话宿主仍使用 `TSUNAGOU_SESSION_FILE`。
 
+## 合并后树复测（同日）
+
+在 main 的 PT1–PT7 工作与本轮修复合并（`cca5618`）后，环境被完整重建（清除旧 daemon 状态、重新签发 ticket、两个会话重新 enroll），11 项在同一真实宿主上复测通过；运行头 `ffe0bbe`。关键新增观察：
+
+- 合并后的 `workspace.prepare` 契约要求显式 `input_digest` 与 `root_binding_refs`，并自动解析任务 scope roots（worker 按新必填字段调用成功）。
+- 重连后 main epoch 6 / worker epoch 5（多次重连累计），agent 不变；旧 epoch 头 401 `authentication_failed`，当前 epoch 200。
+- task.lifecycle 完整闭环复测：claim→workspace.select/prepare→resource.intent/acquire→preflight→start→progress→block→resume→再 acquire→preflight→start→submit，旧 revision `task_revision_conflict`。
+
+复测证据见 [merged-tree retest evidence](../research/evidence/opencode-2026-09-28-retest-merged-tree.json)。
+
 ## 诚实说明
 
 - `compact`/`clear` 在 OpenCode 2.0.18 中没有可手动触发的入口，本轮以 resume/reconnect/new/fork 覆盖连续性语义，未声称 compact/clear 已实测。
