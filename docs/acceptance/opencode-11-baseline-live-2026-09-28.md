@@ -4,7 +4,7 @@
 
 ## 版本与隔离
 
-- 分支 `elysia`，HEAD `a3954ae20961583be9171be1f9f441af6177a126`（工作树含本轮 bridge 修复，未提交）。
+- 分支 `elysia`，运行基线 `a3954ae20961583be9171be1f9f441af6177a126`；本轮 bridge 修复与文档已提交为 `adda6f5d83e0b483c07397daba78c0a7109d4779`（"opencode11test"），随后与 main 的 PT 系列工作合并为 `cca5618`。合并后的 bridge 已重建并通过凭据交接测试 18/18 与 late-ticket 冒烟（两种模式退出码 0）；本报告的 11 项结论对应运行基线加本轮修复的代码。
 - OpenCode `2.0.18`（`opencode --version`）；`opencode serve` 没有旧文档中的 `--pure` 参数，实际参数为 `--hostname/--port/--cors/--serve/--stdio`。
 - Node bridge `/packages/bridge-server/dist/server.js`（`tsc` 退出码 0）；daemon `127.0.0.1:8765`。
 - 两个真实会话：main 会话 `ses_f18d3da8dffehIF2UxzvikhoNs`（本会话）、worker 会话 `ses_f185609c0ffeXXN5M0q3ibrakC`；fork 会话 `ses_f18498661ffer8rK47LVSIua7X`。会话标识以 SHA-256 前缀脱敏存档。

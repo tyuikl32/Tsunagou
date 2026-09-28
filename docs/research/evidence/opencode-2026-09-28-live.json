@@ -5,8 +5,10 @@
   "date": "2026-09-28",
   "git": {
     "branch": "elysia",
-    "head": "a3954ae20961583be9171be1f9f441af6177a126",
-    "worktree": "bridge-server _meta session-id support + per-conversation session files (uncommitted working tree)"
+    "baseline_head": "a3954ae20961583be9171be1f9f441af6177a126",
+    "run_commit": "adda6f5d83e0b483c07397daba78c0a7109d4779",
+    "integration_merge": "cca5618d4e2a2596d8b0e11736bbf09cfa5fa5cc",
+    "note": "the eleven rows were measured on the baseline plus this run's bridge fixes; the merged tree rebuilt the bridge and passed credential-handoff tests 18/18 plus both late-ticket smoke modes"
   },
   "environment": {
     "daemon": "local uvicorn on 127.0.0.1:8765 over a temporary git coordination project",
