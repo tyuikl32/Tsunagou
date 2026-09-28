@@ -3,9 +3,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "checkpoint_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
     "target": {}
   },
   "required": [
+    "reason",
     "target"
   ],
   "title": "ProjectLineageResetPayload",

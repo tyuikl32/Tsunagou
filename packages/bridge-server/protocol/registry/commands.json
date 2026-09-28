@@ -58,10 +58,16 @@
     },
     "agent.ticket.create": {
       "payload_fields": [
-        "kind"
+        "adapter_allowlist",
+        "ceiling_template",
+        "installation_binding",
+        "kind",
+        "target_agent_id"
       ],
       "principal": "M",
       "required_fields": [
+        "adapter_allowlist",
+        "ceiling_template",
         "kind"
       ],
       "schema": "commands/agent/ticket/create.schema.json",
@@ -69,11 +75,16 @@
     },
     "agent.ticket.create.user": {
       "payload_fields": [
-        "kind"
+        "conversation_evidence",
+        "installation_id",
+        "kind",
+        "role",
+        "ttl_seconds"
       ],
       "principal": "U",
       "required_fields": [
-        "kind"
+        "conversation_evidence",
+        "installation_id"
       ],
       "schema": "commands/agent/ticket/create/user.schema.json",
       "uri": "/control/enrollment-tickets"
@@ -107,11 +118,17 @@
     "artifact.upload.create": {
       "payload_fields": [
         "domain_ref",
+        "expected_digest",
+        "media_type",
+        "size_bytes",
         "visibility"
       ],
       "principal": "B",
       "required_fields": [
         "domain_ref",
+        "expected_digest",
+        "media_type",
+        "size_bytes",
         "visibility"
       ],
       "schema": "commands/artifact/upload/create.schema.json",
@@ -402,10 +419,14 @@
     },
     "discrepancy.advance": {
       "payload_fields": [
+        "discrepancy_id",
+        "evidence_refs",
+        "reason",
         "status"
       ],
       "principal": "B",
       "required_fields": [
+        "discrepancy_id",
         "status"
       ],
       "schema": "commands/discrepancy/advance.schema.json",
@@ -434,10 +455,16 @@
     },
     "discrepancy.resolve": {
       "payload_fields": [
-        "kind"
+        "accepted_by",
+        "discrepancy_id",
+        "evidence_refs",
+        "input_digest",
+        "kind",
+        "reason"
       ],
       "principal": "M",
       "required_fields": [
+        "discrepancy_id",
         "kind"
       ],
       "schema": "commands/discrepancy/resolve.schema.json",
@@ -542,11 +569,19 @@
     },
     "message.send": {
       "payload_fields": [
-        "kind"
+        "in_reply_to",
+        "kind",
+        "payload",
+        "priority",
+        "recipient_agent_id",
+        "response_contract",
+        "subject_ref",
+        "summary"
       ],
       "principal": "B",
       "required_fields": [
-        "kind"
+        "recipient_agent_id",
+        "summary"
       ],
       "schema": "commands/message/send.schema.json",
       "uri": "/messages"
@@ -690,10 +725,13 @@
     },
     "project.lineage.reset": {
       "payload_fields": [
+        "checkpoint_digest",
+        "reason",
         "target"
       ],
       "principal": "U",
       "required_fields": [
+        "reason",
         "target"
       ],
       "schema": "commands/project/lineage/reset.schema.json",
@@ -756,11 +794,17 @@
     },
     "project.replica.activate": {
       "payload_fields": [
-        "mode"
+        "checkpoint_digest",
+        "mode",
+        "reason",
+        "recovery_evidence_refs"
       ],
       "principal": "U",
       "required_fields": [
-        "mode"
+        "checkpoint_digest",
+        "mode",
+        "reason",
+        "recovery_evidence_refs"
       ],
       "schema": "commands/project/replica/activate.schema.json",
       "uri": "/control/replicas/{id}:activate"
@@ -1291,12 +1335,15 @@
     "task.recover": {
       "payload_fields": [
         "disposition",
-        "expected_attempt_id"
+        "expected_attempt_id",
+        "reason",
+        "task_id"
       ],
       "principal": "M",
       "required_fields": [
         "disposition",
-        "expected_attempt_id"
+        "expected_attempt_id",
+        "task_id"
       ],
       "schema": "commands/task/recover.schema.json",
       "uri": "/tasks/{id}:recover"
@@ -1373,11 +1420,15 @@
     },
     "task.scope.resolve": {
       "payload_fields": [
-        "choice"
+        "approved_scope",
+        "choice",
+        "reason",
+        "scope_request_id"
       ],
       "principal": "M",
       "required_fields": [
-        "choice"
+        "choice",
+        "scope_request_id"
       ],
       "schema": "commands/task/scope/resolve.schema.json",
       "uri": "/scope-requests/{id}:resolve"
@@ -1686,6 +1737,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:99326365c16718548299351917cb384d740858ae2b42551c5b308d996bbcef92",
+  "schema_bundle_digest": "sha256:cc3d9b54353921048c5d63b17787ea90337e34742c78d025bb832d0d4b7380e4",
   "supported_previous_version": "0.9"
 }

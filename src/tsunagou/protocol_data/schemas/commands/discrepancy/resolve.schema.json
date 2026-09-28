@@ -3,9 +3,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "kind": {}
+    "accepted_by": {},
+    "discrepancy_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "evidence_refs": {},
+    "input_digest": {},
+    "kind": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
   },
   "required": [
+    "discrepancy_id",
     "kind"
   ],
   "title": "DiscrepancyResolvePayload",

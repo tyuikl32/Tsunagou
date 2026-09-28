@@ -3,10 +3,45 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "kind": {}
+    "in_reply_to": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "priority": {
+      "type": "integer"
+    },
+    "recipient_agent_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "response_contract": {
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "schema": {
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "subject_ref": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 4096,
+      "type": "string"
+    }
   },
   "required": [
-    "kind"
+    "recipient_agent_id",
+    "summary"
   ],
   "title": "MessageSendPayload",
   "type": "object"

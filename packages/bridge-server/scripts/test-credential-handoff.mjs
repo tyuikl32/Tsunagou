@@ -502,7 +502,7 @@ async function metadataBridgeFixture(t) {
   const sessionPath = (conversation) => join(stateDir, "sessions", `bridge-session-${digest(conversation).slice(0, 32)}.json`);
   const clients = [];
   let diagnostics = "";
-  async function connect() {
+  async function connect(extraEnv = {}) {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [fileURLToPath(new URL("../dist/server.js", import.meta.url))],
@@ -516,6 +516,7 @@ async function metadataBridgeFixture(t) {
         TSUNAGOU_STATE_DIR: stateDir,
         TSUNAGOU_HOST_ID_ENV: "TSUNAGOU_METADATA_TEST_HOST_ID",
         TSUNAGOU_METADATA_TEST_HOST_ID: "",
+        ...extraEnv,
       },
       stderr: "pipe",
     });
@@ -546,7 +547,7 @@ async function metadataBridgeFixture(t) {
 
 test("MCP metadata preserves explicit bootstrap credentials across A/B/A and restart", { timeout: 30000 }, async (t) => {
   const f = await metadataBridgeFixture(t);
-  let client = await f.connect();
+  let client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
   assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
   assert.equal(loadSession(f.sessionFile).agent_id, credential.agent_id);
 
@@ -568,7 +569,7 @@ test("MCP metadata preserves explicit bootstrap credentials across A/B/A and res
   assert.equal(f.calls.filter((call) => call.path.endsWith("agent.enroll")).length, 2);
 
   await client.close();
-  client = await f.connect();
+  client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
   for (const [conversation, expected] of [[f.secondTicket.conversation_id, f.secondCredential], [ticket.conversation_id, credential]]) {
     const recovered = f.result(await f.call(client, conversation));
     assert.equal(recovered.agent_id, expected.agent_id);
@@ -583,7 +584,7 @@ test("concurrent MCP conversations retain their identity through recovery and au
     ...f.secondCredential, host_conversation_id_digest: f.digest(f.secondTicket.conversation_id),
     conversation_binding_digest: f.digest(f.secondTicket.conversation_id),
   });
-  const client = await f.connect();
+  const client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
   for (const [delayedConversation, delayedAgent, otherConversation, otherAgent, authRetry] of [
     [f.secondTicket.conversation_id, f.secondCredential.agent_id, ticket.conversation_id, credential.agent_id, false],
     [ticket.conversation_id, credential.agent_id, f.secondTicket.conversation_id, f.secondCredential.agent_id, true],
@@ -610,4 +611,35 @@ test("concurrent MCP conversations retain their identity through recovery and au
   }
   assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
   assert.equal(f.result(await f.call(client, f.secondTicket.conversation_id)).agent_id, f.secondCredential.agent_id);
+});
+
+test("host-metadata bridge rejects a first call without valid metadata", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  const client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  const callRaw = (meta) => client.callTool({
+    name: "context__project_read", arguments: {},
+    ...(meta !== undefined ? { _meta: meta } : {}),
+  });
+  const errorOf = (response) => {
+    assert.equal(response.isError, true, JSON.stringify(response.content));
+    const text = response.content.find((item) => item.type === "text").text;
+    assert.ok(!text.includes("agent-one") && !text.includes("sentinel"));
+    return text;
+  };
+
+  // The startup ticket has already recovered the default conversation
+  // (agent-one). A first call that cannot prove its conversation must be
+  // rejected instead of borrowing that recovered credential.
+  assert.match(errorOf(await callRaw(undefined)), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({})), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": "" })), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": 42 })), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": { id: "conversation-one" } })), /conversation_metadata_required/);
+
+  // Bad calls must not enroll anything or mutate the recovered state.
+  assert.equal(f.calls.filter((call) => call.path.endsWith("agent.enroll")).length, 1);
+  assert.equal(loadSession(f.sessionFile).agent_id, credential.agent_id);
+
+  // A valid metadata call still resolves the exact conversation credential.
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
 });

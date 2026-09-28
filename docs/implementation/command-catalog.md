@@ -53,7 +53,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
 | agent.ticket.create | `/enrollment-tickets` | M / agent.enroll | kind:worker\|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id? | TicketReceipt；secret仅私有交付 |
-| agent.ticket.create.user | `/control/enrollment-tickets` | U / — | kind:worker\|main\|session_rebind,role:worker\|main,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id?,expected_authority_epoch? | main票据须authority代次；`role` 是一次性接入后的显式用户角色请求 |
+| agent.ticket.create.user | `/control/enrollment-tickets` | U / — | installation_id,conversation_evidence,kind:worker\|main\|session_rebind?,role:worker\|main?,ttl_seconds? | main票据须authority代次；`role` 是一次性接入后的显式用户角色请求 |
 | agent.enroll | `/sessions:enroll` | T / — | installation_id,conversation_evidence,descriptor_ref,probe_payload,client_nonce,negotiation | EnrollmentResult；secret走专用header/安全通道 |
 | session.rebind | `/sessions:rebind` | T / — | target_agent_id,installation_id,conversation_evidence,probe_payload,client_nonce | replacement HostSession；旧token和Grant撤销 |
 | session.reconnect | `/sessions/{id}:reconnect` | D / — | expected_connection_epoch,reconnect_nonce,continuity_evidence,probe_payload | ConnectionResult；token认证+nonce CAS |
@@ -92,9 +92,9 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | task.cancel_request | `/tasks/{id}:request-cancel` | M / task.coordinate | reason | Task cancel_requested或无owner时cancelled |
 | task.cancel_ack | `/tasks/{id}:ack-cancel` | B / task.coordinate_self | attempt_id,stop_evidence,reason | Task cancelled；owner，仅收敛 |
 | task.fail | `/tasks/{id}:fail` | B / task.coordinate_self | attempt_id,reason,evidence_refs,stop_evidence? | Task failed；owner，无成功伪装 |
-| task.recover | `/tasks/{id}:recover` | M / task.coordinate | expected_attempt_id,disposition:reopen\|cancel\|fail,residual_risk_refs,reason | Task；关闭旧Attempt再reopen |
+| task.recover | `/tasks/{id}:recover` | M / task.coordinate | task_id,expected_attempt_id,disposition:reopen\|cancel\|fail,reason? | Task；关闭旧Attempt再reopen |
 | task.scope.request | `/tasks/{id}/scope-requests` | B / task.coordinate_self | attempt_id,requested_scope,reason,expected_revisions | ScopeExpansionRequest；owner |
-| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | choice:approve\|reject,proposal_digest,reason | ScopeRequest+Task；审批不超ceiling，执行先block |
+| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | scope_request_id,choice:approve\|reject,approved_scope?,reason? | ScopeRequest+Task；审批不超ceiling，执行先block |
 
 ## Main 协调计划与 Worker 唤醒
 
@@ -111,8 +111,8 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 |---|---|---|---|---|
 | cognition.report | `/reports` | B / cognition.report | task_id,attempt_id?,boundary,understanding,assumptions,uncertainties,claims,confidence,confidence_reason,evidence_refs,input_revisions,supersedes_id? | EpistemicReport；owner/指定参与者 |
 | discrepancy.create | `/discrepancies` | B / cognition.discuss | subject_ref,report_refs,severity,participants,summary,affected_actions | Discrepancy；有subject参与关系 |
-| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | status:clarifying\|negotiating,reason,evidence_refs | Discrepancy；participant |
-| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | kind:consensus\|dismissal\|override,reason,evidence_refs,accepted_by,input_digest | Resolution；override不冒充共识 |
+| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | discrepancy_id,status:clarifying\|negotiating,reason?,evidence_refs? | Discrepancy；participant |
+| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | discrepancy_id,kind:consensus\|dismissal\|override,reason?,evidence_refs?,accepted_by?,input_digest? | Resolution；override不冒充共识 |
 | contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,subject_ref,contract_kind,payload,participants_required,participants_optional,input_refs,supersedes_id? | ContractProposal；subject participant |
 | contract.accept | `/contract-proposals/{id}:accept` | B / contract.accept | proposal_digest,evidence_refs | Acceptance；self slot |
 | contract.accept_proxy | `/contract-proposals/{id}:accept-proxy` | M / contract.proxy | participant_slot_id,proposal_digest,proxy_policy_ref,reason,evidence_refs | Acceptance；policy明确允许 |
@@ -145,7 +145,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| message.send | `/messages` | B / message.send | kind:notification\|request,subject_ref,recipient_ids,summary,payload,artifact_refs,response_contract? | Message+Deliveries；关系/大小/收件权限 |
+| message.send | `/messages` | B / message.send | recipient_agent_id,summary,kind:message\|notification\|request?,subject_ref?,payload?,priority?,response_contract?,in_reply_to? | Message+Deliveries；关系/大小/收件权限 |
 | message.respond | `/messages/{id}:respond` | B / message.respond | obligation_id,response_payload,summary,evidence_refs | Response+Obligation；原recipient |
 | message.waive_response | `/response-obligations/{id}:waive` | B / message.send | reason | Obligation；原sender；main只能以原sender身份 |
 | inbox.claim | `/inbox:claim` | B / inbox.consume | limit?,max_bytes? | DeliveryLeaseBatch；authenticated self |

@@ -7,11 +7,20 @@
     "expected_attempt_id": {
       "minLength": 1,
       "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
     "disposition",
-    "expected_attempt_id"
+    "expected_attempt_id",
+    "task_id"
   ],
   "title": "TaskRecoverPayload",
   "type": "object"

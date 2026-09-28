@@ -18,6 +18,37 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
+# Hosts that deliver the conversation identity on each tool call through MCP
+# `_meta` instead of exporting it as an environment variable. The generated
+# bridge config carries this declaration so the bridge fail-closes on any call
+# whose metadata is missing, empty or not a string.
+_HOST_META_KEYS = {"opencode": "ai.opencode/sessionID"}
+
+
+def _bridge_environment(
+    *, adapter: str, daemon_url: str, daemon_state_dir: str, ticket_path: Path,
+    session_path: Path, project_root: str, state_dir: Path,
+) -> dict[str, str]:
+    """Shared MCP bridge environment for every config-generation path.
+
+    ``agent connect`` and ``agent enroll`` both build their bridge config from
+    this single place, so a host that needs per-call metadata identity
+    (``_HOST_META_KEYS``) is declared identically no matter which command
+    prepared the conversation.
+    """
+    environment = {
+        "TSUNAGOU_HTTP_URL": daemon_url,
+        "TSUNAGOU_DAEMON_STATE_DIR": daemon_state_dir,
+        "TSUNAGOU_TICKET_FILE": str(ticket_path),
+        "TSUNAGOU_SESSION_FILE": str(session_path),
+        "TSUNAGOU_PROJECT_ROOT": project_root,
+        "TSUNAGOU_STATE_DIR": str(state_dir),
+    }
+    host_meta_key = _HOST_META_KEYS.get(adapter)
+    if host_meta_key:
+        environment["TSUNAGOU_HOST_META_KEY"] = host_meta_key
+    return environment
+
 
 def _write_ticket_private(
     installation_id: str, conversation_id: str, secret: str, ticket_file: Path | None,
@@ -686,19 +717,21 @@ if typer is not None:
         file_component = re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{adapter}-{installation_id}").strip(".")
         bridge_config_path = output_dir / f"{file_component or 'bridge'}.json"
         bridge_entry = Path(__file__).resolve().parents[3] / "packages" / "bridge-server" / "dist" / "server.js"
+        environment = _bridge_environment(
+            adapter=adapter,
+            daemon_url=_daemon_url(),
+            daemon_state_dir=str(_state_dir_from_environment() or ""),
+            ticket_path=ticket_path,
+            session_path=session_path,
+            project_root=str(_project_root()),
+            state_dir=output_dir,
+        )
         bridge_config_path.write_text(json.dumps({
             "adapter": adapter,
             "mode": mode,
             "command": "node",
             "args": [str(bridge_entry) if bridge_entry.is_file() else "<tsunagou-bridge-server>/dist/server.js"],
-            "env": {
-                "TSUNAGOU_HTTP_URL": _daemon_url(),
-                "TSUNAGOU_DAEMON_STATE_DIR": str(_state_dir_from_environment() or ""),
-                "TSUNAGOU_TICKET_FILE": str(ticket_path),
-                "TSUNAGOU_SESSION_FILE": str(session_path),
-                "TSUNAGOU_PROJECT_ROOT": str(_project_root()),
-                "TSUNAGOU_STATE_DIR": str(output_dir),
-            },
+            "env": environment,
             "secret_fields": [],
         }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         return bridge_config_path
@@ -1020,25 +1053,13 @@ if typer is not None:
         bridge_config_path = None
         if output_dir is not None:
             output_dir = output_dir.expanduser().resolve()
-            output_dir.mkdir(parents=True, exist_ok=True)
-            session_path = output_dir / "bridge-session.json"
-            bridge_config_path = output_dir / f"{adapter}-{installation_id}.json"
-            bridge_entry = Path(__file__).resolve().parents[3] / "packages" / "bridge-server" / "dist" / "server.js"
-            bridge_config_path.write_text(json.dumps({
-                "adapter": adapter,
-                "mode": mode,
-                "command": "node",
-                "args": [str(bridge_entry) if bridge_entry.is_file() else "<tsunagou-bridge-server>/dist/server.js"],
-                "env": {
-                    "TSUNAGOU_HTTP_URL": _daemon_url(),
-                    "TSUNAGOU_DAEMON_STATE_DIR": str(_state_dir_from_environment() or ""),
-                    "TSUNAGOU_TICKET_FILE": str(path),
-                    "TSUNAGOU_SESSION_FILE": str(session_path),
-                    "TSUNAGOU_PROJECT_ROOT": os.environ.get("TSUNAGOU_PROJECT_ROOT", ""),
-                    "TSUNAGOU_STATE_DIR": str(output_dir),
-                },
-                "secret_fields": [],
-            }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+            # One shared generator keeps `agent enroll` and `agent connect`
+            # configs identical, including the per-call metadata declaration
+            # for hosts such as OpenCode.
+            bridge_config_path = _write_bridge_config(
+                adapter=adapter, mode=mode, installation_id=installation_id,
+                output_dir=output_dir, ticket_path=path,
+            )
         print(json.dumps({
             "adapter": adapter, "mode": mode, "status": "ticket_issued",
             "installation_id": installation_id, "conversation_id": conversation_id,

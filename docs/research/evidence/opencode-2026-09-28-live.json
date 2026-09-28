@@ -40,7 +40,7 @@
         "resume: repeated tool calls in the same OpenCode session kept the same agent identity across many turns",
         "reconnect: after killing the bridge process and reloading the host, the same agent id re-attached with connection_epoch 1 -> 2",
         "new: a separately created OpenCode session produced a new conversation digest and a new agent",
-        "fork: opencode run --session ... --fork produced a distinct new session id (ses_f18498661ffe...) vs the source session (ses_f185609c0ffe...)",
+        "fork: opencode run --session ... --fork produced a distinct new session id (session:C) vs the source session (session:B)",
         "note: OpenCode has no manual compact/clear entrypoint in this version, so those transitions were not directly triggered; resume/reconnect/new/fork were observed live"
       ]
     },

@@ -1388,7 +1388,12 @@ def build_handlers(
         message = messages.messages.get(message_id)
         if message is None or message.recipient_agent_id != context["principal_id"]:
             raise PermissionError("inbox_access_denied")
-        return _message_view(message, messages)
+        # The payload is the message body: only the authorized recipient fetches
+        # it, and only here. `inbox.claim` keeps using `_message_view` so the
+        # batch listing stays metadata-only.
+        view = _message_view(message, messages)
+        view["payload"] = message.payload
+        return view
 
     def inbox_presented(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")

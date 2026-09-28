@@ -3,10 +3,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "choice": {}
+    "approved_scope": {},
+    "choice": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "scope_request_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
-    "choice"
+    "choice",
+    "scope_request_id"
   ],
   "title": "TaskScopeResolvePayload",
   "type": "object"

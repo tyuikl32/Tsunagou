@@ -118,6 +118,7 @@ function config(): {
   projectRoot: string;
   stateDir: string;
   hostIdCandidates: string[];
+  hostMetaKey: string;
 } {
   const stateDir = env("TSUNAGOU_STATE_DIR", join(homedir(), ".tsunagou"));
   const projectRoot = env("TSUNAGOU_PROJECT_ROOT");
@@ -132,6 +133,12 @@ function config(): {
       "TSUNAGOU_HOST_ID_ENV",
       "CODEX_SESSION_ID,CODEX_THREAD_ID,CODEX_CONVERSATION_ID,CODEX_ROLLOUT_ID,CODEX_AGREEMENT_ID",
     ).split(",").map((name) => name.trim()).filter(Boolean),
+    // Set by `agent connect` for hosts (OpenCode) that deliver the
+    // conversation id per tool call in MCP `_meta` instead of exporting it as
+    // an environment variable. When declared, every tool call must carry a
+    // fresh non-empty string id; the bridge never falls back to the
+    // startup-recovered default conversation.
+    hostMetaKey: env("TSUNAGOU_HOST_META_KEY"),
   };
 }
 
@@ -249,10 +256,10 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "contract__withdraw", command_kind: "contract.withdraw", description: "Withdraw a still-proposed contract created by this agent.", inputSchema: { type: "object", required: ["proposal_id", "reason"], properties: { proposal_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "durability__reconcile", command_kind: "durability.reconcile", description: "Retry a failed checkpoint materialization after the project is completed (main-authority only).", inputSchema: { type: "object", required: ["reason"], properties: { scope_refs: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "inbox__claim", command_kind: "inbox.claim", description: "Claim this agent's inbox deliveries.", inputSchema: { type: "object", properties: { limit: { type: "integer" } }, additionalProperties: false } },
-  { name: "inbox__fetch", command_kind: "inbox.fetch", description: "Fetch one inbox message by id.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, delivery_lease_id: { type: "string" } }, additionalProperties: false } },
+  { name: "inbox__fetch", command_kind: "inbox.fetch", description: "Fetch one inbox message by id, including its payload.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, delivery_lease_id: { type: "string" } }, additionalProperties: false } },
   { name: "inbox__presented", command_kind: "inbox.presented", description: "Record that a delivery was presented with an evidence digest.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, evidence_digest: { type: "string" }, evidence_kind: { type: "string" } }, additionalProperties: false } },
   { name: "inbox__ack", command_kind: "inbox.ack", description: "Acknowledge a presented inbox delivery.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "message__send", command_kind: "message.send", description: "Send a message to another agent.", inputSchema: { type: "object", required: ["recipient_agent_id"], properties: { command_id: { type: "string", description: "Optional idempotency key. Reusing this id with different message input is rejected as a conflict." }, recipient_agent_id: { type: "string" }, kind: { type: "string" }, subject_ref: { type: "string" }, summary: { type: "string" }, payload: { type: "object" }, priority: { type: "integer" }, response_contract: { type: "object", properties: { required: { type: "boolean" }, schema: { type: "object" } } }, in_reply_to: { type: "string" } } } },
+  { name: "message__send", command_kind: "message.send", description: "Send a message to another agent.", inputSchema: { type: "object", required: ["recipient_agent_id", "summary"], properties: { command_id: { type: "string", description: "Optional idempotency key. Reusing this id with different message input is rejected as a conflict." }, recipient_agent_id: { type: "string" }, kind: { type: "string" }, subject_ref: { type: "string" }, summary: { type: "string" }, payload: { type: "object" }, priority: { type: "integer" }, response_contract: { type: "object", properties: { required: { type: "boolean" }, schema: { type: "object" } } }, in_reply_to: { type: "string" } } } },
   { name: "message__respond", command_kind: "message.respond", description: "Fulfill a response obligation on a received message.", inputSchema: { type: "object", required: ["obligation_id", "response_message_id"], properties: { obligation_id: { type: "string" }, response_message_id: { type: "string" } }, additionalProperties: false } },
   { name: "context__project_read", command_kind: "context.project_read", description: "Read this agent's project context: identity, role, scope capabilities and owned tasks.", inputSchema: { type: "object", additionalProperties: false } },
   { name: "project__configure", command_kind: "project.configure", description: "Enable or disable project-level automatic worker wake for future coordination plans (main-authority only).", inputSchema: { type: "object", required: ["policy_patch", "reason"], properties: { policy_patch: { type: "object", properties: { auto_wake_multi_agent: { type: "boolean" } }, additionalProperties: false }, reason: { type: "string" } }, additionalProperties: false } },
@@ -399,6 +406,15 @@ async function main(): Promise<void> {
   }
 
   function conversationState(metadataSessionId: unknown): ConversationState {
+    // A host that declares per-call metadata identity must prove its
+    // conversation on every call, including the very first one. Missing,
+    // empty or non-string metadata is rejected before any state is selected,
+    // so a call can never borrow the startup-recovered credential of another
+    // conversation (for example the main session that redeemed a ticket at
+    // process start).
+    if (cfg.hostMetaKey && (typeof metadataSessionId !== "string" || metadataSessionId.length === 0)) {
+      throw new Error("conversation_metadata_required");
+    }
     if (typeof metadataSessionId !== "string" || !metadataSessionId) {
       if (conversations.size > 0 && !hostIdentity) throw new Error("conversation_identity_required");
       return defaultState;
