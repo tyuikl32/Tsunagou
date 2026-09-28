@@ -3,20 +3,124 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "baseline_digest": {},
-    "changed_paths": {},
-    "commit_refs": {},
-    "patch_artifact_ref": {},
-    "untracked_summary": {},
-    "validation_refs": {}
+    "changed_paths": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "commit_refs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "patch_artifact_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "untracked_summary": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "validation_metadata": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidence_level": {
+            "enum": [
+              "agent_asserted",
+              "host_observed",
+              "system_verified",
+              "user_confirmed"
+            ]
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stderr_digest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "stdout_digest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "tool": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tool_version": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspace_digest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "command",
+          "exit_code",
+          "tool",
+          "tool_version",
+          "workspace_digest"
+        ],
+        "type": "object"
+      },
+      "maxItems": 100,
+      "type": "array"
+    },
+    "validation_refs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "workspace_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
+    "attempt_id",
     "baseline_digest",
     "changed_paths",
     "commit_refs",
-    "patch_artifact_ref",
+    "task_id",
     "untracked_summary",
-    "validation_refs"
+    "validation_refs",
+    "workspace_id"
   ],
   "title": "WorkspaceResultPayload",
   "type": "object"

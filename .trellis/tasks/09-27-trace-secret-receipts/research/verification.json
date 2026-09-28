@@ -1,0 +1,182 @@
+{
+  "task": "PT2",
+  "status": "passed",
+  "started_at": "2026-09-27T17:54:37.673Z",
+  "head": "a3954ae20961583be9171be1f9f441af6177a126",
+  "branch": "codex/persistence-traceability",
+  "working_tree_uncommitted": true,
+  "real_user_project_modified": false,
+  "checks": [
+    {
+      "command": [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "src",
+        "tests",
+        "tools"
+      ],
+      "started_at": "2026-09-27T17:54:37.754Z",
+      "finished_at": "2026-09-27T17:54:37.904Z",
+      "exit_code": 0,
+      "output": "All checks passed!\n",
+      "output_digest": "sha256:82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "mypy",
+        "src"
+      ],
+      "started_at": "2026-09-27T17:54:37.905Z",
+      "finished_at": "2026-09-27T17:54:38.623Z",
+      "exit_code": 0,
+      "output": "Success: no issues found in 59 source files\n",
+      "output_digest": "sha256:960745a059df2e6bf5556b518f6404c7707247bf3da084d48c3008145eb95a5d"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "pytest",
+        "-q",
+        "--disable-warnings"
+      ],
+      "started_at": "2026-09-27T17:54:38.624Z",
+      "finished_at": "2026-09-27T17:55:07.845Z",
+      "exit_code": 0,
+      "output": "........................................................................ [ 27%]\n........................................................................ [ 54%]\n........................................................................ [ 81%]\n................................................                         [100%]\n",
+      "output_digest": "sha256:9870fe3334aac7cc5980d944d86ef6ec8c0b927a18aac43b2bab40ab3b955890"
+    },
+    {
+      "command": [
+        "corepack.cmd",
+        "pnpm",
+        "run",
+        "check"
+      ],
+      "started_at": "2026-09-27T17:55:07.846Z",
+      "finished_at": "2026-09-27T17:55:09.371Z",
+      "exit_code": 0,
+      "output": "Scope: 7 of 8 workspace projects\npackages/protocol-ts check$ tsc -p tsconfig.json\npackages/bridge-server check$ tsc -p tsconfig.json --noEmit\npackages/protocol-ts check: Done\npackages/bridge-sdk check$ tsc -p tsconfig.json --noEmit\npackages/bridge-server check: Done\npackages/bridge-sdk check: Done\npackages/adapter-codex check$ tsc -p tsconfig.json --noEmit\npackages/adapter-opencode check$ tsc -p tsconfig.json --noEmit\npackages/adapter-deepseek check$ tsc -p tsconfig.json --noEmit\npackages/adapter-zcode check$ tsc -p tsconfig.json --noEmit\npackages/adapter-opencode check: Done\npackages/adapter-codex check: Done\npackages/adapter-zcode check: Done\npackages/adapter-deepseek check: Done\n$ corepack pnpm -r run check\n",
+      "output_digest": "sha256:24023e6c855b0ea936f5906f4af7931f109d34018807083ee587ea5d803b6e90"
+    },
+    {
+      "command": [
+        "corepack.cmd",
+        "pnpm",
+        "--filter",
+        "@tsunagou/bridge-server",
+        "run",
+        "test:credentials"
+      ],
+      "started_at": "2026-09-27T17:55:09.372Z",
+      "finished_at": "2026-09-27T17:55:28.886Z",
+      "exit_code": 0,
+      "output": "✔ lost enrollment response and restart reuse exact envelope and original baseline (354.6556ms)\n✔ lost reconnect response reuses original token, nonce, epoch and command (237.1712ms)\n✔ lost rebind response cannot change its ticket proof or target Agent (194.2942ms)\n✔ session save failure leaves pending request and never ACKs (73.9129ms)\n✔ crash after private save finalizes journal without another credential command (172.8516ms)\n✔ lost ACK preserves valid session and startup retries only ACK (203.7347ms)\n✔ late ACK cannot overwrite a newer session credential (197.3287ms)\n✔ consumed, expired and invalid receipts never replace the session (135.0635ms)\n✔ pending journal cannot be adopted by another conversation (80.4234ms)\n✔ cleanup preserves a newly issued ticket instead of deleting it (193.4638ms)\n✔ private files have owner-only ACL/mode and corrupt journals cannot enroll again (168.3759ms)\n✔ Windows ACL failure leaves the old session intact and no secret temporary file (45.7951ms)\n✔ two bridge processes sharing one handoff use one command ID even after ACK (675.5855ms)\n✔ process-owned private lock fails busy and is released when its owner dies (5153.921ms)\n✔ paused old session writer cannot overwrite the next epoch from another process (1720.8683ms)\n✔ Python CLI ticket replacement and Node cleanup share one process-owned lock (5659.2497ms)\nℹ tests 16\nℹ suites 0\nℹ pass 16\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 15416.1288\n{\"status\":\"passed\",\"late_ticket_recovery\":true,\"implicit_session_restart\":false,\"agent_id\":\"late-agent\"}\n{\"status\":\"passed\",\"late_ticket_recovery\":true,\"implicit_session_restart\":true,\"agent_id\":\"late-agent\"}\n$ pnpm run build && node --test scripts/test-credential-handoff.mjs && node scripts/smoke-late-ticket.mjs && node scripts/smoke-late-ticket.mjs --implicit-session\n$ node scripts/copy-protocol.mjs && tsc -p tsconfig.json\n",
+      "output_digest": "sha256:43be00c0fc62973dc0778c4ad24679651707b6bfe8c286d84792f86d93bf0ae2"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "tools/dev/smoke_standalone.py",
+        "--skip-build"
+      ],
+      "started_at": "2026-09-27T17:55:28.887Z",
+      "finished_at": "2026-09-27T17:55:53.998Z",
+      "exit_code": 0,
+      "output": "{\"bridge_sessions\": 2, \"checkpoint_digest\": \"sha256:0e85e71fd69632502e21ac8fb83891f2d52ca6c0f9678797be93a8288197217e\", \"checkpoint_failure_retry\": \"passed\", \"project_id\": \"183c2937-b618-4bf1-9176-45e2c96f09f2\", \"recovery_status\": \"ready\", \"restart_queries\": {\"agents\": true, \"attempts\": true, \"audit\": true, \"cognition\": true, \"contracts\": true, \"decisions\": true, \"jobs\": true, \"messages\": true, \"results\": true, \"tasks\": true, \"workspaces\": true}, \"review_status\": \"completed\", \"stale_execution\": \"rejected\", \"status\": \"passed\", \"task_id\": \"b6b6e6b1-4013-47a8-80d7-bcd4671ea4d7\", \"worker_user_only_commands\": \"rejected\"}\n",
+      "output_digest": "sha256:d50517083e6ddae537b05d174f11a62cd94e0a6331f211e82fa23a787aaddbde"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "tools/codegen/validate_protocol.py"
+      ],
+      "started_at": "2026-09-27T17:55:54.000Z",
+      "finished_at": "2026-09-27T17:55:54.626Z",
+      "exit_code": 0,
+      "output": "validated 111 command policies and 124 schemas\n",
+      "output_digest": "sha256:ce544bc0e590efdc5e83de0da3a0df5eaf7df8b43ddfab2daea5cdbd7c636735"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "tools/dev/check_architecture.py"
+      ],
+      "started_at": "2026-09-27T17:55:54.627Z",
+      "finished_at": "2026-09-27T17:55:54.814Z",
+      "exit_code": 0,
+      "output": "architecture check passed\n",
+      "output_digest": "sha256:2a2462c6729eeb5ecb05a41a9fb9ed10f97b1bdb34772bac68dd984b7907a5d8"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "tools/docs/validate_docs.py"
+      ],
+      "started_at": "2026-09-27T17:55:54.815Z",
+      "finished_at": "2026-09-27T17:55:55.235Z",
+      "exit_code": 0,
+      "output": "PASS: 48 unchanged archived sources; 307 Markdown files; 777 local links; 6 implementation tasks; 1048 context entries; acyclic dependencies; D161-D182 present.\n",
+      "output_digest": "sha256:b4d51f89131a4d64053a55b028c3069305f3eb98e59a5fd86c5b451a47141e71"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "python",
+        ".trellis/scripts/task.py",
+        "validate",
+        ".trellis/tasks/09-27-trace-secret-receipts"
+      ],
+      "started_at": "2026-09-27T17:55:55.236Z",
+      "finished_at": "2026-09-27T17:55:55.587Z",
+      "exit_code": 0,
+      "output": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-27-trace-secret-receipts\n\n  \u001b[0;32mimplement.jsonl: ✓ (3 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (3 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m\n",
+      "output_digest": "sha256:7b888a0e970e844319f09ff3c6e60cf130b625ac1bf2f89e9a4b4c4d29413f31"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "started_at": "2026-09-27T17:55:55.588Z",
+      "finished_at": "2026-09-27T17:55:55.691Z",
+      "exit_code": 0,
+      "output": "warning: in the working copy of 'docs/README.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/implementation/roadmap.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'packages/bridge-server/scripts/smoke-late-ticket.mjs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'packages/bridge-server/src/server.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'packages/protocol-ts/src/index.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'protocol/openapi.json', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/api/a2a.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/api/app.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/api/auth.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/application/handlers.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/bootstrap/container.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/cli/app.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/interfaces/runtime.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/modules/evaluation.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/modules/workspaces.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/platform/checkpoints.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/platform/db/sqlite.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/platform/state.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/tsunagou/protocol_data/openapi.json', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'tests/integration/test_m1_runtime_flow.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/unit/test_checkpoints.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/unit/test_cli.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/unit/test_storage_runtime.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/unit/test_workspaces.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tools/codegen/generate_openapi.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tools/dev/check.ps1', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tools/dev/smoke_standalone.py', LF will be replaced by CRLF the next time Git touches it\n",
+      "output_digest": "sha256:61a8939cb968dab68eef26d0c003d821ab7098493691ffb23e30df3b51d105f0"
+    }
+  ],
+  "updated_at": "2026-09-27T17:55:55.692Z",
+  "finished_at": "2026-09-27T17:55:55.692Z",
+  "source_digests": {
+    "src/tsunagou/platform/delivery.py": "sha256:218d8fe937db0249619de0debc6e959690ebc444830276d626c135629781dd94",
+    "src/tsunagou/platform/private_files.py": "sha256:9bee05db04202c0ac7af14ea7f278a541d37fe7e1349609816b58375389b36d9",
+    "src/tsunagou/platform/credential_migration.py": "sha256:efe6a7009d20a700a21bd03dacdd5170be481fd5292c6caa0539b34f6bb2570f",
+    "src/tsunagou/platform/db/sqlite.py": "sha256:04229e7246ac30c66ae7544c50605b737a73a4f188b53de4732cff96ab2b4b6f",
+    "src/tsunagou/api/auth.py": "sha256:2ef7676ed8b02563de96aaaf04a793ffe878d2880178531e03ea4aae23346882",
+    "src/tsunagou/api/app.py": "sha256:19e51726a7add44a786ad18659921ebe78e22af1a716401216a26b486000e16a",
+    "src/tsunagou/interfaces/runtime.py": "sha256:198a1125b531eb522b9b36aaec76b8b03fba2f74d4e08cc4ae1c28e7078b6206",
+    "src/tsunagou/bootstrap/container.py": "sha256:c8b9df7b0829bd362e4839ddadc33245fe9db5bf36dca412b5547c0eefa75860",
+    "src/tsunagou/cli/app.py": "sha256:23aa147b8b7296ad45efc8a5464238f779f3b7a31b9867e4da84021fbcfca138",
+    "src/tsunagou/modules/workspaces.py": "sha256:3d2552a283b1c0d9aac17623f19d4c5bcf71bf80bc6cd211ad58432d8e69c14b",
+    "packages/bridge-server/src/server.ts": "sha256:4ee9c4123a9681ea91439d944a5c0d6c42bfb3d5e1abf365aeb4710a789cd1c3",
+    "packages/bridge-server/src/credential-handoff.ts": "sha256:f7ce40b576c1273beb55acc8e15408eb4c42a57ddd4599a6f4fce4e20b3af388",
+    "packages/bridge-server/src/private-file.ts": "sha256:47da585f96c27bb773052125dfb8cd268ea97564863d42ea8befb7c57615398a",
+    "packages/bridge-server/src/private-file-lock.ts": "sha256:902a3a32488bdcbfd7776c0fec2f9584629ffcb1f25e7479fd889152c8d1375d",
+    "src/tsunagou/platform/private_file_lock.py": "sha256:e4544b72cb6e5ea1602168981895dcab26543556c8a36b89ee490d92bf0c9b57",
+    "protocol/schemas/queries/credential-delivery.schema.json": "sha256:c95b0f4da867c29268d1baa109d3a565d19d2a032cc03fb40153a160bd22c1d8"
+  }
+}

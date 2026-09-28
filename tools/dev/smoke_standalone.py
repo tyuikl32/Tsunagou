@@ -245,7 +245,9 @@ def main() -> int:
             if not any(item.get("decision_id") == decision["decision_id"] and item.get("status") == "resolved"
                        for item in decision_query.get("items", [])):
                 raise RuntimeError("decision_not_queryable_after_restart")
-            audit_query = http_json(f"{endpoint['url']}/api/v1/projects/{project['project_id']}/audit")
+            audit_query = json_output(
+                cli("project", "history", str(project["project_id"]), "--json"), env=base_env,
+            )
             if not audit_query.get("items"):
                 raise RuntimeError("audit_not_queryable_after_restart")
             if recovery.get("status") != "ready":

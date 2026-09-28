@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"CLI、HTTP、错误、JSON 输出和退出码的入口契约。"}
+{"file":"docs/implementation/persistence-traceability-plan.md","reason":"PT5 第7节规定只读命令、路由、分页、权限和导出。"}

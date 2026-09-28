@@ -46,9 +46,9 @@ outbox软阈值默认10,000条或最老未物化5分钟告警；硬阈值100,000
 
 共享：Project/roots逻辑描述、policy非秘密部分、Task/Result历史、认知/契约、历史Agent作者、领域event、operation结论及显式promote的project_shared artifacts。排除可用credential/ticket/Grant/Lease/job claims、本机绝对路径、私信正文、用户ceiling秘密和未授权附件。
 
-manifest含 `project_id,lineage_id,parent_digest,through_event_seq,shared_format_version,schema_bundle_digest,files[{path,size,digest}],artifact_digests[]`；文件路径必须相对且无逃逸；digest依规范顺序计算，manifest自身digest不参与自身哈希。每领域NDJSON按规范ID排序，事件按seq排序，UTF-8+LF、末尾换行。首次genesis parent=null。
+manifest含 `project_id,lineage_id,parent_digest,through_event_seq,shared_format_version,schema_bundle_digest,files[{path,size,digest}],artifact_digests[],artifact_files[{path,size,digest}]`；文件路径必须相对且无逃逸，附件条目必须与 `artifact_digests` 一一对应并实际存在；digest依规范顺序计算，manifest自身digest不参与自身哈希。每领域NDJSON按规范ID排序，事件按seq排序，UTF-8+LF、末尾换行。首次genesis parent=null。当前 M1 实现的 checkpoint 根目录就是 `.tsunagou/checkpoints`，新目录键为紧凑 `sha256_<digest-prefix>`，并兼容旧完整 digest 目录。
 
-归档、lineage切换、replica激活用 materialization barrier；用户确认完成例外：Project立刻completed，强制completion checkpoint异步。失败仅阻塞依赖该证据的后续动作，不撤销用户结论。
+归档、lineage切换、replica激活用 materialization barrier；用户确认完成例外：Project立刻completed，强制completion checkpoint通过同一SQLite事务保存固定DTO、Operation、Job和outbox，提交后才物化。HTTP返回前可完成一次执行；失败记录到Operation/outbox并由维护循环或用户CLI重试原始冻结快照。失败不撤销用户结论。
 
 ## Git 锚点、clone 与恢复
 
@@ -58,7 +58,7 @@ unanchored项目仍能协作、完成、形成local archive。replica切换/接�
 
 同lineage分叉三方比较以共同祖先checkpoint为基线：只自动合并不同实体的独立改动；同实体冲突由main提出具体选择，身份/ceiling冲突user。sealed lineage不合并；独立fork延后。
 
-回退/清空：封存旧lineage→创建新lineage/genesis→新replica/runtime→重建SQLite→Authority unassigned，所有运行凭据/Grant/Lease/worker claims失效。非终态Task恢复blocked/recovery_review且无current Attempt；终态保留。用户重新接入/任命后main显式restore_open。
+clean Git clone恢复：CLI先输出只读preview（项目/lineage、through seq、task recovery数量、manifest/tree anchor、目标物理身份、权限重置效果），确认精确plan digest后才写空白local state；拒绝已有DB、control/bridge凭据、root binding和非空local目录。导入公共历史时保留原event seq/actor/subject/UTC时间与未知时间null，追加带用户 actor 的 replica.activation 事件；新写入seq大于source watermark。恢复创建新replica/runtime、Authority unassigned、root unbound，所有session/ticket/Grant/Lease/job claim失效；非终态Task恢复blocked/recovery_review且无current Attempt；终态保留。用户重新接入/任命后main显式restore_open。恢复只能在独立clone执行；有本地DB的副本需用独立的lineage reset流程，不能被该命令覆盖。
 
 ## 附件、保留与迁移
 

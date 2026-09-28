@@ -1,0 +1,102 @@
+{
+  "recorded_at": "2026-09-28T06:26:30.649011+00:00",
+  "target_head": "863537ff4f528da88cdf7b2d6c6786c69f1105a8",
+  "files": [
+    {
+      "path": "Backend/HttpBackend.cs",
+      "bytes": 8301,
+      "sha256": "f481d3df32081f71abcf869497b136234f19670d1295364fe8cc2f585a387a25"
+    },
+    {
+      "path": "Backend/RequestAuditMiddleware.cs",
+      "bytes": 2276,
+      "sha256": "3f4c1f166c76e2d760af50dd465e2834830b68efcd3ed64127798e0112c909b1"
+    },
+    {
+      "path": "docs/api-contract/http-v1.md",
+      "bytes": 1108,
+      "sha256": "ea4289e69030e651fe8eb41246026d5ba6508c89a899178df8b27ecfe04f7926"
+    },
+    {
+      "path": "docs/http-acceptance/README.md",
+      "bytes": 391,
+      "sha256": "c29800d9bf2ad49b0c388226a746752646a1ec4e17c71117c397b3219ee23c33"
+    },
+    {
+      "path": "docs/ui-acceptance/README.md",
+      "bytes": 973,
+      "sha256": "0e943e77d059440f7bedaaae522ee04f9f2f3e7ccb2f32e82a28ab29fb245c9a"
+    },
+    {
+      "path": "Program.cs",
+      "bytes": 1988,
+      "sha256": "27605e09ef0af93b2e7dd82096a2a58bd6db3bcbbd25eb4acc23757811cf0c7e"
+    },
+    {
+      "path": "SegaImageManageTool.csproj",
+      "bytes": 333,
+      "sha256": "b92728bfd99b5dae7523b524d16f62e0127b2226debd3901c73835a3c98da642"
+    },
+    {
+      "path": "tests/Http/run.ps1",
+      "bytes": 2103,
+      "sha256": "b2a52d3f57c2f5b7932f4833c685cc6235a59c4f91dfbc8850d25bbea9e9894f"
+    },
+    {
+      "path": "tests/WebUI/api.test.mjs",
+      "bytes": 2253,
+      "sha256": "121eba78a74a0b8da8089d58a252c4318ba8f067df9e53c28d0a39059f832305"
+    },
+    {
+      "path": "tests/WebUI/mock_server.py",
+      "bytes": 2230,
+      "sha256": "ab28a8fcea4d1d72d7ac8bfa84ba66fdc29329125b002b3de9fbfd1317d56916"
+    },
+    {
+      "path": "tests/WebUI/sample.app",
+      "bytes": 33,
+      "sha256": "5a3f9f19c4b0e229de621681fb0d6a249f7c2d64dc8be07f113042026a3ab734"
+    },
+    {
+      "path": "wwwroot/api.js",
+      "bytes": 2816,
+      "sha256": "99d7ae412eded6e9b788e28a8c74aeb81e625e4489c7f9117494a73e8f4d9563"
+    },
+    {
+      "path": "wwwroot/app.js",
+      "bytes": 7631,
+      "sha256": "35c7bd2d2759985d4a34a8ccf3918921f8892c80a5041870c3e88e6ef2ad489d"
+    },
+    {
+      "path": "wwwroot/index.html",
+      "bytes": 5692,
+      "sha256": "9323bb52164872861cfd3ff09739528ef6798a6c775e5d456343e08dd6929868"
+    },
+    {
+      "path": "wwwroot/package.json",
+      "bytes": 42,
+      "sha256": "609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8"
+    },
+    {
+      "path": "wwwroot/styles.css",
+      "bytes": 12712,
+      "sha256": "74a6ef14c04d44c1bfd09d04b9fc2c835e40d014f2cdc2c2ab157a6b68389b60"
+    }
+  ],
+  "health": {
+    "http_status": 200,
+    "body": {
+      "status": "ok",
+      "service": "SegaImageManageTool",
+      "version": "1.0.0.0",
+      "requestId": "cadd8cd857fd4e13ae4022ca1f0137d0"
+    }
+  },
+  "ui": {
+    "http_status": 200,
+    "title_present": true,
+    "sha256": "9323bb52164872861cfd3ff09739528ef6798a6c775e5d456343e08dd6929868"
+  },
+  "git_commit_performed": false,
+  "secrets_included": false
+}

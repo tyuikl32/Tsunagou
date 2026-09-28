@@ -1,0 +1,2 @@
+{"file":"docs/implementation/modules/07-durability.md","reason":"UoW、operation/outbox、checkpoint 和附件的领域边界。"}
+{"file":"docs/implementation/modules/01-projects.md","reason":"项目 scope、lineage、用户决定和恢复权限不能被快照扩大。"}

@@ -147,7 +147,7 @@ class _MaintenanceState:
     def restore(self, snapshot: dict[str, str]) -> None:
         del snapshot
 
-    def persist(self, uow: object, *, actor_ref: str, command_kind: str) -> None:
+    def persist(self, uow: object, *, actor_ref: str, command_kind: str, before: dict | None = None) -> None:
         del actor_ref
         uow.append_event(  # type: ignore[attr-defined]
             lineage_id="local", event_type=command_kind,

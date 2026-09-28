@@ -182,7 +182,7 @@ Schema生成DTO是wire边界类型；domain可有自己的值对象，转换必�
 D:\Work\ControlRepo\.tsunagou/
 ├── project.toml
 ├── shared/
-│   ├── checkpoints/<digest>/      # manifest+各模块NDJSON
+│   ├── checkpoints/sha256_<prefix>/ # manifest+各模块NDJSON；M1 使用紧凑键
 │   └── artifacts/                # 经过显式promote的共享blob
 └── local/                        # 整个目录Git忽略
     ├── config.toml               # 本机绝对路径bindings

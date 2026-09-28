@@ -1,0 +1,2 @@
+{"file":"docs/standalone/debugging-runbook.md","reason":"沿用独立运行、Windows、daemon 和真实 CLI 的可执行检查方式。"}
+{"file":"docs/implementation/release-gates.md","reason":"发布门禁必须区分规划、局部通过和整体关闭。"}

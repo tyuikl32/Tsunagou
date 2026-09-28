@@ -7,16 +7,35 @@
       "minLength": 1,
       "type": "string"
     },
+    "baseline": {},
     "decision_id": {
       "minLength": 1,
       "type": "string"
     },
-    "input_digest": {}
+    "external_locator": {},
+    "input_digest": {},
+    "repository_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "root_binding_refs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
     "attempt_id",
+    "baseline",
     "decision_id",
-    "input_digest"
+    "input_digest",
+    "root_binding_refs",
+    "task_id"
   ],
   "title": "WorkspacePreparePayload",
   "type": "object"

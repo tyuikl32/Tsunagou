@@ -1,0 +1,2 @@
+{"file":"docs/implementation/protocol.md","reason":"HTTP/CLI 公共时间、revision、错误和 DTO 必须同步。"}
+{"file":"docs/implementation/command-catalog.md","reason":"命令身份、幂等和权限边界不能由适配器改写。"}

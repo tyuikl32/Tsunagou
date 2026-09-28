@@ -20,6 +20,12 @@ from tsunagou.shared_kernel.ids import new_id
 
 
 def _atomic_json(path: Path, value: Any) -> None:
+    if path.is_file():
+        try:
+            if json.loads(path.read_text(encoding="utf-8")) == value:
+                return
+        except (ValueError, UnicodeError):
+            pass  # A disposable projection is rebuilt from authoritative state.
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -107,14 +113,22 @@ class Project:
 class ProjectRegistry:
     """Small persistent project registry backed by the coordination repository."""
 
-    def __init__(self, coordination_repository: str | Path) -> None:
+    def __init__(self, coordination_repository: str | Path, *, load_files: bool = True) -> None:
         self.repository = _resolved(Path(coordination_repository))
         self.state_dir = self.repository / ".tsunagou"
         self.shared_path = self.state_dir / "project.json"
         self.local_path = self.state_dir / "local" / "bindings.json"
         self.project: Project | None = None
         self.local_bindings: dict[str, dict[str, Any]] = {}
-        self._load()
+        self.managed_by_database = False
+        if load_files:
+            self._load()
+
+    def restore_local_state(self, project: dict[str, Any], bindings: dict[str, dict[str, Any]]) -> None:
+        raw = dict(project)
+        config = raw.pop("config", None)
+        self.project = Project(**raw, config=ConfigProvenance(**config) if config else None)
+        self.local_bindings = bindings
 
     @classmethod
     def initialize(
@@ -146,15 +160,25 @@ class ProjectRegistry:
     def _load(self) -> None:
         if self.shared_path.is_file():
             raw = json.loads(self.shared_path.read_text(encoding="utf-8"))
+            # New shared DTOs carry stable project identity only. These local
+            # runtime identifiers never inherit authority from a clone.
+            raw.setdefault("current_replica_id", new_id())
+            raw.setdefault("runtime_epoch", new_id())
             config = raw.pop("config", None)
             self.project = Project(**raw, config=ConfigProvenance(**config) if config else None)
         if self.local_path.is_file():
             self.local_bindings = json.loads(self.local_path.read_text(encoding="utf-8"))
 
     def _save(self) -> None:
+        if self.managed_by_database:
+            return
+        self.materialize_projection()
+
+    def materialize_projection(self) -> None:
+        """Called at bootstrap or after the owning SQLite transaction commits."""
         if self.project is None:
             raise RuntimeError("project_not_initialized")
-        raw = asdict(self.project)
+        raw = self.shared_export()
         _atomic_json(self.shared_path, raw)
         _atomic_json(self.local_path, self.local_bindings)
 
@@ -207,7 +231,7 @@ class ProjectRegistry:
         project = self._require_project()
         if root_id not in project.roots:
             raise KeyError(root_id)
-        if any(item["git_common_dir_identity"] == git_common_dir_identity for item in project.repositories.values()):
+        if any(item.get("git_common_dir_identity") == git_common_dir_identity for item in project.repositories.values()):
             raise ValueError("duplicate_repository_identity")
         repository_id = new_id()
         project.repositories[repository_id] = {
@@ -269,9 +293,16 @@ class ProjectRegistry:
     def shared_export(self) -> dict[str, Any]:
         project = self._require_project()
         raw = asdict(project)
-        raw.pop("config", None)
-        raw["roots"] = {key: {k: v for k, v in value.items() if k != "absolute_path"} for key, value in project.roots.items()}
-        raw["local_binding_ids"] = sorted(self.local_bindings)
+        raw = {key: raw[key] for key in (
+            "project_id", "name", "objective", "lifecycle", "coordination_repository_id",
+            "current_lineage_id", "policy_revision", "settings", "config",
+        )}
+        raw["roots"] = {key: {k: value[k] for k in (
+            "root_id", "name", "root_kind", "required", "descriptor_digest",
+        ) if k in value} for key, value in project.roots.items()}
+        raw["repositories"] = {key: {k: value[k] for k in (
+            "repository_id", "name", "root_id", "required",
+        ) if k in value} for key, value in project.repositories.items()}
         return raw
 
     def diagnose(self) -> dict[str, Any]:

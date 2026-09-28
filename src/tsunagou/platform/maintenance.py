@@ -22,8 +22,9 @@ class RuntimeMaintenance:
     def __init__(
         self, *, database: Any, state_runtime: Any, resources: Any,
         tasks: Any, authority: Any, coordination: Any | None = None,
-        interval_seconds: float = 1.0,
+        interval_seconds: float = 1.0, checkpoint_worker: Any | None = None,
     ) -> None:
+        self.checkpoint_worker = checkpoint_worker
         self.database = database
         self.state_runtime = state_runtime
         self.resources = resources
@@ -39,6 +40,7 @@ class RuntimeMaintenance:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._run_lock = threading.Lock()
+        self.last_projection_error: str | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -54,7 +56,8 @@ class RuntimeMaintenance:
         thread = self._thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=max(1.0, self.interval_seconds * 2))
-        self._thread = None
+        if thread is None or not thread.is_alive():
+            self._thread = None
 
     def run_once(self) -> int:
         """Reconcile due leases/wake deadlines and return work processed.
@@ -65,6 +68,23 @@ class RuntimeMaintenance:
         """
         if not self._run_lock.acquire(blocking=False):
             return 0
+        try:
+            checkpoints = 0
+            if self.checkpoint_worker is not None:
+                checkpoints = self.checkpoint_worker.run_once()
+                try:
+                    self.checkpoint_worker.reconcile_project_projection()
+                    self.last_projection_error = None
+                except (OSError, ValueError):
+                    # A disposable JSON projection must not stop independent
+                    # runtime lease fencing when a filesystem is unavailable.
+                    self.last_projection_error = "project_projection_materialization_failed"
+            with self.database.lock:
+                return checkpoints + self._reconcile_locked()
+        finally:
+            self._run_lock.release()
+
+    def _reconcile_locked(self) -> int:
         snapshot = self.state_runtime.capture()
         try:
             # Job leases are durable rows, so recovery must run even when no
@@ -110,7 +130,7 @@ class RuntimeMaintenance:
                 if not expired and not expired_wakes and not assignment_reconciled:
                     return expired_jobs
                 self.state_runtime.persist(
-                    uow, actor_ref="runtime", command_kind="resource.lease.expired",
+                    uow, actor_ref="runtime", command_kind="resource.lease.expired", before=snapshot,
                 )
                 # A newly-expired Lease already accounts for this pass.  Add
                 # the reconciliation count only when it was the sole work,
@@ -124,8 +144,6 @@ class RuntimeMaintenance:
             # Rebuild from the snapshot that the dispatcher also uses for rollback.
             self.state_runtime.restore(snapshot)
             raise
-        finally:
-            self._run_lock.release()
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval_seconds):

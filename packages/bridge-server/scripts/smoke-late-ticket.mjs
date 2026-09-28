@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -9,6 +11,7 @@ const root = await mkdtemp(join(tmpdir(), "tsunagou-late-ticket-"));
 const stateDir = join(root, "bridge-state");
 const ticketFile = join(root, "ticket.json");
 const sessionFile = join(root, "session.json");
+const implicitSession = process.argv.includes("--implicit-session");
 await mkdir(stateDir, { recursive: true });
 
 const credential = {
@@ -25,6 +28,10 @@ const http = createServer(async (request, response) => {
   response.setHeader("content-type", "application/json");
   if (request.url === "/api/v1/commands/agent.enroll") {
     response.end(JSON.stringify({ result: credential }));
+    return;
+  }
+  if (request.url === "/api/v1/commands/session.reconnect") {
+    response.end(JSON.stringify({ result: { ...credential, connection_epoch: 2 } }));
     return;
   }
   if (request.url === "/api/v1/commands/context.project_read") {
@@ -44,8 +51,8 @@ const http = createServer(async (request, response) => {
 });
 await new Promise((resolveReady) => http.listen(0, "127.0.0.1", resolveReady));
 const port = http.address().port;
-const bridge = resolve("packages/bridge-server/dist/server.js");
-const transport = new StdioClientTransport({
+const bridge = fileURLToPath(new URL("../dist/server.js", import.meta.url));
+function newTransport() { return new StdioClientTransport({
   command: process.execPath,
   args: [bridge],
   env: {
@@ -53,15 +60,16 @@ const transport = new StdioClientTransport({
     TSUNAGOU_HTTP_URL: `http://127.0.0.1:${port}`,
     TSUNAGOU_DAEMON_STATE_DIR: join(root, "missing-daemon-state"),
     TSUNAGOU_TICKET_FILE: ticketFile,
-    TSUNAGOU_SESSION_FILE: sessionFile,
+    TSUNAGOU_SESSION_FILE: implicitSession ? "" : sessionFile,
     TSUNAGOU_PROJECT_ROOT: root,
     TSUNAGOU_STATE_DIR: stateDir,
     TSUNAGOU_HOST_ID_ENV: "TSUNAGOU_TEST_HOST_ID",
     TSUNAGOU_TEST_HOST_ID: "late-host",
   },
   stderr: "pipe",
-});
-const client = new Client({ name: "late-ticket-smoke", version: "0.1.0" }, { capabilities: {} });
+}); }
+let transport = newTransport();
+let client = new Client({ name: "late-ticket-smoke", version: "0.1.0" }, { capabilities: {} });
 try {
   await client.connect(transport);
   await writeFile(ticketFile, JSON.stringify({
@@ -74,7 +82,21 @@ try {
   const text = result.content?.find((item) => item.type === "text")?.text;
   const value = JSON.parse(text);
   if (value.agent_id !== credential.agent_id) throw new Error("late_identity_missing");
-  process.stdout.write(JSON.stringify({ status: "passed", late_ticket_recovery: true, agent_id: value.agent_id }) + "\n");
+  if (implicitSession) {
+    const digest = createHash("sha256").update("TSUNAGOU_TEST_HOST_ID:late-host").digest("hex");
+    const { readFile } = await import("node:fs/promises");
+    const savedPath = join(stateDir, "sessions", `bridge-session-${digest.slice(0, 32)}.json`);
+    const before = JSON.parse(await readFile(savedPath, "utf8"));
+    await client.close();
+    transport = newTransport();
+    client = new Client({ name: "late-ticket-restart-smoke", version: "0.1.0" }, { capabilities: {} });
+    await client.connect(transport);
+    const restarted = await client.callTool({ name: "context__project_read", arguments: {} });
+    if (restarted.isError) throw new Error(restarted.content?.[0]?.text ?? "implicit_session_restart_failed");
+    const after = JSON.parse(await readFile(savedPath, "utf8"));
+    if (after.agent_id !== before.agent_id || after.connection_epoch !== 2) throw new Error("implicit_session_identity_changed");
+  }
+  process.stdout.write(JSON.stringify({ status: "passed", late_ticket_recovery: true, implicit_session_restart: implicitSession, agent_id: value.agent_id }) + "\n");
 } finally {
   await client.close().catch(() => {});
   await http.close();

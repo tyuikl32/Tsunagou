@@ -1,0 +1,2 @@
+{"file":"docs/implementation/modules/06-workspaces.md","reason":"不改变用户选择的根目录、隔离级别和主 Agent Git 边界。"}
+{"file":"docs/implementation/modules/07-durability.md","reason":"ArtifactRef、事件和事务引用必须与 durability 口径一致。"}

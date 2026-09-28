@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tsunagou.platform.checkpoints import CheckpointStore, backup_sqlite, merge_lineage
+from tsunagou.platform.checkpoints import CheckpointStore, GitAnchorScanner, backup_sqlite, merge_lineage
 
 
 def test_checkpoint_is_deterministic_filtered_and_verifiable(tmp_path: Path) -> None:
@@ -40,3 +40,42 @@ def test_lineage_conflict_and_backup(tmp_path: Path) -> None:
         conn.execute("insert into t values (1)")
     backup = backup_sqlite(database, tmp_path / "backups")
     assert backup.exists()
+
+
+def test_git_anchor_requires_manifest_content_on_local_ref(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    import subprocess
+    subprocess.run(["git", "init", "--quiet", str(repository)], check=True)
+    store = CheckpointStore(repository / "shared")
+    manifest = store.materialize(lineage_id="lineage", through_event_seq=1,
+                                 schema_bundle_digest="sha256:s", domains={"tasks": [{"id": "task"}]})
+    digest = manifest.digest
+    manifest_path = (store._directory(digest) / "manifest.json").relative_to(repository).as_posix()
+    subprocess.run(["git", "-c", "core.autocrlf=false", "add", "shared"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "checkpoint"], cwd=repository, check=True)
+    anchors = GitAnchorScanner().scan(
+        repository, {digest}, {digest: manifest_path},
+    )
+    assert anchors and anchors[0].checkpoint_digest == digest
+    # A digest that merely happens to be a substring of the commit id is never
+    # accepted without readable manifest content.
+    assert GitAnchorScanner().scan(repository, {"sha256:" + anchors[0].commit_oid[:8]})[0].checkpoint_digest is None
+    subprocess.run(["git", "tag", "-a", "checkpoint", "-m", "verified"], cwd=repository, check=True)
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/hidden", "HEAD"], cwd=repository, check=True)
+    anchors = GitAnchorScanner().scan(repository, {digest}, {digest: manifest_path})
+    assert {a.ref_name for a in anchors} == {"refs/heads/master", "refs/tags/checkpoint"}
+    assert all(a.checkpoint_digest == digest for a in anchors)
+    assert len({a.commit_oid for a in anchors}) == 1
+    # Matching manifest text is insufficient when its referenced tree differs.
+    (store._directory(digest) / "tasks.ndjson").write_text("tampered\n", encoding="utf-8")
+    subprocess.run(["git", "-c", "core.autocrlf=false", "add", "shared"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "corrupt"], cwd=repository, check=True)
+    anchors = GitAnchorScanner().scan(repository, {digest}, {digest: manifest_path})
+    branch = next(a for a in anchors if a.ref_name.startswith("refs/heads/"))
+    # A corrupt tip does not erase an earlier valid copy still reachable from
+    # the branch. The anchor must name the verified ancestor, not the bad tip.
+    assert branch.checkpoint_digest == digest
+    corrupt_tip = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
+    assert branch.commit_oid != corrupt_tip
+    assert next(a for a in anchors if a.ref_name.startswith("refs/tags/")).checkpoint_digest == digest

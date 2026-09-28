@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/standalone-runtime.md","reason":"runtime fence、重启恢复、目录和跨平台运行时约定。"}
+{"file":"docs/implementation/persistence-traceability-plan.md","reason":"PT4 第6节规定真相分层、checkpoint、Git anchor 和 clone restore。"}

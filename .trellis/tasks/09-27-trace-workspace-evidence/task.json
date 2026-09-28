@@ -1,0 +1,31 @@
+{
+  "id": "trace-workspace-evidence",
+  "name": "trace-workspace-evidence",
+  "title": "PT3 工作区差异与验证证据",
+  "description": "阻止附件递归和范围外采集，记录内容基线、来源、时间与可验证测试结果。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-27",
+  "completedAt": "2026-09-27T19:44:32.466Z",
+  "branch": "codex/persistence-traceability",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-27-persistence-traceability",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "persistence-traceability",
+    "depends_on": [
+      "trace-audit-time"
+    ]
+  }
+}

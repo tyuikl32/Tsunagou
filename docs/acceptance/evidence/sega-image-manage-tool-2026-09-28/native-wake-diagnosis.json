@@ -1,0 +1,89 @@
+{
+  "recorded_at": "2026-09-28T06:18:23.516871+00:00",
+  "original_run": {
+    "host_wake": "disabled",
+    "host_bindings_configured": false
+  },
+  "configured_run": {
+    "daemon_pid": 70156,
+    "host_wake": "managed",
+    "listener_pid": 87044,
+    "codex_version": "0.158.0-alpha.2.1",
+    "provider": "desktop_attach",
+    "selected_threads": 2
+  },
+  "listener_initial_error": "socket directory is not private to the current user",
+  "listener_correction": "new dedicated directory with current-user-only ACL; existing directory permissions unchanged",
+  "resume_error": {
+    "method": "thread/resume",
+    "code": -32600,
+    "reason": "already has an active writer"
+  },
+  "attempt": {
+    "attempt": {
+      "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6",
+      "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+      "state": "failed",
+      "thread_id_digest": null,
+      "turn_id_digest": null,
+      "evidence": [
+        {
+          "kind": "agent_presented",
+          "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6",
+          "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+          "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+          "status": "observed",
+          "evidence_digest": "sha256:7fc8f3bd14e04db25e67f756fc6201c45c084c8c305ffc0419608ec8dc0d8a34",
+          "details": {
+            "evidence_kind": "mcp"
+          }
+        }
+      ],
+      "error_code": "desktop_thread_unavailable",
+      "error_message": "the attached Desktop thread cannot be resumed",
+      "updated_at": "2026-09-28T06:14:00.992692+00:00",
+      "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096"
+    }
+  },
+  "diagnostics": {
+    "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+    "items": [
+      {
+        "diagnostic_id": "diagnostic:daa17c93-afc9-4993-bbda-e6b50bbcec93",
+        "kind": "wake_requested",
+        "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+        "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+        "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+        "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6",
+        "evidence_digest": null,
+        "observed_at": "2026-09-28T06:14:00.890Z",
+        "details": {
+          "connection_epoch": null
+        }
+      },
+      {
+        "diagnostic_id": "diagnostic:bc539ab4-8424-4554-8472-2df932d666b9",
+        "kind": "agent_presented",
+        "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+        "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+        "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+        "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6",
+        "evidence_digest": "sha256:7fc8f3bd14e04db25e67f756fc6201c45c084c8c305ffc0419608ec8dc0d8a34",
+        "observed_at": "2026-09-28T06:17:18.258Z",
+        "details": {
+          "evidence_kind": "mcp"
+        }
+      }
+    ]
+  },
+  "delivery": {
+    "status": "acked",
+    "presented_at": 1790576238.245991,
+    "acked_at": 1790576238.282839,
+    "attempts": 0
+  },
+  "presentation_qualifier": "fallback Codex app follow-up, not native wake",
+  "official_reference": "https://learn.chatgpt.com/docs/app-server",
+  "secrets_included": false
+}

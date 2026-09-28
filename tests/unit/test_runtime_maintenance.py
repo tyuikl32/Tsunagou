@@ -21,7 +21,7 @@ class FakeState:
     def restore(self, snapshot: dict[str, str]) -> None:
         self.restored = snapshot == {"marker": "before"}
 
-    def persist(self, uow: object, *, actor_ref: str, command_kind: str) -> None:
+    def persist(self, uow: object, *, actor_ref: str, command_kind: str, before: dict | None = None) -> None:
         del actor_ref
         self.persisted += 1
         uow.append_event(  # type: ignore[attr-defined]

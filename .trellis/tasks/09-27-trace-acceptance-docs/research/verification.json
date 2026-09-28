@@ -1,0 +1,50 @@
+{
+  "task": "PT7",
+  "verified_at": "2026-09-28T02:39:54Z",
+  "branch": "codex/persistence-traceability",
+  "scope": "repository and disposable standalone audit projects only",
+  "reports": {
+    "runtime_audit": "docs/standalone/persistence-traceability-2026-09-28.json",
+    "acceptance": "docs/standalone/persistence-traceability-acceptance-2026-09-28.json"
+  },
+  "runtime_audit": {
+    "passed_checks": 24,
+    "failed_checks": 0,
+    "a2a_passed": 8,
+    "a2a_failed": 0,
+    "real_project_touched": false
+  },
+  "acceptance_gates": [
+    {"command": "tools/codegen/generate_openapi.py", "exit_code": 0},
+    {"command": "tools/codegen/generate_audit.py", "exit_code": 0},
+    {"command": "tools/codegen/validate_protocol.py", "exit_code": 0},
+    {"command": "tools/dev/check_architecture.py", "exit_code": 0},
+    {"command": "ruff check src tests tools", "exit_code": 0},
+    {"command": "mypy src", "exit_code": 0},
+    {"command": "pytest -q --disable-warnings", "exit_code": 0},
+    {"command": "tools/docs/validate_docs.py", "exit_code": 0},
+    {"command": "corepack.cmd pnpm -r --if-present run build", "exit_code": 0},
+    {"command": "corepack.cmd pnpm check", "exit_code": 0}
+  ],
+  "safety_flags": {
+    "real_project_touched": false,
+    "credential_migration_or_restore_confirmed": false,
+    "secrets_recorded": false,
+    "automatic_git_commit_or_push": false
+  },
+  "acceptance": {
+    "two_agent_coordination_and_boundaries": true,
+    "fault_and_restart_recovery": true,
+    "a2a_delivery_idempotency_and_authority": true,
+    "secret_free_receipts_and_diagnostics": true,
+    "workspace_and_git_checkpoint_verification": true,
+    "time_permission_and_visibility_queries": true,
+    "timestamped_command_exit_evidence": true
+  },
+  "known_catalog_gap": {
+    "declared_commands": 111,
+    "registered_handlers": 67,
+    "missing_handlers_are_future_scope": true,
+    "does_not_block_pt1_pt7_query_and_trace_acceptance": true
+  }
+}

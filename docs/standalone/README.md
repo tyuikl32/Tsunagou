@@ -20,6 +20,7 @@
 12. [提交窗口故障证据](commit-window-2026-09-21.json)：确定性注入覆盖提交后响应丢失的幂等重放。
 13. [真实 daemon 提交窗口证据](commit-window-process-2026-09-21.json)：真实子进程在提交前/提交后退出，重启后按 command_id 重放。
 14. [M1 / R1–R6 Trellis 路线图](../implementation/roadmap.md)：当前唯一活动任务组；R1/R2/R3/R4/R5/R6 均已有部分代码证据，尚以全量 M1 门禁为关闭条件。
+15. [PT1–PT7 持久化溯源整体验收执行单](persistence-traceability-runbook.md)：只使用源码树和临时项目，运行审计、代码生成、协议/架构/类型/测试、文档和 Node 门禁，并保存带时间戳的验收报告。
 
 审计可重复执行：
 

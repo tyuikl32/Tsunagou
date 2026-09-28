@@ -6,6 +6,7 @@ import pytest
 
 from tsunagou.platform.db.sqlite import ProjectDatabase
 from tsunagou.shared_kernel.errors import IdempotencyConflict, RevisionConflict
+from tsunagou.shared_kernel.time import format_timestamp, parse_timestamp
 
 
 def test_transaction_event_outbox_and_idempotency(tmp_path: Path) -> None:
@@ -141,3 +142,99 @@ def test_runtime_epoch_rotation_rejects_stale_worker(tmp_path: Path) -> None:
     with pytest.raises(RevisionConflict):
         with db.transaction("stale") as uow:
             uow.assert_runtime_epoch(old_epoch)
+
+
+def test_audit_event_envelope_is_timestamped_filterable_and_cursor_stable(tmp_path: Path) -> None:
+    db = ProjectDatabase(tmp_path / "state.sqlite3", project_id="p1")
+
+    for number, actor in enumerate(("agent/1", "agent/2", "agent/1"), start=1):
+        def handler(uow, actor=actor, number=number):
+            uow.append_event(
+                lineage_id="lineage-1", event_type="thing.updated",
+                aggregate_ref="thing/1", actor_ref=actor,
+                subject_ref="task/1", revision_before=number - 1,
+                revision_after=number, evidence_refs=("evidence/1",),
+                payload={"number": number},
+            )
+            return {"number": number}
+
+        db.dispatch(
+            principal_id=actor, command_kind="thing.update", command_id=f"cmd-{number}",
+            payload={"number": number},
+            handler=handler,
+        )
+
+    page = db.list_events(limit=2)
+    assert [item["event_seq"] for item in page] == [1, 2]
+    assert page[0]["recorded_at"] >= page[0]["occurred_at"]
+    assert page[0]["subject_ref"] == "task/1"
+    assert page[0]["caused_by_command_id"] == "cmd-1"
+    assert page[0]["evidence_refs"] == ["evidence/1"]
+    assert format_timestamp(page[0]["occurred_at"]).endswith("Z")
+
+    filtered = db.list_events(limit=10, cursor=1, actor_ref="agent/1", subject_ref="task/1")
+    assert [item["event_seq"] for item in filtered] == [3]
+    assert parse_timestamp(format_timestamp(page[0]["occurred_at"])) == page[0]["occurred_at"]
+
+
+def test_public_timestamp_parser_rejects_naive_values() -> None:
+    with pytest.raises(ValueError, match="timestamp_timezone_required"):
+        parse_timestamp("2026-09-28T00:00:00")
+
+
+def test_sensitive_command_result_is_private_and_replayed(tmp_path: Path) -> None:
+    db = ProjectDatabase(tmp_path / "state.sqlite3", project_id="p1")
+    result = {"agent_id": "agent/1", "secret_token": "secret-sentinel", "reconnect_nonce": "nonce-sentinel"}
+
+    first = db.dispatch(
+        principal_id="agent/1", command_kind="session.reconnect", command_id="cmd-secret",
+        payload={"n": 1}, handler=lambda _uow: result,
+    )
+    replay = db.dispatch(
+        principal_id="agent/1", command_kind="session.reconnect", command_id="cmd-secret",
+        payload={"n": 1}, handler=lambda _uow: {"unexpected": True},
+    )
+    assert {key: first.result[key] for key in result} == result
+    assert replay.result == first.result
+    assert first.result["delivery_status"] == "delivered"
+    with db._connect() as conn:
+        raw = str(conn.execute("SELECT result_json FROM commands").fetchone()[0])
+        assert "secret-sentinel" not in raw
+        assert "nonce-sentinel" not in raw
+        assert "delivery:" in raw
+    delivery_files = list((tmp_path / "state.sqlite3.deliveries").glob("*.bin"))
+    assert len(delivery_files) == 1
+    if __import__("os").name == "nt":
+        assert b"secret-sentinel" not in delivery_files[0].read_bytes()
+
+
+def test_legacy_sensitive_rows_require_revocation_not_live_secret_replay(tmp_path: Path) -> None:
+    db = ProjectDatabase(tmp_path / "state.sqlite3", project_id="p1")
+    with db._connect() as conn:
+        conn.execute(
+            """INSERT INTO commands(project_id,principal_id,command_kind,command_id,input_hash,
+               result_json,event_seq,created_at) VALUES(?,?,?,?,?,?,?,?)""",
+            ("p1", "agent/1", "session.reconnect", "legacy", "hash",
+             'x', None, 1),
+        )
+    from tsunagou.shared_kernel.digests import canonical_digest
+    with db._connect() as conn:
+        conn.execute(
+            "UPDATE commands SET input_hash=? WHERE command_id='legacy'",
+            (canonical_digest({"project_id": "p1", "principal_id": "agent/1",
+                               "command_kind": "session.reconnect", "payload": {},
+                               "expected_revision": None}),),
+        )
+        conn.execute(
+            "UPDATE commands SET result_json=? WHERE command_id='legacy'",
+            ('{"secret_token":"legacy-secret","agent_id":"agent/1"}',),
+        )
+    assert db.sensitive_command_rows()[0]["command_id"] == "legacy"
+    with pytest.raises(RuntimeError, match="credential_revocation_migration_required"):
+        db.scrub_sensitive_command_rows()
+    with pytest.raises(RuntimeError, match="legacy_credential_migration_required"):
+        db.dispatch(
+            principal_id="agent/1", command_kind="session.reconnect", command_id="legacy",
+            payload={}, handler=lambda _uow: {"unexpected": True},
+        )
+    assert list((tmp_path / "state.sqlite3.deliveries").glob("*.bin")) == []

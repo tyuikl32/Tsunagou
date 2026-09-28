@@ -1,0 +1,397 @@
+{
+  "record_kind": "tsunagou.acceptance.unexpected-deviations.v1",
+  "recorded_at": "2026-09-28T03:07:42.057Z",
+  "timezone": "Asia/Shanghai",
+  "project_root": "D:\\ALL.Net\\SegaImageManageTool",
+  "source_root": "D:\\Tsunagou",
+  "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+  "source_ref": "working-tree",
+  "source_commit_after_correction": "616bd83e272f6be3c9aec0b6176c6d71a13a4aff",
+  "secrets_included": false,
+  "entries": [
+    {
+      "id": "installer_reused_existing_checkout",
+      "status": "resolved_with_manual_correction",
+      "observed_at": "2026-09-28T02:58:00Z",
+      "impact": "project context initially referenced a different Tsunagou checkout and could drift semantically",
+      "evidence": "installer reused C:\\Users\\Tyuikl\\Tsunagou; initial context referenced e0ada9942...",
+      "resolution": "explicit project bootstrap from D:\\Tsunagou with source-ref working-tree",
+      "follow_up": "make installer report and accept an explicit source root"
+    },
+    {
+      "id": "daemon_pty_lifetime",
+      "status": "mitigated_for_acceptance",
+      "observed_at": "2026-09-28T02:59:00Z",
+      "impact": "PTY start returned success while the daemon soon exited",
+      "evidence": "uvicorn startup/health log followed by stopped status and connection refused",
+      "resolution": "non-PTY start; stable pid 76936 at http://127.0.0.1:56876; doctor ok",
+      "follow_up": "add post-start liveness verification and fail on immediate exit"
+    },
+    {
+      "id": "daemon_root_resolution",
+      "status": "open",
+      "observed_at": "2026-09-28T03:00:00Z",
+      "impact": "status/doctor once inspected D:\\Tsunagou state instead of the target project",
+      "evidence": "implicit-root call returned daemon_unreachable; explicit target root succeeded",
+      "resolution": "all acceptance commands use explicit --coordination-root",
+      "follow_up": "make multi-project root selection explicit and self-reporting"
+    },
+    {
+      "id": "uv_environment_mismatch_warning",
+      "status": "open_low_risk",
+      "observed_at": "2026-09-28T02:58:00Z",
+      "impact": "active VIRTUAL_ENV was ignored, which can confuse reproduction",
+      "evidence": "VIRTUAL_ENV=D:\\Tsunagou\\.venv does not match project environment path .venv",
+      "resolution": "accepted uv project environment and recorded warning",
+      "follow_up": "report actual environment path in structured install output"
+    },
+    {
+      "id": "credential_lock_excluded_port",
+      "status": "fixed_and_regression_tested",
+      "observed_at": "2026-09-28T03:01:00Z",
+      "impact": "codex-webui connect failed twice with WinError 10013",
+      "evidence": "ticket hash selected port 56618 in excluded range 56570-56669; credential_private_lock_busy",
+      "resolution": "deterministic Python/TypeScript port rollover for EACCES/10013; same profile retry succeeded",
+      "follow_up": "make retry/pending cleanup explicit in connect result"
+    },
+    {
+      "id": "pending_ticket_after_lock_failure",
+      "status": "mitigated_but_trace_pending",
+      "observed_at": "2026-09-28T03:02:00Z",
+      "impact": "failed connect left pending ticket/host identity state",
+      "evidence": "same codex-webui profile required retry after lock fix",
+      "resolution": "retried same profile; no evidence of a second business Agent",
+      "follow_up": "persist failed attempt and make recovery state visible"
+    },
+    {
+      "id": "stale_mcp_bridge",
+      "status": "open",
+      "observed_at": "2026-09-28T03:04:00Z",
+      "impact": "current conversation could not use newly issued tickets",
+      "evidence": "credential_transport_failed:retry_pending_request and not_enrolled:no_ticket_or_session_file",
+      "resolution": "created fresh main/webui/http Codex threads for isolated bridge loading",
+      "follow_up": "verify context read and distinguish ticket, bridge-loaded, and ready states"
+    },
+    {
+      "id": "unsupported_agent_list_command",
+      "status": "open",
+      "observed_at": "2026-09-28T03:05:00Z",
+      "impact": "expected read-only identity query is unavailable",
+      "evidence": "agent list --help returned No such command 'list'",
+      "resolution": "use project history and profile-specific context as temporary evidence",
+      "follow_up": "add or document a supported identity query"
+    },
+    {
+      "id": "thread_creation_without_readiness",
+      "status": "open",
+      "observed_at": "2026-09-28T03:07:00Z",
+      "impact": "three threads exist but no A2A/task evidence yet",
+      "evidence": "main 01a0e5fa-cb14-7162-b5d0-ce5216190c7d; webui 01a0e5fa-d186-7430-8fb1-0707ed8b3e49; http 01a0e5fa-daa6-7891-8bb8-9cd58d8b23fb",
+      "resolution": "none; awaiting independent context reads",
+      "follow_up": "capture identities, A2A send/receive/wake, attempts and persisted evidence"
+    },
+    {
+      "id": "target_baseline_nullable_warnings",
+      "status": "baseline_nonblocking",
+      "observed_at": "2026-09-28T02:56:00Z",
+      "impact": "zero-warning acceptance is not a valid baseline",
+      "evidence": "dotnet build succeeded with 67 existing nullable warnings",
+      "resolution": "preserve baseline and compare new warnings",
+      "follow_up": "report delta after worker implementation"
+    },
+    {
+      "id": "otel_blame_evidence_missing",
+      "status": "open_design_gap",
+      "observed_at": "2026-09-28T03:07:42.057Z",
+      "impact": "actor/evidence history cannot substitute for required trace/causation blame evidence",
+      "evidence": "no real HTTP/A2A/CLI/UoW/task/resource/cognition/workspace/checkpoint/wake OTel evidence captured yet",
+      "resolution": "otel_blame gate remains pending",
+      "follow_up": "collect local opt-in spans and redacted blame view or report the gap explicitly"
+    },
+    {
+      "id": "cli_source_module_missing",
+      "status": "open",
+      "observed_at": "2026-09-28T03:10:00Z",
+      "impact": "project-directory CLI persistence query cannot start",
+      "evidence": "uv run python -m tsunagou in D:\\ALL.Net\\SegaImageManageTool returned No module named tsunagou",
+      "resolution": "none; main avoided modifying target",
+      "follow_up": "provide a source-root-independent project CLI wrapper",
+      "followup_at": "2026-09-28T05:58:58.994Z",
+      "followup": "Explicit TSUNAGOU_PROJECT_ROOT/STATE_DIR and --coordination-root recovered all seven CLI reads; original failed observations retained. See public-query-record.json and restart-record.json."
+    },
+    {
+      "id": "cli_control_credential_missing",
+      "status": "open",
+      "observed_at": "2026-09-28T03:10:00Z",
+      "impact": "source-root CLI cannot query history without a user-friendly credential path",
+      "evidence": "same project history command from D:\\Tsunagou returned control_credential_missing",
+      "resolution": "kept persistence gate pending; no secret requested",
+      "follow_up": "add safe local credential initialization or read-only diagnostic route",
+      "followup_at": "2026-09-28T05:58:58.994Z",
+      "followup": "Explicit TSUNAGOU_PROJECT_ROOT/STATE_DIR and --coordination-root recovered all seven CLI reads; original failed observations retained. See public-query-record.json and restart-record.json."
+    },
+    {
+      "id": "auto_wake_project_opt_in_required",
+      "status": "resolved_for_test_but_policy_gap",
+      "observed_at": "2026-09-28T03:11:00Z",
+      "impact": "first coordination__plan was rejected before child assignments were created",
+      "evidence": "daemon returned auto_wake_project_opt_in_required while host_wake was disabled",
+      "resolution": "main enabled auto_wake_multi_agent and retried the same plan",
+      "follow_up": "surface wake policy and user-level configuration during bootstrap"
+    },
+    {
+      "id": "a2a_message_accepted_without_delivery",
+      "status": "open",
+      "observed_at": "2026-09-28T03:12:00Z",
+      "impact": "accepted message and waking assignment have no worker turn evidence",
+      "evidence": "two message__send completed; worker threads remained idle",
+      "resolution": "kept A2A gate at accepted_delivery_pending",
+      "follow_up": "verify delivery/presentation/pull or repair wake adapter"
+    },
+    {
+      "id": "main_worker_bridge_route_mismatch",
+      "status": "open",
+      "observed_at": "2026-09-28T03:12:00Z",
+      "impact": "main sees fresh worker identities while worker conversations use stale bridge namespaces",
+      "evidence": "main called tsunagou-codex-webui/http context; worker calls used sega-worker-live/wake and failed",
+      "resolution": "did not treat cross-bridge context as worker readiness",
+      "follow_up": "bind and reload bridge per conversation identity"
+    },
+    {
+      "id": "main_inbox_fetch_failed",
+      "status": "open",
+      "observed_at": "2026-09-28T03:14:00Z",
+      "impact": "main may not be able to retrieve persisted message payloads by message id",
+      "evidence": "inbox__fetch failed for public message ids ef93b629-e1b0-4231-9d30-027f2ad14a29 and 8fcb7a8a-5d99-4811-a1d6-746d03840132",
+      "resolution": "none; no new messages or guessed payloads created",
+      "follow_up": "return structured reason and retry guidance for inbox fetch"
+    },
+    {
+      "id": "wake_expired_retry_without_worker_pull",
+      "status": "open",
+      "observed_at": "2026-09-28T03:15:00Z",
+      "impact": "auto-wake opt-in did not produce a worker turn or durable pull",
+      "evidence": "wake.expired and wake.retry recorded twice; latest wake_attempt remained waking; no worker claim",
+      "resolution": "kept wake chain and waited; no worker-side action fabricated",
+      "follow_up": "repair wake adapter or expose deterministic pull fallback"
+    },
+    {
+      "id": "main_worker_inbox_access_denied",
+      "status": "expected_boundary_but_observability_gap",
+      "observed_at": "2026-09-28T03:15:00Z",
+      "impact": "main cannot inspect worker presentation directly",
+      "evidence": "main read attempt returned inbox_access_denied",
+      "resolution": "treated as correct privacy boundary; no impersonation",
+      "follow_up": "provide redacted delivery state without exposing worker payload"
+    },
+    {
+      "id": "wake_retry_exhausted_assignments_blocked",
+      "status": "open_blocker",
+      "observed_at": "2026-09-28T03:16:00Z",
+      "impact": "both child assignments blocked before claim/preflight/start; no implementation evidence",
+      "evidence": "wake.failed with wake deadline expired after retry limit after two retries",
+      "resolution": "preserved events and did not fabricate worker execution",
+      "follow_up": "refresh worker bridges and provide open/pull fallback after wake exhaustion"
+    },
+    {
+      "id": "message_send_idempotency_asymmetry",
+      "status": "open",
+      "observed_at": "2026-09-28T03:17:00Z",
+      "impact": "same command retry completed for Web UI but failed for HTTP",
+      "evidence": "duplicate main-webui-assignment-20260928-01 completed; duplicate main-http-assignment-20260928-01 failed",
+      "resolution": "preserved original command ids and did not create replacements",
+      "follow_up": "standardize duplicate command result and expose safe failure reason"
+    },
+    {
+      "id": "wake_fallback_accepted_without_worker_pull",
+      "status": "open",
+      "observed_at": "2026-09-28T03:17:00Z",
+      "impact": "durable pull recovery message was accepted but no worker turn followed",
+      "evidence": "two wake_fallback message__send calls completed; both worker threads remained idle",
+      "resolution": "kept fallback messages and did not impersonate workers",
+      "follow_up": "refresh worker bridge and verify pull/claim/recovery"
+    },
+    {
+      "id": "user_cannot_see_worker_turns",
+      "status": "open_user_visible_blocker",
+      "observed_at": "2026-09-28T03:20:00Z",
+      "impact": "Codex UI shows no new worker conversation or message despite daemon accepted sends",
+      "evidence": "user confirmed both worker threads remain idle; linked to wake.expired/wake.failed and identity errors",
+      "resolution": "recorded as a user-visible symptom; no completion inferred",
+      "follow_up": "make bridge reload or pull recovery produce a visible worker turn"
+    },
+    {
+      "id": "overdesigned_initial_execution_chain",
+      "status": "deferred_postmortem",
+      "observed_at": "2026-09-28T03:42:04.558Z",
+      "impact": "long sequence of mechanical gates delayed first implementation and reduced token/time efficiency",
+      "evidence": "source correction, daemon/bridge recovery, auto-wake opt-in/retry, worker.ready, claim, workspace select, resource intent/acquire, workspace prepare, preflight and start were all encountered before code work",
+      "resolution": "Business tasks delivered and reviewed; user request to defer architecture retrospective retained. Timing now separates wall time, lease windows and host turns.",
+      "follow_up": "postmortem the minimum automatic path after the WebUI/HTTP delivery is complete"
+    },
+    {
+      "id": "path_glob_scope_incompatible_with_typed_resources",
+      "status": "mitigated_in_acceptance",
+      "observed_at": "2026-09-28T03:52:00Z",
+      "impact": "both claimed tasks required an extra scope request/resolve cycle before resource intent could succeed",
+      "evidence": "resource__intent returned invalid_task_execution_scope for path-string execution_scope; typed scope requests 679cc6dd... and c2fa1ccc... were approved",
+      "resolution": "converted both tasks to structured kind/root_id/segments/mode scopes without recreating tasks",
+      "follow_up": "normalize and validate coordination plan scope at creation time"
+    },
+    {
+      "id": "bootstrap_workspace_root_unbound",
+      "status": "mitigated_with_coordination_root_fallback",
+      "observed_at": "2026-09-28T03:56:00Z",
+      "impact": "workspace preparation failed after successful resource acquisition",
+      "evidence": "project.json roots and repositories were empty; workspace__prepare returned workspace_root_unbound; root.register user-control request returned authentication_failed",
+      "resolution": "approved structured resources under the built-in coordination root",
+      "follow_up": "bootstrap must register/bind the project root and doctor must verify workspace readiness"
+    },
+    {
+      "id": "cross_task_test_scope_overlap",
+      "status": "resolved_for_acceptance",
+      "observed_at": "2026-09-28T03:58:00Z",
+      "impact": "WebUI and HTTP work could not acquire their leases in parallel",
+      "evidence": "WebUI acquire returned resource_conflict:path:project:tests because HTTP held tests while WebUI requested tests/WebUI",
+      "resolution": "narrowed HTTP to tests/Http and retained WebUI tests/WebUI",
+      "follow_up": "detect normalized cross-assignment path overlap before publishing a coordination plan"
+    },
+    {
+      "id": "lease_ttl_expires_during_agent_turn",
+      "status": "open_design_gap_with_recovery_in_progress",
+      "observed_at": "2026-09-28T04:07:42.611Z",
+      "impact": "WebUI wrote preserved files after its grant was fenced; HTTP required repeated recovery before code work",
+      "evidence": "WebUI lease expired at 04:07:42.611Z; HTTP fresh-attempt lease expired at 04:16:40.940Z; worker progress/renew then returned capability_denied",
+      "resolution": "stopped WebUI, reopened durable tasks, moved workspace selection before acquire and required immediate progress renewal",
+      "follow_up": "do not consume execution lease during preparation; add host-visible renewal/expiry notification and tune heartbeat/TTL"
+    },
+    {
+      "id": "workspace_decision_attempt_repetition",
+      "status": "open_efficiency_gap",
+      "observed_at": "2026-09-28T04:14:00Z",
+      "impact": "each recovered attempt required main to repeat the unchanged shared-workspace choice",
+      "evidence": "workspace_decision_attempt_mismatch for HTTP fresh attempt; decisions 20e93a0c..., 29a785c3... and f74f566e... represented the same driver choice",
+      "resolution": "kept the attempt fence and repeated main selection for acceptance",
+      "follow_up": "persist a task-level isolation policy and derive attempt decisions after scope/revision validation"
+    },
+    {
+      "id": "contract_participant_slot_encoding_and_proxy_revival",
+      "status": "completed_with_protocol_integrity_gap",
+      "observed_at": "2026-09-28T04:42:29.245Z",
+      "impact": "malformed task-linked contracts blocked strict preflight and a withdrawn proposal later changed to accepted",
+      "evidence": "raw agent-id strings produced slots without agent_id and normal accept returned participant_slot_denied; HTTP withdrew proposal 6333274b..., then main accept_proxy created both acceptances and moved it from withdrawn to accepted",
+      "resolution": "main used explicit proxy acceptance so both tasks could complete; worker also demonstrated the correct {slot, agent_id} form with accepted proposal 8b4d7185...",
+      "follow_up": "validate participant objects at propose time and make proxy acceptance reject proposals outside proposed status"
+    },
+    {
+      "id": "prestart_lease_consumption_and_renewal_race",
+      "status": "completed_after_repeated_recovery",
+      "observed_at": "2026-09-28T05:05:04.020Z",
+      "impact": "resource leases expired during workspace/preflight/model reasoning before a running Agent could renew them",
+      "evidence": "WebUI attempt cc57128f... acquired at 05:03:03.915Z, started at 05:04:49.048Z and expired at 05:05:04.020Z; renew/progress arrived after the fence. Earlier attempts show task.progress renews a still-active lease, but pre-start renew is capability denied",
+      "resolution": "final WebUI attempt executed the complete MCP sequence without intervening reads and submitted in 24.785 seconds; HTTP final attempt submitted in 92.616 seconds",
+      "follow_up": "begin TTL at task.start or allow a narrowly scoped pre-start renewal; keep preparation outside the execution lease and expose remaining TTL to the host"
+    },
+    {
+      "id": "valid_btid_success_fixture_missing",
+      "status": "resolved_with_synthetic_fixture_and_live_browser",
+      "observed_at": "2026-09-28T05:24:00Z",
+      "impact": "the live browser/backend path proves health and structured multipart validation but not a successful BTID parse",
+      "evidence": "repository contains only tests/WebUI/sample.app at 33 bytes; live browser received file_too_small with a correlated request id. HTTP download-id and validation acceptance passed",
+      "resolution": "Added out-of-project reproducible synthetic zero-filled encrypted BTID fixture; real backend returns TEST/1.2.3/headerCrcValid=true, UI shows Inspection complete.",
+      "follow_up": "Commercial real-world images still need separate coverage; synthetic fixture is not claimed as a game image."
+    },
+    {
+      "id": "unexpected_opencode_root_config",
+      "status": "removed_from_delivery_root",
+      "observed_at": "2026-09-28T05:24:00Z",
+      "impact": "the Codex-only acceptance target gained an unrelated root opencode.json outside both worker scopes",
+      "evidence": "untracked opencode.json was last written at 04:53:15 UTC and referenced an opencode-current bridge profile; earlier target status snapshots did not include it",
+      "resolution": "removed the non-secret root config from the business delivery while retaining daemon persistence for forensic review",
+      "follow_up": "host registration must only write the explicitly selected host integration and must attribute generated project-root files"
+    },
+    {
+      "observed_at": "2026-09-28T05:58:58.994Z",
+      "id": "mcp_transport_not_a2a_protocol_proof",
+      "status": "resolved_evidence_gap_separate_native_wake_failure",
+      "impact": "Prior bridge message.send records did not by themselves prove HTTP A2A JSON-RPC.",
+      "evidence": "Bridge posts /api/v1/commands; new direct /api/v1/a2a harness produced events 376/377, six sends persisted only two messages; workers and main ACKed four deliveries.",
+      "resolution": "Record direct request/response and independently observed receipts; mark harness initiation and Codex follow-up explicitly.",
+      "follow_up": "Native host wake remains not passed; do not conflate durable delivery with autonomous turn execution."
+    },
+    {
+      "observed_at": "2026-09-28T05:58:58.994Z",
+      "id": "otel_instrumentation_absent",
+      "status": "incomplete_deferred_after_business_delivery",
+      "impact": "Actor/time/command audit is available, but end-to-end OTel blame cannot be demonstrated.",
+      "evidence": "No opentelemetry/OTEL implementation or dependency in src/tsunagou and pyproject.toml; public audit models have no trace/span link. ASP.NET Activity request IDs are not a Tsunagou OTLP trace.",
+      "resolution": "Do not claim OTel acceptance; record concrete missing implementation without starting a redesign.",
+      "follow_up": "Address after user reviews delivery and prioritizes retrospective findings."
+    },
+    {
+      "observed_at": "2026-09-28T05:58:58.994Z",
+      "id": "diagnostic_empty_despite_transport_and_denials",
+      "status": "open_traceability_gap",
+      "impact": "CLI audit proves successful state changes; it does not provide complete public blame for transport failures and rejected commands.",
+      "evidence": "Public diagnostics items=[] before and after restart; native wake is disabled; three direct A2A owner/capability denials returned errors without domain events.",
+      "resolution": "Preserve sanitized HTTP denial responses, worker receipt metadata and prior failure record separately.",
+      "follow_up": "Define minimal diagnostics for failed transport/denied actions in the later retrospective; do not add rejected operations as successful domain events.",
+      "followup": "After enabling managed wake, diagnostic query returns wake_requested and agent_presented; terminal provider failure is still absent from diagnostic list. See native-wake-diagnosis.json."
+    },
+    {
+      "observed_at": "2026-09-28T05:58:58.994Z",
+      "id": "legacy_btid_integrity_results_discarded",
+      "status": "source_observed_legacy_limitation",
+      "impact": "Successful metadata parsing/header CRC does not establish payload sector CRC or HMAC validation.",
+      "evidence": "Modules/Btid.cs Btid.Create invokes CheckCrc32 and CheckSha1Hmac but ignores boolean results; the new backend reuses this path.",
+      "resolution": "Acceptance fixture has valid header/sector CRC/HMAC. Success evidence is scoped to known-valid input, not a claim that corrupt payloads are rejected.",
+      "follow_up": "A separate parser validation follow-up should propagate integrity results and terminate on truncated sector reads; no baseline-library change made during this acceptance."
+    },
+    {
+      "observed_at": "2026-09-28T06:20:30.852Z",
+      "id": "native_wake_disabled_and_unbound_in_initial_run",
+      "status": "configuration_corrected_for_followup",
+      "impact": "Initial waking/retry/blocked assignments did not establish a failing call to the native Codex provider.",
+      "evidence": "Initial daemon endpoint host_wake=disabled; no host-bindings.json. The unrelated bindings.json was not the host binding store.",
+      "resolution": "Started managed wake daemon PID 70156 and explicitly bound both existing enrolled worker threads through an official local listener.",
+      "follow_up": "Installer/connect should assemble the selected wake mode and bindings before advertising automatic coordination."
+    },
+    {
+      "observed_at": "2026-09-28T06:20:30.852Z",
+      "id": "codex_listener_private_directory_required",
+      "status": "resolved_in_acceptance_setup",
+      "impact": "Listener exited immediately even though process creation returned a PID.",
+      "evidence": "Codex stderr: socket directory is not private to the current user; first listener PID 84432 terminal with no socket.",
+      "resolution": "Created a dedicated current-user-only socket directory, then listener PID 87044 accepted thread/read for both worker threads. No existing directory ACL changed.",
+      "follow_up": "Include private directory setup and liveness verification in the supported installation flow."
+    },
+    {
+      "observed_at": "2026-09-28T06:20:30.852Z",
+      "id": "desktop_thread_active_writer_blocks_external_resume",
+      "status": "verified_native_wake_blocker",
+      "impact": "An idle Desktop conversation cannot be resumed by the separate listener while its existing host retains a writer.",
+      "evidence": "Codex 0.158.0-alpha.2.1: thread/read succeeds; thread/resume returns RPC -32600 already has an active writer. A2A wake attempt wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6 failed desktop_thread_unavailable.",
+      "resolution": "Did not delete locks or take over the Desktop writer. Message remained durable, then actual HTTP worker fetched/presented/ACKed via explicit Codex follow-up.",
+      "follow_up": "Need a supported connection to the owning host, or an explicit supported lifecycle handoff. Starting another listener is not sufficient proof of attaching to the live Desktop host."
+    },
+    {
+      "observed_at": "2026-09-28T06:20:30.852Z",
+      "id": "provider_failure_missing_terminal_diagnostic",
+      "status": "verified_diagnostic_gap",
+      "impact": "Diagnostics alone can show wake_requested then agent_presented even when native wake failed; consumers must not infer native success from presentation.",
+      "evidence": "wake-status remains failed with desktop_thread_unavailable. diagnostics has wake_requested and later manual-fallback agent_presented, but no wake_failed for this provider error.",
+      "resolution": "Saved wake-status, raw error summary and explicit fallback trigger together in native-wake-diagnosis.json.",
+      "follow_up": "Persist provider terminal failure reason and presentation trigger attribution without adding a new orchestration state machine."
+    },
+    {
+      "id": "superseded_open_tasks_and_ownerless_cancel",
+      "observed_at": "2026-09-28T06:28:37.561Z",
+      "status": "duplicate_claim_prevented_terminal_cancel_gap_remains",
+      "impact": "Two initial open tasks duplicated already completed replacement work; cancellation has no owner to ACK and does not reach the documented cancelled state.",
+      "evidence": "Original tasks 93ffd4c0.../f98e9640... were open with no attempt. main task.cancel_request changed both to cancel_requested revision 4; command-catalog.md promises cancelled when ownerless.",
+      "resolution": "Retained all failed-wake history and replacement IDs in cancellation reasons; no direct database changes or fabricated worker ACK.",
+      "follow_up": "Implement ownerless cancellation as an atomic main operation and reconcile assignment status in a separate repair; parent completion still requires user confirmation."
+    }
+  ],
+  "updated_at": "2026-09-28T06:28:37.561Z"
+}

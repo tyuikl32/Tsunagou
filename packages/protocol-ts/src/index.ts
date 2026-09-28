@@ -10,3 +10,5 @@ export interface CommandEnvelope<TPayload = Record<string, unknown>> {
 }
 
 export type { CommandKind } from "./generated/commands.js";
+export type { AuditChange, AuditEvent, AuditPage } from "./generated/audit.js";
+export type { CredentialDelivery } from "./generated/delivery.js";

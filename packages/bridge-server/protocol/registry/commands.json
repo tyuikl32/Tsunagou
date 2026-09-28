@@ -10,6 +10,14 @@
         "probe_payload"
       ],
       "principal": "T",
+      "required_fields": [
+        "client_nonce",
+        "conversation_evidence",
+        "descriptor_ref",
+        "installation_id",
+        "negotiation",
+        "probe_payload"
+      ],
       "schema": "commands/agent/enroll.schema.json",
       "uri": "/sessions:enroll"
     },
@@ -20,6 +28,10 @@
         "stop_evidence"
       ],
       "principal": "M",
+      "required_fields": [
+        "expected_revisions",
+        "reason"
+      ],
       "schema": "commands/agent/retire.schema.json",
       "uri": "/agents/{id}:retire"
     },
@@ -33,6 +45,14 @@
         "successor_agent_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "attempt_plan",
+        "expected_revisions",
+        "obligation_plan",
+        "reason",
+        "residual_risk_refs",
+        "successor_agent_id"
+      ],
       "schema": "commands/agent/succession.schema.json",
       "uri": "/agents/{id}:succeed"
     },
@@ -41,15 +61,20 @@
         "kind"
       ],
       "principal": "M",
+      "required_fields": [
+        "kind"
+      ],
       "schema": "commands/agent/ticket/create.schema.json",
       "uri": "/enrollment-tickets"
     },
     "agent.ticket.create.user": {
       "payload_fields": [
-        "kind",
-        "role"
+        "kind"
       ],
       "principal": "U",
+      "required_fields": [
+        "kind"
+      ],
       "schema": "commands/agent/ticket/create/user.schema.json",
       "uri": "/control/enrollment-tickets"
     },
@@ -59,6 +84,10 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "domain_ref",
+        "reason"
+      ],
       "schema": "commands/artifact/promote.schema.json",
       "uri": "/artifacts/{digest}:promote"
     },
@@ -68,6 +97,10 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "domain_ref",
+        "reason"
+      ],
       "schema": "commands/artifact/promote/user.schema.json",
       "uri": "/control/artifacts/{digest}:promote"
     },
@@ -77,6 +110,10 @@
         "visibility"
       ],
       "principal": "B",
+      "required_fields": [
+        "domain_ref",
+        "visibility"
+      ],
       "schema": "commands/artifact/upload/create.schema.json",
       "uri": "/artifact-uploads"
     },
@@ -86,6 +123,10 @@
         "size_bytes"
       ],
       "principal": "B",
+      "required_fields": [
+        "digest",
+        "size_bytes"
+      ],
       "schema": "commands/artifact/upload/finalize.schema.json",
       "uri": "/artifact-uploads/{id}:finalize"
     },
@@ -97,6 +138,12 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "agent_id",
+        "ceiling_template",
+        "expected_authority_epoch",
+        "reason"
+      ],
       "schema": "commands/authority/appoint.schema.json",
       "uri": "/control/authority:appoint"
     },
@@ -108,6 +155,12 @@
         "target_agent_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "adoption_plan",
+        "expected_authority_epoch",
+        "reason",
+        "target_agent_id"
+      ],
       "schema": "commands/authority/handoff.schema.json",
       "uri": "/authority:handoff"
     },
@@ -117,6 +170,10 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "expected_authority_epoch",
+        "reason"
+      ],
       "schema": "commands/authority/revoke.schema.json",
       "uri": "/control/authority:revoke"
     },
@@ -127,6 +184,11 @@
         "reason"
       ],
       "principal": "H",
+      "required_fields": [
+        "adopted_refs",
+        "expected_revisions",
+        "reason"
+      ],
       "schema": "commands/authority/transition/adopt.schema.json",
       "uri": "/authority-transitions/{id}:adopt"
     },
@@ -136,6 +198,10 @@
         "stopped_refs"
       ],
       "principal": "H",
+      "required_fields": [
+        "evidence_refs",
+        "stopped_refs"
+      ],
       "schema": "commands/authority/transition/report.schema.json",
       "uri": "/authority-transitions/{id}:report"
     },
@@ -145,6 +211,10 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "ceiling",
+        "reason"
+      ],
       "schema": "commands/ceiling/set.schema.json",
       "uri": "/control/ceiling:set"
     },
@@ -154,12 +224,18 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [],
       "schema": "commands/checkpoint/create.schema.json",
       "uri": "/checkpoints"
     },
     "checkpoint.create.user": {
-      "payload_fields": [],
+      "payload_fields": [
+        "minimum_event_seq",
+        "reason",
+        "retry_operation_id"
+      ],
       "principal": "U",
+      "required_fields": [],
       "schema": "commands/checkpoint/create/user.schema.json",
       "uri": "/control/checkpoints"
     },
@@ -179,42 +255,25 @@
         "understanding"
       ],
       "principal": "B",
+      "required_fields": [
+        "assumptions",
+        "boundary",
+        "claims",
+        "confidence",
+        "confidence_reason",
+        "evidence_refs",
+        "input_revisions",
+        "task_id",
+        "uncertainties",
+        "understanding"
+      ],
       "schema": "commands/cognition/report.schema.json",
       "uri": "/reports"
-    },
-    "coordination.plan": {
-      "payload_fields": [
-        "assignments",
-        "auto_wake",
-        "objective",
-        "wake_deadline_seconds"
-      ],
-      "principal": "M",
-      "schema": "commands/coordination/plan.schema.json",
-      "uri": "/coordination/plans"
-    },
-    "coordination.takeover": {
-      "payload_fields": [
-        "assignment_id",
-        "takeover_reason"
-      ],
-      "principal": "M",
-      "schema": "commands/coordination/takeover.schema.json",
-      "uri": "/coordination/assignments/{id}:takeover"
-    },
-    "coordination.wake.accepted": {
-      "payload_fields": [
-        "assignment_id",
-        "host_turn_id",
-        "wake_attempt_id"
-      ],
-      "principal": "D",
-      "schema": "commands/coordination/wake/accepted.schema.json",
-      "uri": "/coordination/wakes/{id}:accepted"
     },
     "context.project_read": {
       "payload_fields": [],
       "principal": "B",
+      "required_fields": [],
       "schema": "commands/context/project_read.schema.json",
       "uri": "/context:project-read"
     },
@@ -224,6 +283,10 @@
         "proposal_digest"
       ],
       "principal": "B",
+      "required_fields": [
+        "evidence_refs",
+        "proposal_digest"
+      ],
       "schema": "commands/contract/accept.schema.json",
       "uri": "/contract-proposals/{id}:accept"
     },
@@ -236,6 +299,13 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "evidence_refs",
+        "participant_slot_id",
+        "proposal_digest",
+        "proxy_policy_ref",
+        "reason"
+      ],
       "schema": "commands/contract/accept_proxy.schema.json",
       "uri": "/contract-proposals/{id}:accept-proxy"
     },
@@ -251,6 +321,14 @@
         "supersedes_id"
       ],
       "principal": "B",
+      "required_fields": [
+        "contract_kind",
+        "input_refs",
+        "participants_optional",
+        "participants_required",
+        "payload",
+        "subject_ref"
+      ],
       "schema": "commands/contract/propose.schema.json",
       "uri": "/contracts:propose"
     },
@@ -261,6 +339,11 @@
         "reason"
       ],
       "principal": "B",
+      "required_fields": [
+        "evidence_refs",
+        "proposal_digest",
+        "reason"
+      ],
       "schema": "commands/contract/reject.schema.json",
       "uri": "/contract-proposals/{id}:reject"
     },
@@ -269,14 +352,62 @@
         "reason"
       ],
       "principal": "B",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/contract/withdraw.schema.json",
       "uri": "/contract-proposals/{id}:withdraw"
+    },
+    "coordination.plan": {
+      "payload_fields": [
+        "assignments",
+        "auto_wake",
+        "objective",
+        "wake_deadline_seconds"
+      ],
+      "principal": "M",
+      "required_fields": [
+        "assignments",
+        "objective"
+      ],
+      "schema": "commands/coordination/plan.schema.json",
+      "uri": "/coordination/plans"
+    },
+    "coordination.takeover": {
+      "payload_fields": [
+        "assignment_id",
+        "takeover_reason"
+      ],
+      "principal": "M",
+      "required_fields": [
+        "assignment_id",
+        "takeover_reason"
+      ],
+      "schema": "commands/coordination/takeover.schema.json",
+      "uri": "/coordination/assignments/{id}:takeover"
+    },
+    "coordination.wake.accepted": {
+      "payload_fields": [
+        "assignment_id",
+        "host_turn_id",
+        "wake_attempt_id"
+      ],
+      "principal": "D",
+      "required_fields": [
+        "assignment_id",
+        "wake_attempt_id"
+      ],
+      "schema": "commands/coordination/wake/accepted.schema.json",
+      "uri": "/coordination/wakes/{id}:accepted"
     },
     "discrepancy.advance": {
       "payload_fields": [
         "status"
       ],
       "principal": "B",
+      "required_fields": [
+        "status"
+      ],
       "schema": "commands/discrepancy/advance.schema.json",
       "uri": "/discrepancies/{id}:advance"
     },
@@ -290,6 +421,14 @@
         "summary"
       ],
       "principal": "B",
+      "required_fields": [
+        "affected_actions",
+        "participants",
+        "report_refs",
+        "severity",
+        "subject_ref",
+        "summary"
+      ],
       "schema": "commands/discrepancy/create.schema.json",
       "uri": "/discrepancies"
     },
@@ -298,6 +437,9 @@
         "kind"
       ],
       "principal": "M",
+      "required_fields": [
+        "kind"
+      ],
       "schema": "commands/discrepancy/resolve.schema.json",
       "uri": "/discrepancies/{id}:resolve"
     },
@@ -307,6 +449,10 @@
         "scope_refs"
       ],
       "principal": "M",
+      "required_fields": [
+        "reason",
+        "scope_refs"
+      ],
       "schema": "commands/durability/reconcile.schema.json",
       "uri": "/durability:reconcile"
     },
@@ -315,6 +461,7 @@
         "reason"
       ],
       "principal": "B",
+      "required_fields": [],
       "schema": "commands/inbox/ack.schema.json",
       "uri": "/deliveries/{id}:ack"
     },
@@ -324,6 +471,7 @@
         "max_bytes"
       ],
       "principal": "B",
+      "required_fields": [],
       "schema": "commands/inbox/claim.schema.json",
       "uri": "/inbox:claim"
     },
@@ -333,6 +481,10 @@
         "reason"
       ],
       "principal": "B",
+      "required_fields": [
+        "defer_until",
+        "reason"
+      ],
       "schema": "commands/inbox/defer.schema.json",
       "uri": "/deliveries/{id}:defer"
     },
@@ -341,6 +493,9 @@
         "delivery_lease_id"
       ],
       "principal": "B",
+      "required_fields": [
+        "delivery_lease_id"
+      ],
       "schema": "commands/inbox/fetch.schema.json",
       "uri": "/deliveries/{id}:fetch"
     },
@@ -350,6 +505,10 @@
         "evidence_kind"
       ],
       "principal": "B",
+      "required_fields": [
+        "evidence_digest",
+        "evidence_kind"
+      ],
       "schema": "commands/inbox/presented.schema.json",
       "uri": "/deliveries/{id}:presented"
     },
@@ -358,6 +517,9 @@
         "delivery_lease_id"
       ],
       "principal": "B",
+      "required_fields": [
+        "delivery_lease_id"
+      ],
       "schema": "commands/inbox/renew.schema.json",
       "uri": "/deliveries/{id}:renew"
     },
@@ -369,6 +531,12 @@
         "summary"
       ],
       "principal": "B",
+      "required_fields": [
+        "evidence_refs",
+        "obligation_id",
+        "response_payload",
+        "summary"
+      ],
       "schema": "commands/message/respond.schema.json",
       "uri": "/messages/{id}:respond"
     },
@@ -377,6 +545,9 @@
         "kind"
       ],
       "principal": "B",
+      "required_fields": [
+        "kind"
+      ],
       "schema": "commands/message/send.schema.json",
       "uri": "/messages"
     },
@@ -385,6 +556,9 @@
         "reason"
       ],
       "principal": "B",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/message/waive_response.schema.json",
       "uri": "/response-obligations/{id}:waive"
     },
@@ -393,6 +567,9 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/operation/cancel.schema.json",
       "uri": "/operations/{id}:cancel"
     },
@@ -404,12 +581,18 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "conclusion",
+        "evidence_refs",
+        "reason"
+      ],
       "schema": "commands/operation/resolve.schema.json",
       "uri": "/operations/{id}:resolve"
     },
     "operation.resolve.user": {
       "payload_fields": [],
       "principal": "U",
+      "required_fields": [],
       "schema": "commands/operation/resolve/user.schema.json",
       "uri": "/control/operations/{id}:resolve"
     },
@@ -419,6 +602,10 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "expected_checkpoint_digest",
+        "reason"
+      ],
       "schema": "commands/project/archive.schema.json",
       "uri": ":archive"
     },
@@ -429,6 +616,11 @@
         "proposal_digest"
       ],
       "principal": "U",
+      "required_fields": [
+        "expected_project_revision",
+        "expected_revisions",
+        "proposal_digest"
+      ],
       "schema": "commands/project/completion/confirm.schema.json",
       "uri": "/control/completion-proposals/{id}:confirm"
     },
@@ -440,6 +632,12 @@
         "outstanding_summary"
       ],
       "principal": "M",
+      "required_fields": [
+        "evidence_refs",
+        "expected_project_revision",
+        "objective_ref",
+        "outstanding_summary"
+      ],
       "schema": "commands/project/completion/propose/main.schema.json",
       "uri": "/completion-proposals"
     },
@@ -451,6 +649,12 @@
         "outstanding_summary"
       ],
       "principal": "X",
+      "required_fields": [
+        "evidence_refs",
+        "expected_project_revision",
+        "objective_ref",
+        "outstanding_summary"
+      ],
       "schema": "commands/project/completion/propose/owner.schema.json",
       "uri": "/completion-proposals:from-owner"
     },
@@ -460,6 +664,10 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "policy_patch",
+        "reason"
+      ],
       "schema": "commands/project/configure.schema.json",
       "uri": ":configure"
     },
@@ -471,6 +679,12 @@
         "objective"
       ],
       "principal": "U",
+      "required_fields": [
+        "coordination_root",
+        "initial_policy",
+        "name",
+        "objective"
+      ],
       "schema": "commands/project/initialize.schema.json",
       "uri": "/api/v1/projects（全路径）"
     },
@@ -479,6 +693,9 @@
         "target"
       ],
       "principal": "U",
+      "required_fields": [
+        "target"
+      ],
       "schema": "commands/project/lineage/reset.schema.json",
       "uri": "/control/lineage:reset"
     },
@@ -490,6 +707,11 @@
         "recovery_evidence_refs"
       ],
       "principal": "U",
+      "required_fields": [
+        "exact_paths_digest",
+        "reason",
+        "recovery_evidence_refs"
+      ],
       "schema": "commands/project/local_copy/delete.schema.json",
       "uri": "/control:delete-local-copy"
     },
@@ -499,6 +721,10 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "expected_runtime_epoch",
+        "reason"
+      ],
       "schema": "commands/project/reactivate/main.schema.json",
       "uri": ":reactivate"
     },
@@ -508,6 +734,10 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "expected_runtime_epoch",
+        "reason"
+      ],
       "schema": "commands/project/reactivate/user.schema.json",
       "uri": "/control:reactivate"
     },
@@ -517,6 +747,10 @@
         "scope_refs"
       ],
       "principal": "M",
+      "required_fields": [
+        "reason",
+        "scope_refs"
+      ],
       "schema": "commands/project/reconcile.schema.json",
       "uri": ":reconcile"
     },
@@ -525,6 +759,9 @@
         "mode"
       ],
       "principal": "U",
+      "required_fields": [
+        "mode"
+      ],
       "schema": "commands/project/replica/activate.schema.json",
       "uri": "/control/replicas/{id}:activate"
     },
@@ -536,6 +773,12 @@
         "task_ids"
       ],
       "principal": "M",
+      "required_fields": [
+        "expected_revisions",
+        "plan_digest",
+        "reason",
+        "task_ids"
+      ],
       "schema": "commands/project/tasks/restore_open.schema.json",
       "uri": "/tasks:restore-open"
     },
@@ -548,6 +791,13 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "change_kind",
+        "expected_revisions",
+        "proposal_digest",
+        "proposal_ref",
+        "reason"
+      ],
       "schema": "commands/project/trust_change.schema.json",
       "uri": "/control/trust:change"
     },
@@ -557,6 +807,10 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "expected_runtime_epoch",
+        "reason"
+      ],
       "schema": "commands/project/unregister.schema.json",
       "uri": "/control:unregister"
     },
@@ -571,6 +825,15 @@
         "repository_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "checkpoint_digest",
+        "commit_oid",
+        "evidence_refs",
+        "ref_name",
+        "remote_name",
+        "reported_at",
+        "repository_id"
+      ],
       "schema": "commands/publication/report.schema.json",
       "uri": "/publication-reports"
     },
@@ -581,6 +844,11 @@
         "root_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "name",
+        "required",
+        "root_id"
+      ],
       "schema": "commands/repository/register.schema.json",
       "uri": "/repositories"
     },
@@ -592,6 +860,12 @@
         "scope_digest"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "intent_id",
+        "intent_revision",
+        "scope_digest"
+      ],
       "schema": "commands/resource/acquire.schema.json",
       "uri": "/lease-sets:acquire"
     },
@@ -603,6 +877,12 @@
         "scope_digest"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "reason",
+        "resources",
+        "scope_digest"
+      ],
       "schema": "commands/resource/intent.schema.json",
       "uri": "/resource-intents"
     },
@@ -612,6 +892,10 @@
         "reason"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "reason"
+      ],
       "schema": "commands/resource/release.schema.json",
       "uri": "/lease-sets/{id}:release"
     },
@@ -620,6 +904,9 @@
         "scope_digest"
       ],
       "principal": "X",
+      "required_fields": [
+        "scope_digest"
+      ],
       "schema": "commands/resource/renew.schema.json",
       "uri": "/lease-sets/{id}:renew"
     },
@@ -629,6 +916,10 @@
         "reason"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "reason"
+      ],
       "schema": "commands/resource/wait/cancel.schema.json",
       "uri": "/resource-waits/{id}:cancel"
     },
@@ -640,6 +931,12 @@
         "subject_ref"
       ],
       "principal": "M",
+      "required_fields": [
+        "accepted_risks",
+        "input_digest",
+        "reason",
+        "subject_ref"
+      ],
       "schema": "commands/risk/accept.schema.json",
       "uri": "/risk-acceptances"
     },
@@ -651,6 +948,12 @@
         "input_snapshot"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "candidates",
+        "input_digest",
+        "input_snapshot"
+      ],
       "schema": "commands/risk/request.schema.json",
       "uri": "/risk-assessments"
     },
@@ -659,6 +962,9 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/risk/revoke.schema.json",
       "uri": "/risk-acceptances/{id}:revoke"
     },
@@ -673,6 +979,15 @@
         "scope"
       ],
       "principal": "M",
+      "required_fields": [
+        "conditions",
+        "evidence_refs",
+        "input_digest",
+        "reason",
+        "recommended_driver",
+        "risk_level",
+        "scope"
+      ],
       "schema": "commands/risk/submit.schema.json",
       "uri": "/risk-assessments/{id}:submit"
     },
@@ -684,6 +999,11 @@
         "root_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "absolute_path",
+        "reason",
+        "root_id"
+      ],
       "schema": "commands/root/bind.schema.json",
       "uri": "/roots/{id}:bind"
     },
@@ -697,6 +1017,13 @@
         "required"
       ],
       "principal": "M",
+      "required_fields": [
+        "binding_request",
+        "kind",
+        "name",
+        "reason",
+        "required"
+      ],
       "schema": "commands/root/register.schema.json",
       "uri": "/roots"
     },
@@ -706,6 +1033,9 @@
         "stop_evidence"
       ],
       "principal": "D",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/session/end.schema.json",
       "uri": "/sessions/{id}:end"
     },
@@ -718,6 +1048,13 @@
         "target_agent_id"
       ],
       "principal": "T",
+      "required_fields": [
+        "client_nonce",
+        "conversation_evidence",
+        "installation_id",
+        "probe_payload",
+        "target_agent_id"
+      ],
       "schema": "commands/session/rebind.schema.json",
       "uri": "/sessions:rebind"
     },
@@ -729,6 +1066,12 @@
         "reconnect_nonce"
       ],
       "principal": "D",
+      "required_fields": [
+        "continuity_evidence",
+        "expected_connection_epoch",
+        "probe_payload",
+        "reconnect_nonce"
+      ],
       "schema": "commands/session/reconnect.schema.json",
       "uri": "/sessions/{id}:reconnect"
     },
@@ -739,6 +1082,11 @@
         "reason"
       ],
       "principal": "D",
+      "required_fields": [
+        "descriptor_ref",
+        "probe_payload",
+        "reason"
+      ],
       "schema": "commands/session/reprobe.schema.json",
       "uri": "/sessions/{id}:reprobe"
     },
@@ -752,6 +1100,14 @@
         "right_digest"
       ],
       "principal": "M",
+      "required_fields": [
+        "ancestor_digest",
+        "expected_revisions",
+        "left_digest",
+        "plan_digest",
+        "resolution_plan",
+        "right_digest"
+      ],
       "schema": "commands/shared/reconcile.schema.json",
       "uri": "/shared-state:reconcile"
     },
@@ -764,6 +1120,13 @@
         "reason_code"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "checkpoint_summary",
+        "dependency_refs",
+        "evidence_refs",
+        "reason_code"
+      ],
       "schema": "commands/task/block.schema.json",
       "uri": "/tasks/{id}:block"
     },
@@ -774,6 +1137,11 @@
         "stop_evidence"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "reason",
+        "stop_evidence"
+      ],
       "schema": "commands/task/cancel_ack.schema.json",
       "uri": "/tasks/{id}:ack-cancel"
     },
@@ -782,6 +1150,9 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/task/cancel_request.schema.json",
       "uri": "/tasks/{id}:request-cancel"
     },
@@ -790,6 +1161,9 @@
         "capability_snapshot_id"
       ],
       "principal": "B",
+      "required_fields": [
+        "capability_snapshot_id"
+      ],
       "schema": "commands/task/claim.schema.json",
       "uri": "/tasks/{id}:claim"
     },
@@ -805,12 +1179,20 @@
         "title"
       ],
       "principal": "M",
+      "required_fields": [
+        "acceptance_policy",
+        "execution_scope",
+        "objective",
+        "required_capabilities",
+        "title"
+      ],
       "schema": "commands/task/create.schema.json",
       "uri": "/tasks"
     },
     "task.create.user": {
       "payload_fields": [],
       "principal": "U",
+      "required_fields": [],
       "schema": "commands/task/create/user.schema.json",
       "uri": "/control/tasks"
     },
@@ -822,6 +1204,12 @@
         "target_task_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "expected_revisions",
+        "kind",
+        "source_task_id",
+        "target_task_id"
+      ],
       "schema": "commands/task/edge/add.schema.json",
       "uri": "/task-edges"
     },
@@ -831,6 +1219,10 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "expected_revisions",
+        "reason"
+      ],
       "schema": "commands/task/edge/remove.schema.json",
       "uri": "/task-edges/{id}:remove"
     },
@@ -842,6 +1234,11 @@
         "stop_evidence"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "evidence_refs",
+        "reason"
+      ],
       "schema": "commands/task/fail.schema.json",
       "uri": "/tasks/{id}:fail"
     },
@@ -852,6 +1249,11 @@
         "expected_revisions"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "evidence_refs",
+        "expected_revisions"
+      ],
       "schema": "commands/task/preflight.schema.json",
       "uri": "/tasks/{id}:preflight"
     },
@@ -861,6 +1263,10 @@
         "summary"
       ],
       "principal": "X",
+      "required_fields": [
+        "evidence_refs",
+        "summary"
+      ],
       "schema": "commands/task/progress.schema.json",
       "uri": "/tasks/{id}:progress"
     },
@@ -869,6 +1275,7 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [],
       "schema": "commands/task/publish.schema.json",
       "uri": "/tasks/{id}:publish"
     },
@@ -877,6 +1284,7 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [],
       "schema": "commands/task/ready.schema.json",
       "uri": "/tasks/{id}:ready"
     },
@@ -886,6 +1294,10 @@
         "expected_attempt_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "disposition",
+        "expected_attempt_id"
+      ],
       "schema": "commands/task/recover.schema.json",
       "uri": "/tasks/{id}:recover"
     },
@@ -898,6 +1310,13 @@
         "input_digest"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "evidence_refs",
+        "expected_execution_epoch",
+        "expected_revisions",
+        "input_digest"
+      ],
       "schema": "commands/task/resume.schema.json",
       "uri": "/tasks/{id}:resume"
     },
@@ -909,6 +1328,12 @@
         "slot_id"
       ],
       "principal": "R",
+      "required_fields": [
+        "evidence_refs",
+        "reason",
+        "result_digest",
+        "slot_id"
+      ],
       "schema": "commands/task/review/accept.schema.json",
       "uri": "/reviews/{id}:accept"
     },
@@ -920,6 +1345,12 @@
         "slot_id"
       ],
       "principal": "R",
+      "required_fields": [
+        "evidence_refs",
+        "reason",
+        "result_digest",
+        "slot_id"
+      ],
       "schema": "commands/task/review/request_changes.schema.json",
       "uri": "/reviews/{id}:request-changes"
     },
@@ -931,6 +1362,12 @@
         "requested_scope"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "expected_revisions",
+        "reason",
+        "requested_scope"
+      ],
       "schema": "commands/task/scope/request.schema.json",
       "uri": "/tasks/{id}/scope-requests"
     },
@@ -939,6 +1376,9 @@
         "choice"
       ],
       "principal": "M",
+      "required_fields": [
+        "choice"
+      ],
       "schema": "commands/task/scope/resolve.schema.json",
       "uri": "/scope-requests/{id}:resolve"
     },
@@ -949,6 +1389,11 @@
         "result_digest"
       ],
       "principal": "B",
+      "required_fields": [
+        "evidence_refs",
+        "reason",
+        "result_digest"
+      ],
       "schema": "commands/task/self_accept.schema.json",
       "uri": "/reviews/{id}:self-accept"
     },
@@ -960,6 +1405,12 @@
         "preflight_id"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "expected_execution_epoch",
+        "input_digest",
+        "preflight_id"
+      ],
       "schema": "commands/task/start.schema.json",
       "uri": "/tasks/{id}:start"
     },
@@ -971,6 +1422,11 @@
         "workspace_result_ref"
       ],
       "principal": "X",
+      "required_fields": [
+        "artifact_refs",
+        "evidence_refs",
+        "summary"
+      ],
       "schema": "commands/task/submit.schema.json",
       "uri": "/tasks/{id}:submit"
     },
@@ -983,6 +1439,9 @@
         "title"
       ],
       "principal": "M",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/task/update_plan.schema.json",
       "uri": "/tasks/{id}:update-plan"
     },
@@ -991,6 +1450,9 @@
         "reason"
       ],
       "principal": "M",
+      "required_fields": [
+        "reason"
+      ],
       "schema": "commands/user_decision/cancel.schema.json",
       "uri": "/decisions/{id}:cancel"
     },
@@ -1004,6 +1466,14 @@
         "summary"
       ],
       "principal": "M",
+      "required_fields": [
+        "choices",
+        "expected_revisions",
+        "kind",
+        "proposal_digest",
+        "proposal_ref",
+        "summary"
+      ],
       "schema": "commands/user_decision/propose.schema.json",
       "uri": "/decisions"
     },
@@ -1015,8 +1485,26 @@
         "reason"
       ],
       "principal": "U",
+      "required_fields": [
+        "choice",
+        "expected_revisions",
+        "proposal_digest"
+      ],
       "schema": "commands/user_decision/resolve.schema.json",
       "uri": "/control/decisions/{id}:resolve"
+    },
+    "worker.ready": {
+      "payload_fields": [
+        "assignment_id",
+        "wake_attempt_id"
+      ],
+      "principal": "B",
+      "required_fields": [
+        "assignment_id",
+        "wake_attempt_id"
+      ],
+      "schema": "commands/worker/ready.schema.json",
+      "uri": "/coordination/assignments/{id}:ready"
     },
     "workspace.attach_external": {
       "payload_fields": [
@@ -1027,6 +1515,13 @@
         "root_binding_refs"
       ],
       "principal": "M",
+      "required_fields": [
+        "attempt_id",
+        "decision_id",
+        "evidence_refs",
+        "external_locator",
+        "root_binding_refs"
+      ],
       "schema": "commands/workspace/attach_external.schema.json",
       "uri": "/workspaces:attach-external"
     },
@@ -1037,6 +1532,11 @@
         "required_checkpoint_ref"
       ],
       "principal": "M",
+      "required_fields": [
+        "input_digest",
+        "reason",
+        "required_checkpoint_ref"
+      ],
       "schema": "commands/workspace/cleanup.schema.json",
       "uri": "/workspaces/{id}:cleanup"
     },
@@ -1049,6 +1549,13 @@
         "required_checkpoint_ref"
       ],
       "principal": "U",
+      "required_fields": [
+        "data_loss_acceptance",
+        "exact_paths_digest",
+        "input_digest",
+        "reason",
+        "required_checkpoint_ref"
+      ],
       "schema": "commands/workspace/cleanup_force.schema.json",
       "uri": "/control/workspaces/{id}:cleanup-force"
     },
@@ -1060,6 +1567,12 @@
         "result_manifest"
       ],
       "principal": "M",
+      "required_fields": [
+        "evidence_refs",
+        "exact_input_digest",
+        "outcome",
+        "result_manifest"
+      ],
       "schema": "commands/workspace/git/report.schema.json",
       "uri": "/git-requests/{id}:report"
     },
@@ -1072,29 +1585,63 @@
         "target_repository_id"
       ],
       "principal": "M",
+      "required_fields": [
+        "plan_digest",
+        "reason",
+        "source_result_ref",
+        "target_baseline_digest",
+        "target_repository_id"
+      ],
       "schema": "commands/workspace/integrate.schema.json",
       "uri": "/integrations"
     },
     "workspace.prepare": {
       "payload_fields": [
         "attempt_id",
+        "baseline",
         "decision_id",
-        "input_digest"
+        "external_locator",
+        "input_digest",
+        "repository_id",
+        "root_binding_refs",
+        "task_id"
       ],
       "principal": "B",
+      "required_fields": [
+        "attempt_id",
+        "baseline",
+        "decision_id",
+        "input_digest",
+        "root_binding_refs",
+        "task_id"
+      ],
       "schema": "commands/workspace/prepare.schema.json",
       "uri": "/workspaces"
     },
     "workspace.result": {
       "payload_fields": [
+        "attempt_id",
         "baseline_digest",
         "changed_paths",
         "commit_refs",
         "patch_artifact_ref",
+        "task_id",
         "untracked_summary",
-        "validation_refs"
+        "validation_metadata",
+        "validation_refs",
+        "workspace_id"
       ],
       "principal": "X",
+      "required_fields": [
+        "attempt_id",
+        "baseline_digest",
+        "changed_paths",
+        "commit_refs",
+        "task_id",
+        "untracked_summary",
+        "validation_refs",
+        "workspace_id"
+      ],
       "schema": "commands/workspace/result.schema.json",
       "uri": "/workspaces/{id}:record-result"
     },
@@ -1108,17 +1655,15 @@
         "risk_submission_ref"
       ],
       "principal": "M",
+      "required_fields": [
+        "attempt_id",
+        "driver_kind",
+        "evidence_refs",
+        "hard_constraints",
+        "input_digest"
+      ],
       "schema": "commands/workspace/select.schema.json",
       "uri": "/workspace-decisions"
-    },
-    "worker.ready": {
-      "payload_fields": [
-        "assignment_id",
-        "wake_attempt_id"
-      ],
-      "principal": "B",
-      "schema": "commands/worker/ready.schema.json",
-      "uri": "/coordination/assignments/{id}:ready"
     }
   },
   "protocol_version": "1.0",
@@ -1141,6 +1686,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:d8d1cb38997e31dfd6fa26540ea155a9940423d6d87e3b9ec8783f74c1dca960",
+  "schema_bundle_digest": "sha256:99326365c16718548299351917cb384d740858ae2b42551c5b308d996bbcef92",
   "supported_previous_version": "0.9"
 }

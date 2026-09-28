@@ -1,0 +1,58 @@
+{
+  "record_kind": "tsunagou.acceptance.deployment.v1",
+  "recorded_at": "2026-09-28T05:24:28.208Z",
+  "timing_record": "timing-record.json",
+  "target": {
+    "project_root": "D:\\ALL.Net\\SegaImageManageTool",
+    "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+    "branch_before_deployment": "main",
+    "head_before_deployment": "863537ff4f528da88cdf7b2d6c6786c69f1105a8",
+    "business_source_copied": false,
+    "expected_changes": [
+      ".gitignore",
+      "AGENTS.md",
+      ".agents/skills/tsunagou-project/SKILL.md",
+      ".tsunagou/"
+    ]
+  },
+  "source": {
+    "root": "D:\\Tsunagou",
+    "ref": "working-tree",
+    "commit_after_explicit_bootstrap": "616bd83e272f6be3c9aec0b6176c6d71a13a4aff",
+    "initial_installer_checkout_observed": "C:\\Users\\Tyuikl\\Tsunagou",
+    "source_correction_command": "uv run python -m tsunagou project bootstrap --coordination-root D:\\ALL.Net\\SegaImageManageTool --source-root D:\\Tsunagou --source-ref working-tree --host codex --refresh"
+  },
+  "daemon": {
+    "status_checked_at": "2026-09-28T03:09:00Z",
+    "status": "running",
+    "pid": 76936,
+    "url": "http://127.0.0.1:56876",
+    "state_dir": "D:\\ALL.NET\\SegaImageManageTool\\.tsunagou\\local",
+    "doctor": "passed",
+    "host_wake": "disabled",
+    "pty_start_behavior": "returned_started_then_exited",
+    "stable_start_behavior": "non_pty_start_still_running"
+  },
+  "baseline": {
+    "dotnet_build": "passed",
+    "existing_nullable_warning_count": 67,
+    "pnpm_update_notice": "12.4.2_to_12.6.0_not_applied"
+  },
+  "delivered_runtime": {
+    "business_project_modified": true,
+    "webui_http_tasks_review_accepted": true,
+    "independent_dotnet_build": "exit_0",
+    "independent_webui_node_tests": "exit_0_5_passed",
+    "independent_http_acceptance": "exit_0",
+    "live_backend_pid": 86772,
+    "live_url": "http://127.0.0.1:5137/",
+    "live_browser_result": "service_online_and_file_too_small_error_with_request_id"
+  },
+  "connect_profiles": [
+    {"profile": "codex-main", "role": "main", "result": "ticket_issued", "host_registration": "registered:tsunagou-codex-main-fa0987f0"},
+    {"profile": "codex-webui", "role": "worker", "result": "ticket_issued_after_retry", "host_registration": "registered:tsunagou-codex-webui-fa0987f0"},
+    {"profile": "codex-http", "role": "worker", "result": "ticket_issued", "host_registration": "registered:tsunagou-codex-http-fa0987f0"}
+  ],
+  "secrets_included": false,
+  "acceptance_state": "runtime_delivered_with_remaining_wake_cli_otel_and_valid_btid_fixture_gaps"
+}

@@ -1,0 +1,76 @@
+{
+  "started_at": "2026-09-28T06:14:00.823523+00:00",
+  "finished_at": "2026-09-28T06:14:00.995002+00:00",
+  "duration_ms": 171.48,
+  "request": {
+    "jsonrpc": "2.0",
+    "id": "native-wake-60c4cbbb-5ac4-421c-b893-f4f61251a9e9",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "messageId": "native-http-cd8d61a7-c00c-4f19-a758-0a05b18f000b",
+        "role": "agent",
+        "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+        "parts": [
+          {
+            "text": "Native A2A wake acceptance only. This message was delivered by daemon host wake, without Codex application follow-up. Read and ACK this message through your existing HTTP worker bridge, then report its message ID and remain idle. Do not change code, claim/reopen tasks, or message other agents."
+          }
+        ],
+        "metadata": {
+          "tsunagou": {
+            "recipient_agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+            "kind": "native_wake_acceptance",
+            "subject_ref": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+            "payload": {
+              "test_origin": "root_http_acceptance_harness",
+              "no_code_changes": true
+            }
+          }
+        }
+      }
+    }
+  },
+  "response": {
+    "jsonrpc": "2.0",
+    "id": "native-wake-60c4cbbb-5ac4-421c-b893-f4f61251a9e9",
+    "result": {
+      "message": {
+        "messageId": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+        "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+        "role": "agent",
+        "parts": [
+          {
+            "text": "Message accepted by Tsunagou durable delivery."
+          }
+        ],
+        "metadata": {
+          "tsunagou": {
+            "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+            "delivery": "pending",
+            "wake": "not_requested",
+            "push": {
+              "requested": false,
+              "status": "not_requested"
+            },
+            "host_wake": {
+              "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6",
+              "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+              "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+              "state": "failed",
+              "thread_id_digest": null,
+              "turn_id_digest": null,
+              "evidence": [],
+              "error_code": "desktop_thread_unavailable",
+              "error_message": "the attached Desktop thread cannot be resumed",
+              "updated_at": "2026-09-28T06:14:00.992692+00:00",
+              "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096"
+            }
+          }
+        }
+      }
+    }
+  },
+  "app_followup_used": false,
+  "secrets_included": false
+}

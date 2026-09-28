@@ -209,7 +209,8 @@ uv run python -m tsunagou project complete COMPLETION_PROPOSAL_ID `
 
 ```powershell
 uv run python -m tsunagou operation show OPERATION_ID
-uv run python -m tsunagou checkpoint list
+uv run python -m tsunagou checkpoint list $projectId --verify
+uv run python -m tsunagou checkpoint verify CHECKPOINT_DIGEST
 uv run python -m tsunagou checkpoint retry
 uv run python -m tsunagou recover
 ```
@@ -246,11 +247,18 @@ Invoke-RestMethod "$baseUrl/api/v1/health"
 | GET | `/api/v1/projects/{project_id}/coordination` | 计划、分工、WakeAttempt、重要事件和覆盖率 |
 | GET | `/api/v1/projects/{project_id}/assignments` | 分工状态和 worker 覆盖率 |
 | GET | `/api/v1/projects/{project_id}/wake-attempts` | 唤醒双确认、重试、deadline 和失败原因 |
+| GET | `/api/v1/projects/{project_id}/diagnostics` | callback、wake、Agent presentation/pull、turn 的独立诊断证据 |
 | GET | `/api/v1/projects/{project_id}/events` | 协调事件与 Main 可见汇总 |
-| GET | `/api/v1/projects/{project_id}/audit` | 脱敏事件审计 |
+| GET | `/api/v1/projects/{project_id}/audit` | 兼容入口：脱敏事件审计 |
+| GET | `/api/v1/projects/{project_id}/history` | 项目责任时间线；AuditPage，支持时间/actor/subject/cursor |
+| GET | `/api/v1/projects/{project_id}/history/export` | 脱敏审计导出；带 schema、source、lineage_id、exported_at |
+| GET | `/api/v1/projects/{project_id}/tasks/{task_id}/history` | 任务及其 Attempt/Result/Workspace/认知和可见消息关联时间线 |
+| GET | `/api/v1/audit/events/{event_id}` | 单事件因果、证据和变更详情 |
 | GET | `/api/v1/decisions` | 用户决定列表 |
 | GET | `/api/v1/operations/{operation_id}` | Operation 状态 |
-| GET | `/api/v1/checkpoints` | checkpoint 列表和 current 指针 |
+| GET | `/api/v1/checkpoints` | 兼容入口：当前项目 checkpoint 列表 |
+| GET | `/api/v1/projects/{project_id}/checkpoints?verify=true` | checkpoint 列表/current 指针；可选实际校验文件摘要 |
+| GET | `/api/v1/checkpoints/{checkpoint_digest}/verify` | 校验单个 manifest、内容摘要和本地 Git heads/tags anchor |
 | GET | `/api/v1/artifacts/{artifact_ref}` | 已授权附件内容摘要/读取 |
 | GET | `/api/v1/recovery` | 当前恢复状态 |
 | GET | `/.well-known/agent-card.json` | A2A Agent Card；不含秘密 |
@@ -283,13 +291,50 @@ $projectId = $project.project_id
 $tasks = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/tasks"
 $agents = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/agents"
 $cognition = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/cognition"
-$audit = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/audit"
+$controlToken = (Get-Content -Raw (Join-Path $env:TSUNAGOU_STATE_DIR 'control.token')).Trim()
+$audit = Invoke-RestMethod "$baseUrl/api/v1/projects/$projectId/audit" `
+  -Headers @{ Authorization = "Bearer $controlToken" }
 
 $tasks | ConvertTo-Json -Depth 10
 $agents | ConvertTo-Json -Depth 10
 ```
 
 当前查询实现集中在 loopback daemon，不是远程多租户 API；不要将端口绑定到 `0.0.0.0` 或配置 LAN 反向代理。未来 Web 工作台应复用同一 command/query 契约，不应另造一套项目事实。
+
+无需手工读取 SQLite 即可查询责任时间线。以下命令自动读取当前项目的私有控制凭据，时间使用 UTC；`$projectId` 沿用初始化结果，或从当前项目的 `.tsunagou/project.json` 读取。
+
+```powershell
+$projectId = (Get-Content -Raw (Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou/project.json') | ConvertFrom-Json).project_id
+uv run python -m tsunagou project history $projectId --limit 50
+
+# 明确时间范围；输出含时间、actor、subject、状态与版本变化、原因、证据引用。
+$page = uv run python -m tsunagou project history $projectId `
+  --from '2026-09-27T00:00:00Z' --to '2026-09-28T00:00:00Z' `
+  --limit 200 --json | ConvertFrom-Json
+$page.items | Select-Object event_seq, occurred_at, actor_ref, action, subject_ref, outcome
+
+# 下一页必须保留原过滤参数与页长；游标为空即读完。
+if ($page.next_cursor) {
+  $page = uv run python -m tsunagou project history $projectId `
+    --from '2026-09-27T00:00:00Z' --to '2026-09-28T00:00:00Z' `
+    --limit 200 --cursor $page.next_cursor --json | ConvertFrom-Json
+}
+```
+
+可加 `--actor <agent_id>` 或 `--subject 'task/<task_id>'`。`as_of_event_seq` 是首屏固定的高水位，新事件需重新查询；游标 15 分钟后或 daemon 重启后失效。旧记录无法证明的时间为 `null`，人类输出显示 `unknown_time`，带时间范围的查询不包含这些旧记录。用户和 main 均不能借审计接口读取其他成员的私信事件。
+
+任务时间线、单事件和导出命令：
+
+```powershell
+uv run python -m tsunagou task history TASK_ID --project-id $projectId --limit 100 --json
+uv run python -m tsunagou audit event EVENT_ID --project-id $projectId --include-evidence
+uv run python -m tsunagou project history $projectId --export --limit 200 --json > audit-export.json
+uv run python -m tsunagou project diagnostics $projectId --json
+```
+
+`task history` 的关联范围由已持久化的 task/attempt/result/workspace/report/contract/message 引用决定；不会把同一项目的无关事件拼入时间线。`audit event` 和 `checkpoint verify` 在服务端再次检查项目归属及私信可见性。所有这些查询是只读的，不创建 event、operation 或 revision；无 Git 仓库时 checkpoint 仍可验证，但 `git_anchors` 为空。
+
+诊断记录只表达传输和宿主观察：`wake_requested`、`callback_received`、`thread_resumed`、`turn_started`、`turn_completed`、`agent_presented` 和 `wake_unknown` 各自带 `diagnostic_id`、`message_id`、`wake_attempt_id`、时间和 evidence digest。callback 2xx、宿主接受 wake 或 Agent presentation 都不能单独证明 Agent 已执行 turn；必须看到独立的 `turn_started`/`turn_completed` 证据。
 
 ### 7.1.1 A2A 调用
 
@@ -440,3 +485,49 @@ Remove-Item Env:TSUNAGOU_CONTROL_TOKEN -ErrorAction SilentlyContinue
 ```
 
 更细的协议语义、模块边界和生成 Schema 见 [实施基线](../implementation/README.md)、[命令目录](../implementation/command-catalog.md)、[CLI 契约](../implementation/cli-contract.md) 和 [子 Agent 接入指南](subagent-guide.md)。
+
+## 11. 旧库凭据迁移（PT2）
+
+新建项目不需要迁移。旧库因 `credential_migration_required` 拒绝启动，或用户决定清理早期泄漏凭据时，使用以下操作。迁移撤销旧 Agent session、票据、grant 和主权限，保留任务历史；完成后需要重新接入并任命主 Agent。不要把私有备份直接复制回运行库。
+
+先把 `$projectRoot` 改成用户选择的项目目录。下面第一段只预览，可以在 daemon 运行时执行：
+
+```powershell
+Set-Location D:\Tsunagou
+$projectRoot = 'D:\Tsunagou-a2a-demo'
+uv run python -m tsunagou daemon migrate-credentials --coordination-root $projectRoot --dry-run
+if ($LASTEXITCODE -ne 0) { throw '预览失败，先处理报告的错误' }
+```
+
+确认要迁移该项目后，停止其 daemon，重新预览并保存精确计划。不要复用运行期间可能已经变化的计划：
+
+```powershell
+uv run python -m tsunagou daemon stop --coordination-root $projectRoot
+if ($LASTEXITCODE -ne 0) { throw '未能停止目标 daemon' }
+$planText = uv run python -m tsunagou daemon migrate-credentials --coordination-root $projectRoot --dry-run
+if ($LASTEXITCODE -ne 0) { throw '迁移预览失败' }
+$migrationPlan = $planText | ConvertFrom-Json
+$planFile = Join-Path $projectRoot '.tsunagou\local\credential-migration-plan.json'
+$planText | Set-Content -LiteralPath $planFile -Encoding utf8
+$migrationPlan | Format-List
+```
+
+查看 `quarantine_files`、撤销范围和 `plan_digest` 后，执行用户确认命令：
+
+```powershell
+uv run python -m tsunagou daemon migrate-credentials --coordination-root $projectRoot --confirm-plan-digest $migrationPlan.plan_digest
+if ($LASTEXITCODE -ne 0) { throw '迁移未完成；保留原计划，按错误处理后恢复' }
+uv run python -m tsunagou daemon start --coordination-root $projectRoot
+if ($LASTEXITCODE -ne 0) { throw 'daemon 启动失败' }
+```
+
+结束标准：报告 `status=completed`、`integrity_check=ok`、有 `started_at/completed_at` 和私有备份路径；daemon 能启动；项目主权限为 unassigned，旧会话不能执行命令。随后按本文接入步骤 `agent connect --role main` 与 worker 接入，禁止复制旧 token。新历史中应能查询到 `credential.migrate` 事件。
+
+中断后，重新打开 PowerShell 设置同一 `$projectRoot`，读取原计划继续；这不会重复撤销或重复创建迁移事件：
+
+```powershell
+$migrationPlan = Get-Content -LiteralPath (Join-Path $projectRoot '.tsunagou\local\credential-migration-plan.json') -Raw | ConvertFrom-Json
+uv run --project D:\Tsunagou python -m tsunagou daemon migrate-credentials --coordination-root $projectRoot --confirm-plan-digest $migrationPlan.plan_digest
+```
+
+`migration_plan_changed` 表示确认前输入已变化，需要重新预览；`credential_migration_incomplete` 表示已有迁移未完成，须用原计划恢复。备份和 quarantine 含已撤销的历史秘密，不提交 Git，不传给模型。机制、交付 ACK 和测试命令见 [凭据交付](../implementation/credential-delivery.md)。

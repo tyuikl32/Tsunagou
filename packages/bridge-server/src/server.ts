@@ -19,10 +19,11 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CredentialHandoff, loadSession, type PersistedSession, type SessionCredential, type TicketFile } from "./credential-handoff.js";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -73,25 +74,14 @@ function readSchemaBundleDigest(): string {
 
 const SCHEMA_BUNDLE_DIGEST = readSchemaBundleDigest();
 
-interface SessionCredential {
-  agent_id: string;
-  session_id: string;
-  connection_epoch: number;
-  secret_token: string;
-  reconnect_nonce: string;
-  baseline_status: string;
-}
-
-interface PersistedSession extends SessionCredential {
-  host_conversation_id_digest?: string;
-  conversation_binding_digest?: string;
-}
-
-interface TicketFile {
-  installation_id: string;
-  conversation_id: string;
-  secret: string;
-  requested_role?: "worker" | "main";
+function workspaceSchema(name: "prepare" | "result"): Tool["inputSchema"] {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const relative = `schemas/commands/workspace/${name}.schema.json`;
+  for (const root of [join(here, "..", "protocol"), join(here, "..", "..", "..", "protocol")]) {
+    const path = join(root, relative);
+    if (existsSync(path)) return JSON.parse(readFileSync(path, "utf-8")) as Tool["inputSchema"];
+  }
+  throw new Error("workspace_schema_unavailable");
 }
 
 interface ToolSpec {
@@ -243,8 +233,8 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "resource__release", command_kind: "resource.release", description: "Release resources held by a task attempt.", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "resource__renew", command_kind: "resource.renew", description: "Renew the active resource lease for a running attempt.", inputSchema: { type: "object", required: ["lease_set_id", "task_id", "attempt_id"], properties: { lease_set_id: { type: "string" }, task_id: { type: "string" }, attempt_id: { type: "string" }, scope_digest: { type: "string" } }, additionalProperties: false } },
   { name: "workspace__select", command_kind: "workspace.select", description: "Select an isolation driver for the task attempt.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "driver_kind"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, driver_kind: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, hard_constraints: { type: "array", items: { type: "string" } }, input_digest: { type: "string" }, risk_submission_ref: { type: "string" } }, additionalProperties: false } },
-  { name: "workspace__prepare", command_kind: "workspace.prepare", description: "Prepare the selected workspace and record its baseline.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "decision_id", "baseline"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, decision_id: { type: "string" }, input_digest: { type: "string" }, root_binding_refs: { type: "array", items: { type: "string" } }, repository_id: { type: "string" }, external_locator: { type: "string" }, baseline: { type: "object" } }, additionalProperties: false } },
-  { name: "workspace__result", command_kind: "workspace.result", description: "Record the resulting workspace manifest after execution.", inputSchema: { type: "object", required: ["workspace_id", "task_id", "attempt_id", "baseline_digest"], properties: { workspace_id: { type: "string" }, task_id: { type: "string" }, attempt_id: { type: "string" }, baseline_digest: { type: "string" }, changed_paths: { type: "array", items: { type: "string" } }, commit_refs: { type: "array", items: { type: "string" } }, patch_artifact_ref: { type: "string" }, untracked_summary: { type: "array", items: { type: "object" } }, validation_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
+  { name: "workspace__prepare", command_kind: "workspace.prepare", description: "Prepare the selected workspace and record its baseline.", inputSchema: workspaceSchema("prepare") },
+  { name: "workspace__result", command_kind: "workspace.result", description: "Record the resulting workspace manifest after execution.", inputSchema: workspaceSchema("result") },
   { name: "workspace__integrate", command_kind: "workspace.integrate", description: "Create a Main-owned local integration request from a worker result; this never pushes.", inputSchema: { type: "object", required: ["source_result_ref", "target_repository_id", "target_baseline_digest", "plan_digest", "reason"], properties: { source_result_ref: { type: "string" }, target_repository_id: { type: "string" }, target_baseline_digest: { type: "string" }, plan_digest: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__review_accept", command_kind: "task.review.accept", description: "Accept a submitted task result as the designated reviewer.", inputSchema: { type: "object", required: ["task_id", "result_id", "result_digest", "slot_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, result_id: { type: "string" }, result_digest: { type: "string" }, slot_id: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
   { name: "task__review_request_changes", command_kind: "task.review.request_changes", description: "Request changes to a submitted task result as the designated reviewer.", inputSchema: { type: "object", required: ["task_id", "result_id", "result_digest", "slot_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, result_id: { type: "string" }, result_digest: { type: "string" }, slot_id: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
@@ -314,122 +304,6 @@ class HttpTransport {
     return body.result ?? {};
   }
 
-  /** Redeem a one-time ticket: T-principal, no session headers, ticket as bearer. */
-  public async enroll(ticket: TicketFile, baseline: Record<string, unknown>): Promise<SessionCredential> {
-    const envelope = {
-      command_id: randomUUID(),
-      protocol_version: PROTOCOL_VERSION,
-      schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
-      payload: {
-        installation_id: ticket.installation_id,
-        conversation_evidence: { conversation_id: ticket.conversation_id },
-        probe_payload: baseline,
-      },
-    };
-    const response = await fetch(`${this.baseUrl}/api/v1/commands/agent.enroll`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${ticket.secret}` },
-      body: JSON.stringify(envelope),
-    });
-    const body = (await response.json().catch(() => ({}))) as {
-      result?: SessionCredential;
-      detail?: { code?: string };
-    };
-    if (!response.ok || body.result === undefined) {
-      const code = body.detail?.code ?? `http_${response.status}`;
-      throw new Error(`tsunagou_enroll_error:${code}`);
-    }
-    return body.result;
-  }
-
-  /** Resume an already-attached session with a fresh one-time ticket (T principal). */
-  public async rebind(ticket: TicketFile, targetAgentId: string, baseline: Record<string, unknown>): Promise<SessionCredential> {
-    const envelope = {
-      command_id: randomUUID(),
-      protocol_version: PROTOCOL_VERSION,
-      schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
-      payload: {
-        installation_id: ticket.installation_id,
-        conversation_evidence: { conversation_id: ticket.conversation_id },
-        target_agent_id: targetAgentId,
-        probe_payload: baseline,
-      },
-    };
-    const response = await fetch(`${this.baseUrl}/api/v1/commands/session.rebind`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${ticket.secret}` },
-      body: JSON.stringify(envelope),
-    });
-    const body = (await response.json().catch(() => ({}))) as {
-      result?: SessionCredential;
-      detail?: { code?: string };
-    };
-    if (!response.ok || body.result === undefined) {
-      const code = body.detail?.code ?? `http_${response.status}`;
-      throw new Error(`tsunagou_rebind_error:${code}`);
-    }
-    return body.result;
-  }
-
-  /** Reconnect an attached session after a restart (D principal): prove we still
-   *  hold the session credential at the expected epoch, and rotate token/nonce.
-   *  No ticket is involved and no baseline is re-sent — this is a pure credential
-   *  rotation, not a re-admission, so the session keeps its current status. */
-  public async reconnect(session: SessionCredential): Promise<SessionCredential> {
-    const envelope = {
-      command_id: randomUUID(),
-      protocol_version: PROTOCOL_VERSION,
-      schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
-      payload: {
-        reconnect_nonce: session.reconnect_nonce,
-        expected_connection_epoch: session.connection_epoch,
-      },
-    };
-    const response = await fetch(`${this.baseUrl}/api/v1/commands/session.reconnect`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${session.secret_token}`,
-        "tsunagou-session-id": session.session_id,
-        "tsunagou-connection-epoch": String(session.connection_epoch),
-      },
-      body: JSON.stringify(envelope),
-    });
-    const body = (await response.json().catch(() => ({}))) as {
-      result?: SessionCredential;
-      detail?: { code?: string };
-    };
-    if (!response.ok || body.result === undefined) {
-      const code = body.detail?.code ?? `http_${response.status}`;
-      throw new Error(`tsunagou_reconnect_error:${code}`);
-    }
-    return body.result;
-  }
-}
-
-function loadSession(path: string): PersistedSession | undefined {
-  if (!existsSync(path)) return undefined;
-  try {
-    const raw = JSON.parse(readFileSync(path, "utf-8")) as PersistedSession;
-    if (typeof raw.session_id !== "string" || typeof raw.secret_token !== "string") return undefined;
-    return raw;
-  } catch {
-    // A partially written private file is treated as absent; the next request
-    // can recover from the ticket or report a stable not-enrolled state.
-    return undefined;
-  }
-}
-
-function saveSession(
-  path: string, session: SessionCredential, hostDigest: string | undefined,
-  conversationBindingDigest: string | undefined,
-): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify({
-    ...session,
-    host_conversation_id_digest: hostDigest,
-    conversation_binding_digest: conversationBindingDigest,
-  }, null, 2) + "\n", "utf-8");
 }
 
 /** A previously persisted digest lets us observe resume continuity honestly. */
@@ -441,126 +315,108 @@ function continuityRefs(previousDigest: string | undefined, currentDigest: strin
 async function main(): Promise<void> {
   const cfg = config();
   const hostIdentity = readHostIdentity(cfg.hostIdCandidates);
-  // hostDigest is the boot-time identity (Codex env vars). For OpenCode the
-  // session id arrives per tool call via MCP _meta["ai.opencode/sessionID"],
-  // so currentHostDigest is updated lazily inside the CallTool handler.
-  let currentHostDigest: string | undefined = hostIdentity?.digest;
   const projectDigest = cfg.projectRoot ? readProjectDigest(cfg.projectRoot) : undefined;
   const transport = new HttpTransport(readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl);
 
   // The MCP process may outlive the CLI operation that writes its ticket or
   // session file.  Do not snapshot admission files only once at process boot:
   // Codex keeps a stdio bridge alive across `mcp add`/re-enrollment.
-  let bootstrapTicket: TicketFile | undefined;
   // A bridge credential belongs to one host conversation. Never use a global
   // ~/.tsunagou/bridge-session.json: when Codex/OpenCode launches several
   // conversations from the same IDE, that file would silently make them one
   // worker. Explicit TSUNAGOU_SESSION_FILE remains supported for a caller
   // that deliberately provisions one private file per conversation.
-  let conversationBindingDigest = currentHostDigest;
-  // Set when a multiplexing host (OpenCode) supplies its conversation id via
-  // MCP _meta: such a bridge keeps one private session file per conversation.
-  let sessionFileOverride: string | undefined;
-  let sessionFile = cfg.sessionFile ?? (
-    conversationBindingDigest
-      ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
-      : undefined
-  );
-  let session: PersistedSession | undefined = sessionFile ? loadSession(sessionFile) : undefined;
-  let observedContinuity = continuityRefs(session?.host_conversation_id_digest, currentHostDigest);
+  interface ConversationState {
+    hostDigest?: string;
+    metadataDigest?: string;
+    sessionFile?: string;
+    session?: PersistedSession;
+    observedContinuity?: string[];
+    recoveryError?: string;
+    recoveryPromise?: Promise<void>;
+  }
+  const conversationFile = (digest: string) => join(cfg.stateDir, "sessions", `bridge-session-${digest.slice(0, 32)}.json`);
+  const defaultState: ConversationState = {
+    hostDigest: hostIdentity?.digest,
+    sessionFile: cfg.sessionFile ?? (hostIdentity ? conversationFile(hostIdentity.digest) : undefined),
+  };
+  const conversations = new Map<string, ConversationState>();
 
-  async function attemptSessionRecovery(): Promise<void> {
-    bootstrapTicket = undefined;
-    if (cfg.ticketFile !== "" && existsSync(cfg.ticketFile)) {
-      try {
-        bootstrapTicket = readTicketFile(cfg.ticketFile);
-      } catch (error) {
-        process.stderr.write(`[tsunagou-bridge] ticket read failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  async function attemptSessionRecovery(state: ConversationState, forceReconnect = false): Promise<void> {
+    try {
+      let bootstrapTicket = cfg.ticketFile && existsSync(cfg.ticketFile)
+        ? readTicketFile(cfg.ticketFile) : undefined;
+      let ticketBinding = bootstrapTicket ? hash(`conversation_id:${bootstrapTicket.conversation_id}`) : undefined;
+      if (state.metadataDigest && ticketBinding !== state.metadataDigest) {
+        // A shared MCP configuration may currently hold another conversation's
+        // ticket. Leave it intact for that conversation; never redeem it here.
+        bootstrapTicket = undefined;
+        ticketBinding = undefined;
       }
-    }
-    conversationBindingDigest = bootstrapTicket
-      ? hash(`conversation_id:${bootstrapTicket.conversation_id}`)
-      : currentHostDigest;
-    sessionFile = sessionFileOverride ?? cfg.sessionFile ?? (
-      conversationBindingDigest
-        ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
-        : undefined
-    );
-    if (sessionFile !== undefined) {
-      const persisted = loadSession(sessionFile);
-      if (persisted !== undefined) session = persisted;
-    }
-    if (bootstrapTicket && session && (
-        session.conversation_binding_digest !== undefined
-          ? session.conversation_binding_digest !== conversationBindingDigest
-          : session.host_conversation_id_digest !== conversationBindingDigest
-    )) {
-      session = undefined;
-    }
-
-    if (bootstrapTicket) {
-      try {
-        const ticket = bootstrapTicket;
-      // Codex does not expose its session id to spawned MCP servers (verified:
-      // no CODEX_* env names are set), so the host conversation identity is the
-      // ticket's bound conversation_id — a real host session id observed by the
-      // orchestrator. It is not caller self-assertion: the ticket secret already
-      // binds this exact conversation, and redeem_ticket rejects a forged id with
-      // enrollment_identity_mismatch.
-      currentHostDigest ??= hash(`conversation_id:${ticket.conversation_id}`);
-      if (session !== undefined) {
-        // Resume: compare the persisted digest to this launch's to observe
-        // identity.continuity_evidence honestly (same digest across a resume).
-        observedContinuity = continuityRefs(session.host_conversation_id_digest, currentHostDigest);
-      } else if (currentHostDigest !== undefined) {
-        // On first admission, the one-time ticket itself is bound to this
-        // conversation identity. It is the continuity proof for this new
-        // session; later launches use the persisted digest plus nonce/epoch.
-        observedContinuity = ["ticket:bound_conversation"];
+      if (!state.metadataDigest && !cfg.sessionFile && ticketBinding) {
+        // When the host exposes stable identity, use the same pathname before
+        // and after single-use ticket cleanup so restart can find the journal.
+        const fileIdentity = hostIdentity?.digest ?? ticketBinding;
+        state.sessionFile = conversationFile(fileIdentity);
       }
-      const baseline = buildBaseline({ hostDigest: currentHostDigest, projectDigest, continuityRefs: observedContinuity, tools: TOOLS });
-      const credential = session !== undefined
-        ? await transport.rebind(ticket, session.agent_id, baseline)
-        : await transport.enroll(ticket, baseline);
-      session = { ...credential, host_conversation_id_digest: currentHostDigest };
-      if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
-      saveSession(sessionFile, credential, currentHostDigest, conversationBindingDigest);
-        if (existsSync(cfg.ticketFile)) unlinkSync(cfg.ticketFile); // single-use
-      } catch (error) {
-        session = undefined;
-        process.stderr.write(`[tsunagou-bridge] bootstrap failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      if (!state.sessionFile) {
+        state.session = undefined;
+        state.recoveryError = "not_enrolled:no_ticket_or_session_file";
+        return;
       }
-    } else if (session !== undefined) {
-      try {
-      // No ticket on restart: reconnect the persisted session (D principal) so the
-      // credential rotates and the epoch advances — the bridge's own recovery path,
-      // instead of silently reusing a possibly-stale credential. There is no new
-      // env/ticket identity here, so the persisted host digest is carried forward.
-      currentHostDigest ??= session.host_conversation_id_digest;
-      if (currentHostDigest !== undefined && session.host_conversation_id_digest !== undefined
-          && currentHostDigest !== session.host_conversation_id_digest) {
-        throw new Error("host_conversation_identity_mismatch");
-      }
-      const credential = await transport.reconnect(session);
-      session = { ...credential, host_conversation_id_digest: currentHostDigest };
-      if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
-      saveSession(sessionFile, credential, currentHostDigest, session.conversation_binding_digest);
-      } catch (error) {
-        session = undefined;
-        process.stderr.write(`[tsunagou-bridge] reconnect failed: ${error instanceof Error ? error.message : String(error)}\n`);
-      }
+      const persisted = loadSession(state.sessionFile);
+      const conversationBindingDigest = state.metadataDigest ?? ticketBinding
+        ?? persisted?.conversation_binding_digest ?? state.hostDigest;
+      state.hostDigest ??= persisted?.host_conversation_id_digest ?? ticketBinding;
+      if (!conversationBindingDigest) throw new Error("conversation_identity_required_for_session_file");
+      state.observedContinuity = persisted
+        ? continuityRefs(persisted.host_conversation_id_digest, state.hostDigest)
+        : bootstrapTicket ? ["ticket:bound_conversation"] : undefined;
+      const handoff = new CredentialHandoff({
+        baseUrl: readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl,
+        protocolVersion: PROTOCOL_VERSION, schemaBundleDigest: SCHEMA_BUNDLE_DIGEST,
+        sessionFile: state.sessionFile, conversationBindingDigest, hostDigest: state.hostDigest,
+      });
+      state.session = await handoff.recover({
+        ticket: bootstrapTicket, ticketFile: cfg.ticketFile || undefined, forceReconnect,
+        baseline: buildBaseline({ hostDigest: state.hostDigest, projectDigest, continuityRefs: state.observedContinuity, tools: TOOLS }),
+      });
+      state.recoveryError = undefined;
+    } catch (error) {
+      state.session = undefined;
+      const message = error instanceof Error ? error.message : "credential_recovery_failed";
+      state.recoveryError = /^[a-z][a-z0-9_:]{0,160}$/.test(message) ? message : "credential_recovery_failed";
+      process.stderr.write(`[tsunagou-bridge] recovery failed: ${state.recoveryError}\n`);
     }
   }
 
-  await attemptSessionRecovery();
-  let recoveryPromise: Promise<void> | undefined;
-  async function ensureSession(): Promise<void> {
-    // For OpenCode the host digest may arrive lazily via MCP _meta on the
-    // first tool call. If the identity changed, drop the cached session so
-    // attemptSessionRecovery re-resolves against the new conversation.
-    if (session !== undefined && session.host_conversation_id_digest === currentHostDigest) return;
-    recoveryPromise ??= attemptSessionRecovery().finally(() => { recoveryPromise = undefined; });
-    await recoveryPromise;
+  await attemptSessionRecovery(defaultState);
+  async function ensureSession(state: ConversationState, forceReconnect = false): Promise<void> {
+    if (state.session !== undefined && state.session.host_conversation_id_digest === state.hostDigest && !forceReconnect) return;
+    state.recoveryPromise ??= attemptSessionRecovery(state, forceReconnect)
+      .finally(() => { state.recoveryPromise = undefined; });
+    await state.recoveryPromise;
+  }
+
+  function conversationState(metadataSessionId: unknown): ConversationState {
+    if (typeof metadataSessionId !== "string" || !metadataSessionId) {
+      if (conversations.size > 0 && !hostIdentity) throw new Error("conversation_identity_required");
+      return defaultState;
+    }
+    const digest = hash(`conversation_id:${metadataSessionId}`);
+    let state = conversations.get(digest);
+    if (!state) {
+      // Startup may already have redeemed this conversation's ticket into an
+      // explicit private file. Keep that file (and its pending/ACK journals)
+      // bound to this conversation when another metadata session arrives.
+      state = defaultState.hostDigest === digest ? defaultState : {
+        hostDigest: digest,
+        sessionFile: conversationFile(digest),
+      };
+      state.metadataDigest = digest;
+      conversations.set(digest, state);
+    }
+    return state;
   }
 
   const server = new Server(
@@ -587,10 +443,9 @@ async function main(): Promise<void> {
     }
     try {
       // OpenCode delivers the host conversation id per tool call via
-      // _meta["ai.opencode/sessionID"] (verified on v2.0.18). Update the
-      // current host digest so ensureSession resolves the correct bridge
-      // session for this conversation. Codex ignores this path because its
-      // identity arrives via environment variables at process boot.
+      // _meta["ai.opencode/sessionID"] (verified on v2.0.18). Capture this
+      // conversation's state for the entire request, including auth retries:
+      // another tool call may arrive while credential recovery is in flight.
       //
       // The digest prefix matches the ticket bootstrap path
       // (`conversation_id:`) so a session enrolled from a ticket bound to
@@ -598,19 +453,12 @@ async function main(): Promise<void> {
       //
       // MCP configuration is project-wide, so one stdio bridge can serve
       // several host conversations. Each conversation keeps its own private
-      // session file under <stateDir>/sessions/ instead of the single
-      // TSUNAGOU_SESSION_FILE the CLI writes for single-conversation hosts.
+      // session file; an explicit CLI bootstrap file is used only by the
+      // conversation whose ticket originally bound it.
       const metaSessionId = (request.params as { _meta?: Record<string, unknown> } | undefined)?._meta?.["ai.opencode/sessionID"];
-      if (typeof metaSessionId === "string" && metaSessionId) {
-        const metaDigest = hash(`conversation_id:${metaSessionId}`);
-        if (metaDigest !== currentHostDigest) {
-          currentHostDigest = metaDigest;
-          session = undefined;
-          sessionFileOverride = join(cfg.stateDir, "sessions", `bridge-session-${metaDigest.slice(0, 32)}.json`);
-        }
-      }
-      await ensureSession();
-      if (session === undefined) throw new Error("not_enrolled:no_ticket_or_session_file");
+      const state = conversationState(metaSessionId);
+      await ensureSession(state);
+      if (state.session === undefined) throw new Error(state.recoveryError ?? "not_enrolled:no_ticket_or_session_file");
       const args = { ...((request.params.arguments ?? {}) as Record<string, unknown>) };
       const commandId = typeof args.command_id === "string" ? args.command_id : undefined;
       if ("command_id" in args) {
@@ -618,7 +466,7 @@ async function main(): Promise<void> {
       }
       let result: unknown;
       try {
-        result = await transport.dispatch(tool.command_kind, args, session, commandId);
+        result = await transport.dispatch(tool.command_kind, args, state.session, commandId);
       } catch (error) {
         // A daemon restart or an external rebind can invalidate the in-memory
         // epoch while this stdio process remains alive. Re-read the private
@@ -626,10 +474,10 @@ async function main(): Promise<void> {
         const message = error instanceof Error ? error.message : String(error);
         if (!message.includes("authentication_failed") && !message.includes("stale_connection_epoch")
             && !message.includes("session_not_found")) throw error;
-        session = undefined;
-        await ensureSession();
-        if (session === undefined) throw error;
-        result = await transport.dispatch(tool.command_kind, args, session, commandId);
+        state.session = undefined;
+        await ensureSession(state, true);
+        if (state.session === undefined) throw error;
+        result = await transport.dispatch(tool.command_kind, args, state.session, commandId);
       }
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (error) {
@@ -644,9 +492,9 @@ async function main(): Promise<void> {
   try {
     mkdirSync(cfg.stateDir, { recursive: true });
     writeFileSync(join(cfg.stateDir, "bridge-boot.json"), JSON.stringify({
-      host_digest: currentHostDigest ?? null,
+      host_digest: defaultState.hostDigest ?? null,
       matched_host_env: hostIdentity?.envName ?? null,
-      baseline_status: session?.baseline_status ?? null,
+      baseline_status: defaultState.session?.baseline_status ?? null,
       wake_capability: BRIDGE_WAKE_CAPABILITY,
       codex_env_names: Object.keys(process.env).filter((name) => /^CODEX/i.test(name)).sort(),
       tsunagou_env_names: Object.keys(process.env).filter((name) => name.startsWith("TSUNAGOU_")).sort(),
@@ -655,7 +503,7 @@ async function main(): Promise<void> {
     // best-effort diagnostics must never break the bridge
   }
   await server.connect(stdio);
-  process.stderr.write(`[tsunagou-bridge] host_digest=${currentHostDigest ?? "none"} session=${session?.baseline_status ?? "not_enrolled"} continuity=${observedContinuity?.join("+") ?? "unknown"}\n`);
+  process.stderr.write(`[tsunagou-bridge] host_digest=${defaultState.hostDigest ?? "none"} session=${defaultState.session?.baseline_status ?? "not_enrolled"} continuity=${defaultState.observedContinuity?.join("+") ?? "unknown"}\n`);
 }
 
 main().catch((error) => {

@@ -102,6 +102,7 @@ export type CommandKind =
   | "user_decision.cancel"
   | "user_decision.propose"
   | "user_decision.resolve"
+  | "worker.ready"
   | "workspace.attach_external"
   | "workspace.cleanup"
   | "workspace.cleanup_force"
@@ -110,5 +111,4 @@ export type CommandKind =
   | "workspace.prepare"
   | "workspace.result"
   | "workspace.select"
-  | "worker.ready"
 ;

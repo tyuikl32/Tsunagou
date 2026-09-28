@@ -192,7 +192,7 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     }, main["secret_token"], session_id=main["session_id"], epoch=main["connection_epoch"])
     assert reviewed["status"] == "completed"
     assert submitted["digest"]
-    assert list((tmp_path / ".tsunagou" / "artifacts").glob("sha256_*.patch"))
+    assert list((state_dir / "artifacts" / "blobs" / "sha256").glob("*/*"))
 
     proposal = agent_call("user_decision.propose", {
         "kind": "design.change", "proposal_ref": task["task_id"], "summary": "confirm design",
@@ -228,7 +228,7 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     tasks = query(ProjectRegistry(tmp_path).project.project_id)  # type: ignore[union-attr]
     assert tasks["items"][0]["status"] == "completed"
     checkpoints = next(route.endpoint for route in rebuilt.routes if getattr(route, "path", "") == "/api/v1/checkpoints")
-    checkpoint_view = checkpoints()
+    checkpoint_view = checkpoints(authorization="Bearer control")
     assert checkpoint_view["current"]["digest"] == confirmed["checkpoint_digest"]
     checkpoint_dir = tmp_path / ".tsunagou" / "checkpoints" / confirmed["checkpoint_digest"].replace(":", "_")
     checkpoint_text = "\n".join(path.read_text(encoding="utf-8") for path in checkpoint_dir.glob("*.ndjson"))
@@ -242,7 +242,13 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     assert workspace_view["items"][0]["result"]["baseline_conflict"] is True
     artifact_ref = workspace_view["items"][0]["result"]["patch_artifact_ref"]
     artifact = next(route.endpoint for route in rebuilt.routes if getattr(route, "path", "") == "/api/v1/artifacts/{artifact_ref:path}")
-    assert artifact(artifact_ref)["content_base64"]
+    try:
+        artifact(artifact_ref)
+    except HTTPException as exc:
+        assert exc.status_code == 401
+    else:
+        raise AssertionError("artifact endpoint exposed a private patch without authentication")
+    assert artifact(artifact_ref, authorization="Bearer control")["content_base64"]
     cognition = next(
         route.endpoint for route in rebuilt.routes
         if getattr(route, "path", "") == "/api/v1/projects/{project_id}/cognition"
@@ -252,7 +258,7 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     assert cognition_view["contracts"][0]["status"] == "accepted"
     audit = next(route.endpoint for route in rebuilt.routes
                  if getattr(route, "path", "") == "/api/v1/projects/{project_id}/audit")
-    audit_view = audit(ProjectRegistry(tmp_path).project.project_id)  # type: ignore[union-attr]
+    audit_view = audit(ProjectRegistry(tmp_path).project.project_id, authorization="Bearer control")  # type: ignore[union-attr]
     assert audit_view["items"]
     assert all("secret_token" not in item for item in audit_view["items"])
     operation = next(route.endpoint for route in rebuilt.routes if getattr(route, "path", "") == "/api/v1/operations/{operation_id}")

@@ -2,7 +2,20 @@
   "$id": "https://tsunagou.local/schema/commands/checkpoint.create.user",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "reason": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "minimum_event_seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retry_operation_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
   "required": [],
   "title": "CheckpointCreateUserPayload",
   "type": "object"

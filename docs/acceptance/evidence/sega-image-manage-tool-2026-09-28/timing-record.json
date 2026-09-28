@@ -1,0 +1,165 @@
+{
+  "record_kind": "tsunagou.acceptance.timing.v1",
+  "recorded_at": "2026-09-28T05:24:28.208Z",
+  "timezone": "Asia/Shanghai",
+  "project_root": "D:\\ALL.Net\\SegaImageManageTool",
+  "test_start": {
+    "at": "2026-09-28T10:50:00+08:00",
+    "at_utc": "2026-09-28T02:50:00Z",
+    "source": "user_reported_start_time",
+    "precision": "minute"
+  },
+  "deployment": {
+    "installer_command_started_at": null,
+    "installer_command_finished_at": null,
+    "installer_duration_seconds": null,
+    "missing_reason": "the first deployment run was not wrapped by a timer; only durable project and daemon milestones are available",
+    "observable_milestones": [
+      {
+        "name": "acceptance_record_created",
+        "at_utc": "2026-09-28T02:56:28Z",
+        "elapsed_from_test_start_seconds": 388.0
+      },
+      {
+        "name": "project_genesis_observed",
+        "at_utc": "2026-09-28T02:58:34.450Z",
+        "elapsed_from_test_start_seconds": 514.45
+      },
+      {
+        "name": "stable_daemon_process_started",
+        "at_utc": "2026-09-28T02:59:35Z",
+        "elapsed_from_test_start_seconds": 575.0,
+        "pid": 76936,
+        "url": "http://127.0.0.1:56876"
+      }
+    ],
+    "reported_duration": {
+      "from_test_start_to_project_genesis_seconds": 514.45,
+      "from_test_start_to_stable_daemon_seconds": 575.0,
+      "qualification": "observable upper bounds from the user-reported test start, not exact installer duration"
+    }
+  },
+  "workers": {
+    "webui": {
+      "agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "first_claim_at_utc": "2026-09-28T03:40:31.914Z",
+      "first_start_at_utc": "2026-09-28T04:06:19.857Z",
+      "final_attempt_id": "574a5473-5291-458b-9e86-8dd757c13e7c",
+      "final_start_at_utc": "2026-09-28T05:17:07.268Z",
+      "submitted_at_utc": "2026-09-28T05:17:32.054Z",
+      "review_accepted_at_utc": "2026-09-28T05:20:06.484Z",
+      "first_start_to_submit_wall_seconds": 4272.197,
+      "persisted_running_windows": [
+        {
+          "attempt_id": "4ccf29ff-f1cd-4715-87ff-5ce55d716ecf",
+          "start_at_utc": "2026-09-28T04:06:19.857Z",
+          "end_at_utc": "2026-09-28T04:07:42.611Z",
+          "duration_seconds": 82.754,
+          "outcome": "orphaned_resource_lease_expired"
+        },
+        {
+          "attempt_id": "6e4efc38-5702-4891-bc3b-507c3cf48240",
+          "start_at_utc": "2026-09-28T04:51:17.434Z",
+          "end_at_utc": "2026-09-28T04:53:35.825Z",
+          "duration_seconds": 138.39,
+          "outcome": "orphaned_resource_lease_expired"
+        },
+        {
+          "attempt_id": "cc57128f-b393-4bd5-8060-a9f828e5bd57",
+          "start_at_utc": "2026-09-28T05:04:49.048Z",
+          "end_at_utc": "2026-09-28T05:05:04.020Z",
+          "duration_seconds": 14.972,
+          "outcome": "orphaned_resource_lease_expired"
+        },
+        {
+          "attempt_id": "574a5473-5291-458b-9e86-8dd757c13e7c",
+          "start_at_utc": "2026-09-28T05:17:07.268Z",
+          "end_at_utc": "2026-09-28T05:17:32.054Z",
+          "duration_seconds": 24.785,
+          "outcome": "submitted"
+        }
+      ],
+      "persisted_running_duration_seconds": 260.901,
+      "acceptance_duration_seconds": 154.43,
+      "status": "completed_and_review_accepted",
+      "qualification": "persisted running duration excludes claim/preflight waits and excludes file writes that occurred after the first execution fence",
+      "completed_host_turn_count": 17,
+      "completed_host_turn_duration_seconds": 4089.535,
+      "host_turn_timing_qualification": "Includes setup, reasoning, tool waits, coordination, recovery and final transport check; NOT pure coding time or authorized lease duration."
+    },
+    "http": {
+      "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "first_claim_at_utc": "2026-09-28T03:40:56.700Z",
+      "first_start_at_utc": "2026-09-28T04:23:15.268Z",
+      "final_attempt_id": "92aa8651-9286-4fca-93a9-dd76c95077e7",
+      "final_start_at_utc": "2026-09-28T05:01:53.570Z",
+      "submitted_at_utc": "2026-09-28T05:03:26.186Z",
+      "review_accepted_at_utc": "2026-09-28T05:20:06.524Z",
+      "first_start_to_submit_wall_seconds": 2410.918,
+      "persisted_running_windows": [
+        {
+          "attempt_id": "cb94b7db-2bae-45d7-ba35-eed7171b0c8a",
+          "start_at_utc": "2026-09-28T04:23:15.268Z",
+          "end_at_utc": "2026-09-28T04:25:16.077Z",
+          "duration_seconds": 120.809,
+          "outcome": "orphaned_resource_lease_expired"
+        },
+        {
+          "attempt_id": "0e6d4a28-4d0a-4c34-8579-08c4c1a7366e",
+          "start_at_utc": "2026-09-28T04:47:51.756Z",
+          "end_at_utc": "2026-09-28T04:55:41.156Z",
+          "duration_seconds": 469.4,
+          "outcome": "orphaned_resource_lease_expired_after_implementation_and_tests"
+        },
+        {
+          "attempt_id": "92aa8651-9286-4fca-93a9-dd76c95077e7",
+          "start_at_utc": "2026-09-28T05:01:53.570Z",
+          "end_at_utc": "2026-09-28T05:03:26.186Z",
+          "duration_seconds": 92.616,
+          "outcome": "submitted"
+        }
+      ],
+      "persisted_running_duration_seconds": 682.825,
+      "acceptance_duration_seconds": 1000.338,
+      "status": "completed_and_review_accepted",
+      "completed_host_turn_count": 21,
+      "completed_host_turn_duration_seconds": 3302.53,
+      "host_turn_timing_qualification": "Includes setup, reasoning, tool waits, coordination, recovery and final transport check; NOT pure coding time or authorized lease duration."
+    }
+  },
+  "final_local_validation": {
+    "completed_by": "root_main_session",
+    "completed_at_utc": "2026-09-28T05:24:28.208Z",
+    "dotnet_build": "exit_0_with_two_NU1900_vulnerability_feed_warnings",
+    "webui_node_tests": "exit_0_5_passed",
+    "http_acceptance": "exit_0",
+    "browser_live_backend": "service_online_and_real_multipart_validation_error_observed",
+    "live_url": "http://127.0.0.1:5137/",
+    "live_backend_pid": 86772
+  },
+  "duration_rules": {
+    "deployment_duration": "installer start to installation/doctor completion; exact duration unavailable, so only observable upper bounds are reported",
+    "persisted_running_duration": "sum of each Attempt started_at to ended_at; excludes claim, decision, workspace and preflight waits",
+    "wall_work_duration": "first persisted start to final submit, including recovery waits",
+    "worker_acceptance_duration": "final submit event to main task.review.accept event",
+    "user_completion_confirmation_is_separate": true
+  },
+  "efficiency_postmortem": {
+    "requested_by_user": true,
+    "status": "deferred_until_after_delivery",
+    "observation": "initial mechanical coordination and repeated Attempt recovery substantially exceeded actual persisted running time",
+    "scope_change": "none; keep redesign deferred per user"
+  },
+  "secrets_included": false,
+  "updated_at": "2026-09-28T06:20:30.852Z",
+  "followup_acceptance": {
+    "finished_at": "2026-09-28T05:58:58.994Z",
+    "restart": "restart-record.json",
+    "a2a_http": "a2a-http-record.json",
+    "worker_receipts": "a2a-receipt-record.json",
+    "btid": "btid-success-record.json",
+    "host_turn_timings": "host-turn-timing.json",
+    "user_completion_confirmation": "pending",
+    "native_wake": "native-wake-diagnosis.json"
+  }
+}

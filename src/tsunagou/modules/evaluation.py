@@ -49,6 +49,12 @@ class AuditView:
     outcome: str
     reason_code: str | None
     evidence_refs: tuple[str, ...]
+    occurred_at: int | None = None
+    recorded_at: int | None = None
+    caused_by_command_id: str | None = None
+    revision_before: int | None = None
+    revision_after: int | None = None
+    evidence_level: str | None = None
     projection_version: str = "v1"
 
 
@@ -61,7 +67,8 @@ class AuditProjector:
     def project(self, event: Mapping[str, Any], *, can_read_subject: bool) -> AuditView:
         subject = str(event.get("subject_ref", "unknown")) if can_read_subject else "[REDACTED]"
         evidence = event.get("evidence_refs", ())
-        refs = tuple(self._redactor.text(str(item)) for item in evidence) if isinstance(evidence, (list, tuple)) else ()
+        refs = (tuple(self._redactor.text(str(item)) for item in evidence)
+                if can_read_subject and isinstance(evidence, (list, tuple)) else ())
         return AuditView(
             source_event_id=str(event.get("event_id", "unknown")),
             source_event_seq=int(event.get("event_seq", 0)),
@@ -69,8 +76,24 @@ class AuditProjector:
             action=str(event.get("action", "unknown")),
             subject_ref=subject,
             outcome=str(event.get("outcome", "unknown")),
-            reason_code=str(event["reason_code"]) if event.get("reason_code") is not None else None,
+            reason_code=(str(event["reason_code"]) if can_read_subject and event.get("reason_code") is not None else None),
             evidence_refs=refs,
+            occurred_at=int(event["occurred_at"]) if event.get("occurred_at") is not None else None,
+            recorded_at=int(event["recorded_at"]) if event.get("recorded_at") is not None else None,
+            caused_by_command_id=(
+                str(event["caused_by_command_id"])
+                if event.get("caused_by_command_id") is not None else None
+            ),
+            revision_before=(
+                int(event["revision_before"])
+                if event.get("revision_before") is not None else None
+            ),
+            revision_after=(
+                int(event["revision_after"])
+                if event.get("revision_after") is not None else None
+            ),
+            evidence_level=str(event["evidence_level"]) if event.get("evidence_level") is not None else None,
+            projection_version=str(event.get("projection_version", "v1")),
         )
 
 

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"统一 SQLite 时间单位、事务、迁移和游标索引。"}
+{"file":"docs/implementation/persistence-traceability-plan.md","reason":"PT1 第3节是唯一时间、actor、subject、causation 契约。"}

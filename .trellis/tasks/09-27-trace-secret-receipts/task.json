@@ -1,0 +1,31 @@
+{
+  "id": "trace-secret-receipts",
+  "name": "trace-secret-receipts",
+  "title": "PT2 秘密交付与安全幂等迁移",
+  "description": "去除命令结果中的秘密，保证 enrollment/reconnect 响应丢失可恢复并安全升级旧库。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-27",
+  "completedAt": "2026-09-27T17:56:30Z",
+  "branch": "codex/persistence-traceability",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-27-persistence-traceability",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "plan_id": "persistence-traceability",
+    "depends_on": [
+      "trace-audit-time"
+    ]
+  }
+}

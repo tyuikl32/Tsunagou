@@ -133,10 +133,10 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | resource.release | `/lease-sets/{id}:release` | B / resource.coordinate | attempt_id,reason | LeaseSet；owner，允许收敛 |
 | resource.wait.cancel | `/resource-waits/{id}:cancel` | B / resource.coordinate | attempt_id,reason | Wait；self |
 | workspace.select | `/workspace-decisions` | M / workspace.manage | attempt_id,driver_kind,risk_submission_ref?,input_digest,hard_constraints,evidence_refs | IsolationDecision；结构验证 |
-| workspace.prepare | `/workspaces` | B / workspace.request | attempt_id,decision_id,input_digest | Workspace+Operation；owner；Git请求发main |
+| workspace.prepare | `/workspaces` | B / workspace.request | task_id,attempt_id,decision_id,input_digest,root_binding_refs,repository_id?,external_locator?,baseline | Workspace+Operation；owner；Git请求发main；scope由主Agent任务范围及根绑定派生 |
 | workspace.attach_external | `/workspaces:attach-external` | M / workspace.manage | attempt_id,decision_id,root_binding_refs,external_locator,evidence_refs | Workspace+Operation；不创建容器 |
 | workspace.git.report | `/git-requests/{id}:report` | M / git.control | exact_input_digest,outcome,evidence_refs,result_manifest | GitActionReport+Operation；main实际执行 |
-| workspace.result | `/workspaces/{id}:record-result` | X / workspace.use | baseline_digest,commit_refs,patch_artifact_ref?,changed_paths,untracked_summary,validation_refs | WorkspaceResult |
+| workspace.result | `/workspaces/{id}:record-result` | X / workspace.use | workspace_id,task_id,attempt_id,baseline_digest,commit_refs,patch_artifact_ref?,changed_paths,untracked_summary,validation_refs,validation_metadata? | WorkspaceResult；daemon观察与Agent自报分级 |
 | workspace.integrate | `/integrations` | M / git.control | source_result_ref,target_repository_id,target_baseline_digest,plan_digest,reason | Integration+Operation；main执行 |
 | workspace.cleanup | `/workspaces/{id}:cleanup` | M / workspace.manage | input_digest,required_checkpoint_ref,reason | Operation；terminal+干净，Git仍main执行 |
 | workspace.cleanup_force | `/control/workspaces/{id}:cleanup-force` | U / — | input_digest,required_checkpoint_ref,exact_paths_digest,data_loss_acceptance,reason | UserDecision+Operation；dirty/最后副本要求 |
@@ -158,8 +158,8 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | artifact.upload.finalize | `/artifact-uploads/{id}:finalize` | B / artifact.attach | digest,size_bytes | ArtifactRef；相同领域授权重验 |
 | artifact.promote | `/artifacts/{digest}:promote` | M / artifact.promote | domain_ref,reason | ArtifactRef+Operation；project_shared，禁止hash绕授权 |
 | artifact.promote.user | `/control/artifacts/{digest}:promote` | U / — | domain_ref,reason | 同上 |
-| checkpoint.create | `/checkpoints` | M / durability.checkpoint | reason,minimum_event_seq? | Operation |
-| checkpoint.create.user | `/control/checkpoints` | U / — | 同上 | Operation |
+| checkpoint.create | `/checkpoints` | M / durability.checkpoint | reason?,minimum_event_seq? | Operation；事务保存固定快照，提交后物化 |
+| checkpoint.create.user | `/control/checkpoints` | U / — | reason?,minimum_event_seq?,retry_operation_id? | Operation；retry复用原里程碑快照 |
 | operation.cancel | `/operations/{id}:cancel` | M / operation.coordinate | reason | Operation；能否中止取决于handler，不伪造撤回外部效果 |
 | operation.resolve | `/operations/{id}:resolve` | M / operation.coordinate | conclusion,evidence_refs,reason,followup_plan? | OperationResolution；原unknown保留，只能可授权范围 |
 | operation.resolve.user | `/control/operations/{id}:resolve` | U / — | 同上 | User保留动作与越权风险专用 |
@@ -187,17 +187,33 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | `P/artifacts/{digest}?domain_kind=...&domain_id=...` | 经领域引用授权的bytes；hash不是凭据 |
 | `P/events`、`P/events:stream` | EventPage或SSE提示；按可见性过滤 |
 | `P/decisions`、`P/decisions/{id}` | 待决摘要/详情 / current main、U；关联参与者只见自身阻塞摘要 |
-| `P/audit`、`P/metrics`、`P/experiments` | 脱敏AuditPage/MetricPage/ExperimentPage；敏感实验原始证据U |
+| `P/audit` | AuditPage / U、B；actor/subject/time 筛选和签名游标；私信关联行仅发送者/收件人，main/U 不绕过 |
+| `P/{id}/history` | `GET /api/v1/projects/{id}/history`；与 `P/audit` 同一 AuditPage 投影，默认50、最大200 |
+| `P/tasks/{task_id}/history` | `GET /api/v1/projects/{id}/tasks/{task_id}/history`；包含任务及其 Attempt/Result/Workspace/认知和可见消息关联事件 |
+| `P/audit/events/{event_id}` | `GET /api/v1/audit/events/{event_id}`；单事件因果、证据和变更详情，仍执行项目与私信权限 |
+| `P/{id}/history/export` | `GET /api/v1/projects/{id}/history/export`；脱敏 `tsunagou.audit-export.v1`，带 `source`、`lineage_id`、`exported_at` |
+| `P/{id}/checkpoints` | `GET /api/v1/projects/{id}/checkpoints?verify=true`；共享 checkpoint 清单/current 指针和可选文件校验 |
+| `P/checkpoints/{digest}/verify` | `GET /api/v1/checkpoints/{digest}/verify`；验证 manifest、文件摘要和本地 heads/tags Git anchor |
+| `P/{id}/diagnostics` | `GET /api/v1/projects/{id}/diagnostics`；U/B 可见的 callback、wake、presentation、turn 诊断证据，不改变 domain revision |
+| `P/metrics`、`P/experiments` | 脱敏MetricPage/ExperimentPage；敏感实验原始证据U |
 | `/api/v1/config`、`/api/v1/doctor` | 脱敏设置来源、诊断 / U；不触发repair |
+
+凭据交付的 transport 入口为 `POST /api/v1/credential-deliveries/{delivery_ref}/ack`，认证后消费私有 delivery；它不创造新的业务权限，不作为普通 MCP 工具。状态、时间和重试规则见 [凭据交付](credential-delivery.md)。
 
 ## CLI 映射与退出码
 
-可落地的用户命令树：`daemon start|stop|status`；`project init|bootstrap|list|show|confirm-completion|archive|reactivate|unregister|reset-lineage`；`root register|bind|list`；`agent enroll|list|show`；`authority appoint|revoke|show`；`task create|list|show`；`decision list|show|resolve`；`checkpoint create|list|show`；`operation list|show|resolve`；`config show|validate`；`doctor`；`experiment run|report`。安装器的 `--project-root` 是显式选择后的安装联动参数，不是新的领域命令。
+PT2 加入 `daemon migrate-credentials --coordination-root <path> [--dry-run] [--confirm-plan-digest <digest>]` 本机离线修复入口：默认只预览，显式计划确认后撤销旧权限并清理秘密；拒绝活跃 daemon writer，未完成迁移阻止启动，完成后重新接入。不是 Agent 领域写命令，不增加 `*.user` 冒充权限。
+
+可落地的用户命令树：`daemon start|stop|status`；`project init|bootstrap|list|show|history|diagnostics|archive|reactivate|unregister|reset-lineage`；`root register|bind|list`；`agent enroll|list|show`；`authority appoint|revoke|show`；`task history`；`decision list|show|resolve`；`audit event`；`checkpoint create|retry|list|verify`；`operation list|show|resolve`；`config show|validate`；`doctor`；`experiment run|report`。安装器的 `--project-root` 是显式选择后的安装联动参数，不是新的领域命令。
+
+离线 Git clone 的确认恢复是 CLI 本地维护动作：`project restore --coordination-root <clone> --checkpoint-digest <digest>` 只预览；用户检查预览后补 `--confirm-plan-digest <plan_digest>` 才写入全新的本地 SQLite。它不调用 daemon、不为 Agent 授权，也不能覆盖已有本地状态；不纳入 MCP/U command registry。
 
 旧概览曾列出`agent reprobe/retire`、`authority handoff`、`task publish/recover`、`operation cancel`，但对应目录只有D/M主体handler，尚无U授权。首发用户CLI不注册这些未绑定动作；相同领域行为仍由自身bridge/current main工具完成。不得为补齐help表而让CLI读取Agent token或自行增加user权限。参数、组合接入和映射见[CLI契约](cli-contract.md)。
 
 `project confirm-completion <proposal_id> --request-file <json> --expected-revision <n>`只映射已注册的U-only `project.completion.confirm`。`proposal_id`进入URI，`--expected-revision`成为CompletionProposal的If-Match；请求文件必须提供同一版本的`proposal_digest`、`expected_project_revision`和`expected_revisions`。CLI不补“最新”值，也不从决定解决、归档或其他动作自动确认项目完成。
 
 CLI是user_control入口，必要的Agent执行命令由typed tools完成，不能通过CLI伪造owner。未列出的管理高级命令可通过公共HTTP调用，不承诺为每个底层动作做交互向导。CLI `--json`输出同一DTO/Problem；无secret，quiet/stdout与日志stderr分开。
+
+PT5 已接入只读 `project history <project_id> [--from RFC3339] [--to RFC3339] [--actor REF] [--subject REF] [--limit 1..200] [--cursor CURSOR] [--json] [--export]`、`task history <task_id> [--project-id ID]`、`audit event <event_id> [--project-id ID]`、`checkpoint list <project_id> [--verify]` 和 `checkpoint verify <digest>`。它们分别映射到上述 HTTP 查询，使用私有控制凭据、同一 AuditPage/验证投影，不写事件或推进 revision；`--export` 额外输出带 schema/source/lineage/exported_at 的脱敏导出。
 
 退出码：0成功或异步已受理（输出operation_id）；2输入/用法；3认证/授权；4revision/state/blocker冲突；5基础设施失败；6`--wait`达到明确客户端等待上限但Operation仍继续。不要用等待超时反推业务失败。daemon start只本机管理，不改用户宿主安全配置。

@@ -1,0 +1,297 @@
+{
+  "recorded_at": "2026-09-28 05:55:51 UTC",
+  "source": "Codex read_thread turn metadata",
+  "qualification": "Host turn durations include reasoning, tools, waiting and coordination; not pure coding or billable-token measurements. Lease running windows are a separate measure.",
+  "workers": [
+    {
+      "role": "webui",
+      "id": "01a0e5fa-d186-7430-8fb1-0707ed8b3e49",
+      "firstStart": "2026-09-28T04:06:19.857Z",
+      "submit": "2026-09-28T05:17:32.054Z",
+      "title": "SegaImageManageTool Web UI Worker",
+      "all_pages_read": true,
+      "turns": [
+        {
+          "turn_id": "01a0e5fa-d677-74b3-9a07-22fed0b2490b",
+          "status": "completed",
+          "started_at": "2026-09-28T03:06:56.000Z",
+          "completed_at": "2026-09-28T03:09:09.000Z",
+          "duration_ms": 133226
+        },
+        {
+          "turn_id": "01a0e612-2c85-7590-b898-fa3ceceb05e3",
+          "status": "completed",
+          "started_at": "2026-09-28T03:32:25.000Z",
+          "completed_at": "2026-09-28T03:33:54.000Z",
+          "duration_ms": 88715
+        },
+        {
+          "turn_id": "01a0e613-ecd9-7d90-970c-9a5109cc476a",
+          "status": "completed",
+          "started_at": "2026-09-28T03:34:20.000Z",
+          "completed_at": "2026-09-28T03:35:01.000Z",
+          "duration_ms": 41313
+        },
+        {
+          "turn_id": "01a0e619-41b9-7173-9ddd-87cbea573398",
+          "status": "completed",
+          "started_at": "2026-09-28T03:40:10.000Z",
+          "completed_at": "2026-09-28T03:40:49.000Z",
+          "duration_ms": 39896
+        },
+        {
+          "turn_id": "01a0e61d-13d2-7460-b7ca-ad0069ada590",
+          "status": "completed",
+          "started_at": "2026-09-28T03:44:20.000Z",
+          "completed_at": "2026-09-28T03:45:04.000Z",
+          "duration_ms": 43583
+        },
+        {
+          "turn_id": "01a0e61f-7dc0-76b0-bea0-02ecdf48511d",
+          "status": "completed",
+          "started_at": "2026-09-28T03:46:58.000Z",
+          "completed_at": "2026-09-28T03:52:16.000Z",
+          "duration_ms": 318170
+        },
+        {
+          "turn_id": "01a0e624-9795-7e52-9bb3-2e25d3abdcc4",
+          "status": "completed",
+          "started_at": "2026-09-28T03:52:32.000Z",
+          "completed_at": "2026-09-28T03:53:13.000Z",
+          "duration_ms": 40710
+        },
+        {
+          "turn_id": "01a0e627-fc9d-7e50-9833-5cc5c45f7bbd",
+          "status": "completed",
+          "started_at": "2026-09-28T03:56:15.000Z",
+          "completed_at": "2026-09-28T04:00:58.000Z",
+          "duration_ms": 283130
+        },
+        {
+          "turn_id": "01a0e62c-d64c-74d2-a5c2-9e6ed2d0c1cd",
+          "status": "completed",
+          "started_at": "2026-09-28T04:01:33.000Z",
+          "completed_at": "2026-09-28T04:02:37.000Z",
+          "duration_ms": 64667
+        },
+        {
+          "turn_id": "01a0e62f-a5a2-7da3-9fac-8d7dcef0255b",
+          "status": "completed",
+          "started_at": "2026-09-28T04:04:37.000Z",
+          "completed_at": "2026-09-28T04:24:01.000Z",
+          "duration_ms": 1164443
+        },
+        {
+          "turn_id": "01a0e644-3c38-73f2-b0f6-6dd96fd77848",
+          "status": "completed",
+          "started_at": "2026-09-28T04:27:06.000Z",
+          "completed_at": "2026-09-28T04:28:17.000Z",
+          "duration_ms": 70872
+        },
+        {
+          "turn_id": "01a0e649-2d41-7a93-9c45-d74c6750f1bd",
+          "status": "completed",
+          "started_at": "2026-09-28T04:32:30.000Z",
+          "completed_at": "2026-09-28T04:35:26.000Z",
+          "duration_ms": 175581
+        },
+        {
+          "turn_id": "01a0e653-3fbb-7510-8c96-8a1f9f26502e",
+          "status": "completed",
+          "started_at": "2026-09-28T04:43:30.000Z",
+          "completed_at": "2026-09-28T04:45:10.000Z",
+          "duration_ms": 100308
+        },
+        {
+          "turn_id": "01a0e657-a946-78c0-83c6-aac818ce7eeb",
+          "status": "completed",
+          "started_at": "2026-09-28T04:48:19.000Z",
+          "completed_at": "2026-09-28T04:59:28.000Z",
+          "duration_ms": 668215
+        },
+        {
+          "turn_id": "01a0e663-805e-7290-8d30-8988573e1c1e",
+          "status": "completed",
+          "started_at": "2026-09-28T05:01:15.000Z",
+          "completed_at": "2026-09-28T05:10:37.000Z",
+          "duration_ms": 561347
+        },
+        {
+          "turn_id": "01a0e671-0f60-77d1-8735-652a8a70d0b5",
+          "status": "completed",
+          "started_at": "2026-09-28T05:16:04.000Z",
+          "completed_at": "2026-09-28T05:17:49.000Z",
+          "duration_ms": 105413
+        },
+        {
+          "turn_id": "01a0e68f-784f-7352-858f-38403a15c58b",
+          "status": "completed",
+          "started_at": "2026-09-28T05:49:17.000Z",
+          "completed_at": "2026-09-28T05:52:27.000Z",
+          "duration_ms": 189946
+        }
+      ],
+      "total_completed_turn_seconds": 4089.535
+    },
+    {
+      "role": "http",
+      "id": "01a0e5fa-daa6-7891-8bb8-9cd58d8b23fb",
+      "firstStart": "2026-09-28T04:23:15.268Z",
+      "submit": "2026-09-28T05:03:26.186Z",
+      "title": "SegaImageManageTool HTTP Worker",
+      "all_pages_read": true,
+      "turns": [
+        {
+          "turn_id": "01a0e5fa-dfc1-7002-b110-df5c2e1129bc",
+          "status": "completed",
+          "started_at": "2026-09-28T03:06:58.000Z",
+          "completed_at": "2026-09-28T03:09:43.000Z",
+          "duration_ms": 165073
+        },
+        {
+          "turn_id": "01a0e612-2d77-7711-85ff-a9c2a2520af5",
+          "status": "completed",
+          "started_at": "2026-09-28T03:32:26.000Z",
+          "completed_at": "2026-09-28T03:34:09.000Z",
+          "duration_ms": 103503
+        },
+        {
+          "turn_id": "01a0e614-4afb-7a23-b3ee-0bf9cfc8b5f1",
+          "status": "completed",
+          "started_at": "2026-09-28T03:34:44.000Z",
+          "completed_at": "2026-09-28T03:36:00.000Z",
+          "duration_ms": 75418
+        },
+        {
+          "turn_id": "01a0e619-43bc-77a1-92e3-4f90f255d1f9",
+          "status": "completed",
+          "started_at": "2026-09-28T03:40:10.000Z",
+          "completed_at": "2026-09-28T03:41:47.000Z",
+          "duration_ms": 96902
+        },
+        {
+          "turn_id": "01a0e61d-151c-7e32-bd2b-373233074869",
+          "status": "completed",
+          "started_at": "2026-09-28T03:44:20.000Z",
+          "completed_at": "2026-09-28T03:45:36.000Z",
+          "duration_ms": 75486
+        },
+        {
+          "turn_id": "01a0e61f-7f0a-7b82-b6e2-7614a0fa71e8",
+          "status": "completed",
+          "started_at": "2026-09-28T03:46:58.000Z",
+          "completed_at": "2026-09-28T03:51:12.000Z",
+          "duration_ms": 253617
+        },
+        {
+          "turn_id": "01a0e624-9929-7940-b815-98ce8613ad18",
+          "status": "completed",
+          "started_at": "2026-09-28T03:52:33.000Z",
+          "completed_at": "2026-09-28T03:53:24.000Z",
+          "duration_ms": 50979
+        },
+        {
+          "turn_id": "01a0e627-fe04-7f40-9d0a-9473e64d6932",
+          "status": "completed",
+          "started_at": "2026-09-28T03:56:15.000Z",
+          "completed_at": "2026-09-28T03:58:58.000Z",
+          "duration_ms": 162261
+        },
+        {
+          "turn_id": "01a0e62c-d7fc-7f63-948d-b742a9efe408",
+          "status": "completed",
+          "started_at": "2026-09-28T04:01:33.000Z",
+          "completed_at": "2026-09-28T04:02:59.000Z",
+          "duration_ms": 85294
+        },
+        {
+          "turn_id": "01a0e62f-e7d1-7300-8f1b-5d927a159f46",
+          "status": "completed",
+          "started_at": "2026-09-28T04:04:54.000Z",
+          "completed_at": "2026-09-28T04:06:06.000Z",
+          "duration_ms": 72147
+        },
+        {
+          "turn_id": "01a0e632-54fc-7e31-8efd-5330da46ed97",
+          "status": "completed",
+          "started_at": "2026-09-28T04:07:33.000Z",
+          "completed_at": "2026-09-28T04:08:25.000Z",
+          "duration_ms": 51939
+        },
+        {
+          "turn_id": "01a0e633-4ee2-74a0-9d59-4ba5fc1bc7a2",
+          "status": "completed",
+          "started_at": "2026-09-28T04:08:37.000Z",
+          "completed_at": "2026-09-28T04:09:41.000Z",
+          "duration_ms": 63726
+        },
+        {
+          "turn_id": "01a0e637-5c23-78f3-8ce2-edef6920cad0",
+          "status": "completed",
+          "started_at": "2026-09-28T04:13:02.000Z",
+          "completed_at": "2026-09-28T04:17:37.000Z",
+          "duration_ms": 275054
+        },
+        {
+          "turn_id": "01a0e63c-cdc2-7950-8624-042df40da2b6",
+          "status": "completed",
+          "started_at": "2026-09-28T04:18:59.000Z",
+          "completed_at": "2026-09-28T04:20:24.000Z",
+          "duration_ms": 84557
+        },
+        {
+          "turn_id": "01a0e640-06a8-7263-a983-3a81a2184b88",
+          "status": "completed",
+          "started_at": "2026-09-28T04:22:30.000Z",
+          "completed_at": "2026-09-28T04:27:56.000Z",
+          "duration_ms": 325904
+        },
+        {
+          "turn_id": "01a0e64a-b489-7db2-9ee8-a66f49ccd6a2",
+          "status": "completed",
+          "started_at": "2026-09-28T04:34:10.000Z",
+          "completed_at": "2026-09-28T04:41:44.000Z",
+          "duration_ms": 453937
+        },
+        {
+          "turn_id": "01a0e653-41db-7402-8931-72a43ec8048a",
+          "status": "completed",
+          "started_at": "2026-09-28T04:43:31.000Z",
+          "completed_at": "2026-09-28T04:44:26.000Z",
+          "duration_ms": 54831
+        },
+        {
+          "turn_id": "01a0e656-da5e-76c2-96cc-fda43d762493",
+          "status": "completed",
+          "started_at": "2026-09-28T04:47:26.000Z",
+          "completed_at": "2026-09-28T04:56:47.000Z",
+          "duration_ms": 561018
+        },
+        {
+          "turn_id": "01a0e663-8311-7872-a91c-121e8a2bec5b",
+          "status": "completed",
+          "started_at": "2026-09-28T05:01:16.000Z",
+          "completed_at": "2026-09-28T05:04:22.000Z",
+          "duration_ms": 186023
+        },
+        {
+          "turn_id": "01a0e68f-7a73-70a2-a375-f7951ced018a",
+          "status": "completed",
+          "started_at": "2026-09-28T05:49:17.000Z",
+          "completed_at": "2026-09-28T05:50:27.000Z",
+          "duration_ms": 69431
+        },
+        {
+          "turn_id": "01a0e6a8-cc17-7e62-8fb4-92df4cb63449",
+          "status": "completed",
+          "started_at": "2026-09-28T06:16:57.000Z",
+          "completed_at": "2026-09-28T06:17:32.000Z",
+          "duration_ms": 35430
+        }
+      ],
+      "total_completed_turn_seconds": 3302.53
+    }
+  ],
+  "secrets_included": false,
+  "updated_at": "2026-09-28T06:20:30.852Z"
+}
