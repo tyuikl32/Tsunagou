@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from tsunagou.platform.private_file_lock import private_file_lock
+from tsunagou.platform.private_file_lock import _next_lock_port, private_file_lock
+
+
+def test_lock_port_fallback_is_deterministic() -> None:
+    assert _next_lock_port(56_669) == 56_670
+    assert _next_lock_port(59_999) == 20_000
 
 
 def test_private_path_mutex_is_exclusive_and_releases_after_exception(tmp_path: Path) -> None:

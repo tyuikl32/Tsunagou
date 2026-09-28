@@ -1,0 +1,632 @@
+{
+  "recorded_at": "2026-09-28T05:48:46.357Z",
+  "harness": "root_acceptance_using_existing_sessions",
+  "qualification": "direct HTTP JSON-RPC; not autonomous main turn or native wake evidence",
+  "endpoint": "http://127.0.0.1:56876/api/v1/a2a",
+  "agent_card": {
+    "name": "Tsunagou Coordination Agent",
+    "description": "Authenticated local Agent-to-Agent coordination boundary.",
+    "version": "0.1.0",
+    "protocolVersion": "1.0",
+    "url": "http://127.0.0.1:56876/api/v1/a2a",
+    "supportedInterfaces": [
+      {
+        "url": "http://127.0.0.1:56876/api/v1/a2a",
+        "protocolBinding": "JSONRPC",
+        "protocolVersion": "1.0"
+      }
+    ],
+    "capabilities": {
+      "streaming": false,
+      "pushNotifications": true,
+      "stateTransitionHistory": false
+    },
+    "defaultInputModes": [
+      "text/plain",
+      "application/json"
+    ],
+    "defaultOutputModes": [
+      "text/plain",
+      "application/json"
+    ],
+    "skills": [
+      {
+        "id": "agent-coordination",
+        "name": "Agent coordination",
+        "description": "Send structured messages, query task progress, and record task transitions.",
+        "tags": [
+          "coordination",
+          "messages",
+          "tasks",
+          "cancellation",
+          "recovery"
+        ]
+      }
+    ],
+    "authentication": {
+      "schemes": [
+        "Bearer"
+      ]
+    },
+    "x-tsunagou": {
+      "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+      "internal_source_of_truth": "project-runtime",
+      "wake": "push-notification",
+      "host_wake": "unsupported",
+      "delivery": "push-or-durable-pull",
+      "methods": [
+        "message/send",
+        "tasks/cancel",
+        "tasks/fail",
+        "tasks/get",
+        "tasks/retry"
+      ]
+    }
+  },
+  "event_seq_before": 375,
+  "event_seq_after": 377,
+  "requests": [
+    {
+      "started_at": "2026-09-28T05:48:46.176Z",
+      "finished_at": "2026-09-28T05:48:46.215Z",
+      "duration_ms": 38.38,
+      "authenticated_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "session_id": "3608b04e-1564-43b1-8b8b-3636aae47d0d",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+            "role": "agent",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "parts": [
+              {
+                "text": "Acceptance transport probe only. Pull and acknowledge this message, then reply acceptance_probe_received to main. Do not reopen tasks or modify code."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "recipient_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "kind": "acceptance_probe",
+                "subject_ref": "0a28f9e6-52c8-4d80-b805-64807da75931",
+                "payload": {
+                  "origin": "root_acceptance_harness",
+                  "host_wake_claimed": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+        "result": {
+          "message": {
+            "messageId": "599c0931-d3ab-4458-bfca-981d6f018090",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "role": "agent",
+            "parts": [
+              {
+                "text": "Message accepted by Tsunagou durable delivery."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "message_id": "599c0931-d3ab-4458-bfca-981d6f018090",
+                "delivery": "pending",
+                "wake": "not_requested",
+                "push": {
+                  "requested": false,
+                  "status": "not_requested"
+                },
+                "host_wake": {
+                  "status": "not_configured"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.215Z",
+      "finished_at": "2026-09-28T05:48:46.240Z",
+      "duration_ms": 25.72,
+      "authenticated_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "session_id": "3608b04e-1564-43b1-8b8b-3636aae47d0d",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+            "role": "agent",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "parts": [
+              {
+                "text": "Acceptance transport probe only. Pull and acknowledge this message, then reply acceptance_probe_received to main. Do not reopen tasks or modify code."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "recipient_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "kind": "acceptance_probe",
+                "subject_ref": "0a28f9e6-52c8-4d80-b805-64807da75931",
+                "payload": {
+                  "origin": "root_acceptance_harness",
+                  "host_wake_claimed": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+        "result": {
+          "message": {
+            "messageId": "599c0931-d3ab-4458-bfca-981d6f018090",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "role": "agent",
+            "parts": [
+              {
+                "text": "Message accepted by Tsunagou durable delivery."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "message_id": "599c0931-d3ab-4458-bfca-981d6f018090",
+                "delivery": "pending",
+                "wake": "not_requested",
+                "push": {
+                  "requested": false,
+                  "status": "not_requested"
+                },
+                "host_wake": {
+                  "status": "not_configured"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.240Z",
+      "finished_at": "2026-09-28T05:48:46.266Z",
+      "duration_ms": 25.74,
+      "authenticated_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "session_id": "3608b04e-1564-43b1-8b8b-3636aae47d0d",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3-retry",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+            "role": "agent",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "parts": [
+              {
+                "text": "Acceptance transport probe only. Pull and acknowledge this message, then reply acceptance_probe_received to main. Do not reopen tasks or modify code."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "recipient_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "kind": "acceptance_probe",
+                "subject_ref": "0a28f9e6-52c8-4d80-b805-64807da75931",
+                "payload": {
+                  "origin": "root_acceptance_harness",
+                  "host_wake_claimed": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3-retry",
+        "result": {
+          "message": {
+            "messageId": "599c0931-d3ab-4458-bfca-981d6f018090",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "role": "agent",
+            "parts": [
+              {
+                "text": "Message accepted by Tsunagou durable delivery."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "message_id": "599c0931-d3ab-4458-bfca-981d6f018090",
+                "delivery": "pending",
+                "wake": "not_requested",
+                "push": {
+                  "requested": false,
+                  "status": "not_requested"
+                },
+                "host_wake": {
+                  "status": "not_configured"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.266Z",
+      "finished_at": "2026-09-28T05:48:46.281Z",
+      "duration_ms": 14.71,
+      "authenticated_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "session_id": "77fff888-5e50-4259-a3bf-58138e786c22",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "7d6d3fb2-2dfd-4f5e-a72f-3eb1f208e336",
+        "method": "tasks/get",
+        "params": {
+          "id": "tsunagou:task:0a28f9e6-52c8-4d80-b805-64807da75931"
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "7d6d3fb2-2dfd-4f5e-a72f-3eb1f208e336",
+        "result": {
+          "id": "tsunagou:task:0a28f9e6-52c8-4d80-b805-64807da75931",
+          "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+          "status": {
+            "state": "completed"
+          },
+          "metadata": {
+            "tsunagou": {
+              "task_id": "0a28f9e6-52c8-4d80-b805-64807da75931",
+              "source_digest": "sha256:758c9d743ac1ee37b9260555a979578050092d6062fc3844428f8759b53b0d2b"
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.281Z",
+      "finished_at": "2026-09-28T05:48:46.302Z",
+      "duration_ms": 20.91,
+      "authenticated_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "session_id": "3608b04e-1564-43b1-8b8b-3636aae47d0d",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+            "role": "agent",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "parts": [
+              {
+                "text": "Acceptance transport probe only. Pull and acknowledge this message, then reply acceptance_probe_received to main. Do not reopen tasks or modify code."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "recipient_agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "kind": "acceptance_probe",
+                "subject_ref": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+                "payload": {
+                  "origin": "root_acceptance_harness",
+                  "host_wake_claimed": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+        "result": {
+          "message": {
+            "messageId": "a2375f00-ad09-497e-932f-2705c8f489ae",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "role": "agent",
+            "parts": [
+              {
+                "text": "Message accepted by Tsunagou durable delivery."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "message_id": "a2375f00-ad09-497e-932f-2705c8f489ae",
+                "delivery": "pending",
+                "wake": "not_requested",
+                "push": {
+                  "requested": false,
+                  "status": "not_requested"
+                },
+                "host_wake": {
+                  "status": "not_configured"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.302Z",
+      "finished_at": "2026-09-28T05:48:46.309Z",
+      "duration_ms": 6.67,
+      "authenticated_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "session_id": "3608b04e-1564-43b1-8b8b-3636aae47d0d",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+            "role": "agent",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "parts": [
+              {
+                "text": "Acceptance transport probe only. Pull and acknowledge this message, then reply acceptance_probe_received to main. Do not reopen tasks or modify code."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "recipient_agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "kind": "acceptance_probe",
+                "subject_ref": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+                "payload": {
+                  "origin": "root_acceptance_harness",
+                  "host_wake_claimed": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+        "result": {
+          "message": {
+            "messageId": "a2375f00-ad09-497e-932f-2705c8f489ae",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "role": "agent",
+            "parts": [
+              {
+                "text": "Message accepted by Tsunagou durable delivery."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "message_id": "a2375f00-ad09-497e-932f-2705c8f489ae",
+                "delivery": "pending",
+                "wake": "not_requested",
+                "push": {
+                  "requested": false,
+                  "status": "not_requested"
+                },
+                "host_wake": {
+                  "status": "not_configured"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.309Z",
+      "finished_at": "2026-09-28T05:48:46.311Z",
+      "duration_ms": 2.86,
+      "authenticated_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "session_id": "3608b04e-1564-43b1-8b8b-3636aae47d0d",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a-retry",
+        "method": "message/send",
+        "params": {
+          "message": {
+            "messageId": "acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+            "role": "agent",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "parts": [
+              {
+                "text": "Acceptance transport probe only. Pull and acknowledge this message, then reply acceptance_probe_received to main. Do not reopen tasks or modify code."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "recipient_agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "kind": "acceptance_probe",
+                "subject_ref": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+                "payload": {
+                  "origin": "root_acceptance_harness",
+                  "host_wake_claimed": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "rpc-acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a-retry",
+        "result": {
+          "message": {
+            "messageId": "a2375f00-ad09-497e-932f-2705c8f489ae",
+            "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+            "role": "agent",
+            "parts": [
+              {
+                "text": "Message accepted by Tsunagou durable delivery."
+              }
+            ],
+            "metadata": {
+              "tsunagou": {
+                "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+                "message_id": "a2375f00-ad09-497e-932f-2705c8f489ae",
+                "delivery": "pending",
+                "wake": "not_requested",
+                "push": {
+                  "requested": false,
+                  "status": "not_requested"
+                },
+                "host_wake": {
+                  "status": "not_configured"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.312Z",
+      "finished_at": "2026-09-28T05:48:46.328Z",
+      "duration_ms": 16.77,
+      "authenticated_agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "session_id": "29d80a62-e0b4-4ddc-8cf3-29bf7a5e2396",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "2f00098f-be93-4db4-b4ff-73aff601d617",
+        "method": "tasks/get",
+        "params": {
+          "id": "tsunagou:task:ab418fd1-b3a8-48a9-9ac2-f595cd833f14"
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "2f00098f-be93-4db4-b4ff-73aff601d617",
+        "result": {
+          "id": "tsunagou:task:ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+          "contextId": "839bdb05-c7db-474c-9517-f0e837eb5096",
+          "status": {
+            "state": "completed"
+          },
+          "metadata": {
+            "tsunagou": {
+              "task_id": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+              "source_digest": "sha256:d9013c1be7eda3d9a4c0c1bcaeb67e2947fcc27eef69a627f1f6280867666547"
+            }
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.328Z",
+      "finished_at": "2026-09-28T05:48:46.330Z",
+      "duration_ms": 1.32,
+      "authenticated_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "session_id": "77fff888-5e50-4259-a3bf-58138e786c22",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "5cd2db5e-3cfb-456c-bf39-54cca6f754e3",
+        "method": "tasks/cancel",
+        "params": {
+          "id": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+          "attemptId": "92aa8651-9286-4fca-93a9-dd76c95077e7",
+          "reason": "acceptance_foreign_worker_denial_probe"
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "5cd2db5e-3cfb-456c-bf39-54cca6f754e3",
+        "error": {
+          "code": -32003,
+          "message": "authenticated A2A action was denied",
+          "data": {
+            "code": "capability_denied"
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.330Z",
+      "finished_at": "2026-09-28T05:48:46.341Z",
+      "duration_ms": 11.33,
+      "authenticated_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "session_id": "77fff888-5e50-4259-a3bf-58138e786c22",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "ccc30b6c-7114-49a6-aa24-d6bc06e47111",
+        "method": "tasks/fail",
+        "params": {
+          "id": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+          "attemptId": "92aa8651-9286-4fca-93a9-dd76c95077e7",
+          "reason": "acceptance_foreign_worker_denial_probe"
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "ccc30b6c-7114-49a6-aa24-d6bc06e47111",
+        "error": {
+          "code": -32000,
+          "message": "A2A request was rejected",
+          "data": {
+            "code": "attempt_owner_required"
+          }
+        }
+      }
+    },
+    {
+      "started_at": "2026-09-28T05:48:46.341Z",
+      "finished_at": "2026-09-28T05:48:46.357Z",
+      "duration_ms": 16.19,
+      "authenticated_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "session_id": "77fff888-5e50-4259-a3bf-58138e786c22",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": "67beb702-2097-42a1-8916-436ff2cb4f29",
+        "method": "tasks/retry",
+        "params": {
+          "id": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+          "attemptId": "92aa8651-9286-4fca-93a9-dd76c95077e7",
+          "reason": "acceptance_foreign_worker_denial_probe"
+        }
+      },
+      "http_status": 200,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "67beb702-2097-42a1-8916-436ff2cb4f29",
+        "error": {
+          "code": -32003,
+          "message": "authenticated A2A action was denied",
+          "data": {
+            "code": "capability_denied"
+          }
+        }
+      }
+    }
+  ],
+  "secrets_included": false
+}

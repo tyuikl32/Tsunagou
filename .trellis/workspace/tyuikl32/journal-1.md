@@ -418,3 +418,20 @@ Aligned CLI examples with implemented flags and reran the full local quality sui
 - 修正一次真实 smoke 暴露的 jobs 查询列名错误；完整 Python/TS/协议/文档检查、双 bridge standalone smoke、真实 daemon commit-window smoke 和 16/16 audit 均通过。
 - 将 checkpoint 失败/HTTP 查询/CLI retry 纳入真实 daemon smoke；新增 `tools/dev/package_smoke.ps1`，本次在源码树外临时 venv 与 npm 解包目录均启动成功。
 - M1 十二条最小产品标准已通过并写入 `docs/standalone/m1-acceptance-2026-09-21.json`；主动 Job runner/物化中断扩展、完整 workflow/风险与断线矩阵、真实宿主基线和完整公共协议仍作为 R1-R6 follow-on。
+
+## Session 18: SegaImageManageTool 三 Agent 实测交付与效率偏差
+
+**Date**: 2026-09-28
+**Request**: 在 `D:\ALL.Net\SegaImageManageTool` 真实部署 Tsunagou，由独立 main/WebUI/HTTP Codex 会话完成 Web UI 与 HTTP 后端，保存 A2A、任务、Lease、契约、持久化、耗时和非预期情况；先完成任务，过度设计复盘后置。
+
+两个 pull-first worker task 最终都完成 `task.submit`，主 Agent在事件 374/375 执行 `task.review.accept`。目标项目新增 loopback ASP.NET Core HTTP 后端、静态 Web UI、Node WebUI 测试、PowerShell HTTP acceptance 和 API/验收说明；主 Agent未执行 Git commit。独立复验：`dotnet build` exit 0（只有 NuGet vulnerability feed 离线警告）、WebUI Node 5/5、HTTP acceptance exit 0。实际后端保持运行于 `http://127.0.0.1:5137/`，浏览器确认在线并观察到真实 multipart `file_too_small` 错误和 request ID；仓库缺少有效 BTID 成功 fixture，未伪造成功路径。
+
+本轮真实暴露：installer 复用错误 checkout、PTY daemon 生命周期、Windows excluded port、bridge/host wake 失效、CLI source/credential 缺口、scope 双重表达、bootstrap root 未绑定、跨 task 资源重叠、契约 slot 编码错误、proxy 将 withdrawn 提案恢复为 accepted、120 秒 Lease 在 start 前消耗、workspace decision 随 attempt 重做，以及无关 `opencode.json` 越界产物。`task.progress` 在 running 且 Lease 仍有效时会续租；失败根因是 acquire 到 start 已消耗大部分 TTL，而 start 前不能 renew。最终通过最短 MCP 序列提交，没有降低 owner/scope/user-only 边界。
+
+计时从用户报告的 10:50 Asia/Shanghai 开始：到 project genesis 514.450 秒、到稳定 daemon 575 秒（installer 精确起止未计时）。WebUI 首次 start→最终 submit 墙上 4272.197 秒，持久 running 合计 260.901 秒，submit→review 154.430 秒；HTTP 分别为 2410.918、682.825 和 1000.338 秒。完整事实写入 `docs/acceptance/evidence/sega-image-manage-tool-2026-09-28/`；docs validator、5 个 acceptance JSON、Python private lock 单测和 bridge TypeScript check 均通过。native host wake、CLI 查询、OTel blame、有效 BTID 成功样本和用户项目完成确认仍明确未关闭。
+
+**后续复验（2026-09-28 05:58 UTC）**：CLI 七项读查询在明确目标环境后全部成功且不产生业务事件，daemon 76936→87492 重启后仍成功，genesis checkpoint verify 通过。直接 A2A HTTP harness 的幂等发送/task 查询/异 Worker 拒绝通过；两名真实 Worker 收件 ACK 并回复，main 收件 ACK，四条 delivery 均 acked。原 bridge MCP 消息未冒充 A2A HTTP，Codex follow-up 未冒充原生唤醒。新增 32 KiB 无游戏数据的有效合成 BTID，真实浏览器+后端解析成功，已保存截图与响应。CLI 和成功样本缺口由后续证据关闭；原生唤醒、OTel/失败诊断以及用户最终完成确认仍未关闭。37 项 JSON 偏差保留，效率复盘继续后置。宿主完成回合累计 WebUI 4089.535 秒（17 回合）、HTTP 3267.100 秒（20 回合），包含接入、推理和协调，不等于纯编码时间。操作命令、证据索引及精确口径在 `docs/acceptance/evidence/sega-image-manage-tool-2026-09-28/delivery-report.md`。
+
+**原生唤醒补测（2026-09-28 06:17 UTC）**：纠正初始测试未启用 provider/宿主绑定的配置遗漏，daemon 现为 PID 70156、managed wake；公开 Unix listener PID 87044、当前用户专用 socket 目录。现有两个 Worker thread/read 均成功；真实 A2A → HTTP Worker 的 thread/resume 被 Codex 0.158.0-alpha.2.1 的 active writer 保护拒绝，未启动原生 turn。没有删锁、强占 Desktop 或替换身份；同一消息通过 HTTP Worker 的 Codex follow-up fetch/present/ACK，wake 仍 failed。diagnostics 有 wake_requested 和 fallback agent_presented，但缺 provider terminal failure。证据保存为 native-wake-*.json/.md，偏差累计 41 项；HTTP 新增 35.430 秒回合，总 3302.530 秒/21 回合。业务代码未改变，用户完成确认仍待答复。
+
+**收尾（2026-09-28 06:26 UTC 后）**：发现早期 managed-wake 的两个重复任务仍 open；main 已通过正式 cancel_request 变为不可领取的 cancel_requested（事件 395/396），原因引用已 completed 替代任务。无 owner 却未按文档直接 cancelled 的缺陷累计为第 42 项，未直接改库或伪造 ACK。新增 delivery-file-manifest（16 文件 hash、health/UI 200）、closeout-state 和 completion-audit。无非终态 Attempt、有效执行 Lease 或 attempt Grant；三会话 idle。项目总任务仍 open，用户最终确认自发出后经过本次及两次前序目标工作仍未收到；架构复盘遵循用户指示后置，不能自行关闭总任务或生成完成 checkpoint。

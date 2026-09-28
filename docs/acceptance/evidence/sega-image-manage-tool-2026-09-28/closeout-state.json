@@ -1,0 +1,72 @@
+{
+  "recorded_at": "2026-09-28T06:28:37.561Z",
+  "as_of_event_seq": 396,
+  "tasks": [
+    {
+      "task_id": "0a28f9e6-52c8-4d80-b805-64807da75931",
+      "status": "completed",
+      "current_attempt_id": "574a5473-5291-458b-9e86-8dd757c13e7c",
+      "revision": 21,
+      "block_reason": null,
+      "parent_task_id": "919027fc-3449-4844-8cb2-824a136f70a9"
+    },
+    {
+      "task_id": "919027fc-3449-4844-8cb2-824a136f70a9",
+      "status": "open",
+      "current_attempt_id": null,
+      "revision": 3,
+      "block_reason": null,
+      "parent_task_id": null
+    },
+    {
+      "task_id": "93ffd4c0-c4ad-4401-bccb-0f3fcacb0b31",
+      "status": "cancel_requested",
+      "current_attempt_id": null,
+      "revision": 4,
+      "block_reason": "superseded_by_completed_task:0a28f9e6-52c8-4d80-b805-64807da75931; retain original failed-wake evidence",
+      "parent_task_id": "919027fc-3449-4844-8cb2-824a136f70a9"
+    },
+    {
+      "task_id": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+      "status": "completed",
+      "current_attempt_id": "92aa8651-9286-4fca-93a9-dd76c95077e7",
+      "revision": 22,
+      "block_reason": null,
+      "parent_task_id": "919027fc-3449-4844-8cb2-824a136f70a9"
+    },
+    {
+      "task_id": "f98e9640-a150-4a22-a37a-6e58fb4ae11e",
+      "status": "cancel_requested",
+      "current_attempt_id": null,
+      "revision": 4,
+      "block_reason": "superseded_by_completed_task:ab418fd1-b3a8-48a9-9ac2-f595cd833f14; retain original failed-wake evidence",
+      "parent_task_id": "919027fc-3449-4844-8cb2-824a136f70a9"
+    }
+  ],
+  "cancellation_events": [
+    {
+      "event_seq": 395,
+      "event_id": "2d693c01-9b5b-4631-be1f-2e8469a1498d",
+      "action": "task.cancel_request",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T06:26:14.321000+00:00",
+      "caused_by_command_id": "a0834d8a-4fc0-479c-a8a0-6b7f8877a684"
+    },
+    {
+      "event_seq": 396,
+      "event_id": "5a5e74e0-a5ce-4b42-a69e-89cd974f79be",
+      "action": "task.cancel_request",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T06:26:14.365000+00:00",
+      "caused_by_command_id": "c3ab24b8-1e94-47a7-8f04-3dbcac158388"
+    }
+  ],
+  "active_execution_lease_count": 0,
+  "active_attempt_grant_count": 0,
+  "nonterminal_attempt_ids": [],
+  "source_check": "TaskService.claim only permits open/blocked/orphaned, so cancel_requested cannot be claimed",
+  "all_app_threads_idle": true,
+  "main_cleanup_turn_duration_ms": 39691,
+  "user_project_completion_confirmed": false,
+  "secrets_included": false
+}

@@ -1,0 +1,36 @@
+{
+  "started_at": "2026-09-28T05:57:41.929Z",
+  "finished_at": "2026-09-28T05:57:41.966Z",
+  "duration_ms": 37.79,
+  "status": 200,
+  "x_request_id": "acceptance-btid-record-20260928",
+  "cache_control": "no-store",
+  "response": {
+    "message": "synthetic-valid.PACK was inspected successfully.",
+    "result": {
+      "gameId": "TEST",
+      "magic": "BTID",
+      "type": 0,
+      "date": "2026-09-28T10:50:00",
+      "version": "1.2.3",
+      "totalSector": 2,
+      "sectorSize": 16384,
+      "imageSector": 1,
+      "expectedFileName": "TEST_1.02.03_20260928105000_1.PACK",
+      "expectedFileSize": 32768,
+      "dataOffset": 16384,
+      "dataSize": 16384,
+      "headerCrcValid": true
+    },
+    "requestId": "acceptance-btid-record-20260928"
+  },
+  "synthetic_fixture": "synthetic-valid.PACK",
+  "fixture_generator": "make-synthetic-btid.ps1",
+  "browser": {
+    "status": "Inspection complete",
+    "request_id": "b0fedf47-8265-44d5-9145-a264ff7e721f",
+    "screenshot": "btid-success.png",
+    "url": "http://127.0.0.1:5137/"
+  },
+  "qualification": "Synthetic zero-filled valid encrypted BTID fixture; real parser and HTTP service, no mock response and no commercial image data."
+}

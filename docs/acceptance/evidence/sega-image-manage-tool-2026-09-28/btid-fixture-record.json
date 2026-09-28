@@ -1,0 +1,14 @@
+{
+  "kind": "synthetic_btid_acceptance_fixture",
+  "created_at": "2026-09-28T05:50:17.8615172Z",
+  "path": "D:\\Tsunagou\\docs\\acceptance\\evidence\\sega-image-manage-tool-2026-09-28\\synthetic-valid.PACK",
+  "size": 32768,
+  "sha256": "03d811c18142b51647cd048db1187227640385b62582cfa410cd6492177d2e85",
+  "game_id": "TEST",
+  "version": "1.2.3",
+  "header_crc32": 3918320766,
+  "sectors": 2,
+  "sector_size": 16384,
+  "synthetic_only": true,
+  "secrets_included": false
+}
