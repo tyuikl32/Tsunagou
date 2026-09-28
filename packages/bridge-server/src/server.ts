@@ -441,7 +441,10 @@ function continuityRefs(previousDigest: string | undefined, currentDigest: strin
 async function main(): Promise<void> {
   const cfg = config();
   const hostIdentity = readHostIdentity(cfg.hostIdCandidates);
-  let hostDigest = hostIdentity?.digest;
+  // hostDigest is the boot-time identity (Codex env vars). For OpenCode the
+  // session id arrives per tool call via MCP _meta["ai.opencode/sessionID"],
+  // so currentHostDigest is updated lazily inside the CallTool handler.
+  let currentHostDigest: string | undefined = hostIdentity?.digest;
   const projectDigest = cfg.projectRoot ? readProjectDigest(cfg.projectRoot) : undefined;
   const transport = new HttpTransport(readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl);
 
@@ -454,14 +457,17 @@ async function main(): Promise<void> {
   // conversations from the same IDE, that file would silently make them one
   // worker. Explicit TSUNAGOU_SESSION_FILE remains supported for a caller
   // that deliberately provisions one private file per conversation.
-  let conversationBindingDigest = hostDigest;
+  let conversationBindingDigest = currentHostDigest;
+  // Set when a multiplexing host (OpenCode) supplies its conversation id via
+  // MCP _meta: such a bridge keeps one private session file per conversation.
+  let sessionFileOverride: string | undefined;
   let sessionFile = cfg.sessionFile ?? (
     conversationBindingDigest
       ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
       : undefined
   );
   let session: PersistedSession | undefined = sessionFile ? loadSession(sessionFile) : undefined;
-  let observedContinuity = continuityRefs(session?.host_conversation_id_digest, hostDigest);
+  let observedContinuity = continuityRefs(session?.host_conversation_id_digest, currentHostDigest);
 
   async function attemptSessionRecovery(): Promise<void> {
     bootstrapTicket = undefined;
@@ -474,8 +480,8 @@ async function main(): Promise<void> {
     }
     conversationBindingDigest = bootstrapTicket
       ? hash(`conversation_id:${bootstrapTicket.conversation_id}`)
-      : hostDigest;
-    sessionFile = cfg.sessionFile ?? (
+      : currentHostDigest;
+    sessionFile = sessionFileOverride ?? cfg.sessionFile ?? (
       conversationBindingDigest
         ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
         : undefined
@@ -501,24 +507,24 @@ async function main(): Promise<void> {
       // orchestrator. It is not caller self-assertion: the ticket secret already
       // binds this exact conversation, and redeem_ticket rejects a forged id with
       // enrollment_identity_mismatch.
-      hostDigest ??= hash(`conversation_id:${ticket.conversation_id}`);
+      currentHostDigest ??= hash(`conversation_id:${ticket.conversation_id}`);
       if (session !== undefined) {
         // Resume: compare the persisted digest to this launch's to observe
         // identity.continuity_evidence honestly (same digest across a resume).
-        observedContinuity = continuityRefs(session.host_conversation_id_digest, hostDigest);
-      } else if (hostDigest !== undefined) {
+        observedContinuity = continuityRefs(session.host_conversation_id_digest, currentHostDigest);
+      } else if (currentHostDigest !== undefined) {
         // On first admission, the one-time ticket itself is bound to this
         // conversation identity. It is the continuity proof for this new
         // session; later launches use the persisted digest plus nonce/epoch.
         observedContinuity = ["ticket:bound_conversation"];
       }
-      const baseline = buildBaseline({ hostDigest, projectDigest, continuityRefs: observedContinuity, tools: TOOLS });
+      const baseline = buildBaseline({ hostDigest: currentHostDigest, projectDigest, continuityRefs: observedContinuity, tools: TOOLS });
       const credential = session !== undefined
         ? await transport.rebind(ticket, session.agent_id, baseline)
         : await transport.enroll(ticket, baseline);
-      session = { ...credential, host_conversation_id_digest: hostDigest };
+      session = { ...credential, host_conversation_id_digest: currentHostDigest };
       if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
-      saveSession(sessionFile, credential, hostDigest, conversationBindingDigest);
+      saveSession(sessionFile, credential, currentHostDigest, conversationBindingDigest);
         if (existsSync(cfg.ticketFile)) unlinkSync(cfg.ticketFile); // single-use
       } catch (error) {
         session = undefined;
@@ -530,15 +536,15 @@ async function main(): Promise<void> {
       // credential rotates and the epoch advances — the bridge's own recovery path,
       // instead of silently reusing a possibly-stale credential. There is no new
       // env/ticket identity here, so the persisted host digest is carried forward.
-      hostDigest ??= session.host_conversation_id_digest;
-      if (hostDigest !== undefined && session.host_conversation_id_digest !== undefined
-          && hostDigest !== session.host_conversation_id_digest) {
+      currentHostDigest ??= session.host_conversation_id_digest;
+      if (currentHostDigest !== undefined && session.host_conversation_id_digest !== undefined
+          && currentHostDigest !== session.host_conversation_id_digest) {
         throw new Error("host_conversation_identity_mismatch");
       }
       const credential = await transport.reconnect(session);
-      session = { ...credential, host_conversation_id_digest: hostDigest };
+      session = { ...credential, host_conversation_id_digest: currentHostDigest };
       if (sessionFile === undefined) throw new Error("conversation_identity_required_for_session_file");
-      saveSession(sessionFile, credential, hostDigest, session.conversation_binding_digest);
+      saveSession(sessionFile, credential, currentHostDigest, session.conversation_binding_digest);
       } catch (error) {
         session = undefined;
         process.stderr.write(`[tsunagou-bridge] reconnect failed: ${error instanceof Error ? error.message : String(error)}\n`);
@@ -549,7 +555,10 @@ async function main(): Promise<void> {
   await attemptSessionRecovery();
   let recoveryPromise: Promise<void> | undefined;
   async function ensureSession(): Promise<void> {
-    if (session !== undefined) return;
+    // For OpenCode the host digest may arrive lazily via MCP _meta on the
+    // first tool call. If the identity changed, drop the cached session so
+    // attemptSessionRecovery re-resolves against the new conversation.
+    if (session !== undefined && session.host_conversation_id_digest === currentHostDigest) return;
     recoveryPromise ??= attemptSessionRecovery().finally(() => { recoveryPromise = undefined; });
     await recoveryPromise;
   }
@@ -577,6 +586,29 @@ async function main(): Promise<void> {
       return { content: [{ type: "text" as const, text: JSON.stringify({ error: "unknown_tool" }) }], isError: true };
     }
     try {
+      // OpenCode delivers the host conversation id per tool call via
+      // _meta["ai.opencode/sessionID"] (verified on v2.0.18). Update the
+      // current host digest so ensureSession resolves the correct bridge
+      // session for this conversation. Codex ignores this path because its
+      // identity arrives via environment variables at process boot.
+      //
+      // The digest prefix matches the ticket bootstrap path
+      // (`conversation_id:`) so a session enrolled from a ticket bound to
+      // this conversation keeps the same identity across later tool calls.
+      //
+      // MCP configuration is project-wide, so one stdio bridge can serve
+      // several host conversations. Each conversation keeps its own private
+      // session file under <stateDir>/sessions/ instead of the single
+      // TSUNAGOU_SESSION_FILE the CLI writes for single-conversation hosts.
+      const metaSessionId = (request.params as { _meta?: Record<string, unknown> } | undefined)?._meta?.["ai.opencode/sessionID"];
+      if (typeof metaSessionId === "string" && metaSessionId) {
+        const metaDigest = hash(`conversation_id:${metaSessionId}`);
+        if (metaDigest !== currentHostDigest) {
+          currentHostDigest = metaDigest;
+          session = undefined;
+          sessionFileOverride = join(cfg.stateDir, "sessions", `bridge-session-${metaDigest.slice(0, 32)}.json`);
+        }
+      }
       await ensureSession();
       if (session === undefined) throw new Error("not_enrolled:no_ticket_or_session_file");
       const args = { ...((request.params.arguments ?? {}) as Record<string, unknown>) };
@@ -612,7 +644,7 @@ async function main(): Promise<void> {
   try {
     mkdirSync(cfg.stateDir, { recursive: true });
     writeFileSync(join(cfg.stateDir, "bridge-boot.json"), JSON.stringify({
-      host_digest: hostDigest ?? null,
+      host_digest: currentHostDigest ?? null,
       matched_host_env: hostIdentity?.envName ?? null,
       baseline_status: session?.baseline_status ?? null,
       wake_capability: BRIDGE_WAKE_CAPABILITY,
@@ -623,7 +655,7 @@ async function main(): Promise<void> {
     // best-effort diagnostics must never break the bridge
   }
   await server.connect(stdio);
-  process.stderr.write(`[tsunagou-bridge] host_digest=${hostDigest ?? "none"} session=${session?.baseline_status ?? "not_enrolled"} continuity=${observedContinuity?.join("+") ?? "unknown"}\n`);
+  process.stderr.write(`[tsunagou-bridge] host_digest=${currentHostDigest ?? "none"} session=${session?.baseline_status ?? "not_enrolled"} continuity=${observedContinuity?.join("+") ?? "unknown"}\n`);
 }
 
 main().catch((error) => {

@@ -1,11 +1,21 @@
 # OpenCode 适配器实施与诊断
 
-OpenCode 适配器只翻译官方 Sessions、plugin 事件和 MCP 工具入口到 bridge-sdk。T02/T19 已用 `opencode-ai 1.18.31` headless server 完成无模型真实 probe：同目录双 session、session 详情、fork 新 ID、消息历史和 `/doc` typed API 可观察；连续 resume、任务/认知/契约、bridge 重连和去重仍 unknown，不能用部分证据改成正式 ready。
+OpenCode 适配器翻译官方 Sessions、plugin 事件和 MCP 工具入口到 bridge-sdk。**2026-09-28 已在真实 OpenCode v2.0.18 宿主上完成 11 项共同基线实测**：两个真实会话由模型轮次驱动，经 stdio MCP bridge 与真实 daemon 交互；结果与脱敏证据见 [验收记录](../acceptance/opencode-11-baseline-live-2026-09-28.md)及[结构化 evidence](../research/evidence/opencode-2026-09-28-live.json)。旧 `opencode-ai 1.18.31` 无模型探针仅保留为历史部分证据。
 
-安装时只在用户选定 profile 写入非秘密 bridge 命令和适配器版本。token 由 bridge 私有存储注入，不能出现在 prompt、tool args、静态 MCP 配置或环境变量。卸载删除适配器生成的 profile 引用，保留 OpenCode 原生 session 与项目持久化。
+两条宿主事实驱动适配器设计（v2.0.18 实测）：
 
-`OpenCodeAdapter.getIdentity` 需要 host-issued `host_conversation_id_digest`；`probeCapabilities` 返回完整 11 项并保留每项 evidence。plugin 关闭、事件乱序、重复通知和恢复失败都应产生 degraded/unknown 诊断，不能假 ready。当前包只提供 host-neutral 翻译接口，未假定 OpenCode 私有 SDK 方法。
+- OpenCode **不向 local MCP server 传递会话 id 环境变量**；会话身份通过每次工具调用的 `_meta["ai.opencode/sessionID"]` 到达。bridge 以该字段的 `conversation_id:` digest 作为宿主会话身份，并与 ticket 绑定路径统一，保证同一会话跨调用、跨 bridge 重启身份一致。
+- MCP 配置是项目级共享的，一个 stdio bridge 可能服务同一项目的多个会话。bridge 为每个会话分配独立私有 session 文件（`<stateDir>/sessions/bridge-session-<digest>.json`）；单会话宿主继续使用 `TSUNAGOU_SESSION_FILE`。
 
-真实验收需要继续锁定 OpenCode 版本，证明 resume/compact/new/clear/fork 连续性、typed tools、pull/fetch/ACK、重连和去重，再把脱敏证据写入 `docs/research/evidence/`。当前适配器仍是 diagnostic-only。
+安装时只在用户选定 profile 写入非秘密 bridge 命令和适配器版本。token 由 bridge 私有存储注入，不出现在 prompt、tool args、静态 MCP 配置或环境变量。`agent connect` 目前不为 OpenCode 自动注册 MCP，需要把生成的 bridge_config 映射到 OpenCode 项目的 `mcp` 配置（`type: "local"`、`command`、`environment`）。卸载删除适配器生成的 profile 引用，保留 OpenCode 原生 session 与项目持久化。
 
-验证：`corepack pnpm --filter @tsunagou/adapter-opencode run check`、`corepack pnpm exec vitest run packages/adapter-opencode/tests`、`python tools/docs/validate_docs.py`。
+`OpenCodeAdapter.getIdentity` 需要 host-issued `host_conversation_id_digest`；`probeCapabilities` 返回完整 11 项并保留每项 evidence。plugin 关闭、事件乱序、重复通知和恢复失败都应产生 degraded/unknown 诊断，不能假 ready。
+
+自动唤醒（`wake.push`）仍为增强缺口：stdio bridge 没有宿主反向唤醒通道，bridge 报告 `unsupported`，不计入 11 项共同基线。
+
+验证：
+
+- `corepack pnpm --filter @tsunagou/adapter-opencode run check`
+- `corepack pnpm exec vitest run packages/adapter-opencode/tests`
+- `corepack pnpm --filter @tsunagou/bridge-server run build`（`tsc` 退出码 0）
+- `python tools/docs/validate_docs.py`
