@@ -34,16 +34,14 @@ from tsunagou.modules.coordination import (
     CoordinationEvent,
     CoordinationPlan,
     CoordinationService,
-    WakeAttempt,
 )
 from tsunagou.modules.messaging import Delivery, Message, MessageStore, ResponseObligation
 from tsunagou.modules.projects import ConfigProvenance, Project, ProjectRegistry
 from tsunagou.modules.resources import (
-    LeaseSet,
-    ResourceIntent,
     ResourceKey,
     ResourceObservation,
     ResourceRequest,
+    ResourceReservation,
     ResourceService,
 )
 from tsunagou.modules.tasks import (
@@ -84,7 +82,7 @@ _ENTITIES: dict[str, dict[str, tuple[str, str]]] = {
                   "risk_acceptances": ("risk_acceptance", "")},
     "messages": {"messages": ("message", "message_id"), "deliveries": ("delivery", "message_id"),
                  "obligations": ("obligation", "obligation_id")},
-    "resources": {"intents": ("resource_intent", "intent_id"), "lease_sets": ("lease", "lease_set_id"),
+    "resources": {"reservations": ("reservation", "reservation_id"),
                   "observations": ("resource_observation", "")},
     "workspaces": {"decisions": ("isolation_decision", "decision_id"), "workspaces": ("workspace", "workspace_id"),
                    "git_requests": ("git_request", "request_id"), "baselines": ("baseline", "manifest_id"),
@@ -92,7 +90,7 @@ _ENTITIES: dict[str, dict[str, tuple[str, str]]] = {
     "artifacts": {"refs": ("artifact", "artifact_ref")},
     "lifecycle": {"decisions": ("decision", "decision_id"), "resolutions": ("resolution", "")},
     "coordination": {"plans": ("plan", "plan_id"), "assignments": ("assignment", "assignment_id"),
-                     "wake_attempts": ("wake_attempt", "wake_attempt_id"), "events": ("coordination_event", "event_id")},
+                     "events": ("coordination_event", "event_id")},
 }
 
 
@@ -217,11 +215,9 @@ class ServiceStateRuntime:
             }
         if module == "resources":
             return {
-                "ttl_seconds": service.ttl_seconds,
-                "intents": service.intents,
-                "lease_sets": service.lease_sets,
+                "reservations": service.reservations,
+                "root_aliases": service.root_aliases,
                 "observations": service.observations,
-                "waiting": service.waiting,
             }
         if module == "workspaces":
             return {
@@ -242,7 +238,6 @@ class ServiceStateRuntime:
             return {
                 "plans": service.plans,
                 "assignments": service.assignments,
-                "wake_attempts": service.wake_attempts,
                 "events": service.events,
             }
         return {
@@ -303,6 +298,7 @@ class ServiceStateRuntime:
                 key: Task(**{
                     **item,
                     "blocks": set(item.get("blocks", [])),
+                    "required_contract_ids": tuple(item.get("required_contract_ids", [])),
                     "suspension_snapshot": (
                         SuspensionSnapshot(**{
                             **item["suspension_snapshot"],
@@ -381,19 +377,13 @@ class ServiceStateRuntime:
     def _replace_optional(self, module: str, value: dict[str, Any]) -> bool:
         service = self._service(module)
         if module == "resources":
-            service.ttl_seconds = int(value.get("ttl_seconds", 120))
-            service.intents = {
-                key: ResourceIntent(
+            service.set_root_aliases(value.get("root_aliases", {}))
+            service.reservations = {
+                key: ResourceReservation(
                     **{**item, "resources": tuple(self._resource_request(request) for request in item.get("resources", ()))},
-                ) for key, item in value.get("intents", {}).items()
-            }
-            service.lease_sets = {
-                key: LeaseSet(
-                    **{**item, "resources": tuple(self._resource_request(request) for request in item.get("resources", ()))},
-                ) for key, item in value.get("lease_sets", {}).items()
+                ) for key, item in value.get("reservations", {}).items()
             }
             service.observations = [ResourceObservation(**item) for item in value.get("observations", [])]
-            service.waiting = [tuple(item) for item in value.get("waiting", [])]
             return True
         if module == "workspaces":
             service.decisions = {
@@ -457,10 +447,6 @@ class ServiceStateRuntime:
                     **{**item, "dependencies": tuple(item.get("dependencies", ()))},
                 )
                 for key, item in value.get("assignments", {}).items()
-            }
-            service.wake_attempts = {
-                key: WakeAttempt(**item)
-                for key, item in value.get("wake_attempts", {}).items()
             }
             service.events = [CoordinationEvent(**item) for item in value.get("events", [])]
             service._task_index = {
@@ -537,31 +523,12 @@ class ServiceStateRuntime:
         return imported_before
 
     def invalidate_execution_state(self) -> None:
-        """Fence work owned by a previous daemon process before serving requests."""
+        """Revoke process-local execution authority while preserving durable ownership."""
         for key, grant in list(self.authority.grants.items()):
             if grant.kind == "task_attempt" and grant.status == "active":
                 self.authority.grants[key] = Grant(
                     **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"},
                 )
-        for task in self.tasks.tasks.values():
-            attempt = self.tasks.attempts.get(task.current_attempt_id or "")
-            if task.status in {"claimed", "running"} and attempt is not None:
-                if self.resources is not None:
-                    self.resources.release_for_attempt(
-                        attempt.attempt_id, reason="runtime_epoch_rotated",
-                    )
-                attempt.status = "orphaned"
-                attempt.ended_at = time.time()
-                attempt.revision += 1
-                task.current_attempt_id = None
-                # A daemon restart invalidates execution authority and the
-                # in-memory claim. Leave the durable task in the public queue
-                # for any later Agent; the old Attempt remains evidence.
-                task.status = "open"
-                task.orphan_reason = "runtime_epoch_rotated"
-                task.revision += 1
-        if self.coordination is not None:
-            self.coordination.invalidate_execution_state()
 
     @property
     def lineage_id(self) -> str:
@@ -626,7 +593,7 @@ class ServiceStateRuntime:
         elif family == "workspace":
             candidates = [("workspace_id", "workspace"), ("decision_id", "isolation_decision"), ("request_id", "git_request")]
         elif family == "resource":
-            candidates = [("lease_set_id", "lease"), ("intent_id", "resource_intent"), ("attempt_id", "attempt")]
+            candidates = [("reservation_id", "reservation"), ("attempt_id", "attempt")]
         else:
             candidates = [("decision_id", "decision"), ("discrepancy_id", "discrepancy"),
                           ("root_id", "root"), ("repository_id", "repository"), ("session_id", "session"),
@@ -700,8 +667,13 @@ class ServiceStateRuntime:
             # Only a domain-handler output may attest observation/verification;
             # an arbitrary client payload cannot upgrade evidence provenance.
             evidence_level = str(result["evidence_level"])
+        from tsunagou.platform.telemetry import active_telemetry
+
         event_payload = {"command_kind": command_kind, "modules_changed": modules_changed,
                          "changes": changes, "session_id": session_id,
+                         "traceparent": active_telemetry().current_traceparent(),
+                         "correlation": {key: payload.get(key) or result.get(key)
+                                         for key in ("task_id", "attempt_id")},
                          "evidence_level": evidence_level,
                          "request_digest": canonical_digest(payload)}
         seq = uow.append_event(
@@ -715,3 +687,12 @@ class ServiceStateRuntime:
                 "UPDATE entity_audit_metadata SET last_event_seq=? WHERE project_id=? AND lineage_id=? AND subject_ref=?",
                 (seq, uow.project_id, self.lineage_id, change["subject_ref"]),
             )
+            if change["change_kind"] == "created" and change["subject_ref"].startswith("message/"):
+                message_id = change["subject_ref"].split("/", 1)[1]
+                message = self.messages.messages.get(message_id)
+                if message is not None:
+                    # Every transport and domain-generated message takes this
+                    # same commit boundary. IPC happens later, outside SQLite.
+                    uow.stage_outbox(kind="host_wake", target_ref=change["subject_ref"], payload={
+                        "message_id": message_id, "recipient_agent_id": message.recipient_agent_id,
+                    })

@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-09-28T13:49:19.960Z",
+  "started_at": "2026-09-28T13:49:01.493Z",
+  "finished_at": "2026-09-28T13:49:19.960Z",
+  "duration_ms": 18485.1393,
+  "exit_code": 0,
+  "tests": 93,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "targets": [
+    "tests/unit/test_telemetry.py",
+    "tests/unit/test_hostwake.py",
+    "tests/unit/test_codex_desktop.py",
+    "tests/unit/test_history_cli.py",
+    "tests/unit/test_trace_audit.py",
+    "tests/integration/test_failure_timeline.py",
+    "tests/integration/test_desktop_wake.py",
+    "tests/protocol/test_audit_contract.py"
+  ],
+  "opentelemetry_version": "1.45.0",
+  "kind": "developer_automated_checks",
+  "live_desktop_verified": false,
+  "span_associations_followup": {
+    "started_at": "2026-09-28T13:50:59.920Z",
+    "finished_at": "2026-09-28T13:51:05.364Z",
+    "duration_ms": 5454.268,
+    "exit_code": 0
+  }
+}

@@ -105,3 +105,57 @@ def test_blocks_dag_rejects_cycle_and_restore_is_atomic() -> None:
     with pytest.raises(TaskStateError, match="restore_open"):
         service.restore_open([first.task_id, second.task_id])
     assert first.status == "ready"
+
+
+@pytest.mark.parametrize("state", ["draft", "ready", "open", "blocked", "submitted", "claimed", "running"])
+def test_cancel_requires_ack_only_with_an_active_executor(state: str) -> None:
+    service = TaskService()
+    task = service.create_task("task", "cancel")
+    attempt = None
+    result = None
+    if state != "draft":
+        service.ready(task.task_id)
+    if state not in {"draft", "ready"}:
+        service.publish(task.task_id)
+    if state in {"claimed", "running", "blocked", "submitted"}:
+        attempt = service.claim(task.task_id, "worker")
+    if state in {"running", "submitted"}:
+        service.start(task.task_id, "worker")
+    if state == "submitted":
+        result = service.submit(task.task_id, "worker", {"evidence": "keep me"})
+    if state == "blocked":
+        service.block(task.task_id, "waiting")
+    service.request_cancel(task.task_id, "no longer needed")
+    if state in {"claimed", "running"}:
+        assert task.status == "cancel_requested"
+        assert attempt is not None and attempt.ended_at is None
+        with pytest.raises(TaskStateError):
+            service.submit(task.task_id, "worker", {})
+        with pytest.raises(TaskStateError, match="attempt_owner_required"):
+            service.acknowledge_cancel(task.task_id, "other", attempt_id=attempt.attempt_id)
+        service.acknowledge_cancel(task.task_id, "worker", attempt_id=attempt.attempt_id)
+        assert attempt.status == "cancelled"
+    assert task.status == "cancelled"
+    if attempt is not None:
+        assert attempt.ended_at is not None
+        if state == "blocked":
+            assert attempt.status == "cancelled"
+    if result is not None:
+        assert service.results[result.result_id] == result
+        assert attempt.status == "submitted"
+    with pytest.raises(TaskStateError, match="terminal_task"):
+        service.request_cancel(task.task_id, "repeat")
+
+
+def test_main_reclaim_cancel_fences_active_attempt_and_terminal_recovery() -> None:
+    service = TaskService()
+    task = open_task(service)
+    attempt = service.claim(task.task_id, "worker")
+    service.start(task.task_id, "worker")
+    revision = attempt.revision
+    service.recover(task.task_id, expected_attempt_id=attempt.attempt_id, disposition="cancel")
+    assert task.status == attempt.status == "cancelled"
+    assert attempt.revision > revision
+    assert attempt.ended_at is not None
+    with pytest.raises(TaskStateError, match="terminal_task"):
+        service.recover(task.task_id, expected_attempt_id=attempt.attempt_id, disposition="fail")

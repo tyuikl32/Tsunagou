@@ -222,7 +222,14 @@ class CognitionService:
     ) -> ContractProposal:
         if not participants:
             raise ValueError("contract_requires_participant")
-        slots = [str(item["slot"]) for item in participants]
+        for item in participants:
+            if (not isinstance(item, dict) or set(item) != {"slot", "agent_id", "required"}
+                    or not isinstance(item["required"], bool)):
+                raise ValueError("invalid_contract_participant")
+            for field in ("slot", "agent_id"):
+                if not isinstance(item[field], str) or not item[field].strip():
+                    raise ValueError(f"participant_{field}_required")
+        slots = [item["slot"] for item in participants]
         if len(slots) != len(set(slots)):
             raise ValueError("duplicate_contract_slot")
         required = tuple(
@@ -242,11 +249,12 @@ class CognitionService:
         self, proposal_id: str, *, participant_slot: str, proposal_digest: str, actor_id: str
     ) -> ContractAcceptance:
         proposal = self.proposals[proposal_id]
-        if proposal.status != "proposed" or proposal.digest != proposal_digest:
-            raise ValueError("proposal_digest_mismatch")
+        self._check_proposed(proposal, proposal_digest)
         participant = next((item for item in proposal.participants if item["slot"] == participant_slot), None)
         if participant is None or participant.get("agent_id") != actor_id:
             raise PermissionError("participant_slot_denied")
+        if (proposal_id, participant_slot) in self.acceptances:
+            raise ValueError("participant_already_accepted")
         acceptance = ContractAcceptance(proposal_id, participant_slot, proposal_digest, actor_id)
         self.acceptances[(proposal_id, participant_slot)] = acceptance
         self._mark_proposal_accepted_if_complete(proposal)
@@ -259,8 +267,12 @@ class CognitionService:
         if not main_allowed:
             raise PermissionError("proxy_not_allowed")
         proposal = self.proposals[proposal_id]
-        if proposal.digest != proposal_digest or participant_slot not in proposal.required_slots:
-            raise ValueError("proposal_digest_or_slot_mismatch")
+        self._check_proposed(proposal, proposal_digest)
+        participant = next((item for item in proposal.participants if item["slot"] == participant_slot), None)
+        if participant is None or participant["agent_id"] != represented_participant:
+            raise PermissionError("participant_slot_denied")
+        if (proposal_id, participant_slot) in self.acceptances:
+            raise ValueError("participant_already_accepted")
         acceptance = ContractAcceptance(proposal_id, participant_slot, proposal_digest, real_actor_id, represented_participant, True)
         self.acceptances[(proposal_id, participant_slot)] = acceptance
         self._mark_proposal_accepted_if_complete(proposal)
@@ -270,8 +282,7 @@ class CognitionService:
         self, proposal_id: str, *, proposal_digest: str, actor_id: str, reason: str,
     ) -> ContractProposal:
         proposal = self.proposals[proposal_id]
-        if proposal.status != "proposed" or proposal.digest != proposal_digest:
-            raise ValueError("proposal_digest_mismatch")
+        self._check_proposed(proposal, proposal_digest)
         participant = next(
             (item for item in proposal.participants if item.get("agent_id") == actor_id), None
         )
@@ -290,13 +301,24 @@ class CognitionService:
         return proposal
 
     def _mark_proposal_accepted_if_complete(self, proposal: ContractProposal) -> None:
+        self._check_proposed(proposal, proposal.digest)
         if all((proposal.proposal_id, slot) in self.acceptances for slot in proposal.required_slots):
             object.__setattr__(proposal, "status", "accepted")
 
+    @staticmethod
+    def _check_proposed(proposal: ContractProposal, digest: str) -> None:
+        if proposal.status != "proposed":
+            raise ValueError("proposal_not_proposed")
+        if proposal.digest != digest:
+            raise ValueError("proposal_digest_mismatch")
+
     def supersede_contract(self, proposal_id: str, payload: dict[str, Any], participants: list[dict[str, Any]]) -> ContractProposal:
         proposal = self.proposals[proposal_id]
+        if proposal.status not in {"proposed", "accepted"}:
+            raise ValueError("proposal_not_supersedable")
+        replacement = self.propose_contract(payload, participants, proposed_by=proposal.proposed_by)
         object.__setattr__(proposal, "status", "superseded")
-        return self.propose_contract(payload, participants)
+        return replacement
 
     def request_risk(
         self, *, attempt_id: str, input_snapshot: dict[str, Any],

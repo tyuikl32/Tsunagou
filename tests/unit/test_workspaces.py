@@ -10,24 +10,19 @@ from tsunagou.shared_kernel.digests import canonical_digest
 
 def worktree_decision(service: WorkspaceService):
     return service.record_isolation_decision(
-        task_id="t", attempt_id="a", driver_kind="worktree",
+        task_id="t", scope_revision=1, driver_kind="worktree",
         input_snapshot={"risk": "medium"}, hard_constraints={"single_repository"},
         evidence_refs=[], decided_by="main",
     )
 
 
-def test_worktree_mutation_is_a_main_request_and_no_main_stays_pending() -> None:
+def test_workspace_reuses_task_policy_without_starting_git_mutation() -> None:
     service = WorkspaceService()
     decision = worktree_decision(service)
-    workspace = service.request_workspace(
-        decision.decision_id, root_binding_refs=["root"], repository_id="repo",
-        current_main_id=None,
-    )
-    request = next(iter(service.git_requests.values()))
-    assert workspace.status == "requested"
-    assert request.status == "pending"
-    with pytest.raises(PermissionError):
-        service.report_git_action(request.request_id, actor_main_id="worker", evidence={}, success=True)
+    first = service.request_workspace(decision.decision_id, attempt_id="a", root_binding_refs=["root"], repository_id="repo")
+    second = service.request_workspace(decision.decision_id, attempt_id="b", root_binding_refs=["root"], repository_id="repo")
+    assert first.attempt_id != second.attempt_id and first.decision_id == second.decision_id
+    assert not service.git_requests
 
 
 def test_git_port_rejects_mutation_and_network_commands() -> None:
@@ -42,7 +37,7 @@ def test_dirty_baseline_head_change_and_cleanup_barriers() -> None:
     service = WorkspaceService()
     decision = worktree_decision(service)
     workspace = service.request_workspace(
-        decision.decision_id, root_binding_refs=["root"], repository_id="repo",
+        decision.decision_id, attempt_id="a", root_binding_refs=["root"], repository_id="repo",
         current_main_id="main",
     )
     with pytest.raises(ValueError, match="not_clean"):
@@ -67,7 +62,7 @@ def test_main_integration_request_is_pending_and_no_push() -> None:
     service = WorkspaceService()
     decision = worktree_decision(service)
     workspace = service.request_workspace(
-        decision.decision_id, root_binding_refs=["root"], repository_id="repo",
+        decision.decision_id, attempt_id="a", root_binding_refs=["root"], repository_id="repo",
         current_main_id="main",
     )
     baseline = service.record_baseline(
@@ -174,10 +169,10 @@ def test_scan_symlink_records_link_without_reading_target(tmp_path) -> None:
 def test_result_scope_and_validation_receipt_do_not_self_elevate() -> None:
     service = WorkspaceService()
     decision = service.record_isolation_decision(
-        task_id="task", attempt_id="attempt", driver_kind="shared", input_snapshot={},
+        task_id="task", scope_revision=1, driver_kind="shared", input_snapshot={},
         hard_constraints=set(), evidence_refs=[], decided_by="main",
     )
-    workspace = service.request_workspace(decision.decision_id, root_binding_refs=[], scope_paths=["src"])
+    workspace = service.request_workspace(decision.decision_id, attempt_id="attempt", root_binding_refs=[], scope_paths=["src"])
     baseline = service.record_baseline(
         workspace.workspace_id, head_commit=None, branch=None, index_digest="i",
         tracked_state_digest="t", untracked_summary=[], root_identities=[],
@@ -424,10 +419,10 @@ def test_symlink_only_result_preserves_observation_without_exporting_target(tmp_
     root.mkdir()
     service = WorkspaceService()
     decision = service.record_isolation_decision(
-        task_id="task", attempt_id="attempt", driver_kind="shared", input_snapshot={},
+        task_id="task", scope_revision=1, driver_kind="shared", input_snapshot={},
         hard_constraints=set(), evidence_refs=[], decided_by="main",
     )
-    workspace = service.request_workspace(decision.decision_id, root_binding_refs=["root"])
+    workspace = service.request_workspace(decision.decision_id, attempt_id="attempt", root_binding_refs=["root"])
     before = service.scan_root(root)
     baseline = service.record_baseline(
         workspace.workspace_id, head_commit=None, branch=None, index_digest=before["index_digest"],

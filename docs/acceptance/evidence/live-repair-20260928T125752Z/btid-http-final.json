@@ -1,0 +1,131 @@
+{
+  "origin": "http://127.0.0.1:57066",
+  "generatedAtUtc": "2026-09-28T15:07:03.4021811+00:00",
+  "requestTimeoutSeconds": 10,
+  "results": [
+    {
+      "name": "valid.app",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "code": null,
+      "requestId": "fx7-btid-valid.app",
+      "responseHeaderRequestId": "fx7-btid-valid.app",
+      "startedAtUtc": "2026-09-28T15:07:03.1368029+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.2062080+00:00",
+      "elapsedMs": 67.2553,
+      "metadata": {
+        "gameId": "FX7T",
+        "magic": "BTID",
+        "totalSector": 2,
+        "sectorSize": 16384,
+        "imageSector": 1,
+        "headerCrcValid": true
+      },
+      "passed": true
+    },
+    {
+      "name": "crc-corrupt.app",
+      "expectedStatus": 422,
+      "actualStatus": 422,
+      "code": "invalid_image",
+      "requestId": "fx7-btid-crc-corrupt.app",
+      "responseHeaderRequestId": "fx7-btid-crc-corrupt.app",
+      "startedAtUtc": "2026-09-28T15:07:03.2587177+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.2772240+00:00",
+      "elapsedMs": 18.4432,
+      "metadata": null,
+      "passed": true
+    },
+    {
+      "name": "hmac-corrupt.app",
+      "expectedStatus": 422,
+      "actualStatus": 422,
+      "code": "invalid_image",
+      "requestId": "fx7-btid-hmac-corrupt.app",
+      "responseHeaderRequestId": "fx7-btid-hmac-corrupt.app",
+      "startedAtUtc": "2026-09-28T15:07:03.2823600+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.3060672+00:00",
+      "elapsedMs": 23.6445,
+      "metadata": null,
+      "passed": true
+    },
+    {
+      "name": "truncated-header.app",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "code": "file_too_small",
+      "requestId": "fx7-btid-truncated-header.app",
+      "responseHeaderRequestId": "fx7-btid-truncated-header.app",
+      "startedAtUtc": "2026-09-28T15:07:03.3148094+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.3592263+00:00",
+      "elapsedMs": 44.2995,
+      "metadata": null,
+      "passed": true
+    },
+    {
+      "name": "truncated-signature.app",
+      "expectedStatus": 422,
+      "actualStatus": 422,
+      "code": "invalid_image",
+      "requestId": "fx7-btid-truncated-signature.app",
+      "responseHeaderRequestId": "fx7-btid-truncated-signature.app",
+      "startedAtUtc": "2026-09-28T15:07:03.3607012+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.3689768+00:00",
+      "elapsedMs": 8.2204,
+      "metadata": null,
+      "passed": true
+    },
+    {
+      "name": "truncated-crc-table.app",
+      "expectedStatus": 422,
+      "actualStatus": 422,
+      "code": "invalid_image",
+      "requestId": "fx7-btid-truncated-crc-table.app",
+      "responseHeaderRequestId": "fx7-btid-truncated-crc-table.app",
+      "startedAtUtc": "2026-09-28T15:07:03.3702878+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.3766464+00:00",
+      "elapsedMs": 6.3109,
+      "metadata": null,
+      "passed": true
+    },
+    {
+      "name": "truncated-sector.app",
+      "expectedStatus": 422,
+      "actualStatus": 422,
+      "code": "invalid_image",
+      "requestId": "fx7-btid-truncated-sector.app",
+      "responseHeaderRequestId": "fx7-btid-truncated-sector.app",
+      "startedAtUtc": "2026-09-28T15:07:03.3776840+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.3841723+00:00",
+      "elapsedMs": 6.4392,
+      "metadata": null,
+      "passed": true
+    },
+    {
+      "name": "invalid-offset.app",
+      "expectedStatus": 422,
+      "actualStatus": 422,
+      "code": "invalid_image",
+      "requestId": "fx7-btid-invalid-offset.app",
+      "responseHeaderRequestId": "fx7-btid-invalid-offset.app",
+      "startedAtUtc": "2026-09-28T15:07:03.3854475+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.3927112+00:00",
+      "elapsedMs": 7.2047,
+      "metadata": null,
+      "passed": true
+    },
+    {
+      "name": "invalid-size-overflow.app",
+      "expectedStatus": 422,
+      "actualStatus": 422,
+      "code": "invalid_image",
+      "requestId": "fx7-btid-invalid-size-overflow.app",
+      "responseHeaderRequestId": "fx7-btid-invalid-size-overflow.app",
+      "startedAtUtc": "2026-09-28T15:07:03.3938989+00:00",
+      "finishedAtUtc": "2026-09-28T15:07:03.4012452+00:00",
+      "elapsedMs": 7.2962,
+      "metadata": null,
+      "passed": true
+    }
+  ]
+}

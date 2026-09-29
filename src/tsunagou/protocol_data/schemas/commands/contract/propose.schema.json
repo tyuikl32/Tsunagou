@@ -2,6 +2,17 @@
   "$id": "https://tsunagou.local/schema/commands/contract.propose",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "$defs": {
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "agent_id"],
+      "properties": {
+        "slot": {"type": "string", "pattern": "\\S"},
+        "agent_id": {"type": "string", "pattern": "\\S"}
+      }
+    }
+  },
   "properties": {
     "contract_id": {
       "minLength": 1,
@@ -9,9 +20,13 @@
     },
     "contract_kind": {},
     "input_refs": {},
-    "participants_optional": {},
-    "participants_required": {},
-    "payload": {},
+    "participants_optional": {
+      "type": "array", "default": [], "items": {"$ref": "#/$defs/participant"}
+    },
+    "participants_required": {
+      "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/participant"}
+    },
+    "payload": {"type": "object"},
     "subject_ref": {
       "minLength": 1,
       "type": "string"
@@ -22,14 +37,8 @@
     }
   },
   "required": [
-    "contract_id",
-    "contract_kind",
-    "input_refs",
-    "participants_optional",
     "participants_required",
-    "payload",
-    "subject_ref",
-    "supersedes_id"
+    "payload"
   ],
   "title": "ContractProposePayload",
   "type": "object"

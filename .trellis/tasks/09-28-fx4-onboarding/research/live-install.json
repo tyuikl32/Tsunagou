@@ -1,0 +1,16 @@
+Scope: all 8 workspace projects
+✓ Lockfile passes supply-chain policies (verified 7d ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+Done in 1.4s using pnpm v12.4.2
+{"project_id": "450286e4-8d1b-4220-840c-e540fe696913", "status": "active"}
+Tsunagou project bootstrap: 450286e4-8d1b-4220-840c-e540fe696913
+created: .tsunagou\project-integration.json
+created: .tsunagou\agent-context.md
+created: .agents\skills\tsunagou-project\SKILL.md
+created: AGENTS.md
+created: .gitignore
+created: .codex\config.toml
+No credentials or runtime secrets were written.
+0.1.0
+{"bridge_entry": "D:\\Tsunagou\\packages\\bridge-server\\dist\\server.js", "clone": "reused_existing_git_repository", "commands": ["D:\\ComfyUI-aki-v3\\python\\Scripts\\uv.EXE sync --locked", "\"C:\\Program Files\\nodejs\\corepack.CMD\" pnpm install --frozen-lockfile", "\"C:\\Program Files\\nodejs\\corepack.CMD\" pnpm --filter @tsunagou/bridge-server run build", "D:\\ComfyUI-aki-v3\\python\\Scripts\\uv.EXE run python -m tsunagou project init --coordination-root D:\\Tsunagou-fx-live-20260928 --name \"FX Live acceptance\" --objective \"Validate original Codex collaboration and repair delivery\"", "D:\\ComfyUI-aki-v3\\python\\Scripts\\uv.EXE run python -m tsunagou project bootstrap --coordination-root D:\\Tsunagou-fx-live-20260928 --source-root D:\\Tsunagou --host codex", "D:\\ComfyUI-aki-v3\\python\\Scripts\\uv.EXE run python -m tsunagou --version", "\"C:\\Program Files\\nodejs\\node.EXE\" --check D:\\Tsunagou\\packages\\bridge-server\\dist\\server.js"], "destination": "D:\\Tsunagou", "finished_at": "2026-09-28T12:57:57.275Z", "installation": {"bridge_entry": "D:\\Tsunagou\\packages\\bridge-server\\dist\\server.js", "bridge_version": "0.1.0", "commit": "1fb86e08b9cfaab312a9210a3eb15d0108314c36", "installed_at": "2026-09-28T12:57:57.116Z", "launcher": "C:\\Users\\Tyuikl\\.local\\bin\\tsunagou.cmd", "python": "D:\\Tsunagou\\.venv\\Scripts\\python.exe", "python_version": "Python 3.13.13", "source_dirty": true, "source_root": "D:\\Tsunagou"}, "node": "corepack-pnpm", "project_bootstrap": "requested", "project_initialization": "initialized", "project_root": "D:\\Tsunagou-fx-live-20260928", "python": "uv", "repository": "https://github.com/tyuikl32/Tsunagou.git", "skills": [{"destination": "D:\\Tsunagou\\.agents\\skills\\tsunagou-agent-onboarding", "skill": "tsunagou-agent-onboarding", "status": "source"}, {"destination": "D:\\Tsunagou\\.agents\\skills\\tsunagou-install", "skill": "tsunagou-install", "status": "source"}, {"destination": "C:\\Users\\Tyuikl\\.agents\\skills\\tsunagou-agent-onboarding", "skill": "tsunagou-agent-onboarding", "status": "installed"}, {"destination": "C:\\Users\\Tyuikl\\.agents\\skills\\tsunagou-install", "skill": "tsunagou-install", "status": "installed"}, {"destination": "C:\\Users\\Tyuikl\\.codex\\skills\\tsunagou-agent-onboarding", "skill": "tsunagou-agent-onboarding", "status": "installed"}, {"destination": "C:\\Users\\Tyuikl\\.codex\\skills\\tsunagou-install", "skill": "tsunagou-install", "status": "installed"}], "started_at": "2026-09-28T12:57:52.468Z", "status": "installed"}

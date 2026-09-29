@@ -862,10 +862,49 @@
       "DiagnosticEventModel": {
         "additionalProperties": false,
         "properties": {
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
           "agent_id": {
-            "minLength": 1,
-            "title": "Agent Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
+          "command_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Id"
           },
           "details": {
             "additionalProperties": {
@@ -889,6 +928,17 @@
             "title": "Diagnostic Id",
             "type": "string"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
           "evidence_digest": {
             "anyOf": [
               {
@@ -906,14 +956,39 @@
             "type": "string"
           },
           "message_id": {
-            "minLength": 1,
-            "title": "Message Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
           },
           "observed_at": {
-            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
-            "title": "Observed At",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
           },
           "project_id": {
             "anyOf": [
@@ -925,6 +1000,39 @@
               }
             ],
             "title": "Project Id"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "trigger_source": {
+            "enum": [
+              "daemon_delivery",
+              "user_followup",
+              "developer_followup",
+              "unknown"
+            ],
+            "title": "Trigger Source",
+            "type": "string"
           },
           "wake_attempt_id": {
             "anyOf": [
@@ -942,11 +1050,19 @@
           "diagnostic_id",
           "kind",
           "project_id",
+          "actor_id",
           "agent_id",
+          "command_id",
+          "task_id",
+          "attempt_id",
           "message_id",
           "wake_attempt_id",
           "evidence_digest",
+          "occurred_at",
+          "recorded_at",
           "observed_at",
+          "trigger_source",
+          "error_code",
           "details"
         ],
         "title": "DiagnosticEventModel",
@@ -1012,6 +1128,18 @@
       "HealthResponse": {
         "additionalProperties": false,
         "properties": {
+          "runtime": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -1038,6 +1166,17 @@
           "agent_id": {
             "title": "Agent Id",
             "type": "string"
+          },
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
           },
           "approval_policy": {
             "anyOf": [
@@ -1066,6 +1205,17 @@
             ],
             "title": "Bridge Config"
           },
+          "caller_thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caller Thread Id"
+          },
           "cwd": {
             "title": "Cwd",
             "type": "string"
@@ -1092,6 +1242,22 @@
             ],
             "title": "Executable"
           },
+          "host_generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Generation"
+          },
+          "host_id": {
+            "default": "local",
+            "title": "Host Id",
+            "type": "string"
+          },
           "model": {
             "anyOf": [
               {
@@ -1103,6 +1269,17 @@
             ],
             "title": "Model"
           },
+          "plugin_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin Version"
+          },
           "policy_digest": {
             "title": "Policy Digest",
             "type": "string"
@@ -1111,7 +1288,8 @@
             "default": "managed_app_server",
             "enum": [
               "managed_app_server",
-              "desktop_attach"
+              "desktop_attach",
+              "codex_desktop_app"
             ],
             "title": "Provider",
             "type": "string"
@@ -1165,6 +1343,25 @@
         "title": "HostBindingRequest",
         "type": "object"
       },
+      "RegisterProject": {
+        "additionalProperties": false,
+        "properties": {
+          "project_root": {
+            "title": "Project Root",
+            "type": "string"
+          },
+          "state_dir": {
+            "title": "State Dir",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_root",
+          "state_dir"
+        ],
+        "title": "RegisterProject",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1216,6 +1413,17 @@
     "/.well-known/agent-card.json": {
       "get": {
         "operationId": "agent_card__well_known_agent_card_json_get",
+        "parameters": [
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1283,6 +1491,15 @@
                 }
               ],
               "title": "Tsunagou-Connection-Epoch"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1385,6 +1602,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1485,6 +1711,15 @@
                 }
               ],
               "title": "Tsunagou-Connection-Epoch"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1601,6 +1836,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1678,6 +1922,15 @@
                 }
               ],
               "title": "Tsunagou-Connection-Epoch"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1768,6 +2021,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1854,6 +2116,15 @@
                 }
               ],
               "title": "Tsunagou-Connection-Epoch"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1954,6 +2225,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1999,9 +2279,126 @@
         "summary": "Credential Delivery Ack"
       }
     },
+    "/api/v1/daemon/projects": {
+      "post": {
+        "operationId": "register_api_v1_daemon_projects_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterProject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Register Api V1 Daemon Projects Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register"
+      }
+    },
     "/api/v1/decisions": {
       "get": {
         "operationId": "decisions_api_v1_decisions_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2014,6 +2411,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Decisions"
@@ -2097,6 +2504,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2176,6 +2592,15 @@
                 }
               ],
               "title": "Tsunagou-Connection-Epoch"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2276,6 +2701,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2365,6 +2799,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2404,6 +2847,15 @@
             "required": true,
             "schema": {
               "title": "Operation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -2447,6 +2899,15 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2488,6 +2949,15 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2527,6 +2997,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -2711,6 +3190,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2808,6 +3296,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2845,6 +3342,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -2888,6 +3394,15 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2927,6 +3442,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -2969,6 +3493,72 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "message_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 160,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Message Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 160,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
             }
           },
           {
@@ -3018,6 +3608,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3055,6 +3654,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -3239,6 +3847,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3419,6 +4036,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3456,6 +4082,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -3499,6 +4134,15 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3538,6 +4182,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -3581,6 +4234,15 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3620,6 +4282,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -3663,6 +4334,15 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3702,6 +4382,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -3879,6 +4568,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3916,6 +4614,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -3959,6 +4666,15 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3991,6 +4707,17 @@
     "/api/v1/recovery": {
       "get": {
         "operationId": "recovery_api_v1_recovery_get",
+        "parameters": [
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

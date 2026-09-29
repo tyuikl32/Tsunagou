@@ -3,14 +3,62 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "conversation_evidence": {},
-    "installation_id": {
-      "minLength": 1,
-      "type": "string"
-    },
     "kind": {},
-    "role": {},
-    "ttl_seconds": {}
+    "role": {
+      "enum": [
+        "worker",
+        "main"
+      ],
+      "default": "worker"
+    },
+    "installation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "conversation_evidence": {
+      "type": "object",
+      "required": [
+        "conversation_id"
+      ],
+      "properties": {
+        "conversation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "host_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "endpoint",
+        "thread_id",
+        "host_generation"
+      ],
+      "properties": {
+        "provider": {
+          "const": "codex_desktop_app"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thread_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_generation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
   },
   "required": [
     "conversation_evidence",

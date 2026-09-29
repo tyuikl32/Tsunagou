@@ -1,0 +1,22 @@
+{
+  "observed_at": "2026-09-28T16:08:02.142Z",
+  "worker_agent_id": "cb2f1ff6-87de-4625-9afe-00b44ef5c182",
+  "task_id": "7271e347-82ee-4bb4-8cfd-ef29e055cfa3",
+  "failed_turn": {
+    "started_at": "2026-09-28T15:42:59.000Z",
+    "finished_at": "2026-09-28T16:02:51.000Z",
+    "duration_ms": 1192291,
+    "status": "failed",
+    "host_status": "systemError",
+    "error_class": "upstream_http_503"
+  },
+  "recovery": {
+    "source": "daemon_delivery",
+    "requested": true,
+    "outcome": "pending"
+  },
+  "limits": [
+    "Failure confirmed by original host state, not inferred from timeout.",
+    "Elapsed turn time includes reasoning and tool use, not pure coding."
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "task": "FX1",
+  "recorded_at": "2026-09-28T10:46:56.598Z",
+  "status": "passed",
+  "started_at": null,
+  "timing_note": "Per-command start timestamps were not captured; recorded_at is recording time, not task duration.",
+  "checks": [
+    {
+      "command": ".venv/Scripts/python.exe -m pytest tests/unit/test_cognition.py tests/unit/test_tasks.py tests/unit/test_task_execution.py tests/unit/test_business_handlers.py tests/unit/test_handlers.py tests/unit/test_history_cli.py tests/integration/test_state_integrity.py tests/integration/test_m1_runtime_flow.py tests/protocol -q --disable-warnings --tb=short",
+      "exit_code": 0,
+      "tests_passed": 119
+    },
+    {
+      "command": "python -m ruff check [FX1 changed files]",
+      "exit_code": 0
+    },
+    {
+      "command": "python -m mypy src/tsunagou/modules/cognition.py src/tsunagou/modules/tasks.py src/tsunagou/application/handlers.py --follow-imports=silent",
+      "exit_code": 0
+    },
+    {
+      "command": "python tools/codegen/validate_protocol.py",
+      "exit_code": 0,
+      "command_policies": 111,
+      "schemas": 127
+    },
+    {
+      "command": "python tools/dev/check_architecture.py",
+      "exit_code": 0
+    },
+    {
+      "command": "corepack pnpm --filter @tsunagou/bridge-server run build",
+      "exit_code": 0
+    },
+    {
+      "command": "corepack pnpm run check",
+      "exit_code": 0
+    },
+    {
+      "command": "python .trellis/scripts/task.py validate 09-28-fx1-state-integrity",
+      "exit_code": 0
+    },
+    {
+      "command": "python tools/docs/validate_docs.py",
+      "exit_code": 0,
+      "markdown_files": 353,
+      "links": 932
+    }
+  ],
+  "pending_integration": [
+    "FX2 cancellation/reservation/Grant atomic release",
+    "FX6 final live acceptance"
+  ]
+}

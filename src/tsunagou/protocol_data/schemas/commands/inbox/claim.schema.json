@@ -1,15 +1,16 @@
 {
   "$id": "https://tsunagou.local/schema/commands/inbox.claim",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InboxClaimPayload",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
-    "limit": {},
-    "max_bytes": {}
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 50
+    }
   },
-  "required": [
-    "limit",
-    "max_bytes"
-  ],
-  "title": "InboxClaimPayload",
-  "type": "object"
+  "required": []
 }

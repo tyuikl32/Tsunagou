@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi import HTTPException, Response
+from jsonschema import Draft202012Validator
 
 from tsunagou.api.app import CommandRequest, create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
@@ -40,11 +42,14 @@ def _harness(
     tasks = TaskService()
     cognition = CognitionService()
     messages = MessageStore()
+    preparers = {}
     for kind, handler in build_handlers(
         authority=authority, tasks=tasks, cognition=cognition, messages=messages,
-        project_id=project_id,
+        project_id=project_id, preparers=preparers,
     ).items():
         dispatcher.register(kind, handler)
+    for kind, prepare in preparers.items():
+        dispatcher.register_preparer(kind, prepare)
     app = create_app(dispatcher, authenticator=LocalCommandAuthenticator(authority=authority))
     endpoint = next(
         route.endpoint for route in app.routes
@@ -72,69 +77,40 @@ def _open_task(tasks: TaskService, title: str = "t") -> str:
     return task.task_id
 
 
-def test_task_lifecycle_claim_preflight_start_progress_submit(tmp_path: Path) -> None:
+def test_task_lifecycle_begin_progress_submit(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-
-    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
-    assert claimed["status"] == "claimed"
-    attempt_id = claimed["attempt_id"]
-
-    preflight = _call(endpoint, "task.preflight", {
-        "task_id": task_id, "attempt_id": attempt_id, "evidence_refs": ["pf"], "expected_revisions": 1,
-    }, receipt)
-    assert preflight["status"] == "preflighted"
-    assert preflight["preflight_id"] in tasks.preflights
-
-    started = _call(endpoint, "task.start", {
-        "task_id": task_id, "attempt_id": attempt_id,
-        "preflight_id": preflight["preflight_id"], "expected_execution_epoch": 1, "input_digest": "d",
-    }, receipt)
+    started = _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision}, receipt)
     assert started["status"] == "running"
-    assert started["execution_grant_id"]
-
+    attempt_id = started["attempt_id"]
     progressed = _call(endpoint, "task.progress", {
         "task_id": task_id, "attempt_id": attempt_id, "summary": "halfway", "evidence_refs": [],
     }, receipt)
     assert progressed["progress_id"] in tasks.progress_records
-
-    submitted = _call(endpoint, "task.submit", {
-        "task_id": task_id, "attempt_id": attempt_id,
-        "summary": "done", "artifact_refs": [], "evidence_refs": [], "workspace_result_ref": "w",
-    }, receipt)
-    assert submitted["result_id"]
-    assert tasks.tasks[task_id].status == "submitted"
+    submitted = _call(endpoint, "task.submit", {"task_id": task_id, "attempt_id": attempt_id, "summary": "done"}, receipt)
+    assert submitted["result_id"] and tasks.tasks[task_id].status == "submitted"
 
 
-def test_task_start_rejects_bogus_preflight_id(tmp_path: Path) -> None:
+def test_task_begin_rejects_stale_revision(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
     with pytest.raises(HTTPException) as exc:
-        _call(endpoint, "task.start", {
-            "task_id": task_id, "attempt_id": claimed["attempt_id"], "preflight_id": "bogus",
-        }, receipt)
-    assert exc.value.status_code == 400
-    assert exc.value.detail["code"] == "preflight_id_mismatch"
-    # The attempt must remain claimed (not running) after the failed start.
-    assert tasks.attempts[claimed["attempt_id"]].status == "claimed"
+        _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": 0}, receipt)
+    assert exc.value.status_code == 409
+    assert tasks.tasks[task_id].status == "open" and not tasks.attempts
 
 
 def test_task_submit_fails_closed_without_execution_grant(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
-
+    attempt = tasks.claim(task_id, receipt.agent_id)
+    tasks.start(task_id, receipt.agent_id)
     with pytest.raises(HTTPException) as exc:
-        _call(endpoint, "task.submit", {
-            "task_id": task_id, "attempt_id": claimed["attempt_id"],
-            "summary": "done", "artifact_refs": [], "evidence_refs": [], "workspace_result_ref": "w",
-        }, receipt)
-    assert exc.value.status_code == 403
-    assert exc.value.detail["code"] == "capability_denied"
+        _call(endpoint, "task.submit", {"task_id": task_id, "attempt_id": attempt.attempt_id, "summary": "done"}, receipt)
+    assert exc.value.status_code == 403 and exc.value.detail["code"] == "capability_denied"
 
 
 def test_cognition_report_roundtrip(tmp_path: Path) -> None:
@@ -168,7 +144,7 @@ def test_contract_propose_accept_roundtrip(tmp_path: Path) -> None:
     proposed = _call(endpoint, "contract.propose", {
         "contract_id": "c1", "contract_kind": "kind", "payload": {"x": 1},
         "participants_required": [{"slot": "self", "agent_id": receipt.agent_id}],
-        "participants_optional": [], "subject_ref": "s", "input_refs": [], "supersedes_id": "",
+        "participants_optional": [], "subject_ref": "s", "input_refs": [],
     }, receipt)
     accepted = _call(endpoint, "contract.accept", {
         "proposal_id": proposed["proposal_id"], "participant_slot": "self",
@@ -183,14 +159,21 @@ def test_inbox_claim_fetch_ack_roundtrip(tmp_path: Path) -> None:
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     messages.send(
         command_id="cmd1", sender_agent_id="other", recipient_agent_id=receipt.agent_id,
-        kind="message", subject_ref="s", summary="hello",
+        kind="message", subject_ref="s", summary="hello", payload={"request": "private-action-sentinel"},
     )
-    claimed = _call(endpoint, "inbox.claim", {"limit": 50, "max_bytes": 1000}, receipt)
+    claimed = _call(endpoint, "inbox.claim", {"limit": 50}, receipt)
     assert claimed["count"] == 1
     message_id = claimed["messages"][0]["message_id"]
+    assert "payload" not in claimed["messages"][0]
 
-    fetched = _call(endpoint, "inbox.fetch", {"delivery_lease_id": message_id}, receipt)
+    fetched = _call(endpoint, "inbox.fetch", {"message_id": message_id}, receipt)
     assert fetched["message_id"] == message_id
+    assert fetched["payload"] == {"request": "private-action-sentinel"}
+    assert fetched["payload_digest"].startswith("sha256:")
+    other = _enroll_ready(authority, installation="install-b", conversation="conversation-b")
+    with pytest.raises(HTTPException) as denied:
+        _call(endpoint, "inbox.fetch", {"message_id": message_id}, other)
+    assert denied.value.status_code == 403
 
     acked = _call(endpoint, "inbox.ack", {"message_id": message_id, "reason": "done"}, receipt)
     assert acked["acked"] is True
@@ -203,6 +186,58 @@ def test_message_send_idempotent_dedup(tmp_path: Path) -> None:
     first = _call(endpoint, "message.send", payload, receipt)
     second = _call(endpoint, "message.send", payload, receipt)
     assert first["message_id"] == second["message_id"]
+
+
+def test_canonical_message_payloads_complete_recipient_reply_flow(tmp_path: Path) -> None:
+    from uuid import uuid4
+
+    _, authority, _, _, messages, endpoint = _harness(tmp_path)
+    sender = _enroll_ready(authority, installation="sender", conversation="sender-conversation")
+    recipient = _enroll_ready(authority, installation="recipient", conversation="recipient-conversation")
+
+    def invoke(name, payload, identity):
+        schema = json.loads((ROOT / "protocol/schemas/commands" / (name.replace(".", "/") + ".schema.json"))
+                            .read_text(encoding="utf-8"))
+        Draft202012Validator(schema).validate(payload)
+        request = _request(payload).model_copy(update={"command_id": uuid4().hex})
+        return endpoint(name, request, Response(), f"Bearer {identity.secret_token}",
+                        identity.session_id, identity.connection_epoch)["result"]
+
+    payload = json.loads((ROOT / "protocol/fixtures/valid/message-send.json").read_text(encoding="utf-8"))
+    payload["recipient_agent_id"] = recipient.agent_id
+    sent = invoke("message.send", payload, sender)
+    message_id = sent["message_id"]
+    claimed = invoke("inbox.claim", {}, recipient)
+    assert claimed["count"] == 1 and "payload" not in claimed["messages"][0]
+    fetched = invoke("inbox.fetch", {"message_id": message_id}, recipient)
+    assert fetched["payload"] == payload["payload"] and fetched["in_reply_to"] is None
+    obligation_id = fetched["response_obligations"][0]["obligation_id"]
+    with pytest.raises(HTTPException) as denied:
+        invoke("inbox.fetch", {"message_id": message_id}, sender)
+    assert denied.value.status_code == 403
+    invoke("inbox.presented", {"message_id": message_id, "evidence_kind": "agent_asserted",
+                               "evidence_digest": fetched["payload_digest"]}, recipient)
+    invoke("inbox.ack", {"message_id": message_id}, recipient)
+    assert messages.obligations[obligation_id].status == "open"
+    reply = invoke("message.send", {"recipient_agent_id": sender.agent_id, "summary": "verified",
+                                    "in_reply_to": message_id, "payload": {"status": "passed"}}, recipient)
+    result = invoke("message.respond", {"obligation_id": obligation_id, "response_message_id": reply["message_id"]}, recipient)
+    assert result["status"] == "responded"
+    returned = invoke("inbox.fetch", {"message_id": reply["message_id"]}, sender)
+    assert returned["payload"] == {"status": "passed"} and returned["in_reply_to"] == message_id
+
+
+@pytest.mark.parametrize("name,payload", [
+    ("inbox.claim", {"max_bytes": 1000}),
+    ("inbox.fetch", {"delivery_lease_id": "old-alias"}),
+    ("message.respond", {"obligation_id": "o", "response_message_id": "m", "response_payload": {}}),
+])
+def test_retired_message_arguments_are_rejected_by_real_dispatch(tmp_path: Path, name, payload) -> None:
+    _, authority, _, _, _, endpoint = _harness(tmp_path)
+    receipt = _enroll_ready(authority, installation="worker", conversation="worker-conversation")
+    with pytest.raises(HTTPException) as rejected:
+        _call(endpoint, name, payload, receipt)
+    assert rejected.value.status_code == 400 and rejected.value.detail["code"] == "unknown_payload_field"
 
 
 def test_message_respond_closes_obligation(tmp_path: Path) -> None:
@@ -297,7 +332,7 @@ def test_inbox_fetch_returns_payload_only_to_the_recipient(tmp_path: Path) -> No
         payload={"marker": "TG-BODY-UNIT"},
     )
 
-    claimed = _call(endpoint, "inbox.claim", {"limit": 50, "max_bytes": 1000}, recipient)
+    claimed = _call(endpoint, "inbox.claim", {"limit": 50}, recipient)
     assert claimed["count"] == 1
     # The claim listing must stay metadata-only: no payload projection leak.
     assert "payload" not in claimed["messages"][0]
@@ -329,7 +364,7 @@ def test_business_commands_denied_for_degraded_session(tmp_path: Path) -> None:
     assert receipt.baseline_status == "degraded"
     with pytest.raises(HTTPException) as exc:
         endpoint(
-            "task.claim", _request({"task_id": "t", "capability_snapshot_id": "x"}), Response(),
+            "task.begin", _request({"task_id": "t", "capability_snapshot_id": "x"}), Response(),
             f"Bearer {receipt.secret_token}", receipt.session_id, receipt.connection_epoch,
         )
     assert exc.value.status_code == 401
@@ -339,7 +374,7 @@ def test_context_project_read_returns_own_scope(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+    _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision}, receipt)
 
     snapshot = _call(endpoint, "context.project_read", {}, receipt)
     assert snapshot["agent_id"] == receipt.agent_id
@@ -352,7 +387,7 @@ def test_context_project_read_includes_project_id(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path, project_id="project-1")
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+    _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision}, receipt)
 
     snapshot = _call(endpoint, "context.project_read", {}, receipt)
     assert snapshot["project_id"] == "project-1"

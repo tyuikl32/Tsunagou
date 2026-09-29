@@ -1,26 +1,51 @@
 {
-  "$id": "https://tsunagou.local/schema/commands/workspace.select",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/commands/workspace.select",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
-    "attempt_id": {
-      "minLength": 1,
-      "type": "string"
+    "task_id": {
+      "type": "string",
+      "minLength": 1
     },
-    "driver_kind": {},
-    "evidence_refs": {},
-    "hard_constraints": {},
-    "input_digest": {},
-    "risk_submission_ref": {}
+    "driver_kind": {
+      "enum": [
+        "shared",
+        "worktree",
+        "external"
+      ]
+    },
+    "root_binding_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "repository_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "external_locator": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hard_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evidence_refs": {
+      "type": "array"
+    },
+    "reason": {
+      "type": "string"
+    }
   },
   "required": [
-    "attempt_id",
-    "driver_kind",
-    "evidence_refs",
-    "hard_constraints",
-    "input_digest",
-    "risk_submission_ref"
-  ],
-  "title": "WorkspaceSelectPayload",
-  "type": "object"
+    "task_id",
+    "driver_kind"
+  ]
 }

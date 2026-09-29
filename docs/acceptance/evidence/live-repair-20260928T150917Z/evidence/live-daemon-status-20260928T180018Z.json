@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-09-28T18:00:18Z",
+  "command": "tsunagou --project-root D:\\Tsunagou-fx-live-20260928 daemon status",
+  "status": "running",
+  "pid": 102616,
+  "runtime_id": "a233923d-af53-48c4-aaf2-286a004cc54e",
+  "started_at": "2026-09-28T13:54:51.611Z",
+  "url": "http://127.0.0.1:61097",
+  "source_root": "D:\\Tsunagou",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "host_binding": "main MCP context__project_read returned ready",
+  "acceptance_effect": "A4 and A6 remain not_run because the daemon has not loaded the current source revision",
+  "user_action_required": "Run the normal daemon stop/start command in an independent PowerShell and provide the resulting daemon status"
+}

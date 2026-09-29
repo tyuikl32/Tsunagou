@@ -1,0 +1,56 @@
+{
+  "task_id": "fx7-btid-integrity",
+  "status": "passed",
+  "completed_at": "2026-09-28T15:07:03.402Z",
+  "target_repository": "D:/ALL.NET/SegaImageManageTool-fx20260928",
+  "criteria": {
+    "B1_valid_metadata_and_crc": "passed",
+    "B2_crc_hmac_mismatch_rejected": "passed",
+    "B3_truncated_reads_exit": "passed",
+    "B4_invalid_offsets_sizes_and_overflow_rejected": "passed",
+    "B5_http_and_webui_distinguish_business_error_from_unreachable": "passed",
+    "B6_build_and_existing_tests": "passed"
+  },
+  "evidence": {
+    "btid_http": "docs/acceptance/evidence/live-repair-20260928T125752Z/btid-http-final.json",
+    "fresh_origin": "docs/acceptance/evidence/live-repair-20260928T125752Z/business-origin-test.json",
+    "worker_tasks": ".trellis/tasks/09-28-fx7-btid-integrity/research/runtime-tasks.json",
+    "work_log": ".trellis/tasks/09-28-fx7-btid-integrity/implementation-progress.md",
+    "browser": "docs/acceptance/evidence/live-repair-20260928T125752Z/browser-check.json"
+  },
+  "validation": [
+    {
+      "command": "dotnet build --no-restore",
+      "exit_code": 0,
+      "warnings": 0,
+      "errors": 0
+    },
+    {
+      "command": "pwsh -File tests/Http/btid-integrity.ps1 -Port 57066",
+      "exit_code": 0,
+      "cases": 9,
+      "passed": 9
+    },
+    {
+      "command": "pwsh -File tests/Http/run.ps1 -Port 57067",
+      "exit_code": 0
+    },
+    {
+      "command": "node --test tests/WebUI/api.test.mjs",
+      "exit_code": 0,
+      "passed": 8
+    },
+    {
+      "command": "node --check wwwroot/app.js && node --check wwwroot/api.js",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "limits": [
+    "Parser submit time remains unavailable in the authorized CLI timeline; no duration was inferred from review."
+  ],
+  "browser_verified_at": "2026-09-28T15:35:25.700Z"
+}

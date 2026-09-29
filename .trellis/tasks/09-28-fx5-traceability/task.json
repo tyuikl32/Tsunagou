@@ -1,0 +1,41 @@
+{
+  "id": "fx5-traceability",
+  "name": "fx5-traceability",
+  "title": "FX5 失败时间线与最小追踪",
+  "description": "补齐真实唤醒失败、触发来源、部署和执行耗时、关键 OTel 链路，复用已有 CLI 查询。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": "codex/live-test-repair",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-28-real-test-repair",
+  "relatedFiles": [
+    ".trellis/tasks/09-28-fx5-traceability/prd.md",
+    ".trellis/tasks/09-28-fx5-traceability/design.md",
+    ".trellis/tasks/09-28-fx5-traceability/implement.md"
+  ],
+  "notes": "Core diagnostics, shared audit projection and optional SDK tracing implemented; focused checks recorded in implementation-progress.md. Joint original Desktop/CLI timing acceptance remains pending.",
+  "meta": {
+    "repair_id": "FX5",
+    "depends_on": [
+      "09-28-fx2-execution-flow",
+      "09-28-fx3-desktop-wake",
+      "09-28-fx4-onboarding"
+    ],
+    "target_repository": "Tsunagou",
+    "requirements": [
+      "FX-R06"
+    ]
+  }
+}

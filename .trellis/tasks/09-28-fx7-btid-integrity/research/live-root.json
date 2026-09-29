@@ -1,0 +1,15 @@
+{
+  "root": {
+    "root_id": "31887111-59e1-4d81-8bc5-9179e0cd59c7",
+    "name": "Sega isolated acceptance checkout",
+    "kind": "repository",
+    "status": "bound",
+    "physical_identity": "inode:17969613890039669545:1407374884196344"
+  },
+  "repository": {
+    "repository_id": "dfa0fec8-e16f-4350-a6dd-661f8100a92b",
+    "root_id": "31887111-59e1-4d81-8bc5-9179e0cd59c7",
+    "name": "Sega acceptance repository"
+  },
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913"
+}

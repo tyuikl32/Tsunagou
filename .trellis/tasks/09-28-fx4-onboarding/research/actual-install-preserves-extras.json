@@ -1,0 +1,33 @@
+{
+  "exit_code": 0,
+  "before": {
+    "pytest": "8.4.2",
+    "mypy": "1.20.2",
+    "ruff": "0.16.8",
+    "opentelemetry-sdk": "1.45.0"
+  },
+  "after": {
+    "pytest": "8.4.2",
+    "mypy": "1.20.2",
+    "ruff": "0.16.8",
+    "opentelemetry-sdk": "1.45.0"
+  },
+  "dependencies_preserved": true,
+  "installation": {
+    "bridge_entry": "D:\\Tsunagou\\packages\\bridge-server\\dist\\server.js",
+    "bridge_version": "0.1.0",
+    "commit": "1fb86e08b9cfaab312a9210a3eb15d0108314c36",
+    "duration_ms": 2528,
+    "install_finished_at": "2026-09-28T13:53:56.462Z",
+    "install_started_at": "2026-09-28T13:53:53.933Z",
+    "installed_at": "2026-09-28T13:53:56.462Z",
+    "launcher": "C:\\Users\\Tyuikl\\.local\\bin\\tsunagou.cmd",
+    "python": "D:\\Tsunagou\\.venv\\Scripts\\python.exe",
+    "python_version": "Python 3.13.13",
+    "source_dirty": true,
+    "source_root": "D:\\Tsunagou"
+  },
+  "started_at": "2026-09-28T13:53:53.933Z",
+  "finished_at": "2026-09-28T13:53:56.462Z",
+  "status": "installed"
+}

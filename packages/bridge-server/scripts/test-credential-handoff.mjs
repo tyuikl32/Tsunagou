@@ -54,6 +54,50 @@ const isAck = (call) => call.path.endsWith("/ack");
 function respond(response, result) { response.end(JSON.stringify({ result })); }
 function ack(response) { response.end(JSON.stringify({ delivery_status: "consumed" })); }
 
+test("reconnect carries private Desktop refresh without changing the target identity", async (t) => {
+  const refresh = { provider: "codex_desktop_app", endpoint: "private-pipe-sentinel", host_generation: "generation-2" };
+  const f = await fixture(t, (call, response) => {
+    if (isAck(call)) return ack(response);
+    assert.equal(call.path, "/api/v1/commands/session.reconnect");
+    assert.deepEqual(call.body.payload.host_binding_refresh, refresh);
+    assert.equal(call.body.payload.target_agent_id, undefined);
+    assert.equal(call.body.payload.thread_id, undefined);
+    respond(response, { ...credential, connection_epoch: 2, secret_token: "new-credential", reconnect_nonce: "new-nonce" });
+  });
+  writePrivateJson(f.sessionFile, { ...credential, conversation_binding_digest: "conversation-digest", host_conversation_id_digest: "host-digest" });
+  const session = await new CredentialHandoff(f.options).recover({ forceReconnect: true, hostBindingRefresh: refresh });
+  assert.equal(session.agent_id, credential.agent_id);
+  assert.equal(session.connection_epoch, 2);
+  assert.ok(!readFileSync(f.sessionFile, "utf8").includes(refresh.endpoint));
+});
+
+test("overlapping and late host restores rotate a generation only once", async (t) => {
+  const refresh = { provider: "codex_desktop_app", endpoint: "new-private-pipe", host_generation: "new-generation" };
+  const waiting = [];
+  const f = await fixture(t, (call, response) => {
+    if (isAck(call)) return ack(response);
+    assert.equal(call.path, "/api/v1/commands/session.reconnect");
+    waiting.push(response);
+    if (waiting.length === 2) {
+      for (const reply of waiting) respond(reply, { ...credential, connection_epoch: 2,
+        secret_token: "refreshed-token", reconnect_nonce: "refreshed-nonce" });
+    }
+  });
+  writePrivateJson(f.sessionFile, { ...credential, host_binding_generation: "old-generation",
+    conversation_binding_digest: f.options.conversationBindingDigest });
+  const initial = await Promise.all([0, 1].map(() => new CredentialHandoff(f.options).recover({ hostBindingRefresh: refresh })));
+  assert.ok(initial.every((session) => session.connection_epoch === 2 && session.host_binding_generation === refresh.host_generation));
+  const before = f.calls.filter((call) => !isAck(call));
+  assert.equal(before.length, 2);
+  assert.equal(before[0].text, before[1].text);
+  // A restore selected before the first exchange can enter prepare after it
+  // completes. It must compare against the current locked session, not rotate
+  // again merely because its caller previously observed the old generation.
+  const late = await new CredentialHandoff(f.options).recover({ hostBindingRefresh: refresh });
+  assert.equal(late.connection_epoch, 2);
+  assert.equal(f.calls.filter((call) => !isAck(call)).length, 2);
+});
+
 test("lost enrollment response and restart reuse exact envelope and original baseline", async (t) => {
   let attempts = 0;
   const f = await fixture(t, (call, response, { sessionFile }) => {
@@ -93,7 +137,7 @@ test("lost reconnect response reuses original token, nonce, epoch and command", 
     respond(response, rotated);
   });
   writePrivateJson(f.sessionFile, { ...credential, conversation_binding_digest: f.options.conversationBindingDigest });
-  await assert.rejects(new CredentialHandoff(f.options).recover(), /retry_pending_request/);
+  await assert.rejects(new CredentialHandoff(f.options).recover({ forceReconnect: true }), /retry_pending_request/);
   const recovered = await new CredentialHandoff(f.options).recover();
   assert.equal(recovered.connection_epoch, 2);
   assert.equal(f.calls[0].text, f.calls[1].text);
@@ -182,7 +226,7 @@ test("consumed, expired and invalid receipts never replace the session", async (
   }));
   writePrivateJson(f.sessionFile, credential);
   const original = readFileSync(f.sessionFile, "utf8");
-  await assert.rejects(new CredentialHandoff(f.options).recover(), /reconnect_required/);
+  await assert.rejects(new CredentialHandoff(f.options).recover({ forceReconnect: true }), /reconnect_required/);
   assert.equal(readFileSync(f.sessionFile, "utf8"), original);
   assert.equal(f.calls.length, 1);
 });
@@ -298,7 +342,7 @@ test("two bridge processes sharing one handoff use one command ID even after ACK
   assert.equal(loadSession(f.sessionFile).agent_id, credential.agent_id);
 });
 
-test("process-owned private lock fails busy and is released when its owner dies", { timeout: 15000 }, async (t) => {
+test("Node-owned private lock excludes Python and Node and is released when its owner dies", { timeout: 20000 }, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "tsunagou-private-lock-"));
   const path = join(root, "session.json");
   const moduleUrl = pathToFileURL(join(import.meta.dirname, "../dist/private-file-lock.js")).href;
@@ -318,11 +362,75 @@ test("process-owned private lock fails busy and is released when its owner dies"
   let entered = false;
   await assert.rejects(withPrivateFileLock(path, () => { entered = true; }), /private_lock_busy/);
   assert.equal(entered, false);
+  const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  const python = `
+import sys
+from pathlib import Path
+from tsunagou.platform.private_file_lock import private_file_lock
+try:
+    with private_file_lock(Path(sys.argv[1]), timeout=0):
+        result = 'acquired'
+except RuntimeError as error:
+    if str(error) != 'credential_private_lock_busy:retry_pending_request':
+        raise
+    result = 'busy'
+print(result)
+`;
+  const probePython = () => execFileSync("uv", ["run", "--no-sync", "--project", repoRoot, "python", "-c", python, path], {
+    cwd: repoRoot, windowsHide: true, encoding: "utf8", timeout: 5000,
+  }).trim();
+  assert.equal(probePython(), "busy");
   const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill();
+  await exited;
+  assert.equal(probePython(), "acquired");
+  await withPrivateFileLock(path, () => { entered = true; });
+  assert.equal(entered, true);
+});
+
+test("Python-owned private lock excludes Node and is released when its owner dies", { timeout: 20000 }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "tsunagou-private-lock-"));
+  const path = join(root, "session.json");
+  const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  // Spawn the interpreter itself so kill targets the process holding the lock,
+  // not an intermediary uv process that could leave its child alive.
+  const interpreter = execFileSync("uv", ["run", "--no-sync", "--project", repoRoot, "python", "-c", "import sys; print(sys.executable)"], {
+    cwd: repoRoot, windowsHide: true, encoding: "utf8", timeout: 5000,
+  }).trim();
+  const python = `
+import sys, time
+from pathlib import Path
+from tsunagou.platform.private_file_lock import private_file_lock
+with private_file_lock(Path(sys.argv[1])):
+    print('held', flush=True)
+    time.sleep(30)
+`;
+  const child = spawn(interpreter, ["-u", "-c", python, path], {
+    cwd: repoRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.on("data", (data) => { stderr += data; });
+  const exited = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await exited;
+    rmSync(root, { recursive: true, force: true });
+  });
+  await Promise.race([
+    new Promise((resolve) => child.stdout.on("data", (data) => { if (data.toString().includes("held")) resolve(); })),
+    exited.then(() => { throw new Error(`Python lock owner exited before readiness: ${stderr}`); }),
+  ]);
+  let entered = false;
+  await assert.rejects(withPrivateFileLock(path, () => { entered = true; }), /private_lock_busy/);
+  assert.equal(entered, false);
   child.kill();
   await exited;
   await withPrivateFileLock(path, () => { entered = true; });
   assert.equal(entered, true);
+  assert.equal(existsSync(path), false);
 });
 
 test("paused old session writer cannot overwrite the next epoch from another process", { timeout: 20000 }, async (t) => {
@@ -429,7 +537,7 @@ def paused(path, data):
 private_files.write_private_bytes = paused
 _write_ticket_private('codex:one', 'conversation-one', 'new-python-ticket-sentinel', target)
 `;
-  const child = spawn("uv", ["run", "--project", repoRoot, "python", "-u", "-c", python, f.ticketFile, gate], {
+  const child = spawn("uv", ["run", "--no-sync", "--project", repoRoot, "python", "-u", "-c", python, f.ticketFile, gate], {
     cwd: repoRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
   });
   let stderr = "";
@@ -470,6 +578,7 @@ async function metadataBridgeFixture(t) {
     if (call.path.endsWith("agent.enroll")) {
       const conversation = call.body.payload.conversation_evidence.conversation_id;
       assert.equal(call.headers.authorization, `Bearer ${tickets.get(conversation)?.secret}`);
+      if (await hooks.beforeEnroll?.(conversation, response)) return;
       return respond(response, conversation === ticket.conversation_id ? credential : secondCredential);
     }
     const current = sessions.get(call.headers["tsunagou-session-id"]);
@@ -516,6 +625,9 @@ async function metadataBridgeFixture(t) {
         TSUNAGOU_STATE_DIR: stateDir,
         TSUNAGOU_HOST_ID_ENV: "TSUNAGOU_METADATA_TEST_HOST_ID",
         TSUNAGOU_METADATA_TEST_HOST_ID: "",
+        TSUNAGOU_HOST_META_KEY: "",
+        TSUNAGOU_ROUTING_DIR: "",
+        TSUNAGOU_DESKTOP_WAKE: "",
         ...extraEnv,
       },
       stderr: "pipe",
@@ -573,18 +685,17 @@ test("MCP metadata preserves explicit bootstrap credentials across A/B/A and res
   for (const [conversation, expected] of [[f.secondTicket.conversation_id, f.secondCredential], [ticket.conversation_id, credential]]) {
     const recovered = f.result(await f.call(client, conversation));
     assert.equal(recovered.agent_id, expected.agent_id);
-    assert.equal(recovered.connection_epoch, 2);
+    assert.equal(recovered.connection_epoch, 1);
   }
   assert.equal(f.calls.filter((call) => call.path.endsWith("agent.enroll")).length, 2);
+  assert.equal(f.calls.filter((call) => call.path.endsWith("session.reconnect")).length, 0);
 });
 
 test("concurrent MCP conversations retain their identity through recovery and auth retry", { timeout: 30000 }, async (t) => {
   const f = await metadataBridgeFixture(t);
-  writePrivateJson(f.sessionPath(f.secondTicket.conversation_id), {
-    ...f.secondCredential, host_conversation_id_digest: f.digest(f.secondTicket.conversation_id),
-    conversation_binding_digest: f.digest(f.secondTicket.conversation_id),
-  });
   const client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  writePrivateJson(f.ticketFile, f.secondTicket);
   for (const [delayedConversation, delayedAgent, otherConversation, otherAgent, authRetry] of [
     [f.secondTicket.conversation_id, f.secondCredential.agent_id, ticket.conversation_id, credential.agent_id, false],
     [ticket.conversation_id, credential.agent_id, f.secondTicket.conversation_id, f.secondCredential.agent_id, true],
@@ -593,6 +704,9 @@ test("concurrent MCP conversations retain their identity through recovery and au
     let release;
     const reconnectEntered = new Promise((resolve) => { entered = resolve; });
     const reconnectReleased = new Promise((resolve) => { release = resolve; });
+    f.hooks.beforeEnroll = async (conversation) => {
+      if (conversation === delayedConversation) { entered(); await reconnectReleased; }
+    };
     f.hooks.beforeReconnect = async (session) => {
       if (session.agent_id === delayedAgent) { entered(); await reconnectReleased; }
     };
@@ -607,7 +721,7 @@ test("concurrent MCP conversations retain their identity through recovery and au
     }
     const recovered = f.result(await delayed);
     assert.equal(recovered.agent_id, delayedAgent);
-    assert.equal(recovered.connection_epoch, 2);
+    assert.equal(recovered.connection_epoch, authRetry ? 2 : 1);
   }
   assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
   assert.equal(f.result(await f.call(client, f.secondTicket.conversation_id)).agent_id, f.secondCredential.agent_id);
@@ -627,19 +741,55 @@ test("host-metadata bridge rejects a first call without valid metadata", { timeo
     return text;
   };
 
-  // The startup ticket has already recovered the default conversation
-  // (agent-one). A first call that cannot prove its conversation must be
-  // rejected instead of borrowing that recovered credential.
+  // A first call that cannot prove its conversation must not redeem the
+  // configured ticket or fall back to the explicit default session file.
   assert.match(errorOf(await callRaw(undefined)), /conversation_metadata_required/);
   assert.match(errorOf(await callRaw({})), /conversation_metadata_required/);
   assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": "" })), /conversation_metadata_required/);
   assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": 42 })), /conversation_metadata_required/);
   assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": { id: "conversation-one" } })), /conversation_metadata_required/);
 
-  // Bad calls must not enroll anything or mutate the recovered state.
-  assert.equal(f.calls.filter((call) => call.path.endsWith("agent.enroll")).length, 1);
-  assert.equal(loadSession(f.sessionFile).agent_id, credential.agent_id);
+  // Credential selection now happens per request, so invalid metadata causes
+  // no startup enrollment or other authentication request at all.
+  assert.equal(f.calls.length, 0);
+  assert.equal(loadSession(f.sessionFile), undefined);
+  assert.equal(existsSync(f.ticketFile), true);
 
   // A valid metadata call still resolves the exact conversation credential.
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+});
+
+test("metadata bootstrap resumes its explicit pending journal after a lost response", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  let loseResponse = true;
+  f.hooks.beforeEnroll = (_conversation, response) => {
+    if (loseResponse) { loseResponse = false; response.destroy(); return true; }
+  };
+  let client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  assert.equal((await f.call(client, ticket.conversation_id)).isError, true);
+  assert.equal(loadSession(f.sessionFile), undefined);
+  const pending = JSON.parse(readFileSync(`${f.sessionFile}.pending.json`, "utf8"));
+  await client.close();
+  client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  assert.equal((await f.call(client, f.secondTicket.conversation_id)).isError, true);
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  const enrollments = f.calls.filter((call) => call.path.endsWith("agent.enroll"));
+  assert.equal(enrollments.length, 2);
+  assert.equal(enrollments[0].body.command_id, pending.envelope.command_id);
+  assert.equal(enrollments[1].text, enrollments[0].text);
+  assert.equal(existsSync(`${f.sessionFile}.pending.json`), false);
+});
+
+test("unconfigured metadata bridge never falls back to its bootstrap credential after observing metadata", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  const client = await f.connect();
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  const callsBefore = f.calls.length;
+  for (const meta of [undefined, {}, { "ai.opencode/sessionID": "" }, { "ai.opencode/sessionID": 42 }, { threadId: ticket.conversation_id }]) {
+    const response = await client.callTool({ name: "context__project_read", arguments: {}, ...(meta ? { _meta: meta } : {}) });
+    assert.equal(response.isError, true);
+    assert.match(response.content.find((item) => item.type === "text").text, /conversation_metadata_required/);
+  }
+  assert.equal(f.calls.length, callsBefore);
   assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
 });

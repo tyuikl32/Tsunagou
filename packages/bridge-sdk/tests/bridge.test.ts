@@ -67,10 +67,10 @@ describe("bridge session isolation and recovery", () => {
       },
     }, { connection: { sessionId: "session-a", connectionEpoch: 1, capabilities: new Set() } });
     const envelope = { command_id: "cmd-epoch", protocol_version: "1", schema_bundle_digest: "d", payload: {} };
-    await bridge.send(envelope, "task.claim");
-    await bridge.send(envelope, "task.claim");
+    await bridge.send(envelope, "task.begin");
+    await bridge.send(envelope, "task.begin");
     bridge.reconnect({ sessionId: "session-a", connectionEpoch: 2, capabilities: new Set() });
-    await bridge.send(envelope, "task.claim");
+    await bridge.send(envelope, "task.begin");
     expect(epochs).toEqual([1, 2]);
   });
 
@@ -89,16 +89,16 @@ describe("bridge session isolation and recovery", () => {
       },
     }, { connection: { sessionId: "session-a", connectionEpoch: 1, capabilities: new Set() } });
     const envelope = { command_id: "cmd-race", protocol_version: "1", schema_bundle_digest: "d", payload: {} };
-    const oldRequest = bridge.send(envelope, "task.claim");
+    const oldRequest = bridge.send(envelope, "task.begin");
     bridge.reconnect({ sessionId: "session-a", connectionEpoch: 2, capabilities: new Set() });
-    const newRequest = bridge.send(envelope, "task.claim");
+    const newRequest = bridge.send(envelope, "task.begin");
     releaseOld();
     await expect(oldRequest).rejects.toThrow("stale_connection_epoch");
-    const duplicateNew = bridge.send(envelope, "task.claim");
+    const duplicateNew = bridge.send(envelope, "task.begin");
     expect(epochs).toEqual([1, 2]);
     releaseNew();
     await expect(Promise.all([newRequest, duplicateNew])).resolves.toEqual([{ epoch: 2 }, { epoch: 2 }]);
-    await expect(bridge.send(envelope, "task.claim")).resolves.toEqual({ epoch: 2 });
+    await expect(bridge.send(envelope, "task.begin")).resolves.toEqual({ epoch: 2 });
     expect(epochs).toEqual([1, 2]);
   });
 
@@ -114,12 +114,12 @@ describe("bridge session isolation and recovery", () => {
       },
     }, { connection: { sessionId: "session-a", connectionEpoch: 1, capabilities: new Set() } });
     const envelope = { command_id: "cmd-1", protocol_version: "1", schema_bundle_digest: "sha256:x", payload: { task_id: "t-1" } };
-    const first = bridge.send(envelope, "task.claim");
-    const duplicate = bridge.send({ ...envelope, payload: { task_id: "t-1" } }, "task.claim");
+    const first = bridge.send(envelope, "task.begin");
+    const duplicate = bridge.send({ ...envelope, payload: { task_id: "t-1" } }, "task.begin");
     release();
     await expect(Promise.all([first, duplicate])).resolves.toEqual([{ accepted: true }, { accepted: true }]);
     expect(calls).toBe(1);
-    await expect(bridge.send({ ...envelope, payload: { task_id: "t-2" } }, "task.claim")).rejects.toThrow("idempotency_conflict");
+    await expect(bridge.send({ ...envelope, payload: { task_id: "t-2" } }, "task.begin")).rejects.toThrow("idempotency_conflict");
   });
 
   it("retries transport failures but not typed non-retryable problems", async () => {

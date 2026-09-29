@@ -16,7 +16,7 @@ sections 固定包括 objective、assigned_tasks、task_dependencies、active_bl
 
 HostSession 保存 template version/digest。adapter 只格式转换和预算裁剪；身份、权限、当前阻塞、查询入口不可裁剪。预算不足先移除可选摘要，仍不足则诊断，不能漏约束继续运行。
 
-模板必须表达：你代表哪个 Agent，Full Access 不扩大协调授权；以当前黑板事实为准；主动公开相关理解/假设/不确定性；只接受核对过的契约版本；上游阻塞时保存进度并挂起相关工作，无关任务可继续；resume 不等于 start；ACK 不等于接受；Git 写由 main，重大设计/项目完成由用户确认。
+模板必须表达：你代表哪个 Agent，Full Access 不扩大协调授权；以当前黑板事实为准；主动公开相关理解/假设/不确定性；只接受核对过的契约版本；以 task.begin 获取执行上下文，task.submit 自动采集结果并释放；上游阻塞时 task.block 保存进度并挂起相关工作，无关任务可继续；时间不转移 owner；ACK 不等于接受；Git 写由 main，重大设计/项目完成由用户确认。
 
 不索取隐藏思维链，不将消息正文拼入系统权限片段，不允许外部文本改写身份。自然语言约束是 advisory，API 仍做机械校验。
 

@@ -22,13 +22,13 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 ## Tsunagou 项目约定
 
-- 当前仓库是可启动原型；T01–T17、T22 的旧完成标记仅证明分项产物，实际运行仍缺统一持久化、主从任务边界、事务编排及独立安装资源。当前优先读 [八模块审计与最小成品路径](docs/standalone/README.md)，按 R1–R6 补齐；完整目标保留在 [实施基线](docs/implementation/README.md)。
+- 当前工作是 [实测修复方案](docs/implementation/live-test-repair-plan.md)：用户已授权完成 FX1–FX7，实施中；实际进度以任务索引和各项 implementation-progress 为准。源码已包含 PT 持久化与查询修复，不能照旧审计重复开发；当前问题和证据以该方案为准。原 [八模块审计](docs/standalone/README.md)保留历史背景，完整目标在 [实施基线](docs/implementation/README.md)。
 - 规范优先级和历史追溯见 [文档目录](docs/README.md)。`docs/history/2026-09-18-source/` 是原始记录，不修改；新实现以当前 implementation、已确认 decisions 为准。
-- 开发前读相应 `.trellis/spec`、当前任务 PRD/design/implement 与上下文。任务依赖以 [task-plan.json](docs/implementation/task-plan.json) 和 `meta.depends_on` 为准；Trellis 父子关系不是依赖调度器。
-- 当前活动计划是 M1 总任务与 R1–R6 六个子任务，依次推进。此前 T01–T24 和旧总计划均已按用户要求完成或放弃并归档，不再作为活动依赖；处置记录见 [任务迁移清单](docs/standalone/trellis-transition-2026-09-20.json)。
+- 开发前读相应 `.trellis/spec`、当前任务 PRD/design/implement 与上下文。本轮依赖以 [FX 任务索引](docs/implementation/live-test-repair-tasks.json) 和 `meta.depends_on` 为准；旧 M1 索引仍为 [task-plan.json](docs/implementation/task-plan.json)。Trellis 父子关系不是依赖调度器。
+- 不整体重开 M1/PT 或此前已关闭任务。FX 四项已确认决定覆盖旧资源 TTL/续租、多段准备、Desktop 唤醒降级及旧版迁移约定，所属规范随代码同步；本轮手动 Desktop 原会话自动唤醒必须实测通过。更早任务的处置记录见 [任务迁移清单](docs/standalone/trellis-transition-2026-09-20.json)。
 - 已确认的问题不要重新逐项询问用户。普通实现选择自行完成并留档；用户目标、重大设计和固定用户权限边界的实质变化才升级。
 - 系统代码维护身份、范围、版本、状态等机械不变量；业务语义交给运行时主 Agent。八模块以公开端口协作，workflows/blackboard 不新增领域真相。
-- 当前 M1 以独立安装、实际业务闭环和重启恢复验收，宿主能力报告与研究实验不阻塞；见 [D183](docs/decisions/2026-09-20-standalone-priority.md)。原多宿主正式发布目标保留，ZCode后置；不得把未知能力写成supported或放弃owner、scope和user-only边界。
+- 原 M1 以独立安装、实际业务闭环和重启恢复验收，见 [D183](docs/decisions/2026-09-20-standalone-priority.md)；当前 FX 还须通过已确认的原会话唤醒，不增加能力问卷。原多宿主目标保留，ZCode后置；不得把未知能力写成supported或放弃owner、scope和user-only边界。
 - 项目说明中的运行命令是待实现规范，不能据此报告已运行成功。每项验收以实际测试/版本/证据为准。
 - 文档校验：`python tools/docs/validate_docs.py`。修改公共语义时同步 Schema、命令目录、fixtures、任务和用户文档。
 - 实施步骤和文件位置见 [搭建指南](docs/implementation/build-guide.md)、[预期目录](docs/implementation/directory-layout.md)；用户子Agent接入与CLI/HTTP示例分别见 [接入指南](docs/overview/subagent-guide.md)、[操作手册](docs/overview/cli-http-manual.md)。示例不能创造未注册的U权限或把宿主临时subagent视为已认证项目成员。

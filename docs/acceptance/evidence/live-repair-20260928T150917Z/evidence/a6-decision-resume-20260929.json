@@ -1,0 +1,43 @@
+{
+  "schema": "tsunagou.live-repair.a6-decision-resume.v1",
+  "observed_at": "2026-09-29T04:45:48.644Z",
+  "timezone": "UTC",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "pending_path_ref": "evidence/a6-user-decision-pending-20260928T235043Z.json",
+  "user_decision": {
+    "decision_id": "f1396c86-ae11-4ce9-b499-281367fb5202",
+    "proposal_digest": "sha256:df307e0ef656c9559855a9ec7b323673659a29c5cb6140eee5d9dbdb0790d669",
+    "status_after_user_cli": "resolved",
+    "outcome": "approved",
+    "reason": "A6 live acceptance: later enrollment supersedes prior project exit",
+    "resolved_at": "2026-09-29T01:58:52.747Z"
+  },
+  "main_notification": {
+    "message_id": "bc5ebaab-eb71-410c-aa0a-35413c41e59b",
+    "wake_requested_at": "2026-09-29T01:58:52.985Z",
+    "wake_queued_at": "2026-09-29T01:58:53.388Z",
+    "wake_completed_at": "2026-09-29T02:00:54.408Z",
+    "completion_reason": "messages_already_acked",
+    "separate_new_main_turn_proven": false
+  },
+  "related_worker_resume": {
+    "worker_agent_id": "cb2f1ff6-87de-4625-9afe-00b44ef5c182",
+    "task_id": "097876bd-0473-40c2-9bed-d52fe5baa2f5",
+    "blocked_attempt_id": "35427c2f-cfe8-498c-8f64-cd2b8a8a1097",
+    "blocked_attempt_orphaned_at": "2026-09-29T02:02:40.419Z",
+    "resume_message_id": "cc6099f9-6d63-4eb8-a414-7fee2783886d",
+    "original_desktop_worker_woken": true,
+    "message_fetched_presented_and_acknowledged": true,
+    "fresh_attempt_id": "eb5a1efa-d499-4039-a6bd-d8e2e0bbc35f",
+    "fresh_attempt_began_at": "2026-09-29T02:11:42.253Z",
+    "decision_verified_resolved_by_worker": true,
+    "result_id": "e0b72a1e-e6a0-41c7-9596-a922998f2927",
+    "submitted_at": "2026-09-29T02:13:14.340Z",
+    "task_completed_at": "2026-09-29T02:58:09.115Z"
+  },
+  "unrelated_work_while_pending": {
+    "task_id": "948d446d-bdb5-4905-a9f1-6b873abb8ca6",
+    "submitted_at": "2026-09-28T23:48:39.572Z"
+  },
+  "assessment": "The related Worker blocked and ended its earlier turn while the decision was pending. After the user approved the exact decision, main recovered the blocked task and notified the original Desktop Worker, which resumed in a fresh Attempt and submitted successfully. The decision notification to main was ACKed while the main host was active; it is not evidence of a separate automatic main wake turn."
+}

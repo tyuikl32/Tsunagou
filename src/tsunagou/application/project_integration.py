@@ -6,16 +6,19 @@ import json
 import os
 import subprocess
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from tsunagou.modules.projects import ProjectRegistry
 from tsunagou.platform.db.sqlite import ProjectLock
+from tsunagou.platform.runtime_context import read_object, running_source_root
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.time import format_timestamp, now_ms, parse_timestamp
 
 SOURCE_REPOSITORY = "https://github.com/tyuikl32/Tsunagou.git"
-GENERATOR_VERSION = "project-bootstrap-v1"
+GENERATOR_VERSION = "project-bootstrap-v2"
 START_MARKER = "<!-- TSUNAGOU:START -->"
 END_MARKER = "<!-- TSUNAGOU:END -->"
 
@@ -53,17 +56,20 @@ def _read(path: Path) -> str | None:
         raise ProjectIntegrationError(f"managed_file_not_utf8:{path}") from exc
 
 
-def _replace_block(existing: str | None, block: str, *, path: Path) -> tuple[str, str]:
+def _replace_block(
+    existing: str | None, block: str, *, path: Path,
+    start_marker: str = START_MARKER, end_marker: str = END_MARKER,
+) -> tuple[str, str]:
     if existing is None:
         return block, "created"
-    start = existing.find(START_MARKER)
-    end = existing.find(END_MARKER)
+    start = existing.find(start_marker)
+    end = existing.find(end_marker)
     if start == -1 and end == -1:
         separator = "" if existing.endswith(("\n", "\r")) else "\n"
         return existing + separator + "\n" + block, "updated"
     if start == -1 or end < start:
         raise ProjectIntegrationError(f"managed_marker_conflict:{path}")
-    end += len(END_MARKER)
+    end += len(end_marker)
     replacement = existing[:start] + block + existing[end:]
     return replacement, "unchanged" if replacement == existing else "updated"
 
@@ -112,10 +118,13 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 1. 第一次行动前先读取本文件、当前 Agent/session 身份、黑板和收件箱；不能凭旧对话猜测任务或权限。
 2. 主 Agent 负责任务统筹、Git 写操作、整合和需要用户确认的重大决定。
    子 Agent 只能使用自己领取的 Attempt，不能任命自己为 main、接管主任务或代用户确认。
-3. `claim` 只领取任务，`preflight` 只准备，`start` 才获得当前 scope 的执行授权。
+   main 收到子 Agent 请求后，检查现有任务及重复请求，再自主发布合适任务、明确回复无需新任务，或说明实际阻塞。
+   普通调度沿已有用户授权执行，不再次询问“是否需要发布任务”；必须履行回复义务，不能只读消息或 ACK。
+3. 读取任务的当前 revision 后调用 `task.begin`，成功才获得当前 scope 的执行授权；`task.submit` 自动收集结果并释放占用。
    Full Access 宿主不等于获得 Tsunagou scope，也不等于 OS 沙箱。
 4. 认知报告、契约接受、消息 ACK、Task 完成和 Project 完成是不同事实；ACK 不表示同意，项目完成必须由用户确认。
-5. 上游决定阻塞时保存进展并结束本轮；不相交的任务可以继续。恢复前重新读取状态，不复用过期 Grant、Lease 或旧 session 假设。
+5. 上游决定阻塞时调用 `task.block` 保存进展、释放占用并结束本轮；不相交的任务可以继续。
+   恢复前重读状态并再次 begin。静默、断线或同库重启不会转移资源 owner，主 Agent 可以显式回收。
 6. 需要扩大范围、改变项目设计或处理无法协调的冲突时向主 Agent 提出；越过用户上限时建立 UserDecision，不能自行绕过。
 
 ## 接入入口
@@ -146,7 +155,9 @@ bridge, or onboarding skill and it grants no permission.
 
 1. Read `.tsunagou/agent-context.md` and the managed Tsunagou block in `AGENTS.md`.
 2. Ask the bridge for the current project/Agent/session context; `ticket_issued` is not ready.
-3. Read the incremental inbox and blackboard before acting. A worker waits for a published task and claims only its own Attempt.
+3. Read the incremental inbox and blackboard. A worker calls task.begin on eligible published work and uses the returned Attempt.
+   Main handles routine worker requests under existing authorization: check duplicates, publish work or reply with a concrete reason.
+   Reading or ACK alone is not a response.
 4. Follow the main/worker/user boundaries, Full Access limitation, Git ownership, and recovery rules in the context file.
 5. For installation or enrollment, follow `tsunagou-agent-onboarding`; never request or print tokens.
 
@@ -161,7 +172,10 @@ def _render_agents_block() -> str:
 Before changing files, read `.tsunagou/agent-context.md` and the current Agent/session context.
 The daemon and bridge enforce identity, task owner, scope, revision and epoch; this file is a project instruction, not an OS sandbox.
 The main Agent coordinates tasks and performs Git writes. A worker cannot become main or act outside its own claimed Attempt.
-`claim`/`preflight`/`start` are separate; Full Access does not expand Tsunagou scope.
+The main Agent proactively handles routine worker requests: check existing work, publish or reply, and fulfill response obligations.
+Do not ask the user to authorize ordinary scheduling again.
+`task.begin` prepares and starts the owned attempt; `task.submit` captures results and releases it.
+Full Access does not expand Tsunagou scope.
 Major design, permission and project-completion decisions remain user-controlled.
 Use `tsunagou-agent-onboarding` for enrollment and recovery. Do not put tokens, tickets or bridge sessions in prompts or commits.
 
@@ -225,16 +239,43 @@ class ProjectIntegration:
             raise ProjectIntegrationError("project_not_initialized")
         if not registry.is_git_repository():
             raise ProjectIntegrationError("coordination_repository_must_be_git_repository")
-        source_path = Path(source_root).expanduser().resolve() if source_root else None
+        selected_hosts = sorted(set(hosts or ["generic"]))
+        if set(selected_hosts) - {"generic", "codex", "claude", "cursor", "opencode", "gemini", "zcode"}:
+            raise ProjectIntegrationError("unsupported_skill_host")
+        source_path = Path(source_root).expanduser().resolve() if source_root else running_source_root()
         source = _source_metadata(source_path, source_ref)
         context = _render_context(registry.project.project_id, source, source_path)
         skill = _render_skill()
         agents_block = _render_agents_block()
         gitignore_block = _render_gitignore_block()
+        host_files = [
+            _ManagedFile(self.root / f".{host}/skills/tsunagou-project/SKILL.md", skill)
+            for host in selected_hosts if host not in {"generic", "codex"}
+        ]
+        host_config: str | None = None
+        if "codex" in selected_hosts:
+            from tsunagou.application.onboarding import codex_routing_directory
+
+            if source_path is None or not (source_path / "packages/bridge-server/dist/server.js").is_file():
+                raise ProjectIntegrationError("installation_bridge_not_built")
+            host_config = (
+                '# TSUNAGOU:START\n[mcp_servers.tsunagou]\ncommand = "node"\n'
+                f'args = {json.dumps([str(source_path / "packages/bridge-server/dist/server.js")])}\n'
+                'env_vars = ["CODEX_APP_TOOLS_PIPE_PATH"]\n'
+                '[mcp_servers.tsunagou.env]\n'
+                f'TSUNAGOU_ROUTING_DIR = {json.dumps(str(codex_routing_directory()))}\n# TSUNAGOU:END'
+            )
         content_digest = canonical_digest({
             "context": context, "skill": skill,
             "agents_block": agents_block, "gitignore_block": gitignore_block,
+            "hosts": selected_hosts, "host_config": host_config,
         })
+        previous = read_object(self.state_dir / "project-integration.json")
+        updated_at = previous.get("updated_at") if previous.get("content_digest") == content_digest else None
+        try:
+            parse_timestamp(updated_at)
+        except ValueError:
+            updated_at = None
         manifest = {
             "schema_version": 1,
             "project_id": registry.project.project_id,
@@ -245,9 +286,10 @@ class ProjectIntegration:
                 "AGENTS.md#TSUNAGOU", ".agents/skills/tsunagou-project/SKILL.md",
                 ".tsunagou/agent-context.md", ".tsunagou/project-integration.json",
                 ".gitignore#TSUNAGOU",
-            ],
+            ] + [str(item.path.relative_to(self.root)).replace("\\", "/") for item in host_files]
+              + ([".codex/config.toml#TSUNAGOU"] if host_config else []),
             "content_digest": content_digest,
-            "updated_at": content_digest,
+            "updated_at": updated_at or format_timestamp(now_ms()),
         }
         managed = [
             _ManagedFile(
@@ -256,7 +298,7 @@ class ProjectIntegration:
             ),
             _ManagedFile(self.state_dir / "agent-context.md", context),
             _ManagedFile(self.root / ".agents" / "skills" / "tsunagou-project" / "SKILL.md", skill),
-        ]
+        ] + host_files
         planned: list[tuple[Path, str, str]] = [
             self._plan_exact(item, refresh=refresh, force_managed=force_managed)
             for item in managed
@@ -267,6 +309,17 @@ class ProjectIntegration:
         planned.append(
             self._plan_block(self.root / ".gitignore", gitignore_block, refresh=refresh, force_managed=force_managed)
         )
+        if host_config:
+            config_path = self.root / ".codex/config.toml"
+            config_plan = self._plan_block(
+                config_path, host_config, refresh=refresh, force_managed=force_managed,
+                start_marker="# TSUNAGOU:START", end_marker="# TSUNAGOU:END",
+            )
+            try:
+                tomllib.loads(config_plan[1])
+            except tomllib.TOMLDecodeError as exc:
+                raise ProjectIntegrationError(f"host_config_conflict:{config_path}") from exc
+            planned.append(config_plan)
         # All conflict checks happen before the first replacement. A user-file
         # conflict therefore cannot leave a partially materialized project.
         statuses: list[dict[str, str]] = []
@@ -277,7 +330,7 @@ class ProjectIntegration:
         return {
             "status": "bootstrapped", "project_id": registry.project.project_id,
             "coordination_root": str(self.root), "source": source,
-            "hosts": hosts or ["generic"], "content_digest": content_digest,
+            "hosts": selected_hosts, "content_digest": content_digest,
             "files": statuses, "secrets_written": False,
         }
 
@@ -287,19 +340,22 @@ class ProjectIntegration:
             return item.path, item.content, "created"
         if existing == item.content:
             return item.path, existing, "unchanged"
-        if not (refresh or force_managed) or GENERATOR_VERSION not in existing:
+        if not (refresh or force_managed) or "project-bootstrap-v" not in existing:
             raise ProjectIntegrationError(f"managed_file_conflict:{item.path}")
         return item.path, item.content, "updated"
 
-    def _plan_block(self, path: Path, block: str, *, refresh: bool, force_managed: bool) -> tuple[Path, str, str]:
+    def _plan_block(
+        self, path: Path, block: str, *, refresh: bool, force_managed: bool,
+        start_marker: str = START_MARKER, end_marker: str = END_MARKER,
+    ) -> tuple[Path, str, str]:
         existing = _read(path)
-        if existing is not None and START_MARKER in existing and END_MARKER in existing:
-            start = existing.find(START_MARKER)
-            end = existing.find(END_MARKER, start)
+        if existing is not None and start_marker in existing and end_marker in existing:
+            start = existing.find(start_marker)
+            end = existing.find(end_marker, start)
             if end < start:
                 raise ProjectIntegrationError(f"managed_marker_conflict:{path}")
-            current = existing[start : end + len(END_MARKER)]
+            current = existing[start : end + len(end_marker)]
             if current != block and not (refresh or force_managed):
                 raise ProjectIntegrationError(f"managed_file_conflict:{path}")
-        updated, status = _replace_block(existing, block, path=path)
+        updated, status = _replace_block(existing, block, path=path, start_marker=start_marker, end_marker=end_marker)
         return path, updated, status

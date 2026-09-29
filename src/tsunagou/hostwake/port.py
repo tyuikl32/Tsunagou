@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
+
+from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 CapabilityStatus = Literal["supported", "unsupported", "unknown", "degraded"]
 BindingStatus = Literal["ready", "degraded", "stale", "detached"]
@@ -15,7 +16,7 @@ WakeState = Literal[
 
 
 def utc_now() -> str:
-    return datetime.now(UTC).isoformat()
+    return str(format_timestamp(now_ms()))
 
 
 @dataclass(frozen=True, slots=True)

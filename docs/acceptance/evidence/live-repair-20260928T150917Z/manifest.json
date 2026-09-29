@@ -1,0 +1,154 @@
+{
+  "agent_ids": [
+    "1a20b513-3efd-48c6-81c9-479335f7572a",
+    "cb2f1ff6-87de-4625-9afe-00b44ef5c182",
+    "e5a866e0-3c1c-4ab5-8d11-5becd613cc48"
+  ],
+  "attempt_ids": [
+    "046b861e-ef93-4b6e-8842-7861209be5a7",
+    "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+    "90db2984-cf54-4877-a9b6-4f28caffb2d3",
+    "a8dff583-c8bb-4b7d-b180-6f02699e9c73",
+    "bfbf7ee8-ab0b-45a1-a734-34e23dab401d",
+    "d2f2b430-232a-4387-9979-6ef66395910f",
+    "de703c52-e9ae-4644-99d1-5af9e9b304e0",
+    "e76723a2-0df1-4e29-ac50-d93daf4f4bc3",
+    "ed5c675b-caed-4028-93a0-e6e2e1021fd3",
+    "f30cf40d-9cc8-40b7-b507-1b2238941e56",
+    "29cec294-4683-466d-8095-8af8bf342ca9",
+    "35427c2f-cfe8-498c-8f64-cd2b8a8a1097",
+    "eb5a1efa-d499-4039-a6bd-d8e2e0bbc35f",
+    "6495bfad-e2d2-41c6-b534-9a6eb2f8ae66",
+    "fabc19f8-38ca-447c-b1ad-ac55223a7ee7",
+    "566c57ee-bbb0-47c9-ac51-59345499c25e"
+  ],
+  "capture_started_at": "2026-09-28T15:09:18.006Z",
+  "cli": "C:\\Users\\Tyuikl\\.local\\bin\\tsunagou.cmd",
+  "criteria": {
+    "A1": {
+      "evidence_refs": [
+        "evidence/original-host.md",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-28T15:35:25.700Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    },
+    "A2": {
+      "evidence_refs": [
+        "evidence/message-loop.json",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-28T15:35:25.700Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    },
+    "A3": {
+      "evidence_refs": [
+        "evidence/runtime-tasks.json",
+        "evidence/btid-http-final.json",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-28T15:35:25.700Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    },
+    "A4": {
+      "evidence_refs": [
+        "evidence/a4-restart-recovery-20260928T1951Z.json",
+        "evidence/a4-stale-submit-20260929.json",
+        "snapshots/20260928T195149-d28cfb69/facts.json",
+        "snapshots/20260928T195149-d28cfb69/agents.json",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-29T04:45:48.644Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    },
+    "A5": {
+      "evidence_refs": [
+        "evidence/a5-independent-interface-check.json",
+        "evidence/a5-discrepancy-contract-20260929.json",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-29T04:45:48.644Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    },
+    "A6": {
+      "evidence_refs": [
+        "evidence/a6-user-decision-pending-20260928T235043Z.json",
+        "evidence/a6-decision-resume-20260929.json",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-29T04:45:48.644Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    },
+    "A7": {
+      "evidence_refs": [
+        "snapshots/20260928T164747-c06e35eb/timeline.json",
+        "snapshots/20260928T164747-c06e35eb/facts.json",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-28T16:47:50.327Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    },
+    "A8": {
+      "evidence_refs": [
+        "evidence/browser-check.json",
+        "evidence/ui-valid-final.png",
+        "evidence/ui-crc-final.png",
+        "evidence/ui-truncated-final.png",
+        "operator-review.md"
+      ],
+      "observed_at": "2026-09-28T15:35:25.700Z",
+      "source": "operator_review_not_script_verification",
+      "status": "pass"
+    }
+  },
+  "exported_at": "2026-09-29T04:52:53.210Z",
+  "finished_at": "2026-09-29T04:52:53.210Z",
+  "host_versions": {
+    "codex_app": "26.924.2738.0",
+    "codex_cli": "0.158.0-alpha.2.1",
+    "codex_plugin": null
+  },
+  "installation": {
+    "bridge_version": "0.1.0",
+    "commit": "1fb86e08b9cfaab312a9210a3eb15d0108314c36",
+    "duration_ms": 2528,
+    "install_finished_at": "2026-09-28T13:53:56.462Z",
+    "install_started_at": "2026-09-28T13:53:53.933Z",
+    "installed_at": "2026-09-28T13:53:56.462Z",
+    "python_version": "Python 3.13.13",
+    "source_dirty": true,
+    "status": "installed"
+  },
+  "last_checked_at": "2026-09-29T04:52:25.664Z",
+  "latest_snapshot": "snapshots/20260929T045223-aca724d1",
+  "project_confirmation": "unverified",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "project_root": "D:\\Tsunagou-fx-live-20260928",
+  "runtime_version": "0.1.0",
+  "schema": "tsunagou.live-acceptance.v1",
+  "source_root": "D:\\Tsunagou",
+  "task_ids": [
+    "097876bd-0473-40c2-9bed-d52fe5baa2f5",
+    "357de2e9-8990-4c1e-b99f-365057d29732",
+    "53aabd07-9a50-477c-8f2a-19cc69f10646",
+    "7271e347-82ee-4bb4-8cfd-ef29e055cfa3",
+    "74f34f37-f3df-44ef-a5f0-8991de6243b7",
+    "948d446d-bdb5-4905-a9f1-6b873abb8ca6",
+    "a4bf07a7-acf8-4253-94c8-f69a193ba276",
+    "a57f7596-61da-435a-b0ed-b236a811ed3a",
+    "a89caf35-7f00-4693-be59-b70b5633524b",
+    "b335f087-790b-421f-bb39-e65a961774d7",
+    "c70a3de6-a2ee-4dff-882e-943977469ed5",
+    "cc7ada9e-d7e7-433d-915b-4e0cadf3341e",
+    "e877f316-1f3c-4b9d-a5ba-270eb893514a"
+  ],
+  "timezone": "China Standard Time",
+  "token_usage": "unavailable"
+}

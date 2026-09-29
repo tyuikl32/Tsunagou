@@ -2,7 +2,7 @@
 
 首发发布门禁覆盖 Codex、OpenCode、DeepSeek Harness 三个宿主。ZCode 适配器仍保留在共享 SDK、目录和研究矩阵中，但正式共同基线与首发验收后置；unknown 不得写成 supported。
 
-`packages/bridge-sdk` 拥有协议客户端、私有凭据注入、command_id/重试、连接 epoch、probe 报告、inbox 拉取去重、MCP 传输、提示渲染、后台 Lease 续租和诊断。四 adapter 只负责宿主生命周期、可信 conversation ID、工具/上下文入口和增强能力，不重定义领域协议。
+`packages/bridge-sdk` 拥有协议客户端、私有凭据注入、command_id/重试、连接 epoch、probe 报告、inbox 拉取去重、MCP 传输、提示渲染和诊断。adapter 负责宿主生命周期、会话身份、工具/上下文入口和唤醒增强；不复制领域状态，不做资源续租。
 
 daemon 的共享项目 MCP 服务由官方 Python SDK 接入 FastAPI/ASGI；官方 TS SDK 仅用于 bridge 所需传输/stdio 转发。每连接独立 HostSession，不共用全项目 token。SDK 具体 API 和版本由 T02 实测，不臆造厂商方法。
 
@@ -16,7 +16,7 @@ daemon 的共享项目 MCP 服务由官方 Python SDK 接入 FastAPI/ASGI；官�
 | identity.continuity_evidence | resume/compact 保持 ID，new/clear/fork 不同 |
 | context.project_read | 正确项目摘要与黑板入口，不串项目 |
 | command.typed_tools | schema 与 REST 语义一致，不能自报 actor |
-| task.lifecycle | claim/preflight/start/block/resume/submit 与旧 revision 拒绝 |
+| task.lifecycle | begin/block/submit、owner/版本冲突、取消与显式回收 |
 | cognition.report | 显式认知与分歧读写，作者可信 |
 | contract.participation | exact proposal digest 接受，旧 hash 无效 |
 | inbox.pull_fetch_ack | 无 push 仍能拉取与 ACK，正文仅 recipient |
@@ -45,7 +45,7 @@ token 由 bridge 私有内存/当前 OS 用户私有文件持有，经 header �
 
 attach 收集 probe 后兑换 ticket，ready 或 diagnostic-only。resume CAS 新 connection epoch 并新快照；配置/插件变化显式 reprobe；不在每条普通命令执行慢 probe。必需能力下降冻结相关业务 Grant 并收敛执行；增强下降只禁增强。上升不自动扩大权限或恢复任务。
 
-Lease 续租与 transport 独立于 LLM 轮次；挂起先释放执行 Lease。无 wake 不强制外部重启对话，用户打开时 pull/blackboard 恢复。只有真实宿主呈现证据才标 presented。
+资源占用不依赖 LLM 轮次、transport 存活或续租；owner 挂起时显式释放。只有真实宿主呈现证据才标 presented。首发 Codex 原会话自动唤醒按 FX3/FX6 验收，不能以手动恢复冒充完成。
 
 ## 本项目端口与交付
 

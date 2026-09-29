@@ -80,44 +80,20 @@ try {
   const task = await call(main.client, "task__create", {
     title: "bridge smoke",
     objective: "write one file",
-    execution_scope: {
-      digest: "bridge-smoke-scope",
-      resources: [{ kind: "path", root_id: "project", segments: [], mode: "exclusive_write" }],
-    },
+    execution_scope: { roots: ["coordination"] },
   });
   const workFile = `bridge-demo-${task.task_id}.mjs`;
   const userFile = `user-edit-${task.task_id}.txt`;
+  await call(main.client, "workspace__select", { task_id: task.task_id, driver_kind: "shared" });
   await call(main.client, "task__ready", { task_id: task.task_id });
   await call(main.client, "task__publish", { task_id: task.task_id });
-  const claimed = await call(worker.client, "task__claim", { task_id: task.task_id });
+  const openContext = await call(worker.client, "context__project_read");
+  const available = openContext.open_tasks.find((item) => item.task_id === task.task_id);
+  if (!available?.execution_scope?.roots?.includes("coordination")) throw new Error("open_task_context_missing");
+  const claimed = await call(worker.client, "task__begin", { task_id: task.task_id, expected_task_revision: available.revision });
   await expectError(main.client, "task__submit", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    summary: "foreign submit probe",
+    task_id: task.task_id, attempt_id: claimed.attempt_id, summary: "foreign submit probe",
   }, "capability_denied");
-
-  const selection = await call(main.client, "workspace__select", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    driver_kind: "shared",
-    evidence_refs: ["bridge-smoke:shared"],
-    hard_constraints: [],
-    input_digest: "bridge-smoke",
-  });
-  const intent = await call(worker.client, "resource__intent", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    reason: "bridge smoke",
-    scope_digest: "bridge-smoke-scope",
-    resources: [{ kind: "path", root_id: "project", segments: [workFile], mode: "exclusive_write" }],
-  });
-  const lease = await call(worker.client, "resource__acquire", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    intent_id: intent.intent_id,
-    intent_revision: intent.revision,
-    scope_digest: "bridge-smoke-scope",
-  });
 
   await call(worker.client, "cognition__report", {
     task_id: task.task_id,
@@ -188,24 +164,6 @@ try {
   });
   await call(main.client, "inbox__ack", { message_id: message.message_id, reason: "observed" });
 
-  const prepared = await call(worker.client, "workspace__prepare", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    decision_id: selection.decision_id,
-    input_digest: "bridge-smoke",
-    root_binding_refs: [],
-    baseline: {},
-  });
-  const preflight = await call(worker.client, "task__preflight", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    evidence_refs: [`workspace:${prepared.workspace_id}`],
-  });
-  await call(worker.client, "task__start", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    preflight_id: preflight.preflight_id,
-  });
   if (process.argv.includes("--stop-after-start")) {
     process.stdout.write(JSON.stringify({ status: "started", task_id: task.task_id, attempt_id: claimed.attempt_id }) + "\n");
     throw new StopAfterStart();
@@ -217,23 +175,14 @@ try {
     encoding: "utf-8",
   });
   if (test.status !== 0) throw new Error(`worker_test_failed:${test.stderr ?? "unknown"}`);
-  const result = await call(worker.client, "workspace__result", {
-    workspace_id: prepared.workspace_id,
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    baseline_digest: prepared.baseline_digest,
-    changed_paths: [workFile, userFile],
-    commit_refs: [],
-    untracked_summary: [],
-    validation_refs: ["bridge-smoke:ok"],
-  });
-  if (result.baseline_conflict !== true) throw new Error("baseline_conflict_not_observed");
   const submitted = await call(worker.client, "task__submit", {
-    task_id: task.task_id,
-    attempt_id: claimed.attempt_id,
-    summary: "bridge smoke passed",
-    workspace_result_ref: result.result_manifest_id,
+    task_id: task.task_id, attempt_id: claimed.attempt_id, summary: "bridge smoke passed",
+    evidence_refs: ["bridge-smoke:ok"],
   });
+  const base = mainConfig.env.TSUNAGOU_HTTP_URL;
+  const workspaces = await (await fetch(`${base}/api/v1/projects/${mainContext.project_id}/workspaces`)).json();
+  const result = workspaces.items.find((item) => item.workspace_id === claimed.workspace_id)?.result;
+  if (!result?.baseline_conflict) throw new Error("baseline_conflict_not_observed");
   const reviewed = await call(main.client, "task__review_accept", {
     task_id: task.task_id,
     attempt_id: claimed.attempt_id,
@@ -257,14 +206,16 @@ try {
     expected_project_revision: 1,
   });
 
-  await expectError(main.client, "task__claim", { task_id: task.task_id }, "task_not_claimable");
+  const taskPage = await (await fetch(`${base}/api/v1/projects/${mainContext.project_id}/tasks`)).json();
+  const completed = taskPage.items.find((item) => item.task_id === task.task_id);
+  await expectError(main.client, "task__begin", { task_id: task.task_id, expected_task_revision: completed.revision }, "task_not_beginable");
   process.stdout.write(JSON.stringify({
     status: "passed",
     task_id: task.task_id,
     attempt_id: claimed.attempt_id,
     main_agent_id: mainContext.agent_id,
     worker_agent_id: workerContext.agent_id,
-    lease_set_id: lease.lease_set_id,
+    reservation_id: claimed.reservation_id,
     discrepancy_observed: true,
     baseline_conflict: result.baseline_conflict,
     test_executed: true,

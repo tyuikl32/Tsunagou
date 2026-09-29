@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-09-28T16:31:12.000Z",
+  "source": "current_main_session_mcp_context__project_read",
+  "user_report": "Codex MCP settings show tsunagou but no reload button",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "agent_id": "1a20b513-3efd-48c6-81c9-479335f7572a",
+  "role": "main",
+  "session_status": "ready",
+  "connection_epoch": 2,
+  "host_binding_status": "ready",
+  "host_binding_revision": 2,
+  "reenrollment_performed": false,
+  "codex_restart_requested": false,
+  "conclusion": "The earlier reload request is obsolete for this main session. This observation does not by itself prove other sessions or daemon restart recovery."
+}

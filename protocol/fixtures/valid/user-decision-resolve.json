@@ -1,0 +1,6 @@
+{
+  "decision_id": "decision-example",
+  "choice": "approved",
+  "expected_revisions": {"decision": 1},
+  "proposal_digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}

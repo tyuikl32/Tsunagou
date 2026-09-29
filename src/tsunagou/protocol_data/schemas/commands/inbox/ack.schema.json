@@ -1,16 +1,19 @@
 {
   "$id": "https://tsunagou.local/schema/commands/inbox.ack",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InboxAckPayload",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
+    "message_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "reason": {
-      "maxLength": 4096,
       "type": "string"
     }
   },
   "required": [
-    "reason"
-  ],
-  "title": "InboxAckPayload",
-  "type": "object"
+    "message_id"
+  ]
 }

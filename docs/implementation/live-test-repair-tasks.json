@@ -1,0 +1,141 @@
+{
+  "format_version": 1,
+  "plan_id": "live-test-repair",
+  "created_at": "2026-09-28T09:48:08.820Z",
+  "updated_at": "2026-09-28T15:09:20.634Z",
+  "status": "in_progress",
+  "awaiting_user_instruction": false,
+  "developer": "tyuikl32",
+  "platform": "codex",
+  "source": "docs/implementation/live-test-repair-plan.md",
+  "trellis_parent": ".trellis/tasks/09-28-real-test-repair",
+  "source_baseline": "1fb86e0",
+  "execution_rule": "meta.depends_on contains task directory names; this manifest uses FX IDs; parent/children only group tasks",
+  "recommended_order": [
+    "FX3",
+    "FX1",
+    "FX2",
+    "FX4",
+    "FX5",
+    "FX7",
+    "FX6"
+  ],
+  "tasks": [
+    {
+      "id": "FX1",
+      "title": "状态正确性",
+      "trellis_path": ".trellis/tasks/09-28-fx1-state-integrity",
+      "depends_on": [],
+      "status": "completed",
+      "requirements": [
+        "FX-R04"
+      ],
+      "target_repository": "Tsunagou",
+      "deliverable": "契约终态、参与者和无 owner 取消",
+      "completed_at": "2026-09-28T10:46:56.598Z",
+      "validation": ".trellis/tasks/09-28-fx1-state-integrity/validation.json"
+    },
+    {
+      "id": "FX2",
+      "title": "执行流程简化",
+      "trellis_path": ".trellis/tasks/09-28-fx2-execution-flow",
+      "depends_on": [
+        "FX1"
+      ],
+      "status": "completed",
+      "requirements": [
+        "FX-R01",
+        "FX-R02"
+      ],
+      "target_repository": "Tsunagou",
+      "deliverable": "begin/submit、显式资源释放、稳定工作区策略",
+      "started_at": "2026-09-28T10:46:56.598Z",
+      "progress": ".trellis/tasks/09-28-fx2-execution-flow/implementation-progress.md",
+      "completed_at": "2026-09-28T11:49:45.911Z",
+      "validation": ".trellis/tasks/09-28-fx2-execution-flow/research/process-probe-final.json"
+    },
+    {
+      "id": "FX3",
+      "title": "Codex 原会话自动唤醒",
+      "trellis_path": ".trellis/tasks/09-28-fx3-desktop-wake",
+      "depends_on": [],
+      "status": "in_progress",
+      "requirements": [
+        "FX-R03"
+      ],
+      "target_repository": "Tsunagou",
+      "deliverable": "应用本机管道适配、原会话绑定与真实自动回合",
+      "started_at": "2026-09-28T10:02:33.192Z"
+    },
+    {
+      "id": "FX4",
+      "title": "安装与接入简化",
+      "trellis_path": ".trellis/tasks/09-28-fx4-onboarding",
+      "depends_on": [
+        "FX2",
+        "FX3"
+      ],
+      "status": "in_progress",
+      "requirements": [
+        "FX-R05"
+      ],
+      "target_repository": "Tsunagou",
+      "deliverable": "统一安装入口、自动身份与接入、项目规则和查询",
+      "started_at": "2026-09-28T11:49:45.911Z",
+      "progress": ".trellis/tasks/09-28-fx4-onboarding/implementation-progress.md",
+      "validation": ".trellis/tasks/09-28-fx4-onboarding/validation-connect-multiproject.json"
+    },
+    {
+      "id": "FX5",
+      "title": "失败时间线与最小追踪",
+      "trellis_path": ".trellis/tasks/09-28-fx5-traceability",
+      "depends_on": [
+        "FX2",
+        "FX3",
+        "FX4"
+      ],
+      "status": "in_progress",
+      "requirements": [
+        "FX-R06"
+      ],
+      "target_repository": "Tsunagou",
+      "deliverable": "失败终态、来源和时间关联、最小可选 OTel",
+      "progress": ".trellis/tasks/09-28-fx5-traceability/implementation-progress.md"
+    },
+    {
+      "id": "FX6",
+      "title": "双 Worker 真实协作验收",
+      "trellis_path": ".trellis/tasks/09-28-fx6-live-acceptance",
+      "depends_on": [
+        "FX1",
+        "FX2",
+        "FX3",
+        "FX4",
+        "FX5",
+        "FX7"
+      ],
+      "status": "in_progress",
+      "requirements": [
+        "FX-R07"
+      ],
+      "target_repository": "Tsunagou + isolated Sega checkout",
+      "deliverable": "部署、原会话唤醒、执行、恢复和真实业务回归"
+    },
+    {
+      "id": "FX7",
+      "title": "Sega BTID 完整性修复",
+      "trellis_path": ".trellis/tasks/09-28-fx7-btid-integrity",
+      "depends_on": [],
+      "status": "completed",
+      "requirements": [
+        "FX-R08"
+      ],
+      "target_repository": "SegaImageManageTool isolated checkout",
+      "deliverable": "CRC/HMAC 结果、截断退出及 HTTP/UI 回归",
+      "completed_at": "2026-09-28T15:07:03.402Z",
+      "progress": ".trellis/tasks/09-28-fx7-btid-integrity/implementation-progress.md",
+      "validation": ".trellis/tasks/09-28-fx7-btid-integrity/validation.json"
+    }
+  ],
+  "implementation_authorized_at": "2026-09-28T10:02:33.192Z"
+}

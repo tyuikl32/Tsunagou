@@ -52,6 +52,7 @@ class EnrollmentTicket:
     expires_at: int
     used: bool = False
     requested_role: str = "worker"
+    host_binding: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -178,7 +179,7 @@ class AuthorityService:
 
     def issue_ticket(
         self, installation_id: str, conversation_id: str, ttl_seconds: int = 600,
-        *, requested_role: str = "worker",
+        *, requested_role: str = "worker", host_binding: dict[str, Any] | None = None,
     ) -> str:
         if requested_role not in {"worker", "main"}:
             raise ValueError("invalid_requested_role")
@@ -189,9 +190,14 @@ class AuthorityService:
                 new_id(), secret_hash, canonical_digest({"installation_id": installation_id}),
                 canonical_digest({"conversation_id": conversation_id}), _now() + ttl_seconds,
                 requested_role=requested_role,
+                host_binding=host_binding,
             )
             self._save()
             return secret
+
+    def ticket_host_binding(self, secret: str) -> dict[str, Any] | None:
+        ticket = self.tickets.get(_token_hash(secret))
+        return dict(ticket.host_binding) if ticket is not None and ticket.host_binding else None
 
     def redeem_ticket(
         self,
@@ -347,7 +353,6 @@ class AuthorityService:
                 "cognition.report",
                 "cognition.discuss",
                 "contract.propose", "contract.accept",
-                "resource.intent", "resource.acquire", "resource.release", "workspace.prepare",
                 "inbox.consume",
                 "message.send", "message.respond",
             }), {"agent_id": session.agent_id},
@@ -484,7 +489,7 @@ class AuthorityService:
         self, *, agent_id: str, session_id: str, task_id: str, attempt_id: str,
         execution_epoch: int = 1,
     ) -> Grant:
-        """Issue the ``task.execute`` grant inside the ``task.start`` transaction.
+        """Issue the ``task.execute`` grant inside the ``task.begin`` transaction.
 
         This is the catalog's start-time execution grant. It is only reachable after
         ``TaskService.start`` has verified attempt ownership, so it never grants
@@ -496,7 +501,7 @@ class AuthorityService:
                 raise PermissionError("ready_session_required")
             grant = Grant(
                 new_id(), "task_attempt", agent_id, session_id, new_id(), self.authority_epoch,
-                task_id, attempt_id, execution_epoch, frozenset({"task.execute", "workspace.result"}),
+                task_id, attempt_id, execution_epoch, frozenset({"task.execute"}),
                 {"task_id": task_id, "attempt_id": attempt_id},
             )
             self.grants[grant.grant_id] = grant

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -22,6 +23,8 @@ class UserDecision:
     status: str = "pending"
     decision: str | None = None
     reason: str | None = None
+    choices: Any = None
+    summary: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +51,7 @@ class LifecycleService:
         decision = UserDecision(
             new_id(), kind, subject_ref, expected_revision,
             canonical_digest({"subject_ref": subject_ref, "payload": payload, "revision": expected_revision}),
+            choices=deepcopy(payload.get("choices")), summary=payload.get("summary"),
         )
         self.decisions[decision.decision_id] = decision
         return decision

@@ -1,0 +1,38 @@
+{
+  "id": "fx7-btid-integrity",
+  "name": "fx7-btid-integrity",
+  "title": "FX7 Sega BTID 完整性与截断处理",
+  "description": "独立业务修复包：处理 CRC/HMAC 返回值、短读和截断退出，补真实 HTTP 与页面错误验收。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": "2026-09-28",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-28-real-test-repair",
+  "relatedFiles": [
+    ".trellis/tasks/09-28-fx7-btid-integrity/prd.md",
+    ".trellis/tasks/09-28-fx7-btid-integrity/design.md",
+    ".trellis/tasks/09-28-fx7-btid-integrity/implement.md"
+  ],
+  "notes": "B1–B6 passed in the isolated Sega checkout: CRC/HMAC, truncation and bounds handling, real HTTP regression, existing HTTP regression, WebUI origin/error paths, clean build. Exact evidence and limits are recorded in implementation-progress.md and validation.json. Overall FX6 acceptance remains separate.",
+  "meta": {
+    "repair_id": "FX7",
+    "depends_on": [],
+    "target_repository": "SegaImageManageTool isolated checkout",
+    "requirements": [
+      "FX-R08"
+    ]
+  },
+  "updated_at": "2026-09-28T15:07:03.402Z"
+}

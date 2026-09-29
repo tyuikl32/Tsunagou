@@ -1,0 +1,91 @@
+{
+  "format_version": 1,
+  "task_id": "FX4",
+  "status": "in_progress",
+  "recorded_at": "2026-09-28T12:50:42.000Z",
+  "scope": "CLI connect, per-request shared MCP routing, selected-host bootstrap, multi-project daemon",
+  "source_baseline": "1fb86e0",
+  "working_tree_changes": true,
+  "checks": [
+    {
+      "name": "python_full",
+      "command": ".venv\\Scripts\\python.exe -m pytest -q -rA",
+      "exit_code": 0,
+      "passed": 403,
+      "skipped": 3,
+      "started_at": null,
+      "finished_at": null,
+      "duration_ms": null,
+      "log": "test-connect-multiproject-full.log",
+      "skip_reasons": [
+        "Windows filename newline",
+        "Windows case-insensitive paths",
+        "POSIX FIFO"
+      ]
+    },
+    {
+      "name": "credential_handoff",
+      "command": "corepack pnpm --filter @tsunagou/bridge-server run test:credentials",
+      "exit_code": 0,
+      "passed": 17,
+      "late_ticket_smokes": 2
+    },
+    {
+      "name": "typescript",
+      "command": "corepack pnpm -r run check; corepack pnpm exec vitest run",
+      "exit_code": 0,
+      "passed": 34
+    },
+    {
+      "name": "mypy",
+      "exit_code": 0,
+      "source_files": 72
+    },
+    {
+      "name": "ruff",
+      "exit_code": 0
+    },
+    {
+      "name": "architecture",
+      "exit_code": 0
+    },
+    {
+      "name": "protocol",
+      "exit_code": 0,
+      "commands": 99,
+      "schemas": 115
+    },
+    {
+      "name": "docs",
+      "exit_code": 0
+    },
+    {
+      "name": "git_diff_check",
+      "exit_code": 0
+    }
+  ],
+  "behavioral_evidence": {
+    "shared_mcp": "Two fixture conversations; one MCP process; 20 interleaved requests; independent identities/roles; bridge restart preserves ID/epoch; exactly two enroll commands and zero ordinary reconnects.",
+    "shared_daemon": "Two Git roots; same actual PID/URL; separate databases/main Agents/control tokens. Missing or conflicting project selection rejected; project A U token rejected by project B and project B U token rejected by host registration. Stop from B reports both projects; restart from B restores both and retains Agent IDs.",
+    "bootstrap": "Selected Codex project config and shared skill written; user TOML preserved; unowned server collision rejected before writes; repeated generation preserves timestamp/content.",
+    "original_host": "Not yet validated in this batch. Fixtures/headless MCP clients are not live LLM Workers."
+  },
+  "known_findings": [
+    {
+      "kind": "private_mutex_port_collision",
+      "observed_at": null,
+      "recorded_at": "2026-09-28T12:50:42.000Z",
+      "port": 26822,
+      "process_name": "MSI.TerminalServer",
+      "process_id": 23880,
+      "error": "credential_private_lock_busy:retry_pending_request",
+      "disposition": "Earlier isolated unit-test path hashed to an unrelated listener. No process killed or lock bypassed. Full suite later passed at different temp paths; that does not resolve the collision design limitation.",
+      "affects": "Python/Node credential private-file socket mutex; original host reliability remains to be reviewed."
+    }
+  ],
+  "pending": [
+    "Original Codex MCP tool load/context and daemon-triggered original-chat work loop",
+    "Credential mutex collision handling without violating cross-process exclusion",
+    "FX5 traceability, FX7 BTID repair, FX6 full live acceptance"
+  ]
+}

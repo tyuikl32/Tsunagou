@@ -1,0 +1,8 @@
+{
+  "payload": {"decision": "Use a shared workspace"},
+  "participants_required": [
+    {"slot": "implementation", "agent_id": "worker-agent"},
+    {"slot": "review", "agent_id": "main-agent"}
+  ],
+  "participants_optional": []
+}

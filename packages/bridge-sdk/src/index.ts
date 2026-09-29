@@ -145,10 +145,10 @@ export interface HostWakeAdapter {
 }
 
 export type WakeEventKind =
-  | "worker.ready"
+  | "task.assigned"
   | "worker.blocked"
   | "decision.requested"
-  | "lease.exception"
+  | "resource.conflict"
   | "worker.submitted"
   | "integration.conflict"
   | "task.completed";
@@ -242,10 +242,6 @@ export interface InboxSource {
   fetch(sessionId: string, deliveryId: string): Promise<InboxItem>;
   presented(sessionId: string, deliveryId: string, evidenceDigest: string): Promise<void>;
   ack(sessionId: string, deliveryId: string): Promise<void>;
-}
-
-export interface LeaseRenewer {
-  renew(sessionId: string, connectionEpoch: number): Promise<boolean>;
 }
 
 export interface McpToolDescriptor {
@@ -481,9 +477,7 @@ export class BridgeClient {
     return true;
   }
 
-  public async renewLease(renewer: LeaseRenewer): Promise<boolean> {
-    return renewer.renew(this.connectionState.sessionId, this.connectionState.connectionEpoch);
-  }
+
 }
 
 export class ContextRenderer {

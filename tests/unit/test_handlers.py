@@ -22,17 +22,11 @@ ROOT = Path(__file__).parents[2]
 
 
 def complete_baseline() -> dict[str, Any]:
-    return {"baseline": {
-        name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]}
-        for name in BASELINE_CAPABILITIES
-    }}
+    return {"baseline": {name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]} for name in BASELINE_CAPABILITIES}}
 
 
 def _endpoint(app: Any) -> Any:
-    return next(
-        route.endpoint for route in app.routes
-        if getattr(route, "path", "") == "/api/v1/commands/{command_kind}"
-    )
+    return next(route.endpoint for route in app.routes if getattr(route, "path", "") == "/api/v1/commands/{command_kind}")
 
 
 def _request(payload: dict[str, Any]) -> CommandRequest:
@@ -91,7 +85,10 @@ def test_issue_user_ticket_returns_redeemable_secret(tmp_path: Path) -> None:
     result = _endpoint(app)(
         "agent.ticket.create.user",
         _request({"kind": "worker", "installation_id": "install-a", "conversation_evidence": {"conversation_id": "conversation-a"}}),
-        Response(), "Bearer ctl", None, None,
+        Response(),
+        "Bearer ctl",
+        None,
+        None,
     )
     secret = result["result"]["secret"]
     assert secret
@@ -103,15 +100,25 @@ def test_issue_user_ticket_can_request_main_without_agent_id(tmp_path: Path) -> 
     app, authority = _app(tmp_path, control_token="ctl")
     result = _endpoint(app)(
         "agent.ticket.create.user",
-        _request({
-            "kind": "worker", "role": "main", "installation_id": "install-main",
-            "conversation_evidence": {"conversation_id": "conversation-main"},
-        }),
-        Response(), "Bearer ctl", None, None,
+        _request(
+            {
+                "kind": "worker",
+                "role": "main",
+                "installation_id": "install-main",
+                "conversation_evidence": {"conversation_id": "conversation-main"},
+            }
+        ),
+        Response(),
+        "Bearer ctl",
+        None,
+        None,
     )
     secret = result["result"]["secret"]
     receipt = authority.redeem_ticket(
-        secret, "install-main", "conversation-main", baseline=complete_baseline(),
+        secret,
+        "install-main",
+        "conversation-main",
+        baseline=complete_baseline(),
     )
     assert result["result"]["requested_role"] == "main"
     assert authority.main_agent_id == receipt.agent_id
@@ -120,9 +127,7 @@ def test_issue_user_ticket_can_request_main_without_agent_id(tmp_path: Path) -> 
 def test_appoint_requires_ready_session(tmp_path: Path) -> None:
     app, authority = _app(tmp_path, control_token="ctl")
     endpoint = _endpoint(app)
-    degraded = authority.redeem_ticket(
-        authority.issue_ticket("install-a", "conversation-a"), "install-a", "conversation-a", baseline={}
-    )
+    degraded = authority.redeem_ticket(authority.issue_ticket("install-a", "conversation-a"), "install-a", "conversation-a", baseline={})
     with pytest.raises(HTTPException) as exc:
         endpoint("authority.appoint", _request({"agent_id": degraded.agent_id}), Response(), "Bearer ctl", None, None)
     assert exc.value.status_code == 403
@@ -143,11 +148,19 @@ def test_build_application_full_enrollment_chain(tmp_path: Path, monkeypatch: py
     issued = endpoint(
         "agent.ticket.create.user",
         _request({"kind": "worker", "installation_id": "install-a", "conversation_evidence": {"conversation_id": "conversation-a"}}),
-        Response(), "Bearer ctl", None, None,
+        Response(),
+        "Bearer ctl",
+        None,
+        None,
     )
     secret = issued["result"]["secret"]
     enrolled = endpoint(
-        "agent.enroll", _request(_enroll_payload()), Response(), f"Bearer {secret}", None, None,
+        "agent.enroll",
+        _request(_enroll_payload()),
+        Response(),
+        f"Bearer {secret}",
+        None,
+        None,
     )
     assert enrolled["result"]["baseline_status"] == "ready"
 
@@ -160,16 +173,16 @@ def test_build_application_fails_closed_without_control_token(tmp_path: Path, mo
         endpoint(
             "agent.ticket.create.user",
             _request({"kind": "worker", "installation_id": "i", "conversation_evidence": {"conversation_id": "c"}}),
-            Response(), "Bearer whatever", None, None,
+            Response(),
+            "Bearer whatever",
+            None,
+            None,
         )
     assert exc.value.status_code == 401
 
 
 def _admission_baseline() -> dict[str, Any]:
-    return {"baseline": {
-        name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]}
-        for name in ADMISSION_CAPABILITIES
-    }}
+    return {"baseline": {name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]} for name in ADMISSION_CAPABILITIES}}
 
 
 def test_admission_only_baseline_grants_ready_and_b_auth(tmp_path: Path) -> None:
@@ -180,8 +193,10 @@ def test_admission_only_baseline_grants_ready_and_b_auth(tmp_path: Path) -> None
     receipt = authority.redeem_ticket(ticket, "install-a", "conversation-a", baseline=_admission_baseline())
     assert receipt.baseline_status == "ready"
     principal = LocalCommandAuthenticator(authority=authority).authenticate(
-        "B", f"Bearer {receipt.secret_token}",
-        session_id=receipt.session_id, connection_epoch=receipt.connection_epoch,
+        "B",
+        f"Bearer {receipt.secret_token}",
+        session_id=receipt.session_id,
+        connection_epoch=receipt.connection_epoch,
     )
     assert principal.principal_id == receipt.agent_id
 
@@ -203,11 +218,15 @@ def test_review_changes_requested_closes_execution_lease_and_grant() -> None:
     authority = AuthorityService(None)
     main = authority.redeem_ticket(
         authority.issue_ticket("review-main", "review-main-conversation"),
-        "review-main", "review-main-conversation", baseline=complete_baseline(),
+        "review-main",
+        "review-main-conversation",
+        baseline=complete_baseline(),
     )
     worker = authority.redeem_ticket(
         authority.issue_ticket("review-worker", "review-worker-conversation"),
-        "review-worker", "review-worker-conversation", baseline=complete_baseline(),
+        "review-worker",
+        "review-worker-conversation",
+        baseline=complete_baseline(),
     )
     authority.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
     tasks = TaskService()
@@ -219,19 +238,27 @@ def test_review_changes_requested_closes_execution_lease_and_grant() -> None:
     preflight = tasks.preflight(task.task_id, worker.agent_id, attempt_id=attempt.attempt_id)
     tasks.start(task.task_id, worker.agent_id, preflight_id=preflight.preflight_id, require_preflight=True)
     grant = authority.issue_execution_grant(
-        agent_id=worker.agent_id, session_id=worker.session_id,
-        task_id=task.task_id, attempt_id=attempt.attempt_id,
+        agent_id=worker.agent_id,
+        session_id=worker.session_id,
+        task_id=task.task_id,
+        attempt_id=attempt.attempt_id,
     )
-    intent = resources.declare_intent(
-        task_id=task.task_id, attempt_id=attempt.attempt_id, owner_agent_id=worker.agent_id,
-        scope_digest="review-scope", resources=[ResourceRequest(ResourceKey.path("root", "file.py"), "exclusive_write")],
-        reason="review test",
+    reservation = resources.reserve_set(
+        task_id=task.task_id,
+        attempt_id=attempt.attempt_id,
+        owner_agent_id=worker.agent_id,
+        execution_epoch=attempt.execution_epoch,
+        scope_digest="review-scope",
+        requests=[ResourceRequest(ResourceKey.path("root", "file.py"), "exclusive_write")],
     )
-    lease = resources.reserve_set(intent.intent_id, execution_epoch=attempt.execution_epoch)
     result = tasks.submit(task.task_id, worker.agent_id, {"summary": "needs changes"})
     authority.issue_grant(
-        issuer_agent_id=main.agent_id, kind="task_review", principal_id=main.agent_id,
-        session_id=main.session_id, task_id=task.task_id, capabilities={"task.review"},
+        issuer_agent_id=main.agent_id,
+        kind="task_review",
+        principal_id=main.agent_id,
+        session_id=main.session_id,
+        task_id=task.task_id,
+        capabilities={"task.review"},
     )
 
     handlers = build_handlers(authority=authority, tasks=tasks, resources=resources)
@@ -243,44 +270,26 @@ def test_review_changes_requested_closes_execution_lease_and_grant() -> None:
     assert reviewed["status"] == "changes_requested"
     assert tasks.tasks[task.task_id].current_attempt_id is None
     assert tasks.attempts[attempt.attempt_id].status == "orphaned"
-    assert resources.lease_sets[lease.lease_set_id].status == "released"
+    assert resources.reservations[reservation.reservation_id].status == "released"
     assert authority.grants[grant.grant_id].status == "revoked"
 
 
-def test_task_execution_scope_rejects_resource_outside_declared_prefix() -> None:
-    from tsunagou.application.handlers import build_handlers
-    from tsunagou.modules.tasks import TaskService
+def test_task_resource_requests_come_from_main_scope():
+    from tsunagou.application.workflows.execution_commands import ExecutionCommands
+    from tsunagou.modules.tasks import Task
 
-    authority = AuthorityService(None)
-    main = authority.redeem_ticket(
-        authority.issue_ticket("scope-main", "scope-main-conversation"),
-        "scope-main", "scope-main-conversation", baseline=complete_baseline(),
-    )
-    worker = authority.redeem_ticket(
-        authority.issue_ticket("scope-worker", "scope-worker-conversation"),
-        "scope-worker", "scope-worker-conversation", baseline=complete_baseline(),
-    )
-    authority.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
-    tasks = TaskService()
-    handlers = build_handlers(authority=authority, tasks=tasks)
-    main_context = {"kind": "M", "principal_id": main.agent_id, "session_id": main.session_id}
-    worker_context = {"kind": "B", "principal_id": worker.agent_id, "session_id": worker.session_id}
-    task = handlers["task.create"]({
-        "title": "scoped", "objective": "write only source", "execution_scope": {
-            "digest": "scope-v1",
-            "resources": [{"kind": "path", "root_id": "root", "segments": ["src"], "mode": "exclusive_write"}],
+    task = Task(
+        "task",
+        "scoped",
+        "write",
+        execution_scope={
+            "resources": [
+                {"kind": "path", "root_id": "root", "segments": ["src"], "mode": "exclusive_write"},
+            ]
         },
-    }, main_context)
-    handlers["task.ready"]({"task_id": task["task_id"]}, main_context)
-    handlers["task.publish"]({"task_id": task["task_id"]}, main_context)
-    claimed = handlers["task.claim"]({"task_id": task["task_id"]}, worker_context)
-    outside = {
-        "task_id": task["task_id"], "attempt_id": claimed["attempt_id"], "scope_digest": "scope-v1",
-        "resources": [{"kind": "path", "root_id": "root", "segments": ["tests", "fixture.py"], "mode": "exclusive_write"}],
-    }
-    with pytest.raises(PermissionError, match="task_scope_denied"):
-        handlers["resource.intent"](outside, worker_context)
-    inside = {**outside, "resources": [{
-        "kind": "path", "root_id": "root", "segments": ["src", "module.py"], "mode": "exclusive_write",
-    }]}
-    assert handlers["resource.intent"](inside, worker_context)["task_id"] == task["task_id"]
+    )
+    requests = ExecutionCommands.requests(task)
+    assert len(requests) == 1 and requests[0].key.segments == ("src",)
+    task.execution_scope["resources"][0]["segments"] = ["..", "outside"]
+    with pytest.raises(ValueError, match="invalid_path_resource"):
+        ExecutionCommands.requests(task)

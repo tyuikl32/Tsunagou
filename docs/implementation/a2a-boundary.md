@@ -1,5 +1,7 @@
 # A2A 边界实现
 
+2026-09-28 FX3 更新：所有新建持久消息（包括 MCP/command、A2A 和领域内生成的消息）在同一 UoW 写 `host_wake` outbox；装配 provider 的 daemon 在事务外投递。A2A 的即时触发和 outbox 重试以同一 recipient/message 去重。新增 `codex_desktop_app` 可经应用本机接口触发原对话，传输及空闲调用者实测见 [Codex 说明](adapter-codex.md)；完整业务接入/验收仍由 FX4/FX6 完成。消息 accepted、宿主 accepted、turn started、inbox presented/ACK 不合并为一个“成功”。下文原阶段 A/B 的能力说明是历史背景，不覆盖本轮原会话唤醒必达的决定。
+
 Tsunagou 的初版设计要求 Agent 之间可以通过 A2A 交换澄清、依赖询问、设计异议、变更通知、冲突协商和验证结果。当前代码已经提供一个本机、同步的 A2A JSON-RPC 边界；MCP bridge 仍是 Coding Agent 连接 daemon 的工具入口，不能把 MCP tools 目录称作 A2A 实现。
 
 ## 1. 端点和发现

@@ -1,48 +1,54 @@
 {
   "$id": "https://tsunagou.local/schema/commands/message.send",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MessageSendPayload",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
-    "in_reply_to": {
-      "type": "string"
+    "recipient_agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
     },
     "kind": {
-      "type": "string"
+      "type": "string",
+      "default": "message"
+    },
+    "subject_ref": {
+      "type": "string",
+      "default": ""
     },
     "payload": {
-      "type": "object"
+      "type": "object",
+      "default": {}
     },
     "priority": {
-      "type": "integer"
-    },
-    "recipient_agent_id": {
-      "minLength": 1,
-      "type": "string"
+      "type": "integer",
+      "default": 0
     },
     "response_contract": {
+      "type": "object",
       "properties": {
         "required": {
-          "type": "boolean"
+          "type": "boolean",
+          "default": true
         },
         "schema": {
           "type": "object"
         }
-      },
-      "type": "object"
+      }
     },
-    "subject_ref": {
-      "minLength": 1,
-      "type": "string"
-    },
-    "summary": {
-      "maxLength": 4096,
-      "type": "string"
+    "in_reply_to": {
+      "type": "string",
+      "minLength": 1
     }
   },
   "required": [
     "recipient_agent_id",
     "summary"
-  ],
-  "title": "MessageSendPayload",
-  "type": "object"
+  ]
 }

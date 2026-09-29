@@ -1,5 +1,17 @@
 # Codex 适配器实施与诊断
 
+## 2026-09-28 FX3 实施进展
+
+新增 `codex_desktop_app` provider，经宿主继承的本机 app-tools 管道调用原 Desktop 线程。独立 Python 发送及发送方回合结束后的后台自唤醒均已真实通过，见 [空闲调用者记录](../../.trellis/tasks/09-28-fx3-desktop-wake/research/desktop-idle-caller.json)。这是传输实测，尚不能替代完整接入、持久 inbox 和双 Worker 验收。
+
+`NativeAppToolsClient` 使用应用插件的长度前缀 JSON-RPC；保留真实 caller thread，使用插件自身的 `mcp-turn-*`/`mcp-call-*` 请求关联回退，不假冒模型活跃回合。私有绑定持有 thread/endpoint；对外只返回 digest。普通唤醒不改变 model、approval 或 sandbox。旧 `desktop_attach` 的独立 listener 只保留旧实验路径，不作为本轮原会话唤醒方案。
+
+初次绑定仍经 U 控制入口。`session.reconnect` 的可选私有 `host_binding_refresh` 只能刷新当前已绑定 Agent 的连接及代次，不能改目标 thread；在凭据事务提交后写 private binding，私有请求 journal 重试可补全。同代次没有变化时无需反复重连。FX4 已接通 prepare/request-file/connect，正常共享 MCP 配置只需 TSUNAGOU_ROUTING_DIR；每次调用从宿主 `_meta.threadId` 选择私有路由，不用进程全局 session。原会话完整产品验收仍待收口。
+
+消息创建与 `host_wake` outbox 同事务；普通 command/MCP 与 A2A 共用投递。空闲启动、忙时排队合并；失去响应先检查带 wake 关联引用的原回合；daemon 重启继续观察原会话，不复制身份或覆盖失败。宿主接受、turn 开始与 inbox 呈现分开记录。
+
+以下 T02/阶段 A/B 说明保留版本历史；其中无需唤醒的降级与旧 Desktop 限制已由 FX-D03/04 覆盖，不能作为本轮完成标准。
+
 此适配器的职责是把 Codex CLI/App Server 的会话生命周期翻译为 bridge-sdk 的 host-neutral 端口。它不创建任务状态机、不决定权限、不把 Codex 的 Full Access 设置扩大为 Tsunagou 的强制能力。
 
 ## 版本和接入面

@@ -110,7 +110,7 @@ describe("Codex adapter evidence boundary", () => {
 
   it("keeps the wake prompt reference-only", () => {
     const prompt = createCodexWakePrompt({ wake_id: "w", task_id: "t", assignment_id: "a" });
-    expect(prompt).toContain("worker.ready");
+    expect(prompt).toContain("task.begin");
     expect(prompt).toContain("inbox");
     expect(() => createCodexWakePrompt({ wake_id: "", task_id: "t", assignment_id: "a" })).toThrow("invalid_wake_request");
   });

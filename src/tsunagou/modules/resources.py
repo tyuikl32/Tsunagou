@@ -1,4 +1,4 @@
-"""Resource intents, deterministic conflict checking, and execution leases."""
+"""Explicit resource reservations; elapsed time never transfers ownership."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import ResourceConflict
 from tsunagou.shared_kernel.ids import new_id
+from tsunagou.shared_kernel.time import now_ms
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -41,28 +43,18 @@ class ResourceRequest:
 
 
 @dataclass(slots=True)
-class ResourceIntent:
-    intent_id: str
+class ResourceReservation:
+    reservation_id: str
     task_id: str
     attempt_id: str
     owner_agent_id: str
-    scope_digest: str
-    resources: tuple[ResourceRequest, ...]
-    reason: str
-    revision: int = 1
-
-
-@dataclass(slots=True)
-class LeaseSet:
-    lease_set_id: str
-    attempt_id: str
     execution_epoch: int
     scope_digest: str
-    request_digest: str
     resources: tuple[ResourceRequest, ...]
+    created_at: int
     status: str = "active"
-    expires_at: float = 0.0
-    last_renewed_at: float = 0.0
+    released_at: int | None = None
+    release_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,109 +67,77 @@ class ResourceObservation:
 
 
 class ResourceService:
-    def __init__(self, *, ttl_seconds: int = 120) -> None:
-        self.ttl_seconds = ttl_seconds
+    def __init__(self) -> None:
         self._lock = threading.RLock()
         # Root IDs are project semantics; physical identities are local
         # bindings.  Keep both so callers can still report the declared root
         # while conflict checks treat aliases as the same resource.
         self.root_aliases: dict[str, str] = {}
-        self.intents: dict[str, ResourceIntent] = {}
-        self.lease_sets: dict[str, LeaseSet] = {}
+        self.reservations: dict[str, ResourceReservation] = {}
         self.observations: list[ResourceObservation] = []
-        self.waiting: list[tuple[float, str]] = []
 
     def set_root_aliases(self, aliases: dict[str, str]) -> None:
         with self._lock:
             self.root_aliases = {str(root_id): str(identity) for root_id, identity in aliases.items()}
 
-    def declare_intent(
-        self, *, task_id: str, attempt_id: str, owner_agent_id: str,
-        scope_digest: str, resources: list[ResourceRequest], reason: str,
-    ) -> ResourceIntent:
-        if not resources:
-            raise ValueError("resource_intent_empty")
-        keys = [request.key.canonical for request in resources]
-        if len(keys) != len(set(keys)):
-            raise ValueError("duplicate_resource_key")
-        intent = ResourceIntent(new_id(), task_id, attempt_id, owner_agent_id, scope_digest, tuple(resources), reason)
-        with self._lock:
-            self.intents[intent.intent_id] = intent
-        return intent
-
     def check_conflicts(
         self, requests: list[ResourceRequest], *, attempt_id: str | None = None,
-        now: float | None = None,
     ) -> list[str]:
-        now = time.time() if now is None else now
         conflicts: list[str] = []
-        for lease in self.lease_sets.values():
-            if lease.status != "active" or lease.expires_at <= now or lease.attempt_id == attempt_id:
+        for reservation in self.reservations.values():
+            if reservation.status != "active" or reservation.attempt_id == attempt_id:
                 continue
             for incoming in requests:
-                for held in lease.resources:
+                for held in reservation.resources:
                     if self._conflict(incoming, held, self.root_aliases):
                         conflicts.append(held.key.canonical)
         return sorted(set(conflicts))
 
     def reserve_set(
-        self, intent_id: str, *, execution_epoch: int, attempt_status: str = "running",
-        now: float | None = None,
-    ) -> LeaseSet:
-        if attempt_status not in {"claimed", "running"}:
-            raise ValueError("blocked_attempt_has_no_execution_lease")
-        now = time.time() if now is None else now
+        self, *, task_id: str, attempt_id: str, owner_agent_id: str,
+        execution_epoch: int, scope_digest: str, requests: list[ResourceRequest],
+    ) -> ResourceReservation | None:
+        if not requests:
+            return None
+        keys = [request.key.canonical for request in requests]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate_resource_key")
         with self._lock:
-            intent = self.intents[intent_id]
-            conflicts = self.check_conflicts(list(intent.resources), attempt_id=intent.attempt_id, now=now)
+            ordered = tuple(sorted(requests, key=lambda item: item.key.canonical))
+            for existing in self.reservations.values():
+                if existing.attempt_id == attempt_id and existing.status == "active":
+                    if (existing.task_id != task_id or existing.owner_agent_id != owner_agent_id
+                            or existing.execution_epoch != execution_epoch or existing.scope_digest != scope_digest
+                            or existing.resources != ordered):
+                        raise PermissionError("reservation_context_mismatch")
+                    return existing
+            conflicts = self.check_conflicts(requests, attempt_id=attempt_id)
             if conflicts:
-                self.waiting.append((now, intent_id))
-                raise RuntimeError("resource_conflict:" + ",".join(conflicts))
-            ordered = tuple(sorted(intent.resources, key=lambda item: item.key.canonical))
-            lease = LeaseSet(
-                new_id(), intent.attempt_id, execution_epoch, intent.scope_digest,
-                canonical_digest({"intent_id": intent_id, "revision": intent.revision}), ordered,
-                expires_at=now + self.ttl_seconds, last_renewed_at=now,
+                raise ResourceConflict([
+                    {"resource_key": held.key.canonical, "reservation_id": existing.reservation_id,
+                     "task_id": existing.task_id, "attempt_id": existing.attempt_id,
+                     "owner_agent_id": existing.owner_agent_id}
+                    for existing in self.reservations.values() if existing.status == "active"
+                    for held in existing.resources
+                    if any(self._conflict(incoming, held, self.root_aliases) for incoming in requests)
+                ])
+            reservation = ResourceReservation(
+                new_id(), task_id, attempt_id, owner_agent_id, execution_epoch,
+                scope_digest, ordered, now_ms(),
             )
-            self.lease_sets[lease.lease_set_id] = lease
-            return lease
-
-    def renew(
-        self, lease_set_id: str, *, attempt_id: str, execution_epoch: int,
-        scope_digest: str, now: float | None = None,
-    ) -> LeaseSet:
-        now = time.time() if now is None else now
-        with self._lock:
-            lease = self.lease_sets.get(lease_set_id)
-            if lease is None or lease.status != "active":
-                raise ValueError("lease_not_active")
-            if lease.expires_at <= now:
-                lease.status = "expired"
-                raise ValueError("lease_expired")
-            if lease.attempt_id != attempt_id or lease.execution_epoch != execution_epoch or lease.scope_digest != scope_digest:
-                raise PermissionError("stale_execution_epoch_or_scope")
-            lease.last_renewed_at = now
-            lease.expires_at = now + self.ttl_seconds
-            return lease
+            self.reservations[reservation.reservation_id] = reservation
+            return reservation
 
     def release_for_attempt(self, attempt_id: str, *, reason: str = "attempt_left_running") -> int:
         with self._lock:
             count = 0
-            for lease in self.lease_sets.values():
-                if lease.attempt_id == attempt_id and lease.status == "active":
-                    lease.status = "released"
+            for reservation in self.reservations.values():
+                if reservation.attempt_id == attempt_id and reservation.status == "active":
+                    reservation.status = "released"
+                    reservation.released_at = now_ms()
+                    reservation.release_reason = reason
                     count += 1
             return count
-
-    def expire_due(self, *, now: float | None = None) -> list[str]:
-        now = time.time() if now is None else now
-        expired: list[str] = []
-        with self._lock:
-            for lease in self.lease_sets.values():
-                if lease.status == "active" and lease.expires_at <= now:
-                    lease.status = "expired"
-                    expired.append(lease.lease_set_id)
-            return expired
 
     def observe_external(self, key: ResourceKey, *, source: str, evidence: dict[str, Any], kind: str) -> ResourceObservation:
         observation = ResourceObservation(key.canonical, source, canonical_digest(evidence), time.time(), kind)
@@ -185,33 +145,12 @@ class ResourceService:
             self.observations.append(observation)
         return observation
 
-    def next_waiting(
-        self, *, now: float | None = None, base_priority: dict[str, int] | None = None,
-    ) -> ResourceIntent | None:
-        """Return the fairest waiting intent; callers still must explicitly reserve/start it."""
-        now = time.time() if now is None else now
-        base_priority = base_priority or {}
-        with self._lock:
-            candidates = [
-                (enqueued_at, intent_id) for enqueued_at, intent_id in self.waiting
-                if intent_id in self.intents
-            ]
-            if not candidates:
-                return None
-            candidates.sort(
-                key=lambda item: (
-                    -min(3, base_priority.get(item[1], 0) + int(max(0, now - item[0]) // 300)),
-                    item[0], item[1],
-                )
-            )
-            return self.intents[candidates[0][1]]
-
     @staticmethod
     def _conflict(left: ResourceRequest, right: ResourceRequest, aliases: dict[str, str] | None = None) -> bool:
         if left.key.kind != right.key.kind:
             return False
         if left.key.kind == "named":
-            return left.mode == "exclusive_use" and right.mode == "exclusive_use"
+            return left.key == right.key and left.mode == "exclusive_use" and right.mode == "exclusive_use"
         aliases = aliases or {}
         left_root = aliases.get(str(left.key.root_id), str(left.key.root_id))
         right_root = aliases.get(str(right.key.root_id), str(right.key.root_id))
@@ -224,4 +163,4 @@ class ResourceService:
             return False
         if left.mode == "read" or right.mode == "read":
             return False
-        return left.mode in {"consistent_read", "exclusive_write"} or right.mode in {"consistent_read", "exclusive_write"}
+        return left.mode == "exclusive_write" or right.mode == "exclusive_write"

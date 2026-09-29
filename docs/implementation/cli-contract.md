@@ -1,23 +1,28 @@
 # CLI 外壳与已有领域命令的精确映射
 
-本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/bootstrap/complete/history、agent connect/enroll/appoint、task history、audit event、decision、operation、checkpoint create/retry/list/verify 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
+本文件细化 T16 的命令行参数，属于工程约定，**没有新增领域权限或业务命令**。当前 `tsunagou` 已实现基础 doctor、project init/bootstrap/complete/history/timings、agent connect/enroll/appoint、task history、audit event、decision、operation、checkpoint create/retry/list/verify 和 recover；其余表项仍是待接入契约。HTTP 和权限仍以[命令目录](command-catalog.md)为准；面向用户的步骤见[简明手册](../overview/cli-http-manual.md)。
 
 ## 1. 适用范围
 
-CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bridge/MCP，不读取CLI控制凭据。`agent connect`是用户侧的便捷编排：它写 profile 私有票据和宿主配置；bridge 兑换仍是独立的 T principal 事务。`agent enroll`保留为低层恢复入口。`--role main` 只表示用户在签发 ticket 时提出主角色请求，daemon 仍在 ready session 后应用；组合不创造超级身份。
+CLI 是用户控制入口，持有 user_control 凭据。用户已授权安装/加入时，Agent 可执行对应 CLI 而不打印凭据；业务执行仍经自己的 bridge/MCP。`agent prepare` 观察真实宿主并只写私有请求，`agent connect` 按该请求签票据、由 bridge 兑换并登记原会话，不以 profile 生成身份。`agent enroll` 保留为低层恢复入口。main 角色仍需用户明确选择，组合接入不创造超级身份。
 
-| `agent connect --adapter <kind> --profile <name> --role worker|main` | U 签发逐 profile ticket，写入私有 bridge 配置，并按宿主登记 MCP | `ticket_issued`、profile 路径和宿主登记状态；不打印秘密 |
+| CLI | 行为 | 输出 |
+| --- | --- | --- |
+| `agent prepare --adapter codex --role worker`（或 main） | 核对宿主并写私有请求；不签权限 | prepared、已填写的 connect 命令 |
+| `agent connect --adapter codex --request-file PATH --role worker`（或 main） | 已授权 U 接入、bridge 兑换和原会话绑定；将同项目、同 bridge 的旧固定-session MCP 注册迁移为共享路由 | enrolled、project_id/agent_id/role/session/host_binding/source_root/version/connected_at，以及本次 connect_started_at/connect_finished_at/enrolled_at/duration_ms；原会话 MCP 查询后才 ready |
+| `agent list [--json]` | 项目成员只读投影 | 角色、会话状态、当前任务及 UTC 最近活动；不读取私信 |
 
 `daemon start/stop/status`是本机进程管理，不伪装成Project领域mutation。其余项目操作走本机HTTP；不要直接读写SQLite绕过同一policy。
 
 ## 2. 命令签名
 
-公共形式：`tsunagou [--project <project_id>] [--json] <group> <command> ...`。项目命令要求显式`--project`；无参数发现存在多个项目时不猜。init/list/daemon/config/doctor不要求project；JSON模式遇到需选择的对象返回输入错误，不能无限等交互。
+当前公共形式：`tsunagou [--project-root <path>] [--json] <group> <command> ...`。项目上下文由显式根目录、绑定环境或最近祖先的 `.tsunagou/project.json` 确定；冲突报错，不按进程 cwd 猜另一项目。部分查询要求其签名列出的业务 project_id，不能把它当成不存在的全局 `--project` 参数。下表未实施的子命令仍是规划契约，实际可执行项以顶部说明和 CLI `--help` 为准。
 
 | CLI | payload来源 / 对应已定入口 | 成功输出 |
 |---|---|---|
+| `installation-info [--json]` | 本机用户级安装记录白名单投影；无需 daemon | source_root/commit/source_dirty/runtime 版本、安装起止及 duration_ms；缺失时间为 null，不含接入秘密 |
 | `daemon start` | 用户配置+OS启动，绑定127.0.0.1随机端口 | endpoint/instance，不含token |
-| `daemon status` / `stop` | 本机已验证daemon实例；stop优雅收敛 | status/worker收敛摘要 |
+| `daemon status` / `stop` | 本机实例身份核验；stop 等待确认进程退出 | running/0、stopped/3、unverified/4；重复 stop 为 already_stopped/0；不杀未核实的 PID |
 | `project init --coordination-root <path> [--name <name>] [--objective <text>]` | `project.initialize`；缺name/objective交互询问，JSON模式要求补齐 | Project与genesis Operation |
 | `project bootstrap --coordination-root <path> [--source-root <path>] [--source-ref <ref>] [--host <kind>] [--refresh]` | 项目本地入口物化；不创建Agent/任务，不写秘密 | 受管文件状态、project_id、source reference |
 
@@ -41,7 +46,8 @@ CLI由用户启动，持有user_control凭据。Agent执行命令经自己的bri
 | `checkpoint list <project_id> [--verify]` | GET `/api/v1/projects/{project_id}/checkpoints` | manifest状态与覆盖水位；`--verify` 实际校验文件摘要 |
 | `checkpoint verify <checkpoint_id>` | GET `/api/v1/checkpoints/{checkpoint_id}/verify` | manifest、文件摘要和本地 Git anchor |
 | `project history <project_id> [--from] [--to] [--actor] [--subject] [--limit] [--cursor] [--json] [--export]` | GET project history 或 history/export | AuditPage 或脱敏导出，不写状态 |
-| `project diagnostics <project_id> [--json]` | GET project diagnostics | callback、wake、presentation、turn 的脱敏诊断证据；不写 domain event |
+| `project timings <project_id> [--task-id <task_id>] [--json]` | 认证 GET project history 全部分页，以及 attempts/results；按精确 Attempt/Result ID 只读组合 | ProjectTimings：开始、提交、审查的 UTC 时间、来源、实际可见事件数和流程经过时间；无 payload/evidence/私信引用 |
+| `project diagnostics <project_id> [--message-id] [--task-id] [--from] [--to] [--json]` | GET project diagnostics | callback、wake、presentation、turn 的脱敏诊断证据及发生/记录/观测时间；过滤不提高权限，不写 domain event |
 | `task history <task_id> [--project-id] [--from] [--to] [--actor] [--limit] [--cursor] [--json]` | GET task history | 任务及其可见关联实体的 AuditPage |
 | `audit event <event_id> [--project-id] [--include-evidence] [--json]` | GET single audit event | 因果、证据、变更详情；越权拒绝 |
 | `project restore --coordination-root <clone> --checkpoint-digest <digest>` | 本地只读 `preview`；加 `--confirm-plan-digest <preview.plan_digest>` 才导入 | 仅 clean clone；检查本地 Git 可达 heads/tags 的完整 manifest/tree；不覆盖既有数据库、凭据、bridge 或 root binding；恢复后 authority unassigned、根 unbound、非终态任务需 recovery review |
@@ -74,6 +80,10 @@ PT2 已加入离线命令 `daemon migrate-credentials --coordination-root <path>
 CLI从platformdirs私有目录读取control token；不提供`--token`，不把秘密写环境变量、request-file、日志或JSON。T01固定普通运行参数的配置键；本手册不引入未登记的`TSUNAGOU_*`环境开关。endpoint由daemon发现文件读取并核对instance，不能凭过期PID连接别的服务。
 
 PT5 的只读查询从本项目 `.tsunagou/local/control.token` 读取已有控制凭据，通过 daemon 查询。`project history` 支持 `--from/--to/--actor/--subject/--limit/--cursor` 和脱敏 `--export`；`task history` 展开任务关联实体；`audit event` 查询单条责任记录；`checkpoint list/verify` 验证本地持久化。根级或命令级 `--json` 输出同一投影，查询不写 SQLite，拒绝无凭据、过期游标和变更过滤条件的游标；未知历史时间显示 `unknown_time`。未来全局凭据目录迁移不改变这一只读权限模型。
+
+FX5 的 `project timings` 复用这些读取边界，不新增后台路由或领域命令。JSON 为 `{project_id, items}`；每项含 attempt_id、task_id、owner_agent_id、state、started_at/submitted_at/reviewed_at、对应的 started_source/submitted_source/reviewed_source、begin_events/submit_events、review_action，以及 work_elapsed/review_wait_elapsed。source 分别为 `task_begin_event`、`task_submit_event` 或 `result_created_at`、`task_review_event`，无法确定时为 null。elapsed 含 `elapsed_ms` 和 `clock_status`（ok/unknown/clock_inconsistent）；反向时钟保留事实时间但不返回成功耗时。
+
+开始和审查仅用可见事件的 occurred_at；提交优先用可见 submit 事件，否则用唯一匹配公开 Result 的 created_at。这是服务器记录的提交时间，不是 COMMIT/fsync 完成瞬间。显式私信 evidence 仍可隐藏整条 submit 事件，此时 `submit_events=0` 与非空 `submitted_at` 可以同时成立。多个 Result、多个阶段事件或提交来源时间冲突保持 null/unknown；不使用 Attempt.ended_at、实体 updated_at 或当前时间补值。审查只沿明确 Attempt/Result 引用关联，不猜同一 Task 的最近 Attempt。history 页使用既有固定水位，三个查询间不宣称跨请求原子快照；活跃任务可能只返回已读取到的阶段，重新查询可补齐。权限错误退出 3，输入错误退出 2，分页或响应校验失败退出 5，均不输出部分汇总或原始响应。
 
 `--json`输出生成DTO/Problem，日志只在stderr。`--wait <seconds>`仅对返回Operation的命令有效；超时退出6，打印operation_id和最近状态，不取消业务操作。没有wait则202受理退出0，用户后续show。普通操作的退出码沿用catalog的0/2/3/4/5/6。
 

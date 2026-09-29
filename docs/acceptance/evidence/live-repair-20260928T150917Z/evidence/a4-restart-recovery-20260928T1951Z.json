@@ -1,0 +1,111 @@
+{
+  "schema": "tsunagou.live-repair.a4-restart-recovery.v1",
+  "observed_at": "2026-09-28T19:51:51.667Z",
+  "timezone": "UTC",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "daemon": {
+    "status": "running",
+    "pid": 103048,
+    "runtime_id": "432243a5-9041-4979-89f9-83c20ddc9cf0",
+    "started_at": "2026-09-28T18:11:09.514Z",
+    "owner_root": "D:\\Tsunagou-fx-live-20260928",
+    "state_dir": "D:\\Tsunagou-fx-live-20260928\\.tsunagou\\local"
+  },
+  "main_after_restart": {
+    "project_context": "ready",
+    "connection_epoch": 3,
+    "host_binding_status": "ready",
+    "host_binding_revision": 3
+  },
+  "original_owner_recovery": {
+    "task_id": "357de2e9-8990-4c1e-b99f-365057d29732",
+    "attempt_id": "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+    "owner_agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+    "before": {
+      "task_status": "running",
+      "task_revision": 5,
+      "attempt_status": "running"
+    },
+    "task_begin_after_restart": {
+      "mcp_status": "completed",
+      "expected_task_revision": 5,
+      "task_revision_after": 5,
+      "same_attempt_after": true,
+      "new_attempt_created": false,
+      "connection_epoch": 3,
+      "host_binding_status": "ready"
+    },
+    "codex_turn": {
+      "started_at": "2026-09-28T19:13:24Z",
+      "completed_at": "2026-09-28T19:15:14Z",
+      "duration_ms": 110486,
+      "observed_state_during_turn": "active",
+      "observed_state_after_turn": "idle"
+    },
+    "worker_report_message_id": "f31a7892-4f63-40a2-96b6-2cdafaa1e593"
+  },
+  "main_explicit_recovery": {
+    "action": "task.recover",
+    "event_id": "dd6a5032-19e0-40ef-a8ca-3b3050e352fa",
+    "event_seq": 242,
+    "occurred_at": "2026-09-28T19:16:44.430Z",
+    "disposition": "reopen",
+    "result": {
+      "task_status": "open",
+      "task_revision": 6,
+      "attempt_id": "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+      "attempt_status_before": "running",
+      "attempt_status_after": "orphaned"
+    },
+    "task_history_as_of_event_seq": 262
+  },
+  "stale_attempt_submit_probe": {
+    "expected_attempt_id": "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+    "requested": true,
+    "executed": false,
+    "result": "not_run",
+    "worker_messages": [
+      "54ee7603-4909-43f9-8689-eaad27b25596",
+      "957683e9-f089-4c85-a31b-c8fe563205f3",
+      "f0d44643-8d1c-4181-96a9-422d1e3dcd89"
+    ],
+    "observation": "The Worker read and acknowledged the probe request but kept treating an earlier user exit instruction as controlling after the same conversation had later rejoined the current project. It declined to call task.submit. No task submit result was created."
+  },
+  "worker_status_after_probe": {
+    "agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+    "session_status": "ready",
+    "current_task_ids": [],
+    "observed_at": "2026-09-28T19:51:51.667Z"
+  },
+  "retirement_surface": {
+    "protocol_catalog_has_agent_retire": true,
+    "installed_cli_has_agent_retire_command": false,
+    "current_main_mcp_exposes_agent_retire": false,
+    "installed_cli_has_session_end_command": false
+  },
+  "snapshot_refs": [
+    "snapshots/20260928T195149-d28cfb69/facts.json",
+    "snapshots/20260928T195149-d28cfb69/agents.json",
+    "snapshots/20260928T195149-d28cfb69/timeline.json"
+  ],
+  "task_history_events": [
+    {
+      "event_seq": 123,
+      "action": "task.begin",
+      "occurred_at": "2026-09-28T14:34:20.676Z",
+      "actor_ref": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+      "attempt_id": "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+      "outcome": "committed"
+    },
+    {
+      "event_seq": 242,
+      "action": "task.recover",
+      "occurred_at": "2026-09-28T19:16:44.430Z",
+      "actor_ref": "1a20b513-3efd-48c6-81c9-479335f7572a",
+      "attempt_id": "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+      "outcome": "committed",
+      "revision_before": 5,
+      "revision_after": 6
+    }
+  ]
+}

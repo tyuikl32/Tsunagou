@@ -35,7 +35,7 @@ Invoke-RestMethod "$((Get-Content (Join-Path $env:TSUNAGOU_STATE_DIR 'endpoint.j
 
 ## 7–9 分钟：执行、挂起和恢复
 
-子 Agent claim 后先 preflight，再 start；共享资源有 Lease，主 Agent 负责 Git 写操作。用户提出重大 API 方向变化时，相关 Agent 提交 SuspensionSnapshot、block 并释放 Lease；不相交的 Agent 继续工作。用户稍后 resolve 精确 revision/digest，Agent 重连并 resume，再次 preflight/start。无 wake 宿主可由用户打开原会话后 pull 黑板恢复。
+子 Agent begin 成功后执行，submit 自动采集结果并释放占用；main 控制 Git。重大 API 决策影响当前工作时，相关 owner block 并结束本轮，无关任务继续。用户 resolve 后再读状态并 begin；资源不会因用户等待而到期。
 
 ```powershell
 tsunagou decision list

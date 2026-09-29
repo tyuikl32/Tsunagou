@@ -44,3 +44,13 @@ def test_reset_invalidates_old_runtime_and_unknown_resolution_is_append_only(tmp
     first = service.resolve_unknown(operation_id="op", actor="main", conclusion="risk_accepted", evidence_refs=[], reason="known")
     second = service.resolve_unknown(operation_id="op", actor="user", conclusion="verified_failed", evidence_refs=[], reason="receipt")
     assert first != second and len(service.resolutions) == 2
+
+
+def test_proposal_content_is_an_owned_snapshot(tmp_path: Path) -> None:
+    service = make_lifecycle(tmp_path)
+    payload = {"choices": [{"choice": "approved", "description": "keep behavior"}], "summary": "confirm design"}
+    decision = service.request_decision(kind="design.change", subject_ref="task", payload=payload, expected_revision=3)
+    payload["choices"][0]["description"] = "changed after proposal"
+    payload["summary"] = "changed summary"
+    assert decision.choices == [{"choice": "approved", "description": "keep behavior"}]
+    assert decision.summary == "confirm design"

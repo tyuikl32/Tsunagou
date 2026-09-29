@@ -1,0 +1,488 @@
+......................FFF........FFF..............F..................... [ 18%]
+.......................FFFF.F..................................FF....... [ 36%]
+.........................FF..FFF........................................ [ 54%]
+.........FF................F...F.....F........EEEEEEEEFFFFFFF........... [ 73%]
+...s........s.s.............EEE....................F.FF...............F. [ 91%]
+.............................F.FF                                        [100%]
+=================================== ERRORS ====================================
+_ ERROR at setup of test_actual_http_authorizes_domain_before_blob_and_restores_after_restart _
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_ ERROR at setup of test_reference_bindings_are_checked_before_reading[project_id-404] _
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_ ERROR at setup of test_reference_bindings_are_checked_before_reading[lineage_id-404] _
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_ ERROR at setup of test_reference_bindings_are_checked_before_reading[domain_ref-403] _
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_ ERROR at setup of test_reference_bindings_are_checked_before_reading[owner_actor-403] _
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_ ERROR at setup of test_reference_bindings_are_checked_before_reading[scope_digest-403] _
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_ ERROR at setup of test_private_recipient_boundary_applies_to_main_and_user __
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_ ERROR at setup of test_corrupt_blob_returns_explicit_unavailable_without_content _
+tests\unit\test_trace_workspace_access.py:47: in workspace_runtime
+    decision = state.workspaces.record_isolation_decision(
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+_______ ERROR at setup of test_clean_clone_preview_confirm_and_restart ________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\integration\test_clone_recovery.py:43: in clone
+    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_trace_audit.py:61: in call
+    return self.command(kind, request, Response(), **credentials)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+____ ERROR at setup of test_restore_cli_and_unconfirmed_clone_cannot_start ____
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\integration\test_clone_recovery.py:43: in clone
+    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_trace_audit.py:61: in call
+    return self.command(kind, request, Response(), **credentials)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+_ ERROR at setup of test_clone_rejects_local_credentials_and_unanchored_content _
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\integration\test_clone_recovery.py:43: in clone
+    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_trace_audit.py:61: in call
+    return self.command(kind, request, Response(), **credentials)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+================================== FAILURES ===================================
+__________ test_task_lifecycle_claim_preflight_start_progress_submit __________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_business_handlers.py:80: in test_task_lifecycle_claim_preflight_start_progress_submit
+    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_business_handlers.py:62: in _call
+    return endpoint(
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+_________________ test_task_start_rejects_bogus_preflight_id __________________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_business_handlers.py:114: in test_task_start_rejects_bogus_preflight_id
+    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_business_handlers.py:62: in _call
+    return endpoint(
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+____________ test_task_submit_fails_closed_without_execution_grant ____________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_business_handlers.py:129: in test_task_submit_fails_closed_without_execution_grant
+    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_business_handlers.py:62: in _call
+    return endpoint(
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+_____________ test_business_commands_denied_for_degraded_session ______________
+tests\unit\test_business_handlers.py:310: in test_business_commands_denied_for_degraded_session
+    assert exc.value.status_code == 401
+E   assert 404 == 401
+E    +  where 404 = HTTPException(status_code=404, detail={'code': "'unknown_command'"}).status_code
+E    +    where HTTPException(status_code=404, detail={'code': "'unknown_command'"}) = <ExceptionInfo HTTPException(status_code=404, detail={'code': "'unknown_command'"}) tblen=2>.value
+_________________ test_context_project_read_returns_own_scope _________________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_business_handlers.py:317: in test_context_project_read_returns_own_scope
+    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+tests\unit\test_business_handlers.py:62: in _call
+    return endpoint(
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+________________ test_context_project_read_includes_project_id ________________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_business_handlers.py:330: in test_context_project_read_includes_project_id
+    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+tests\unit\test_business_handlers.py:62: in _call
+    return endpoint(
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+_______ test_projection_failure_does_not_block_independent_maintenance ________
+tests\unit\test_checkpoint_materialization.py:330: in test_projection_failure_does_not_block_independent_maintenance
+    maintenance = RuntimeMaintenance(database=database, state_runtime=state, tasks=TaskService(),
+E   TypeError: RuntimeMaintenance.__init__() got an unexpected keyword argument 'state_runtime'
+_____ test_task_start_rejects_expired_active_lease_before_execution_grant _____
+tests\unit\test_coordination_reliability.py:106: in test_task_start_rejects_expired_active_lease_before_execution_grant
+    worker, authority, tasks, resources, lease, preflight = _lease_fixture()
+                                                            ^^^^^^^^^^^^^^^^
+tests\unit\test_coordination_reliability.py:68: in _lease_fixture
+    resources = ResourceService(ttl_seconds=120)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ResourceService.__init__() got an unexpected keyword argument 'ttl_seconds'
+_______________ test_wake_callbacks_are_rejected_after_deadline _______________
+tests\unit\test_coordination_reliability.py:136: in test_wake_callbacks_are_rejected_after_deadline
+    host_plan = service.create_plan(
+E   TypeError: CoordinationService.create_plan() got an unexpected keyword argument 'wake_deadline_seconds'
+______ test_runtime_maintenance_retries_expired_wakes_three_total_times _______
+tests\unit\test_coordination_reliability.py:208: in test_runtime_maintenance_retries_expired_wakes_three_total_times
+    plan = coordination.create_plan(
+E   TypeError: CoordinationService.create_plan() got an unexpected keyword argument 'wake_deadline_seconds'
+_______ test_maintenance_does_not_renew_live_lease_without_worker_call ________
+tests\unit\test_coordination_reliability.py:255: in test_maintenance_does_not_renew_live_lease_without_worker_call
+    resources = ResourceService(ttl_seconds=120)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ResourceService.__init__() got an unexpected keyword argument 'ttl_seconds'
+____ test_worker_lifecycle_responses_expose_worker_owned_renewal_guidance _____
+tests\unit\test_coordination_reliability.py:326: in test_worker_lifecycle_responses_expose_worker_owned_renewal_guidance
+    resources = ResourceService(ttl_seconds=120)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ResourceService.__init__() got an unexpected keyword argument 'ttl_seconds'
+_______ test_review_changes_requested_closes_execution_lease_and_grant ________
+tests\unit\test_handlers.py:225: in test_review_changes_requested_closes_execution_lease_and_grant
+    intent = resources.declare_intent(
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'ResourceService' object has no attribute 'declare_intent'
+_____ test_task_execution_scope_rejects_resource_outside_declared_prefix ______
+tests\unit\test_handlers.py:276: in test_task_execution_scope_rejects_resource_outside_declared_prefix
+    claimed = handlers["task.claim"]({"task_id": task["task_id"]}, worker_context)
+              ^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'task.claim'
+_______ test_http_and_dispatcher_share_hash_and_mcp_hides_user_commands _______
+tests\unit\test_interfaces.py:22: in test_http_and_dispatcher_share_hash_and_mcp_hides_user_commands
+    service.register("task.claim", lambda payload, context: {"accepted": payload.get("task_id"), "actor": context["principal_id"]})
+src\tsunagou\interfaces\runtime.py:159: in register
+    raise KeyError(f"unregistered_command:{command_kind}")
+E   KeyError: 'unregistered_command:task.claim'
+________ test_http_rejects_spoofed_identity_headers_and_stale_session _________
+tests\unit\test_interfaces.py:55: in test_http_rejects_spoofed_identity_headers_and_stale_session
+    service.register("task.claim", lambda _payload, _context: {"accepted": True})
+src\tsunagou\interfaces\runtime.py:159: in register
+    raise KeyError(f"unregistered_command:{command_kind}")
+E   KeyError: 'unregistered_command:task.claim'
+______ test_handler_lease_reconciliation_blocks_assignment_idempotently _______
+tests\unit\test_lease_assignment_sync.py:106: in test_handler_lease_reconciliation_blocks_assignment_idempotently
+    tasks, resources, _worker, assignment, worker_context, facts = _task_with_lease(
+tests\unit\test_lease_assignment_sync.py:67: in _task_with_lease
+    resources = ResourceService(ttl_seconds=120)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ResourceService.__init__() got an unexpected keyword argument 'ttl_seconds'
+________ test_runtime_maintenance_blocks_assignment_after_lease_expiry ________
+tests\unit\test_lease_assignment_sync.py:171: in test_runtime_maintenance_blocks_assignment_after_lease_expiry
+    coordination.mark_claimed(task.task_id, worker.agent_id, attempt.attempt_id)  # type: ignore[attr-defined]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'CoordinationService' object has no attribute 'mark_claimed'
+__ test_runtime_maintenance_repairs_assignment_after_partial_orphan_recovery __
+tests\unit\test_lease_assignment_sync.py:203: in test_runtime_maintenance_repairs_assignment_after_partial_orphan_recovery
+    tasks, resources, _worker, assignment, _worker_context, facts = _task_with_lease(
+tests\unit\test_lease_assignment_sync.py:67: in _task_with_lease
+    resources = ResourceService(ttl_seconds=120)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ResourceService.__init__() got an unexpected keyword argument 'ttl_seconds'
+___________________ test_task_submit_releases_active_lease ____________________
+tests\unit\test_submit_lease_reliability.py:61: in test_task_submit_releases_active_lease
+    worker, authority, tasks, resources, task_id, attempt_id, lease_id = _fixture()
+                                                                         ^^^^^^^^^^
+tests\unit\test_submit_lease_reliability.py:42: in _fixture
+    claimed = handlers["task.claim"]({"task_id": task.task_id}, worker)
+              ^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'task.claim'
+____________ test_task_submit_rejects_expired_lease_without_result ____________
+tests\unit\test_submit_lease_reliability.py:75: in test_task_submit_rejects_expired_lease_without_result
+    worker, authority, tasks, resources, task_id, attempt_id, lease_id = _fixture()
+                                                                         ^^^^^^^^^^
+tests\unit\test_submit_lease_reliability.py:42: in _fixture
+    claimed = handlers["task.claim"]({"task_id": task.task_id}, worker)
+              ^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'task.claim'
+_____ test_actual_actor_subject_causation_entity_times_and_noop_revisions _____
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_trace_audit.py:130: in test_actual_actor_subject_causation_entity_times_and_noop_revisions
+    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_trace_audit.py:61: in call
+    return self.command(kind, request, Response(), **credentials)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+________ test_query_entity_times_use_own_identity_and_survive_restart _________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_trace_audit.py:247: in test_query_entity_times_use_own_identity_and_survive_restart
+    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, main)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_trace_audit.py:61: in call
+    return self.command(kind, request, Response(), **credentials)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+_________ test_task_history_includes_related_entities_without_writing _________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_trace_audit.py:408: in test_task_history_includes_related_entities_without_writing
+    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\unit\test_trace_audit.py:61: in call
+    return self.command(kind, request, Response(), **credentials)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+_________ test_retry_rejects_late_host_acceptance_without_attempt_id __________
+tests\unit\test_wake_callback_fence.py:22: in test_retry_rejects_late_host_acceptance_without_attempt_id
+    service, assignment_id, first_id = _assignment()
+                                       ^^^^^^^^^^^^^
+tests\unit\test_wake_callback_fence.py:17: in _assignment
+    wake = service.wake(assignment.assignment_id)
+           ^^^^^^^^^^^^
+E   AttributeError: 'CoordinationService' object has no attribute 'wake'
+___________ test_retry_rejects_late_worker_ready_without_attempt_id ___________
+tests\unit\test_wake_callback_fence.py:38: in test_retry_rejects_late_worker_ready_without_attempt_id
+    service, assignment_id, first_id = _assignment()
+                                       ^^^^^^^^^^^^^
+tests\unit\test_wake_callback_fence.py:17: in _assignment
+    wake = service.wake(assignment.assignment_id)
+           ^^^^^^^^^^^^
+E   AttributeError: 'CoordinationService' object has no attribute 'wake'
+______ test_external_multiple_roots_use_task_scope_and_unambiguous_paths ______
+tests\unit\test_workspace_evidence.py:37: in test_external_multiple_roots_use_task_scope_and_unambiguous_paths
+    registry, paths, ids, task, evidence, workspace = fixture(tmp_path)
+                                                      ^^^^^^^^^^^^^^^^^
+tests\unit\test_workspace_evidence.py:29: in fixture
+    decision = service.record_isolation_decision(task_id="task", attempt_id="attempt", driver_kind="shared",
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+____ test_bound_root_cannot_expand_scope_and_rebind_invalidates_workspace _____
+tests\unit\test_workspace_evidence.py:50: in test_bound_root_cannot_expand_scope_and_rebind_invalidates_workspace
+    registry, paths, ids, task, evidence, workspace = fixture(tmp_path)
+                                                      ^^^^^^^^^^^^^^^^^
+tests\unit\test_workspace_evidence.py:29: in fixture
+    decision = service.record_isolation_decision(task_id="task", attempt_id="attempt", driver_kind="shared",
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+____________ test_invalid_scope_shape_fails_as_input_error[scope0] ____________
+tests\unit\test_workspace_evidence.py:61: in test_invalid_scope_shape_fails_as_input_error
+    _, _, _, task, evidence, _ = fixture(tmp_path)
+                                 ^^^^^^^^^^^^^^^^^
+tests\unit\test_workspace_evidence.py:29: in fixture
+    decision = service.record_isolation_decision(task_id="task", attempt_id="attempt", driver_kind="shared",
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+____________ test_invalid_scope_shape_fails_as_input_error[scope1] ____________
+tests\unit\test_workspace_evidence.py:61: in test_invalid_scope_shape_fails_as_input_error
+    _, _, _, task, evidence, _ = fixture(tmp_path)
+                                 ^^^^^^^^^^^^^^^^^
+tests\unit\test_workspace_evidence.py:29: in fixture
+    decision = service.record_isolation_decision(task_id="task", attempt_id="attempt", driver_kind="shared",
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+____________ test_invalid_scope_shape_fails_as_input_error[scope2] ____________
+tests\unit\test_workspace_evidence.py:61: in test_invalid_scope_shape_fails_as_input_error
+    _, _, _, task, evidence, _ = fixture(tmp_path)
+                                 ^^^^^^^^^^^^^^^^^
+tests\unit\test_workspace_evidence.py:29: in fixture
+    decision = service.record_isolation_decision(task_id="task", attempt_id="attempt", driver_kind="shared",
+E   TypeError: WorkspaceService.record_isolation_decision() got an unexpected keyword argument 'attempt_id'
+______ test_m1_task_workspace_review_and_user_completion_survive_rebuild ______
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\integration\test_m1_runtime_flow.py:77: in test_m1_task_workspace_review_and_user_completion_survive_rebuild
+    claimed = agent_call("task.claim", {"task_id": task["task_id"]}, worker)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\integration\test_m1_runtime_flow.py:71: in agent_call
+    return call(kind, payload, receipt["secret_token"],
+tests\integration\test_m1_runtime_flow.py:52: in call
+    result = endpoint(kind, request, Response(), headers, session_id, epoch)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+_ test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped _
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\integration\test_m1_runtime_flow.py:385: in test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped
+    claimed = agent_call("task.claim", {"task_id": task["task_id"]}, worker)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\integration\test_m1_runtime_flow.py:371: in agent_call
+    return call(kind, payload, receipt["secret_token"],
+tests\integration\test_m1_runtime_flow.py:354: in call
+    return endpoint(kind, request, Response(), f"Bearer {authorization}", session_id, epoch)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+__ test_cognition_discrepancy_and_contract_resolution_are_public_and_scoped ___
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\integration\test_m1_runtime_flow.py:456: in test_cognition_discrepancy_and_contract_resolution_are_public_and_scoped
+    claimed = agent_call("task.claim", {"task_id": task["task_id"]}, worker)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\integration\test_m1_runtime_flow.py:450: in agent_call
+    return call(kind, payload, receipt["secret_token"],
+tests\integration\test_m1_runtime_flow.py:433: in call
+    return endpoint(kind, request, Response(), f"Bearer {authorization}", session_id, epoch)["result"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+________ test_only_owner_ack_or_main_reclaim_can_finish_active_cancel _________
+src\tsunagou\api\app.py:174: in command
+    raise KeyError("unknown_command")
+E   KeyError: 'unknown_command'
+
+The above exception was the direct cause of the following exception:
+tests\integration\test_state_integrity.py:199: in test_only_owner_ack_or_main_reclaim_can_finish_active_cancel
+    attempt = call("task.claim", task_payload, worker)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\integration\test_state_integrity.py:35: in call
+    return _endpoint(app)(kind, CommandRequest(
+src\tsunagou\api\app.py:227: in command
+    raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+E   fastapi.exceptions.HTTPException: 404: {'code': "'unknown_command'"}
+____________ test_registry_has_schema_and_policy_for_every_command ____________
+tests\protocol\test_protocol_codegen.py:13: in test_registry_has_schema_and_policy_for_every_command
+    assert len(registry["commands"]) >= 100
+E   AssertionError: assert 99 >= 100
+E    +  where 99 = len({'agent.enroll': {'payload_fields': ['client_nonce', 'conversation_evidence', 'descriptor_ref', 'installation_id', 'ne...kind'], 'principal': 'M', 'required_fields': ['kind'], 'schema': 'commands/agent/ticket/create.schema.json', ...}, ...})
+_____ test_workspace_receipt_schema_is_optional_but_strict_when_supplied ______
+tests\protocol\test_workspace_contract.py:11: in test_workspace_receipt_schema_is_optional_but_strict_when_supplied
+    schema = json.loads((ROOT / "protocol/schemas/commands/workspace/result.schema.json").read_text(encoding="utf-8"))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Tyuikl\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py:546: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Tyuikl\AppData\Local\Programs\Python\Python313\Lib\pathlib\_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Tyuikl\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py:537: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'D:\\Tsunagou\\protocol\\schemas\\commands\\workspace\\result.schema.json'
+___ test_workspace_protocol_mirror_matches_source_and_scope_is_server_owned ___
+tests\protocol\test_workspace_contract.py:29: in test_workspace_protocol_mirror_matches_source_and_scope_is_server_owned
+    assert (ROOT / "protocol" / relative).read_bytes() == (ROOT / "src/tsunagou/protocol_data" / relative).read_bytes()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Tyuikl\AppData\Local\Programs\Python\Python313\Lib\pathlib\_abc.py:625: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+C:\Users\Tyuikl\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py:537: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'D:\\Tsunagou\\protocol\\schemas\\commands\\workspace\\result.schema.json'
+=========================== short test summary info ===========================
+FAILED tests/unit/test_business_handlers.py::test_task_lifecycle_claim_preflight_start_progress_submit
+FAILED tests/unit/test_business_handlers.py::test_task_start_rejects_bogus_preflight_id
+FAILED tests/unit/test_business_handlers.py::test_task_submit_fails_closed_without_execution_grant
+FAILED tests/unit/test_business_handlers.py::test_business_commands_denied_for_degraded_session
+FAILED tests/unit/test_business_handlers.py::test_context_project_read_returns_own_scope
+FAILED tests/unit/test_business_handlers.py::test_context_project_read_includes_project_id
+FAILED tests/unit/test_checkpoint_materialization.py::test_projection_failure_does_not_block_independent_maintenance
+FAILED tests/unit/test_coordination_reliability.py::test_task_start_rejects_expired_active_lease_before_execution_grant
+FAILED tests/unit/test_coordination_reliability.py::test_wake_callbacks_are_rejected_after_deadline
+FAILED tests/unit/test_coordination_reliability.py::test_runtime_maintenance_retries_expired_wakes_three_total_times
+FAILED tests/unit/test_coordination_reliability.py::test_maintenance_does_not_renew_live_lease_without_worker_call
+FAILED tests/unit/test_coordination_reliability.py::test_worker_lifecycle_responses_expose_worker_owned_renewal_guidance
+FAILED tests/unit/test_handlers.py::test_review_changes_requested_closes_execution_lease_and_grant
+FAILED tests/unit/test_handlers.py::test_task_execution_scope_rejects_resource_outside_declared_prefix
+FAILED tests/unit/test_interfaces.py::test_http_and_dispatcher_share_hash_and_mcp_hides_user_commands
+FAILED tests/unit/test_interfaces.py::test_http_rejects_spoofed_identity_headers_and_stale_session
+FAILED tests/unit/test_lease_assignment_sync.py::test_handler_lease_reconciliation_blocks_assignment_idempotently
+FAILED tests/unit/test_lease_assignment_sync.py::test_runtime_maintenance_blocks_assignment_after_lease_expiry
+FAILED tests/unit/test_lease_assignment_sync.py::test_runtime_maintenance_repairs_assignment_after_partial_orphan_recovery
+FAILED tests/unit/test_submit_lease_reliability.py::test_task_submit_releases_active_lease
+FAILED tests/unit/test_submit_lease_reliability.py::test_task_submit_rejects_expired_lease_without_result
+FAILED tests/unit/test_trace_audit.py::test_actual_actor_subject_causation_entity_times_and_noop_revisions
+FAILED tests/unit/test_trace_audit.py::test_query_entity_times_use_own_identity_and_survive_restart
+FAILED tests/unit/test_trace_audit.py::test_task_history_includes_related_entities_without_writing
+FAILED tests/unit/test_wake_callback_fence.py::test_retry_rejects_late_host_acceptance_without_attempt_id
+FAILED tests/unit/test_wake_callback_fence.py::test_retry_rejects_late_worker_ready_without_attempt_id
+FAILED tests/unit/test_workspace_evidence.py::test_external_multiple_roots_use_task_scope_and_unambiguous_paths
+FAILED tests/unit/test_workspace_evidence.py::test_bound_root_cannot_expand_scope_and_rebind_invalidates_workspace
+FAILED tests/unit/test_workspace_evidence.py::test_invalid_scope_shape_fails_as_input_error[scope0]
+FAILED tests/unit/test_workspace_evidence.py::test_invalid_scope_shape_fails_as_input_error[scope1]
+FAILED tests/unit/test_workspace_evidence.py::test_invalid_scope_shape_fails_as_input_error[scope2]
+FAILED tests/integration/test_m1_runtime_flow.py::test_m1_task_workspace_review_and_user_completion_survive_rebuild
+FAILED tests/integration/test_m1_runtime_flow.py::test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped
+FAILED tests/integration/test_m1_runtime_flow.py::test_cognition_discrepancy_and_contract_resolution_are_public_and_scoped
+FAILED tests/integration/test_state_integrity.py::test_only_owner_ack_or_main_reclaim_can_finish_active_cancel
+FAILED tests/protocol/test_protocol_codegen.py::test_registry_has_schema_and_policy_for_every_command
+FAILED tests/protocol/test_workspace_contract.py::test_workspace_receipt_schema_is_optional_but_strict_when_supplied
+FAILED tests/protocol/test_workspace_contract.py::test_workspace_protocol_mirror_matches_source_and_scope_is_server_owned
+ERROR tests/unit/test_trace_workspace_access.py::test_actual_http_authorizes_domain_before_blob_and_restores_after_restart
+ERROR tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[project_id-404]
+ERROR tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[lineage_id-404]
+ERROR tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[domain_ref-403]
+ERROR tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[owner_actor-403]
+ERROR tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[scope_digest-403]
+ERROR tests/unit/test_trace_workspace_access.py::test_private_recipient_boundary_applies_to_main_and_user
+ERROR tests/unit/test_trace_workspace_access.py::test_corrupt_blob_returns_explicit_unavailable_without_content
+ERROR tests/integration/test_clone_recovery.py::test_clean_clone_preview_confirm_and_restart
+ERROR tests/integration/test_clone_recovery.py::test_restore_cli_and_unconfirmed_clone_cannot_start
+ERROR tests/integration/test_clone_recovery.py::test_clone_rejects_local_credentials_and_unanchored_content
+38 failed, 341 passed, 3 skipped, 476 warnings, 11 errors in 48.46s

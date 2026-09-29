@@ -13,7 +13,10 @@
       ]
     },
     "kind": {},
-    "proposal_digest": {},
+    "proposal_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
     "proposal_ref": {
       "minLength": 1,
       "type": "string"
@@ -25,9 +28,7 @@
   },
   "required": [
     "choices",
-    "expected_revisions",
     "kind",
-    "proposal_digest",
     "proposal_ref",
     "summary"
   ],

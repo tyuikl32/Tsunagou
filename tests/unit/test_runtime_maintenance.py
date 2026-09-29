@@ -1,62 +1,32 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
-from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceService
 from tsunagou.modules.tasks import TaskService
 from tsunagou.platform.db.sqlite import ProjectDatabase
 from tsunagou.platform.maintenance import RuntimeMaintenance
 
 
-class FakeState:
-    def __init__(self) -> None:
-        self.persisted = 0
-        self.restored = False
-
-    def capture(self) -> dict[str, str]:
-        return {"marker": "before"}
-
-    def restore(self, snapshot: dict[str, str]) -> None:
-        self.restored = snapshot == {"marker": "before"}
-
-    def persist(self, uow: object, *, actor_ref: str, command_kind: str, before: dict | None = None) -> None:
-        del actor_ref
-        self.persisted += 1
-        uow.append_event(  # type: ignore[attr-defined]
-            lineage_id="local", event_type=command_kind,
-            aggregate_ref="project/local-project", actor_ref="runtime", payload={},
-        )
-
-
-def test_expired_lease_orphans_attempt_and_persists_reconciliation(tmp_path: Path) -> None:
+def test_maintenance_never_changes_silent_task_or_reservation(tmp_path: Path) -> None:
     database = ProjectDatabase(tmp_path / "state.sqlite3")
     tasks = TaskService()
-    task = tasks.create_task("lease", "expire")
+    task = tasks.create_task("ownership", "no expiry")
     tasks.ready(task.task_id)
     tasks.publish(task.task_id)
     attempt = tasks.claim(task.task_id, "worker")
-    resources = ResourceService(ttl_seconds=1)
-    intent = resources.declare_intent(
+    resources = ResourceService()
+    reservation = resources.reserve_set(
         task_id=task.task_id, attempt_id=attempt.attempt_id, owner_agent_id="worker",
-        scope_digest="scope", resources=[ResourceRequest(ResourceKey.path("root", "a.py"), "exclusive_write")],
-        reason="test",
+        execution_epoch=1, scope_digest="scope",
+        requests=[ResourceRequest(ResourceKey.path("root", "a.py"), "exclusive_write")],
     )
-    lease = resources.reserve_set(intent.intent_id, execution_epoch=1, now=time.time() - 2)
-    state = FakeState()
-    maintenance = RuntimeMaintenance(
-        database=database, state_runtime=state, resources=resources,
-        tasks=tasks, authority=AuthorityService(None), interval_seconds=0.05,
-    )
-
-    assert maintenance.run_once() == 1
-    assert lease.status == "expired"
-    assert tasks.tasks[task.task_id].status == "open"
-    assert tasks.tasks[task.task_id].current_attempt_id is None
-    assert tasks.attempts[attempt.attempt_id].status == "orphaned"
-    assert state.persisted == 1
-    assert database.last_event_seq() == 1
+    reservation.created_at = 1
+    maintenance = RuntimeMaintenance(database=database)
+    assert maintenance.run_once() == 0
+    assert reservation.status == "active" and attempt.status == "claimed"
+    assert task.current_attempt_id == attempt.attempt_id
+    assert database.last_event_seq() == 0
 
 
 def test_expired_job_lease_is_recovered_without_executing_effect(tmp_path: Path) -> None:
@@ -83,10 +53,8 @@ def test_expired_job_lease_is_recovered_without_executing_effect(tmp_path: Path)
             (job_id, 1, 1, "dead-worker", now),
         )
 
-    state = FakeState()
     maintenance = RuntimeMaintenance(
-        database=database, state_runtime=state, resources=ResourceService(),
-        tasks=TaskService(), authority=AuthorityService(None), interval_seconds=0.05,
+        database=database, interval_seconds=0.05,
     )
 
     assert maintenance.run_once() == 1
