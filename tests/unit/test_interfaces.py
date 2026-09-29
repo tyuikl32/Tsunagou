@@ -19,32 +19,42 @@ def dispatcher() -> CommandDispatcher:
 
 def test_http_and_dispatcher_share_hash_and_mcp_hides_user_commands(tmp_path: Path) -> None:
     service = dispatcher()
-    service.register("task.claim", lambda payload, context: {"accepted": payload.get("task_id"), "actor": context["principal_id"]})
+    service.register("task.begin", lambda payload, context: {"accepted": payload.get("task_id"), "actor": context["principal_id"]})
     authority = AuthorityService(tmp_path / "identity.json")
     ticket = authority.issue_ticket("installation", "conversation")
-    receipt = authority.redeem_ticket(ticket, "installation", "conversation", baseline={"baseline": {
-        name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]}
-        for name in BASELINE_CAPABILITIES
-    }})
+    receipt = authority.redeem_ticket(
+        ticket,
+        "installation",
+        "conversation",
+        baseline={"baseline": {name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]} for name in BASELINE_CAPABILITIES}},
+    )
     app = create_app(service, authenticator=LocalCommandAuthenticator(authority=authority))
     endpoint = next(route.endpoint for route in app.routes if getattr(route, "path", "") == "/api/v1/commands/{command_kind}")
     response = endpoint(
-        "task.claim",
-        CommandRequest(command_id="c", protocol_version="1", schema_bundle_digest="sha256:x", payload={"task_id": "t"}),
-        Response(), f"Bearer {receipt.secret_token}", receipt.session_id, 1,
+        "task.begin",
+        CommandRequest(
+            command_id="c", protocol_version="1", schema_bundle_digest="sha256:x", payload={"task_id": "t", "expected_task_revision": 3}
+        ),
+        Response(),
+        f"Bearer {receipt.secret_token}",
+        receipt.session_id,
+        1,
     )
     assert response["result"]["actor"] == receipt.agent_id
     with pytest.raises(HTTPException) as stale:
         endpoint(
-            "task.claim",
+            "task.begin",
             CommandRequest(command_id="c2", protocol_version="1", schema_bundle_digest="sha256:x", payload={}),
-            Response(), f"Bearer {receipt.secret_token}", receipt.session_id, 2,
+            Response(),
+            f"Bearer {receipt.secret_token}",
+            receipt.session_id,
+            2,
         )
     assert stale.value.status_code == 401
     assert all(tool["name"] != "agent.ticket.create.user" for tool in service.mcp_tools())
     with pytest.raises(PermissionError):
         service.dispatch(
-            "task.claim",
+            "task.begin",
             {"command_id": "c", "protocol_version": "1", "schema_bundle_digest": "x", "payload": {}},
             principal=PrincipalContext("U", "user"),
         )
@@ -52,7 +62,7 @@ def test_http_and_dispatcher_share_hash_and_mcp_hides_user_commands(tmp_path: Pa
 
 def test_http_rejects_spoofed_identity_headers_and_stale_session(tmp_path: Path) -> None:
     service = dispatcher()
-    service.register("task.claim", lambda _payload, _context: {"accepted": True})
+    service.register("task.begin", lambda _payload, _context: {"accepted": True})
     authority = AuthorityService(tmp_path / "identity.json")
     ticket = authority.issue_ticket("installation", "conversation")
     receipt = authority.redeem_ticket(ticket, "installation", "conversation", baseline={"baseline_ok": True})
@@ -60,10 +70,10 @@ def test_http_rejects_spoofed_identity_headers_and_stale_session(tmp_path: Path)
     endpoint = next(route.endpoint for route in app.routes if getattr(route, "path", "") == "/api/v1/commands/{command_kind}")
     request = CommandRequest(command_id="c", protocol_version="1", schema_bundle_digest="sha256:x", payload={})
     with pytest.raises(HTTPException) as missing:
-        endpoint("task.claim", request, Response(), None, None, None)
+        endpoint("task.begin", request, Response(), None, None, None)
     assert missing.value.status_code == 401
     with pytest.raises(HTTPException) as degraded:
-        endpoint("task.claim", request, Response(), f"Bearer {receipt.secret_token}", receipt.session_id, 1)
+        endpoint("task.begin", request, Response(), f"Bearer {receipt.secret_token}", receipt.session_id, 1)
     assert degraded.value.status_code == 401
     headers = app.openapi()["paths"]["/api/v1/commands/{command_kind}"]["post"]["parameters"]
     assert all(not item["name"].startswith("X-Principal-") for item in headers)
@@ -84,10 +94,13 @@ def test_user_control_credential_is_distinct_from_agent_credential(tmp_path: Pat
 
 
 def test_blackboard_filters_secrets_and_marks_truncation() -> None:
-    snapshot = BlackboardComposer().compose({
-        "identity": {"agent_id": "a", "token": "secret"},
-        "blockers": [{"id": str(i)} for i in range(3)],
-    }, max_items=2)
+    snapshot = BlackboardComposer().compose(
+        {
+            "identity": {"agent_id": "a", "token": "secret"},
+            "blockers": [{"id": str(i)} for i in range(3)],
+        },
+        max_items=2,
+    )
     assert "token" not in json.dumps(snapshot)
     assert snapshot["truncated"]["blockers"] == 1
     assert "snapshot_digest" in snapshot

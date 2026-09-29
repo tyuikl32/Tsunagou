@@ -15,9 +15,6 @@ from typing import Any
 import pytest
 
 from tsunagou.modules.artifacts import ArtifactService
-from tsunagou.modules.authority import AuthorityService
-from tsunagou.modules.resources import ResourceService
-from tsunagou.modules.tasks import TaskService
 from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore, GitAnchorScanner
 from tsunagou.platform.clone_recovery import CloneRecovery
@@ -327,8 +324,7 @@ def test_projection_failure_does_not_block_independent_maintenance(runtime) -> N
         def reconcile_project_projection(self):
             raise OSError("disk full")
 
-    maintenance = RuntimeMaintenance(database=database, state_runtime=state, tasks=TaskService(),
-        resources=ResourceService(), authority=AuthorityService(None), checkpoint_worker=BrokenProjection())
+    maintenance = RuntimeMaintenance(database=database, checkpoint_worker=BrokenProjection())
     assert maintenance.run_once() == 0
     assert maintenance.last_projection_error == "project_projection_materialization_failed"
 

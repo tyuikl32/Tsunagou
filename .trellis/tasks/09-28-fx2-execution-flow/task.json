@@ -1,0 +1,40 @@
+{
+  "id": "fx2-execution-flow",
+  "name": "fx2-execution-flow",
+  "title": "FX2 合并执行入口并删除资源续租",
+  "description": "将领取准备开工合并为一次可恢复入口，明确释放资源占用，工作区策略复用，移除 worker.ready 与重复执行状态门槛。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": "2026-09-28T11:49:45.911Z",
+  "branch": "codex/live-test-repair",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-28-real-test-repair",
+  "relatedFiles": [
+    ".trellis/tasks/09-28-fx2-execution-flow/prd.md",
+    ".trellis/tasks/09-28-fx2-execution-flow/design.md",
+    ".trellis/tasks/09-28-fx2-execution-flow/implement.md"
+  ],
+  "notes": "E1-E8 passed; full Python 377 passed/3 platform skips, final context tests 31 passed; real HTTP/MCP probe passed. See implementation-progress.md and research/process-probe-final.json.",
+  "meta": {
+    "repair_id": "FX2",
+    "depends_on": [
+      "09-28-fx1-state-integrity"
+    ],
+    "target_repository": "Tsunagou",
+    "requirements": [
+      "FX-R01",
+      "FX-R02"
+    ]
+  }
+}

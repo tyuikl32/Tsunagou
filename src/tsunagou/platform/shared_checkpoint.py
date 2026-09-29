@@ -53,7 +53,7 @@ COLLECTION_FIELDS: dict[str, dict[str, str]] = {
         ),
     },
     "lifecycle": {
-        "decisions": "decision_id kind subject_ref expected_revision input_digest status decision reason",
+        "decisions": "decision_id kind subject_ref expected_revision input_digest status decision reason choices summary",
         "resolutions": "operation_id actor conclusion evidence_refs reason",
     },
     "authority": {
@@ -69,7 +69,7 @@ _PRIVATE = frozenset({
     "runtime_epoch", "connection_epoch", "session_id", "conversation_id", "conversation_evidence",
     "conversation_digest", "host_id", "bridge_config", "absolute_path", "storage_path", "external_locator",
     "current_replica_id", "physical_identity", "git_common_dir_identity", "local_binding_ids",
-    "private_message", "grant", "grants", "lease", "leases", "lease_set_id", "lease_sets", "job_claim",
+    "private_message", "grant", "grants", "reservation", "reservations", "reservation_id", "root_aliases", "job_claim",
     "lease_owner", "lease_until", "lease_epoch", "worker_id", "job_id", "root_identities",
 })
 _SECRET_REDACTOR = SecretRedactor()

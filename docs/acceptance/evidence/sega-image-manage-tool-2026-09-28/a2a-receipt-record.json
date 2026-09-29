@@ -1,0 +1,209 @@
+{
+  "recorded_at": "2026-09-28T05:57:41.928Z",
+  "messages": [
+    {
+      "message_id": "599c0931-d3ab-4458-bfca-981d6f018090",
+      "sender_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "recipient_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "kind": "acceptance_probe",
+      "in_reply_to": null,
+      "subject_ref": "0a28f9e6-52c8-4d80-b805-64807da75931",
+      "command_id": "a2a:message:acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3",
+      "payload_digest": "sha256:151eba970634a0052bd09e93ab05f61193f2f059ce705378c65be06c83ee3ac1",
+      "created_at": "1970-01-21T17:22:54.526Z",
+      "delivery": {
+        "status": "acked",
+        "presented_at": "1970-01-21T17:22:54.623Z",
+        "acked_at": "1970-01-21T17:22:54.658Z",
+        "attempts": 1
+      }
+    },
+    {
+      "message_id": "a2375f00-ad09-497e-932f-2705c8f489ae",
+      "sender_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "recipient_agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "kind": "acceptance_probe",
+      "in_reply_to": null,
+      "subject_ref": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+      "command_id": "a2a:message:acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a",
+      "payload_digest": "sha256:a4c738d1bd1b0c56e39e23e15f55178feb1f29e01833275408ad3b0c1afcbc4c",
+      "created_at": "1970-01-21T17:22:54.526Z",
+      "delivery": {
+        "status": "acked",
+        "presented_at": "1970-01-21T17:22:54.586Z",
+        "acked_at": "1970-01-21T17:22:54.586Z",
+        "attempts": 1
+      }
+    },
+    {
+      "message_id": "f47751c4-39f7-4219-ac6c-af3ad80ca522",
+      "sender_agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "recipient_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "kind": "acceptance_probe_received",
+      "in_reply_to": "a2375f00-ad09-497e-932f-2705c8f489ae",
+      "subject_ref": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+      "command_id": "4a61e949-10d1-4daf-a892-f744a231271b",
+      "payload_digest": "sha256:8c3cb570d8541bb8c632eb29c319405a6d4533f1e13eedb144970752df9b1cc0",
+      "created_at": "1970-01-21T17:22:54.586Z",
+      "delivery": {
+        "status": "acked",
+        "presented_at": "1970-01-21T17:22:54.941Z",
+        "acked_at": "1970-01-21T17:22:54.963Z",
+        "attempts": 1
+      }
+    },
+    {
+      "message_id": "928d3ce8-4a94-471c-b6e6-f5d4e2683aba",
+      "sender_agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "recipient_agent_id": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "kind": "acceptance_probe_received",
+      "in_reply_to": "599c0931-d3ab-4458-bfca-981d6f018090",
+      "subject_ref": "0a28f9e6-52c8-4d80-b805-64807da75931",
+      "command_id": "a441f437-99a0-426f-bbab-124defa5c71a",
+      "payload_digest": "sha256:b671360620023ccacb9de353ebf25dc657fe9fd5c7fbdbaf75eedee6d4b54392",
+      "created_at": "1970-01-21T17:22:54.695Z",
+      "delivery": {
+        "status": "acked",
+        "presented_at": "1970-01-21T17:22:54.941Z",
+        "acked_at": "1970-01-21T17:22:54.963Z",
+        "attempts": 1
+      }
+    }
+  ],
+  "events": [
+    {
+      "event_seq": 376,
+      "event_id": "2fc2c78a-ff26-4a34-9fd2-114f8ea813e9",
+      "action": "message.send",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T05:48:46.196Z",
+      "caused_by_command_id": "a2a:message:acceptance-webui-237c5845-8f91-4a2c-bc2b-c62addce0ee3"
+    },
+    {
+      "event_seq": 377,
+      "event_id": "9cea0c74-dcac-496c-8aa3-fdf10080a484",
+      "action": "message.send",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T05:48:46.289Z",
+      "caused_by_command_id": "a2a:message:acceptance-http-504e4ff8-c273-4f10-97eb-3f15482d837a"
+    },
+    {
+      "event_seq": 378,
+      "event_id": "7701eae9-8a41-4c79-8377-d09467967a31",
+      "action": "inbox.claim",
+      "actor_ref": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "occurred_at": "2026-09-28T05:49:46.771Z",
+      "caused_by_command_id": "4822abad-c76e-448b-950a-2dd68767df07"
+    },
+    {
+      "event_seq": 379,
+      "event_id": "2766bf04-6532-4310-9442-dfe0c66cce08",
+      "action": "inbox.presented",
+      "actor_ref": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "occurred_at": "2026-09-28T05:49:46.864Z",
+      "caused_by_command_id": "977c7326-48fc-47be-9ec6-a3d2aa0af823"
+    },
+    {
+      "event_seq": 380,
+      "event_id": "ccb52e95-1d5e-4f24-ae53-cd3c2ad520f7",
+      "action": "inbox.ack",
+      "actor_ref": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "occurred_at": "2026-09-28T05:49:46.911Z",
+      "caused_by_command_id": "5149c42c-ae9b-4f82-8d2d-3da5c20bfae3"
+    },
+    {
+      "event_seq": 381,
+      "event_id": "6bfb03d1-2a34-4624-a946-bb821bb3b5d3",
+      "action": "message.send",
+      "actor_ref": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "occurred_at": "2026-09-28T05:49:46.958Z",
+      "caused_by_command_id": "4a61e949-10d1-4daf-a892-f744a231271b"
+    },
+    {
+      "event_seq": 382,
+      "event_id": "347d8a98-ada7-41e0-8672-6f9642af4ec1",
+      "action": "inbox.claim",
+      "actor_ref": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "occurred_at": "2026-09-28T05:49:51.467Z",
+      "caused_by_command_id": "9f6dcf17-aaf7-4ac8-ba4a-f048520e0c43"
+    },
+    {
+      "event_seq": 383,
+      "event_id": "4863c881-45c8-423d-8bba-26ed1bd31fd0",
+      "action": "inbox.presented",
+      "actor_ref": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "occurred_at": "2026-09-28T05:50:23.430Z",
+      "caused_by_command_id": "81c2e03b-4935-4cc1-b322-c495fac77eb3"
+    },
+    {
+      "event_seq": 384,
+      "event_id": "3375e0cf-c735-4ff8-a886-aadfcf7f9d9a",
+      "action": "inbox.ack",
+      "actor_ref": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "occurred_at": "2026-09-28T05:50:58.376Z",
+      "caused_by_command_id": "e2492dc3-1145-4bfc-85c5-a8840ef5f628"
+    },
+    {
+      "event_seq": 385,
+      "event_id": "5538b0b3-6b5f-4327-8cdf-0f2c940f20cc",
+      "action": "message.send",
+      "actor_ref": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "occurred_at": "2026-09-28T05:51:35.752Z",
+      "caused_by_command_id": "a441f437-99a0-426f-bbab-124defa5c71a"
+    },
+    {
+      "event_seq": 386,
+      "event_id": "f26aa7e3-78b5-4a8e-8bd7-4628a0c0e876",
+      "action": "runtime.recovery",
+      "actor_ref": "runtime",
+      "occurred_at": "2026-09-28T05:53:25.570Z",
+      "caused_by_command_id": "runtime-recovery"
+    },
+    {
+      "event_seq": 387,
+      "event_id": "200a408b-b1f7-482b-98a7-ec7f513b7769",
+      "action": "inbox.claim",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T05:55:03.664Z",
+      "caused_by_command_id": "33b60980-1e3e-4bd7-96bc-5a1dc9d82029"
+    },
+    {
+      "event_seq": 388,
+      "event_id": "78e2bf18-519f-4e82-86da-51674cce8f9f",
+      "action": "inbox.presented",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T05:55:41.769Z",
+      "caused_by_command_id": "f1e42edf-b205-4838-9bc0-2985f8b02aff"
+    },
+    {
+      "event_seq": 389,
+      "event_id": "c63e6d7e-ed70-4586-bc9a-0df2d662adf0",
+      "action": "inbox.presented",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T05:55:41.813Z",
+      "caused_by_command_id": "8614b835-98ad-4dfc-bac3-26ec8ab533ab"
+    },
+    {
+      "event_seq": 390,
+      "event_id": "b14ffff3-7f67-4811-a1c7-58d82a6ac637",
+      "action": "inbox.ack",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T05:56:03.171Z",
+      "caused_by_command_id": "ed45157e-0f81-4a05-b434-2de5ea3fa472"
+    },
+    {
+      "event_seq": 391,
+      "event_id": "fe3a876b-b835-4976-b91d-398f6c51c868",
+      "action": "inbox.ack",
+      "actor_ref": "f55871bb-b3c2-4c58-916b-6b624f002bf0",
+      "occurred_at": "2026-09-28T05:56:03.206Z",
+      "caused_by_command_id": "ea67d3a9-73c4-4ee2-a9ef-cef157c582c5"
+    }
+  ],
+  "as_of_event_seq": 391,
+  "host_wake": {
+    "initiator": "root Codex send_message_to_thread",
+    "daemon_native_wake_observed": false
+  },
+  "secrets_included": false
+}

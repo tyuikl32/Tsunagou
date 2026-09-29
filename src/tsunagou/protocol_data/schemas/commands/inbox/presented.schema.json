@@ -1,15 +1,22 @@
 {
   "$id": "https://tsunagou.local/schema/commands/inbox.presented",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InboxPresentedPayload",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
-    "evidence_digest": {},
-    "evidence_kind": {}
+    "message_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_kind": {
+      "type": "string"
+    },
+    "evidence_digest": {
+      "type": "string"
+    }
   },
   "required": [
-    "evidence_digest",
-    "evidence_kind"
-  ],
-  "title": "InboxPresentedPayload",
-  "type": "object"
+    "message_id"
+  ]
 }

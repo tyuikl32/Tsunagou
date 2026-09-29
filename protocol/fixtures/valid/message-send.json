@@ -1,0 +1,30 @@
+{
+  "recipient_agent_id": "worker-fixture",
+  "summary": "Please report the verification result.",
+  "kind": "request",
+  "subject_ref": "task:fixture",
+  "payload": {
+    "request": "Run the agreed verification",
+    "output": {
+      "required": [
+        "status"
+      ]
+    }
+  },
+  "priority": 1,
+  "response_contract": {
+    "required": true,
+    "schema": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

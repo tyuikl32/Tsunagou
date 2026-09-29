@@ -1,0 +1,113 @@
+........................................................................ [ 14%]
+........................................................................ [ 28%]
+........................................................................ [ 42%]
+........................................................................ [ 56%]
+........................................................................ [ 70%]
+........................................................................ [ 84%]
+..........................................................s........s.s.. [ 98%]
+.........                                                                [100%]
+============================== warnings summary ===============================
+tests/integration/test_a2a_http.py: 1 warning
+tests/integration/test_checkpoint_failure.py: 2 warnings
+tests/integration/test_clone_recovery.py: 4 warnings
+tests/integration/test_desktop_wake.py: 14 warnings
+tests/integration/test_execution_begin.py: 16 warnings
+tests/integration/test_failure_timeline.py: 3 warnings
+tests/integration/test_m1_runtime_flow.py: 5 warnings
+tests/integration/test_state_integrity.py: 12 warnings
+tests/protocol/test_audit_contract.py: 1 warning
+tests/protocol/test_delivery_contract.py: 1 warning
+tests/unit/test_a2a.py: 6 warnings
+tests/unit/test_business_handlers.py: 20 warnings
+tests/unit/test_foundation.py: 1 warning
+tests/unit/test_handlers.py: 9 warnings
+tests/unit/test_hostwake.py: 3 warnings
+tests/unit/test_interfaces.py: 3 warnings
+tests/unit/test_trace_audit.py: 10 warnings
+tests/unit/test_trace_secret_receipts.py: 8 warnings
+tests/unit/test_trace_workspace_access.py: 9 warnings
+  D:\Tsunagou\src\tsunagou\api\app.py:117: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+tests/integration/test_a2a_http.py: 1 warning
+tests/integration/test_checkpoint_failure.py: 6 warnings
+tests/integration/test_clone_recovery.py: 12 warnings
+tests/integration/test_desktop_wake.py: 56 warnings
+tests/integration/test_execution_begin.py: 48 warnings
+tests/integration/test_failure_timeline.py: 10 warnings
+tests/integration/test_m1_runtime_flow.py: 15 warnings
+tests/integration/test_state_integrity.py: 36 warnings
+tests/protocol/test_audit_contract.py: 1 warning
+tests/protocol/test_delivery_contract.py: 1 warning
+tests/unit/test_a2a.py: 6 warnings
+tests/unit/test_business_handlers.py: 20 warnings
+tests/unit/test_foundation.py: 1 warning
+tests/unit/test_handlers.py: 13 warnings
+tests/unit/test_hostwake.py: 3 warnings
+tests/unit/test_interfaces.py: 3 warnings
+tests/unit/test_trace_audit.py: 30 warnings
+tests/unit/test_trace_secret_receipts.py: 24 warnings
+tests/unit/test_trace_workspace_access.py: 27 warnings
+  D:\Tsunagou\.venv\Lib\site-packages\fastapi\applications.py:4681: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/integration/test_checkpoint_failure.py: 2 warnings
+tests/integration/test_clone_recovery.py: 4 warnings
+tests/integration/test_desktop_wake.py: 14 warnings
+tests/integration/test_execution_begin.py: 16 warnings
+tests/integration/test_failure_timeline.py: 3 warnings
+tests/integration/test_m1_runtime_flow.py: 5 warnings
+tests/integration/test_state_integrity.py: 12 warnings
+tests/unit/test_handlers.py: 2 warnings
+tests/unit/test_trace_audit.py: 10 warnings
+tests/unit/test_trace_secret_receipts.py: 8 warnings
+tests/unit/test_trace_workspace_access.py: 9 warnings
+  D:\Tsunagou\src\tsunagou\bootstrap\container.py:223: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @application.on_event("startup")
+
+tests/integration/test_checkpoint_failure.py: 2 warnings
+tests/integration/test_clone_recovery.py: 4 warnings
+tests/integration/test_desktop_wake.py: 14 warnings
+tests/integration/test_execution_begin.py: 16 warnings
+tests/integration/test_failure_timeline.py: 3 warnings
+tests/integration/test_m1_runtime_flow.py: 5 warnings
+tests/integration/test_state_integrity.py: 12 warnings
+tests/unit/test_handlers.py: 2 warnings
+tests/unit/test_trace_audit.py: 10 warnings
+tests/unit/test_trace_secret_receipts.py: 8 warnings
+tests/unit/test_trace_workspace_access.py: 9 warnings
+  D:\Tsunagou\src\tsunagou\bootstrap\container.py:227: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @application.on_event("shutdown")
+
+tests/integration/test_desktop_wake.py: 14 warnings
+tests/integration/test_failure_timeline.py: 1 warning
+  D:\Tsunagou\src\tsunagou\bootstrap\container.py:219: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @application.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: D:\Tsunagou\.trellis\tasks\09-28-real-test-repair\research\final-tests.xml -

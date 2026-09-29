@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": "docs/decisions/2026-09-28-clean-break-upgrade.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-fx5-traceability/design.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-fx3-desktop-wake/design.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-fx4-onboarding/design.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-fx5-traceability/prd.md", "reason": "Verify every acceptance criterion; build success alone is insufficient."}

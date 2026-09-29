@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-09-28T05:53:24.1573869Z",
+  "finished_at": "2026-09-28T05:53:26.5130899Z",
+  "before": {
+    "host_wake": "disabled",
+    "pid": 76936,
+    "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+    "started_at": 1790564375,
+    "state_dir": "D:\\ALL.NET\\SegaImageManageTool\\.tsunagou\\local",
+    "status": "running",
+    "url": "http://127.0.0.1:56876"
+  },
+  "stop": {
+    "pid": 76936,
+    "status": "stopped"
+  },
+  "start": {
+    "host_wake": "disabled",
+    "pid": 87492,
+    "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+    "started_at": 1790574806,
+    "state_dir": "D:\\ALL.NET\\SegaImageManageTool\\.tsunagou\\local",
+    "status": "started",
+    "url": "http://127.0.0.1:56876"
+  },
+  "after": {
+    "host_wake": "disabled",
+    "pid": 87492,
+    "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+    "started_at": 1790574806,
+    "state_dir": "D:\\ALL.NET\\SegaImageManageTool\\.tsunagou\\local",
+    "status": "running",
+    "url": "http://127.0.0.1:56876"
+  },
+  "business_backend_stopped": false,
+  "host_wake_policy_changed": false
+}

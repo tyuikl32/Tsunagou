@@ -46,7 +46,7 @@ class LocalCommandAuthenticator:
             return PrincipalContext("T", token, session_id, connection_epoch, hashlib.sha256(token.encode()).hexdigest())
         if principal_kind == "X":
             # Execution commands carry the agent session credential but are scoped by a
-            # task_attempt grant issued at task.start. Fail closed without one.
+            # task_attempt grant issued at task.begin. Fail closed without one.
             if self.authority is None or session_id is None:
                 raise PermissionError("authentication_failed")
             session = self.authority.sessions.get(session_id)

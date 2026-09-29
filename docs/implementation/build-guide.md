@@ -94,7 +94,7 @@ root注册分别测试逻辑ID、物理绑定、case、symlink/junction、嵌套
 
 ## 7. 资源、认知、隔离和附件（T09–T12）
 
-资源先实现scope子集、冲突矩阵和all-or-none，再接TTL/续租/过期；认知先显式报告与确定性规则，再做proposal/接受和proxy，最后风险请求/建议。双方各自只保存所属事实。
+资源实现 scope、冲突矩阵、all-or-none 与显式释放；不实现资源 TTL/续租/过期。认知以显式报告、分歧与版本化 proposal/acceptance 为主，只有任务 required_contract_ids 构成执行门禁。
 
 workspace先driver候选与IsolationDecision，再baseline/result和main Git请求；所有Git mutation由main。没有main时pending，不让daemon代跑worktree add。附件先upload intent和领域授权，再流式存储/finalize，再显式promote；hash不是权限。
 
@@ -102,9 +102,9 @@ workspace先driver候选与IsolationDecision，再baseline/result和main Git请�
 
 ## 8. 打通第一个可信闭环（T13）
 
-用一个main、两个worker的simulator场景串起：创建两个任务→各自claim→报告字段理解不一致→分歧→契约共同接受→风险/隔离→Lease/preflight/start→结果→review。每条命令记录哪个principal、Grant、revision、事件与状态改变。
+使用一个 main、两个 Worker 验证：创建任务→main 选择文件工作区→发布→Worker begin→实际工作/必要协商→submit→main review。覆盖事务回滚、并发 owner 和同库重启；实际进程探针为 tools/dev/execution_flow_probe.py。
 
-先故意修改contract revision、scope digest、workspace baseline，使旧preflight失败；再验证重新准备可恢复。用户待决场景保持相关Task blocked，无关worker继续。此阶段可以证明内核闭环，仍不能宣称四宿主真机兼容。
+注入实际相关的 required 契约、scope 或 root binding 变化，验证明确拒绝；无关契约不影响执行。owner block 释放资源，main 可重选策略；同 owner 重启恢复复用原 Attempt，不能因重启开放给其他人。
 
 ## 9. 共享恢复和重大生命周期（T14、T15）
 
@@ -118,7 +118,7 @@ workspace先driver候选与IsolationDecision，再baseline/result和main Git请�
 
 模块router→dispatcher→同一policy/UoW；MCP仅投影允许的Agent命令；CLI用U入口。先验证HTTP/工具同语义/错误/hash，再完成用户向导。
 
-黑板一次ReadSnapshot组合；提示按attach/resume/task边界最小注入；shared bridge负责token注入、epoch、重试、消息去重和Lease。adapter不能复制服务端授权或状态机。CLI完整映射见[CLI契约](cli-contract.md)，用户示例见[手册](../overview/cli-http-manual.md)。
+黑板通过已有 query 组合；shared bridge 注入凭据、处理 epoch、重试与消息去重，不能维护资源续租。adapter 不复制服务端授权或状态机。CLI 与 HTTP 示例见 [手册](../overview/cli-http-manual.md)。
 
 阶段出口：OpenAPI可重复生成；同命令REST/MCP一致；CLI示例全部由contract fixture驱动，无未注册user权限。依据：[FastAPI多文件应用](https://fastapi.tiangolo.com/tutorial/bigger-applications/)、[Typer教程](https://typer.tiangolo.com/tutorial/)。
 

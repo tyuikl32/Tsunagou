@@ -13,6 +13,7 @@ from tsunagou.hostwake.codex_app_server import (
     ManagedCodexProvider,
     UnixWebSocketAppServerClient,
 )
+from tsunagou.hostwake.codex_desktop import CodexDesktopProvider, NativeAppToolsClient
 from tsunagou.hostwake.dispatcher import WakeDispatcher
 from tsunagou.hostwake.port import (
     HostBindingRef,
@@ -27,6 +28,8 @@ from tsunagou.hostwake.port import (
 
 __all__ = [
     "CodexAppServerClient",
+    "CodexDesktopProvider",
+    "NativeAppToolsClient",
     "DesktopAttachProvider",
     "HostBindingRef",
     "HostCapabilityReport",

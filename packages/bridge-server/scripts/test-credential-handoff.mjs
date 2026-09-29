@@ -51,6 +51,50 @@ const isAck = (call) => call.path.endsWith("/ack");
 function respond(response, result) { response.end(JSON.stringify({ result })); }
 function ack(response) { response.end(JSON.stringify({ delivery_status: "consumed" })); }
 
+test("reconnect carries private Desktop refresh without changing the target identity", async (t) => {
+  const refresh = { provider: "codex_desktop_app", endpoint: "private-pipe-sentinel", host_generation: "generation-2" };
+  const f = await fixture(t, (call, response) => {
+    if (isAck(call)) return ack(response);
+    assert.equal(call.path, "/api/v1/commands/session.reconnect");
+    assert.deepEqual(call.body.payload.host_binding_refresh, refresh);
+    assert.equal(call.body.payload.target_agent_id, undefined);
+    assert.equal(call.body.payload.thread_id, undefined);
+    respond(response, { ...credential, connection_epoch: 2, secret_token: "new-credential", reconnect_nonce: "new-nonce" });
+  });
+  writePrivateJson(f.sessionFile, { ...credential, conversation_binding_digest: "conversation-digest", host_conversation_id_digest: "host-digest" });
+  const session = await new CredentialHandoff(f.options).recover({ forceReconnect: true, hostBindingRefresh: refresh });
+  assert.equal(session.agent_id, credential.agent_id);
+  assert.equal(session.connection_epoch, 2);
+  assert.ok(!readFileSync(f.sessionFile, "utf8").includes(refresh.endpoint));
+});
+
+test("overlapping and late host restores rotate a generation only once", async (t) => {
+  const refresh = { provider: "codex_desktop_app", endpoint: "new-private-pipe", host_generation: "new-generation" };
+  const waiting = [];
+  const f = await fixture(t, (call, response) => {
+    if (isAck(call)) return ack(response);
+    assert.equal(call.path, "/api/v1/commands/session.reconnect");
+    waiting.push(response);
+    if (waiting.length === 2) {
+      for (const reply of waiting) respond(reply, { ...credential, connection_epoch: 2,
+        secret_token: "refreshed-token", reconnect_nonce: "refreshed-nonce" });
+    }
+  });
+  writePrivateJson(f.sessionFile, { ...credential, host_binding_generation: "old-generation",
+    conversation_binding_digest: f.options.conversationBindingDigest });
+  const initial = await Promise.all([0, 1].map(() => new CredentialHandoff(f.options).recover({ hostBindingRefresh: refresh })));
+  assert.ok(initial.every((session) => session.connection_epoch === 2 && session.host_binding_generation === refresh.host_generation));
+  const before = f.calls.filter((call) => !isAck(call));
+  assert.equal(before.length, 2);
+  assert.equal(before[0].text, before[1].text);
+  // A restore selected before the first exchange can enter prepare after it
+  // completes. It must compare against the current locked session, not rotate
+  // again merely because its caller previously observed the old generation.
+  const late = await new CredentialHandoff(f.options).recover({ hostBindingRefresh: refresh });
+  assert.equal(late.connection_epoch, 2);
+  assert.equal(f.calls.filter((call) => !isAck(call)).length, 2);
+});
+
 test("lost enrollment response and restart reuse exact envelope and original baseline", async (t) => {
   let attempts = 0;
   const f = await fixture(t, (call, response, { sessionFile }) => {
@@ -90,7 +134,7 @@ test("lost reconnect response reuses original token, nonce, epoch and command", 
     respond(response, rotated);
   });
   writePrivateJson(f.sessionFile, { ...credential, conversation_binding_digest: f.options.conversationBindingDigest });
-  await assert.rejects(new CredentialHandoff(f.options).recover(), /retry_pending_request/);
+  await assert.rejects(new CredentialHandoff(f.options).recover({ forceReconnect: true }), /retry_pending_request/);
   const recovered = await new CredentialHandoff(f.options).recover();
   assert.equal(recovered.connection_epoch, 2);
   assert.equal(f.calls[0].text, f.calls[1].text);
@@ -232,7 +276,7 @@ test("consumed, expired and invalid receipts never replace the session", async (
   }));
   writePrivateJson(f.sessionFile, credential);
   const original = readFileSync(f.sessionFile, "utf8");
-  await assert.rejects(new CredentialHandoff(f.options).recover(), /reconnect_required/);
+  await assert.rejects(new CredentialHandoff(f.options).recover({ forceReconnect: true }), /reconnect_required/);
   assert.equal(readFileSync(f.sessionFile, "utf8"), original);
   assert.equal(f.calls.length, 1);
 });
@@ -348,7 +392,7 @@ test("two bridge processes sharing one handoff use one command ID even after ACK
   assert.equal(loadSession(f.sessionFile).agent_id, credential.agent_id);
 });
 
-test("process-owned private lock fails busy and is released when its owner dies", { timeout: 15000 }, async (t) => {
+test("Node-owned private lock excludes Python and Node and is released when its owner dies", { timeout: 20000 }, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "tsunagou-private-lock-"));
   const path = join(root, "session.json");
   const moduleUrl = pathToFileURL(join(import.meta.dirname, "../dist/private-file-lock.js")).href;
@@ -368,11 +412,75 @@ test("process-owned private lock fails busy and is released when its owner dies"
   let entered = false;
   await assert.rejects(withPrivateFileLock(path, () => { entered = true; }), /private_lock_busy/);
   assert.equal(entered, false);
+  const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  const python = `
+import sys
+from pathlib import Path
+from tsunagou.platform.private_file_lock import private_file_lock
+try:
+    with private_file_lock(Path(sys.argv[1]), timeout=0):
+        result = 'acquired'
+except RuntimeError as error:
+    if str(error) != 'credential_private_lock_busy:retry_pending_request':
+        raise
+    result = 'busy'
+print(result)
+`;
+  const probePython = () => execFileSync("uv", ["run", "--no-sync", "--project", repoRoot, "python", "-c", python, path], {
+    cwd: repoRoot, windowsHide: true, encoding: "utf8", timeout: 5000,
+  }).trim();
+  assert.equal(probePython(), "busy");
   const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill();
+  await exited;
+  assert.equal(probePython(), "acquired");
+  await withPrivateFileLock(path, () => { entered = true; });
+  assert.equal(entered, true);
+});
+
+test("Python-owned private lock excludes Node and is released when its owner dies", { timeout: 20000 }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "tsunagou-private-lock-"));
+  const path = join(root, "session.json");
+  const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  // Spawn the interpreter itself so kill targets the process holding the lock,
+  // not an intermediary uv process that could leave its child alive.
+  const interpreter = execFileSync("uv", ["run", "--no-sync", "--project", repoRoot, "python", "-c", "import sys; print(sys.executable)"], {
+    cwd: repoRoot, windowsHide: true, encoding: "utf8", timeout: 5000,
+  }).trim();
+  const python = `
+import sys, time
+from pathlib import Path
+from tsunagou.platform.private_file_lock import private_file_lock
+with private_file_lock(Path(sys.argv[1])):
+    print('held', flush=True)
+    time.sleep(30)
+`;
+  const child = spawn(interpreter, ["-u", "-c", python, path], {
+    cwd: repoRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.on("data", (data) => { stderr += data; });
+  const exited = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await exited;
+    rmSync(root, { recursive: true, force: true });
+  });
+  await Promise.race([
+    new Promise((resolve) => child.stdout.on("data", (data) => { if (data.toString().includes("held")) resolve(); })),
+    exited.then(() => { throw new Error(`Python lock owner exited before readiness: ${stderr}`); }),
+  ]);
+  let entered = false;
+  await assert.rejects(withPrivateFileLock(path, () => { entered = true; }), /private_lock_busy/);
+  assert.equal(entered, false);
   child.kill();
   await exited;
   await withPrivateFileLock(path, () => { entered = true; });
   assert.equal(entered, true);
+  assert.equal(existsSync(path), false);
 });
 
 test("paused old session writer cannot overwrite the next epoch from another process", { timeout: 20000 }, async (t) => {
@@ -483,7 +591,7 @@ def paused(path, data):
 bridge_files.write_private_bytes = paused
 _write_ticket_private('codex:one', 'conversation-one', 'new-python-ticket-sentinel', target)
 `;
-  const child = spawn("uv", ["run", "--project", repoRoot, "python", "-u", "-c", python, f.ticketFile, gate], {
+  const child = spawn("uv", ["run", "--no-sync", "--project", repoRoot, "python", "-u", "-c", python, f.ticketFile, gate], {
     cwd: repoRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
   });
   let stderr = "";

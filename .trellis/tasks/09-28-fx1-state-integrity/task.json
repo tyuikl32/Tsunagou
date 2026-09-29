@@ -1,0 +1,37 @@
+{
+  "id": "fx1-state-integrity",
+  "name": "fx1-state-integrity",
+  "title": "FX1 修复契约终态与取消收口",
+  "description": "修复终态契约复活、参与者不完整和无执行者任务无法取消；全新状态回归，不编写历史迁移。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": "2026-09-28T10:46:56.598Z",
+  "branch": "codex/live-test-repair",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-28-real-test-repair",
+  "relatedFiles": [
+    ".trellis/tasks/09-28-fx1-state-integrity/prd.md",
+    ".trellis/tasks/09-28-fx1-state-integrity/design.md",
+    ".trellis/tasks/09-28-fx1-state-integrity/implement.md"
+  ],
+  "notes": "S1-S6 implemented and tested. ResourceReservation/Grant integration remains part of FX2; final live acceptance remains FX6. No commit created.",
+  "meta": {
+    "repair_id": "FX1",
+    "depends_on": [],
+    "target_repository": "Tsunagou",
+    "requirements": [
+      "FX-R04"
+    ]
+  }
+}

@@ -21,7 +21,7 @@ Use the official repository unless the user specifies another trusted ref:
 https://github.com/tyuikl32/Tsunagou.git
 ```
 
-If the user did not give a destination, use the host's normal user workspace and propose `~/Tsunagou` (PowerShell: `$HOME\Tsunagou`). If that directory exists and is a Git checkout, inspect it and reuse it. If it exists and is non-empty but not a Git checkout, stop and ask for a different destination.
+Use an explicit source/destination first. Otherwise inspect `~/.tsunagou/installation.json` for the registered source, then the checkout containing this installer. Only a fresh installation without either uses `~/Tsunagou`. When the user selected a checkout, pass its actual `--source-root` so a stale registration cannot override it. Do not reset or silently switch an existing checkout to satisfy a requested ref.
 
 ## Installation workflow
 
@@ -30,16 +30,16 @@ If the user did not give a destination, use the host's normal user workspace and
 3. Before cloning, decide whether the user selected the current business project. If so, resolve its Git root from the original working directory and save it in a separate variable. Do not use the new Tsunagou checkout as the project root. Run the checked-in installer from the cloned checkout:
 
    ```powershell
-   uv run python tools/install/install.py --skill-scope all --json
+   uv run python tools/install/install.py --source-root $PWD --skill-scope user --host codex --json
    ```
 
    On a host without `uv`, use the available Python executable:
 
    ```text
-   python tools/install/install.py --skill-scope all --json
+   python tools/install/install.py --source-root <resolved-checkout> --skill-scope user --host <selected-host> --json
    ```
 
-   The script installs the locked Python dependencies, installs the frozen pnpm workspace, builds `packages/bridge-server/dist/server.js`, and copies the two Tsunagou skills to the project `.agents/skills` plus known user-level skill roots. It refuses conflicting skill directories unless the user explicitly asks to update them with `--force`.
+   The script installs the locked Python dependencies, installs the frozen pnpm workspace, builds `packages/bridge-server/dist/server.js`, and copies the two skills to the shared user `.agents/skills` and explicitly selected host only. It generates a user CLI launcher bound to this runtime and registers its actual source. In an already-open terminal use the fully qualified `installation.launcher` returned by the installer. It refuses conflicting skill directories; an authorized skill update may use `--force` after checking these are Tsunagou-managed copies.
 
 4. Validate the result with the returned JSON and these read-only checks:
 
@@ -54,7 +54,7 @@ project if `.tsunagou/project.json` is absent, then materializes its non-secret
 local entries in the same run:
 
 ```powershell
-uv run python tools/install/install.py --skill-scope all `
+uv run python tools/install/install.py --source-root $PWD --skill-scope user `
   --project-root <selected-business-project-root> `
   --host codex --project-name '<project-name>' `
   --project-objective '<project-objective>' --json

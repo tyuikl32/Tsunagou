@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -26,6 +27,11 @@ class UserDecision:
     # only feed the digest, which left "what am I deciding" unanswerable for every
     # reader that was not the proposer.
     payload: dict[str, Any] = field(default_factory=dict)
+    # The two spellings the console and the runbook read directly. They are kept in
+    # step with ``payload`` by ``request_decision``; neither is a second source of
+    # truth, so a reader may use whichever it was written against.
+    choices: Any = None
+    summary: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +59,7 @@ class LifecycleService:
             new_id(), kind, subject_ref, expected_revision,
             canonical_digest({"subject_ref": subject_ref, "payload": payload, "revision": expected_revision}),
             payload=dict(payload),
+            choices=deepcopy(payload.get("choices")), summary=payload.get("summary"),
         )
         self.decisions[decision.decision_id] = decision
         return decision
@@ -89,8 +96,14 @@ class LifecycleService:
         answer the proposer never offered.
         """
 
+        # ``payload`` is the primary record; ``choices`` is read as a fallback so a row
+        # restored from state written before the payload field existed still answers
+        # with the words its proposer offered instead of the approved/rejected default.
+        offered_source = (item.payload or {}).get("choices")
+        if offered_source is None:
+            offered_source = item.choices
         offered: list[str] = []
-        for choice in item.payload.get("choices") or ():
+        for choice in offered_source or ():
             if isinstance(choice, str):
                 value = choice.strip()
             elif isinstance(choice, dict):

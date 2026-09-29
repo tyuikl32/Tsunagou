@@ -1,0 +1,72 @@
+{
+  "daemon_contains_selected_project": true,
+  "daemon_process_id": 102616,
+  "daemon_project_ids": [
+    "450286e4-8d1b-4220-840c-e540fe696913"
+  ],
+  "daemon_runtime_id": "a233923d-af53-48c4-aaf2-286a004cc54e",
+  "daemon_status": "reachable",
+  "history_complete": true,
+  "independent_agent_ids": true,
+  "installation": {
+    "bridge_version": "0.1.0",
+    "commit": "1fb86e08b9cfaab312a9210a3eb15d0108314c36",
+    "duration_ms": 2528,
+    "install_finished_at": "2026-09-28T13:53:56.462Z",
+    "install_started_at": "2026-09-28T13:53:53.933Z",
+    "installed_at": "2026-09-28T13:53:56.462Z",
+    "python_version": "Python 3.13.13",
+    "source_dirty": true,
+    "status": "installed"
+  },
+  "installation_record_matches_source": true,
+  "main_count": 1,
+  "model_tool_calls": null,
+  "observed_at": "2026-09-28T15:09:20.423Z",
+  "original_conversation_readiness": "requires_original_conversation_evidence",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "query_status": {
+    "agents": {
+      "duration_ms": 377.7067,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T15:09:18.914Z",
+      "observed_at": "2026-09-28T15:09:18.537Z",
+      "status": "ok"
+    },
+    "diagnostics": {
+      "duration_ms": 584.4305,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T15:09:19.881Z",
+      "observed_at": "2026-09-28T15:09:19.297Z",
+      "status": "ok"
+    },
+    "doctor": {
+      "duration_ms": 382.079,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T15:09:19.297Z",
+      "observed_at": "2026-09-28T15:09:18.914Z",
+      "status": "ok"
+    },
+    "history": [
+      {
+        "duration_ms": 539.6754,
+        "exit_code": 0,
+        "finished_at": "2026-09-28T15:09:20.422Z",
+        "observed_at": "2026-09-28T15:09:19.883Z",
+        "status": "ok"
+      }
+    ],
+    "installation": {
+      "duration_ms": 353.5594,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T15:09:18.537Z",
+      "observed_at": "2026-09-28T15:09:18.183Z",
+      "status": "ok"
+    }
+  },
+  "ready_agent_count": 3,
+  "recorded_recovery_events": 3,
+  "runtime_version": "0.1.0",
+  "token_usage": "unavailable",
+  "worker_count": 2
+}

@@ -1,0 +1,99 @@
+{
+  "recorded_at": "2026-09-28T06:13:24.101071+00:00",
+  "listener_pid": 87044,
+  "daemon_host_wake": "managed",
+  "bindings": [
+    {
+      "role": "http",
+      "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "binding": {
+        "binding": {
+          "binding_id": "binding:a8f94a00-016b-4d24-89a7-e3d8df442825",
+          "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+          "provider": "desktop_attach",
+          "adapter_profile": "codex-http",
+          "thread_id_digest": "sha256:f53d56463ef32e5ed336ccd9f3d5d2590030f3e2ae659beffbefaa74e7a833f7",
+          "session_id_digest": null,
+          "endpoint_kind": "unix_proxy",
+          "cwd_digest": "sha256:2c906ef523de0b1933dab89f19f9ca3bf689da425665df2e2064e0d0ae81718f",
+          "scope_digest": "sha256:0739449fc29ca729cd58b61d19c31b408699f7377abf3339c9a5f14e4ae84ccb",
+          "policy_digest": "sha256:92b2d5999bc47c33312d5b63e3028db2e9a6bf1c8f98adb2fd66d4374395977d",
+          "status": "ready",
+          "binding_revision": 1,
+          "connection_epoch": null,
+          "capabilities": {
+            "thread/start": "unknown",
+            "thread/resume": "unknown",
+            "turn/start": "unknown",
+            "thread/read": "unknown"
+          },
+          "last_probe": {}
+        }
+      },
+      "probe": {
+        "provider": "desktop_attach",
+        "status": "unknown",
+        "version": null,
+        "transport": "unix_proxy",
+        "methods": [
+          "thread/read"
+        ],
+        "capabilities": {
+          "thread/read": "supported",
+          "thread/resume": "unknown",
+          "turn/start": "unknown"
+        },
+        "evidence_digest": "sha256:756d996abce8209ce7d54c768ea31de71291ad261b4dae8546a14f94a2a2579f",
+        "reason": null,
+        "observed_at": "2026-09-28T06:13:24.230117+00:00"
+      }
+    },
+    {
+      "role": "webui",
+      "agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+      "binding": {
+        "binding": {
+          "binding_id": "binding:bf333f3d-2153-4096-9045-aeccb6135bd1",
+          "agent_id": "78ff6171-c98f-4c16-8895-4c307bbe628e",
+          "provider": "desktop_attach",
+          "adapter_profile": "codex-webui",
+          "thread_id_digest": "sha256:fc63c9c96f0cfd541824aa3d699dd00a66f5a27a4e556a649ffc0390b118d7d7",
+          "session_id_digest": null,
+          "endpoint_kind": "unix_proxy",
+          "cwd_digest": "sha256:2c906ef523de0b1933dab89f19f9ca3bf689da425665df2e2064e0d0ae81718f",
+          "scope_digest": "sha256:78eb6ead298f10e8a354c25af24d933752c567a19324743fe848daaaf525a0d6",
+          "policy_digest": "sha256:92b2d5999bc47c33312d5b63e3028db2e9a6bf1c8f98adb2fd66d4374395977d",
+          "status": "ready",
+          "binding_revision": 1,
+          "connection_epoch": null,
+          "capabilities": {
+            "thread/start": "unknown",
+            "thread/resume": "unknown",
+            "turn/start": "unknown",
+            "thread/read": "unknown"
+          },
+          "last_probe": {}
+        }
+      },
+      "probe": {
+        "provider": "desktop_attach",
+        "status": "unknown",
+        "version": null,
+        "transport": "unix_proxy",
+        "methods": [
+          "thread/read"
+        ],
+        "capabilities": {
+          "thread/read": "supported",
+          "thread/resume": "unknown",
+          "turn/start": "unknown"
+        },
+        "evidence_digest": "sha256:756d996abce8209ce7d54c768ea31de71291ad261b4dae8546a14f94a2a2579f",
+        "reason": null,
+        "observed_at": "2026-09-28T06:13:24.334763+00:00"
+      }
+    }
+  ],
+  "policy": "inherit existing selected thread permissions and model; no overrides",
+  "secrets_included": false
+}

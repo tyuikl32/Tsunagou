@@ -1,0 +1,29 @@
+{
+  "observed_at": "2026-09-28T18:25:11Z",
+  "daemon": {
+    "status": "running",
+    "pid": 103048,
+    "runtime_id": "432243a5-9041-4979-89f9-83c20ddc9cf0",
+    "started_at": "2026-09-28T18:11:09.514Z",
+    "url": "http://127.0.0.1:49338",
+    "health_schema_bundle_digest": "sha256:f574e1308cb05d16e9833a2570f1476ca718844cbf4daa5e3bd172260142d2b4"
+  },
+  "mcp": {
+    "context_project_read": "tsunagou_error:schema_bundle_digest_mismatch",
+    "inbox_claim": "tsunagou_error:schema_bundle_digest_mismatch",
+    "bridge_process_latest_creation_at": "2026-09-29T00:56:01.297289+08:00",
+    "bridge_process_entrypoint": "D:\\Tsunagou\\packages\\bridge-server\\dist\\server.js"
+  },
+  "current_bridge_files": {
+    "registry": "D:\\Tsunagou\\packages\\bridge-server\\protocol\\registry\\commands.json",
+    "registry_digest": "sha256:f574e1308cb05d16e9833a2570f1476ca718844cbf4daa5e3bd172260142d2b4",
+    "registry_last_write_at_local": "2026-09-29T01:51:47+08:00",
+    "server_bundle_last_write_at_local": "2026-09-29T01:51:49+08:00"
+  },
+  "persistence_check": {
+    "agent_list": "CLI shows the same main and two worker agent IDs; owner worker still has task 357de2e9-8990-4c1e-b99f-365057d29732",
+    "task_history": "Attempt 6c6b53f3-64b7-4f63-beb8-504276e8c8f4 remains running and owned by e5a866e0-3c1c-4ab5-8d11-5becd613cc48 after daemon restart"
+  },
+  "assessment": "Daemon restart and same-database identity/owner persistence succeeded. MCP bridge subprocesses were started before the current bridge bundle was built and still send an incompatible digest. A4 owner reconnect and explicit reclaim fencing, plus A6, remain unverified until Codex reloads the bridge subprocesses.",
+  "next_action": "Fully exit and reopen Codex once; do not re-enroll agents. Then verify context_project_read and inbox_claim before resuming A4/A6."
+}

@@ -1,0 +1,522 @@
+........................................................................ [ 17%]
+........................................................................ [ 35%]
+........................................................................ [ 53%]
+........................................................................ [ 70%]
+........................................................................ [ 88%]
+.......................s........s.s...........                           [100%]
+============================== warnings summary ===============================
+tests/integration/test_a2a_http.py: 1 warning
+tests/integration/test_checkpoint_failure.py: 2 warnings
+tests/integration/test_clone_recovery.py: 4 warnings
+tests/integration/test_desktop_wake.py: 5 warnings
+tests/integration/test_execution_begin.py: 16 warnings
+tests/integration/test_m1_runtime_flow.py: 5 warnings
+tests/integration/test_state_integrity.py: 12 warnings
+tests/protocol/test_audit_contract.py: 1 warning
+tests/protocol/test_delivery_contract.py: 1 warning
+tests/unit/test_a2a.py: 6 warnings
+tests/unit/test_business_handlers.py: 16 warnings
+tests/unit/test_foundation.py: 1 warning
+tests/unit/test_handlers.py: 9 warnings
+tests/unit/test_hostwake.py: 3 warnings
+tests/unit/test_interfaces.py: 3 warnings
+tests/unit/test_trace_audit.py: 10 warnings
+tests/unit/test_trace_secret_receipts.py: 8 warnings
+tests/unit/test_trace_workspace_access.py: 9 warnings
+  D:\Tsunagou\src\tsunagou\api\app.py:107: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+tests/integration/test_a2a_http.py: 1 warning
+tests/integration/test_checkpoint_failure.py: 6 warnings
+tests/integration/test_clone_recovery.py: 12 warnings
+tests/integration/test_desktop_wake.py: 20 warnings
+tests/integration/test_execution_begin.py: 48 warnings
+tests/integration/test_m1_runtime_flow.py: 15 warnings
+tests/integration/test_state_integrity.py: 36 warnings
+tests/protocol/test_audit_contract.py: 1 warning
+tests/protocol/test_delivery_contract.py: 1 warning
+tests/unit/test_a2a.py: 6 warnings
+tests/unit/test_business_handlers.py: 16 warnings
+tests/unit/test_foundation.py: 1 warning
+tests/unit/test_handlers.py: 13 warnings
+tests/unit/test_hostwake.py: 3 warnings
+tests/unit/test_interfaces.py: 3 warnings
+tests/unit/test_trace_audit.py: 30 warnings
+tests/unit/test_trace_secret_receipts.py: 24 warnings
+tests/unit/test_trace_workspace_access.py: 27 warnings
+  D:\Tsunagou\.venv\Lib\site-packages\fastapi\applications.py:4681: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/integration/test_checkpoint_failure.py: 2 warnings
+tests/integration/test_clone_recovery.py: 4 warnings
+tests/integration/test_desktop_wake.py: 5 warnings
+tests/integration/test_execution_begin.py: 16 warnings
+tests/integration/test_m1_runtime_flow.py: 5 warnings
+tests/integration/test_state_integrity.py: 12 warnings
+tests/unit/test_handlers.py: 2 warnings
+tests/unit/test_trace_audit.py: 10 warnings
+tests/unit/test_trace_secret_receipts.py: 8 warnings
+tests/unit/test_trace_workspace_access.py: 9 warnings
+  D:\Tsunagou\src\tsunagou\bootstrap\container.py:218: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @application.on_event("startup")
+
+tests/integration/test_checkpoint_failure.py: 2 warnings
+tests/integration/test_clone_recovery.py: 4 warnings
+tests/integration/test_desktop_wake.py: 5 warnings
+tests/integration/test_execution_begin.py: 16 warnings
+tests/integration/test_m1_runtime_flow.py: 5 warnings
+tests/integration/test_state_integrity.py: 12 warnings
+tests/unit/test_handlers.py: 2 warnings
+tests/unit/test_trace_audit.py: 10 warnings
+tests/unit/test_trace_secret_receipts.py: 8 warnings
+tests/unit/test_trace_workspace_access.py: 9 warnings
+  D:\Tsunagou\src\tsunagou\bootstrap\container.py:222: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @application.on_event("shutdown")
+
+tests/integration/test_desktop_wake.py::test_user_ticket_binds_the_redeeming_conversation_automatically
+tests/integration/test_desktop_wake.py::test_enrollment_binding_cannot_name_a_different_thread
+tests/integration/test_desktop_wake.py::test_messages_commit_outbox_once_and_resume_delivery[command]
+tests/integration/test_desktop_wake.py::test_messages_commit_outbox_once_and_resume_delivery[a2a]
+tests/integration/test_desktop_wake.py::test_reconnect_refresh_is_own_binding_only_and_private
+  D:\Tsunagou\src\tsunagou\bootstrap\container.py:214: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @application.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=================================== PASSES ====================================
+_______ test_clone_preview_is_byte_for_byte_read_only_for_legacy_store ________
+---------------------------- Captured stderr call -----------------------------
+warning: in the working copy of '.tsunagou/checkpoints/current.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.tsunagou/checkpoints/sha256_5b599cce0b6d8f6f2464ecfe5a1e65e2/manifest.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.tsunagou/checkpoints/sha256_5b599cce0b6d8f6f2464ecfe5a1e65e2/project.ndjson', LF will be replaced by CRLF the next time Git touches it
+=========================== short test summary info ===========================
+PASSED tests/architecture/test_import_boundaries.py::test_rejects_forbidden_edges[tsunagou.modules.tasks.domain.task-from fastapi import FastAPI]
+PASSED tests/architecture/test_import_boundaries.py::test_rejects_forbidden_edges[tsunagou.modules.tasks.domain.task-from sqlalchemy.orm import Session]
+PASSED tests/architecture/test_import_boundaries.py::test_rejects_forbidden_edges[tsunagou.modules.tasks.domain.task-from ..infrastructure import repository]
+PASSED tests/architecture/test_import_boundaries.py::test_rejects_forbidden_edges[tsunagou.modules.tasks.application.commands-from tsunagou.modules.agents.infrastructure import tables]
+PASSED tests/architecture/test_import_boundaries.py::test_rejects_forbidden_edges[tsunagou.api.app-from tsunagou.modules.tasks.infrastructure import repository]
+PASSED tests/architecture/test_import_boundaries.py::test_rejects_forbidden_edges[tsunagou.application.workflows.task-from tsunagou.modules.tasks.domain import task]
+PASSED tests/architecture/test_import_boundaries.py::test_allows_pure_domain_and_public_ports
+PASSED tests/architecture/test_import_boundaries.py::test_repository_import_graph
+PASSED tests/integration/test_a2a_http.py::test_a2a_http_loopback_card_message_and_task
+PASSED tests/integration/test_checkpoint_failure.py::test_project_completion_survives_checkpoint_materialization_failure
+PASSED tests/integration/test_clone_recovery.py::test_clean_clone_preview_confirm_and_restart
+PASSED tests/integration/test_clone_recovery.py::test_restore_cli_and_unconfirmed_clone_cannot_start
+PASSED tests/integration/test_clone_recovery.py::test_clone_rejects_local_credentials_and_unanchored_content
+PASSED tests/integration/test_coordination_recovery.py::test_pull_ack_recovery_keeps_one_delivery_and_one_owner
+PASSED tests/integration/test_coordination_recovery.py::test_sqlite_crash_before_commit_and_epoch_fence_are_not_success
+PASSED tests/integration/test_coordination_recovery.py::test_sqlite_commit_before_response_replays_original_result
+PASSED tests/integration/test_desktop_wake.py::test_user_ticket_binds_the_redeeming_conversation_automatically
+PASSED tests/integration/test_desktop_wake.py::test_enrollment_binding_cannot_name_a_different_thread
+PASSED tests/integration/test_desktop_wake.py::test_messages_commit_outbox_once_and_resume_delivery[command]
+PASSED tests/integration/test_desktop_wake.py::test_messages_commit_outbox_once_and_resume_delivery[a2a]
+PASSED tests/integration/test_desktop_wake.py::test_reconnect_refresh_is_own_binding_only_and_private
+PASSED tests/integration/test_execution_begin.py::test_nonfile_begin_submit_needs_no_workspace_resource_or_ready
+PASSED tests/integration/test_execution_begin.py::test_worker_can_discover_begin_inputs_without_main_credentials
+PASSED tests/integration/test_execution_begin.py::test_begin_conflict_is_atomic_and_submit_releases
+PASSED tests/integration/test_execution_begin.py::test_scan_failure_rolls_back_and_duplicate_begin_does_not_rescan
+PASSED tests/integration/test_execution_begin.py::test_competing_workers_and_explicit_main_reclaim
+PASSED tests/integration/test_execution_begin.py::test_only_explicit_required_contracts_gate_begin
+PASSED tests/integration/test_execution_begin.py::test_restart_preserves_ownership_and_original_begin_reissues_only_the_grant
+PASSED tests/integration/test_execution_begin.py::test_every_explicit_exit_releases_resources_revokes_grants_and_replays_once[task.block]
+PASSED tests/integration/test_execution_begin.py::test_every_explicit_exit_releases_resources_revokes_grants_and_replays_once[task.fail]
+PASSED tests/integration/test_execution_begin.py::test_every_explicit_exit_releases_resources_revokes_grants_and_replays_once[task.cancel_ack]
+PASSED tests/integration/test_execution_begin.py::test_every_explicit_exit_releases_resources_revokes_grants_and_replays_once[task.recover]
+PASSED tests/integration/test_execution_begin.py::test_workspace_policy_reused_but_rework_gets_current_baseline
+PASSED tests/integration/test_execution_begin.py::test_preparation_and_patch_materialization_run_outside_sqlite_transaction
+PASSED tests/integration/test_execution_begin.py::test_assignment_needs_no_ready_and_takeover_revokes_old_owner
+PASSED tests/integration/test_execution_begin.py::test_user_wait_notifies_owner_without_releasing_running_work
+PASSED tests/integration/test_m1_runtime_flow.py::test_m1_task_workspace_review_and_user_completion_survive_rebuild
+PASSED tests/integration/test_m1_runtime_flow.py::test_main_can_register_bind_and_query_multiple_project_roots
+PASSED tests/integration/test_m1_runtime_flow.py::test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped
+PASSED tests/integration/test_m1_runtime_flow.py::test_cognition_discrepancy_and_contract_resolution_are_public_and_scoped
+PASSED tests/integration/test_multi_project_daemon.py::test_two_projects_share_process_but_not_agents_or_authority
+PASSED tests/integration/test_onboarding_connect.py::test_background_daemon_survives_starting_cli_and_resolves_from_subdirectory
+PASSED tests/integration/test_onboarding_connect.py::test_one_connect_and_shared_mcp_keep_two_host_conversations_separate
+PASSED tests/integration/test_project_bootstrap_cli.py::test_project_bootstrap_cli_creates_and_reuses_project_entries
+PASSED tests/integration/test_release_gates.py::test_live_host_gate_requires_all_three_first_release_hosts
+PASSED tests/integration/test_release_gates.py::test_zcode_is_optional_for_first_release_gate
+PASSED tests/integration/test_release_gates.py::test_static_gate_does_not_promote_current_unknown_matrix
+PASSED tests/integration/test_release_gates.py::test_missing_baseline_diagnostic_names_each_unproven_row
+PASSED tests/integration/test_state_integrity.py::test_terminal_contract_no_mutation_or_success_event_and_replay[withdrawn]
+PASSED tests/integration/test_state_integrity.py::test_terminal_contract_no_mutation_or_success_event_and_replay[rejected]
+PASSED tests/integration/test_state_integrity.py::test_terminal_contract_no_mutation_or_success_event_and_replay[superseded]
+PASSED tests/integration/test_state_integrity.py::test_terminal_contract_no_mutation_or_success_event_and_replay[accepted]
+PASSED tests/integration/test_state_integrity.py::test_proxy_identity_and_cancel_survive_restart_with_audit_times
+PASSED tests/integration/test_state_integrity.py::test_invalid_members_have_no_persisted_proposal[participants0]
+PASSED tests/integration/test_state_integrity.py::test_invalid_members_have_no_persisted_proposal[participants1]
+PASSED tests/integration/test_state_integrity.py::test_invalid_members_have_no_persisted_proposal[participants2]
+PASSED tests/integration/test_state_integrity.py::test_invalid_members_have_no_persisted_proposal[participants3]
+PASSED tests/integration/test_state_integrity.py::test_duplicate_slots_and_invalid_supersede_leave_original_untouched
+PASSED tests/integration/test_state_integrity.py::test_only_owner_ack_or_main_reclaim_can_finish_active_cancel
+PASSED tests/integration/test_toolchain_policy.py::test_pnpm_build_policy_allows_only_esbuild
+PASSED tests/integration/test_toolchain_policy.py::test_root_check_runs_each_workspace_package_check
+PASSED tests/integration/test_toolchain_policy.py::test_pytest_entrypoint_includes_repo_tools
+PASSED tests/protocol/test_audit_contract.py::test_known_and_unknown_times_validate_in_schema_and_python
+PASSED tests/protocol/test_audit_contract.py::test_wire_contract_rejects_ambiguous_times_and_unregistered_evidence[occurred_at-2026-09-27T16:00:00Z]
+PASSED tests/protocol/test_audit_contract.py::test_wire_contract_rejects_ambiguous_times_and_unregistered_evidence[occurred_at-2026-09-27T09:00:00.000-07:00]
+PASSED tests/protocol/test_audit_contract.py::test_wire_contract_rejects_ambiguous_times_and_unregistered_evidence[occurred_at-1790524800000]
+PASSED tests/protocol/test_audit_contract.py::test_wire_contract_rejects_ambiguous_times_and_unregistered_evidence[event_seq-True]
+PASSED tests/protocol/test_audit_contract.py::test_wire_contract_rejects_ambiguous_times_and_unregistered_evidence[revision_after--1]
+PASSED tests/protocol/test_audit_contract.py::test_wire_contract_rejects_ambiguous_times_and_unregistered_evidence[evidence_level-verified_by_agent]
+PASSED tests/protocol/test_audit_contract.py::test_wire_contract_rejects_ambiguous_times_and_unregistered_evidence[secret_token-fixture-never-usable]
+PASSED tests/protocol/test_audit_contract.py::test_packaged_schema_and_generated_models_are_current
+PASSED tests/protocol/test_audit_contract.py::test_audit_openapi_uses_canonical_dto_and_limits
+PASSED tests/protocol/test_audit_contract.py::test_checkpoint_query_models_are_generated_and_strict
+PASSED tests/protocol/test_contract_integrity.py::test_contract_wire_fixtures_and_packaged_schema_agree
+PASSED tests/protocol/test_contract_integrity.py::test_contract_wire_rejects_incomplete_participants[participants0]
+PASSED tests/protocol/test_contract_integrity.py::test_contract_wire_rejects_incomplete_participants[participants1]
+PASSED tests/protocol/test_contract_integrity.py::test_contract_wire_rejects_incomplete_participants[participants2]
+PASSED tests/protocol/test_contract_integrity.py::test_contract_wire_rejects_incomplete_participants[participants3]
+PASSED tests/protocol/test_contract_integrity.py::test_contract_wire_rejects_incomplete_participants[participants4]
+PASSED tests/protocol/test_contract_integrity.py::test_contract_wire_rejects_incomplete_participants[participants5]
+PASSED tests/protocol/test_contract_integrity.py::test_proxy_result_requires_both_actual_identities
+PASSED tests/protocol/test_delivery_contract.py::test_safe_delivery_contract_matches_schema_and_openapi
+PASSED tests/protocol/test_delivery_contract.py::test_delivery_wire_rejects_secrets_bad_refs_and_ambiguous_time[secret_token-never-a-real-secret]
+PASSED tests/protocol/test_delivery_contract.py::test_delivery_wire_rejects_secrets_bad_refs_and_ambiguous_time[reconnect_nonce-never-a-real-nonce]
+PASSED tests/protocol/test_delivery_contract.py::test_delivery_wire_rejects_secrets_bad_refs_and_ambiguous_time[delivery_ref-delivery:../wrong]
+PASSED tests/protocol/test_delivery_contract.py::test_delivery_wire_rejects_secrets_bad_refs_and_ambiguous_time[delivery_status-ready]
+PASSED tests/protocol/test_delivery_contract.py::test_delivery_wire_rejects_secrets_bad_refs_and_ambiguous_time[created_at-1790528400123]
+PASSED tests/protocol/test_delivery_contract.py::test_delivery_wire_rejects_secrets_bad_refs_and_ambiguous_time[created_at-2026-09-27T17:00:00Z]
+PASSED tests/protocol/test_delivery_contract.py::test_generated_delivery_models_and_packaged_schema_match
+PASSED tests/protocol/test_protocol_codegen.py::test_registry_has_schema_and_policy_for_every_command
+PASSED tests/protocol/test_protocol_codegen.py::test_schema_digest_is_stable_and_fixture_rejects_actor
+PASSED tests/protocol/test_workspace_contract.py::test_workspace_receipt_schema_is_optional_but_strict_when_supplied
+PASSED tests/protocol/test_workspace_contract.py::test_workspace_protocol_mirror_matches_source_and_scope_is_server_owned
+PASSED tests/unit/test_a2a.py::test_agent_card_declares_a2a_and_truthful_wake_capability
+PASSED tests/unit/test_a2a.py::test_a2a_message_send_uses_internal_message_store_and_idempotency
+PASSED tests/unit/test_a2a.py::test_a2a_message_send_pushes_standard_configuration_without_persisting_credentials
+PASSED tests/unit/test_a2a.py::test_a2a_task_query_maps_internal_task_without_new_truth_source
+PASSED tests/unit/test_a2a.py::test_a2a_task_transitions_reuse_main_and_worker_authority
+PASSED tests/unit/test_a2a.py::test_a2a_rejects_missing_authentication_and_unsupported_stream
+PASSED tests/unit/test_artifacts.py::test_stream_finalize_hash_access_and_explicit_promotion
+PASSED tests/unit/test_artifacts.py::test_truncation_tamper_digest_mismatch_and_no_auto_gc
+PASSED tests/unit/test_artifacts.py::test_unknown_hash_is_not_a_read_capability
+PASSED tests/unit/test_artifacts.py::test_same_blob_has_independent_domain_refs_and_integrity
+PASSED tests/unit/test_audit_cursor.py::test_cursor_binds_snapshot_and_all_query_identity
+PASSED tests/unit/test_audit_cursor.py::test_cursor_expires_and_rejects_tampering_and_unbounded_input
+PASSED tests/unit/test_authority.py::test_ticket_is_single_use_and_baseline_controls_degraded_state
+PASSED tests/unit/test_authority.py::test_malformed_baseline_does_not_consume_ticket_or_rotate_session
+PASSED tests/unit/test_authority.py::test_boolean_or_incomplete_baseline_cannot_grant_ready_or_main
+PASSED tests/unit/test_authority.py::test_requested_main_role_is_applied_by_daemon_after_ticket_redeem
+PASSED tests/unit/test_authority.py::test_requested_main_role_waits_until_session_is_ready
+PASSED tests/unit/test_authority.py::test_baseline_downgrade_freezes_existing_grants
+PASSED tests/unit/test_authority.py::test_user_only_main_and_exact_attempt_grant
+PASSED tests/unit/test_authority.py::test_rebind_rotates_connection_epoch_without_exposing_token_in_snapshot
+PASSED tests/unit/test_authority.py::test_each_conversation_is_a_distinct_worker_even_with_same_installation
+PASSED tests/unit/test_authority.py::test_rebind_cannot_retarget_another_conversation_agent
+PASSED tests/unit/test_business_handlers.py::test_task_lifecycle_begin_progress_submit
+PASSED tests/unit/test_business_handlers.py::test_task_begin_rejects_stale_revision
+PASSED tests/unit/test_business_handlers.py::test_task_submit_fails_closed_without_execution_grant
+PASSED tests/unit/test_business_handlers.py::test_cognition_report_roundtrip
+PASSED tests/unit/test_business_handlers.py::test_cognition_report_rejects_string_claims
+PASSED tests/unit/test_business_handlers.py::test_contract_propose_accept_roundtrip
+PASSED tests/unit/test_business_handlers.py::test_inbox_claim_fetch_ack_roundtrip
+PASSED tests/unit/test_business_handlers.py::test_message_send_idempotent_dedup
+PASSED tests/unit/test_business_handlers.py::test_message_respond_closes_obligation
+PASSED tests/unit/test_business_handlers.py::test_message_respond_validates_response_schema
+PASSED tests/unit/test_business_handlers.py::test_inbox_fetch_exposes_own_response_obligation
+PASSED tests/unit/test_business_handlers.py::test_business_commands_denied_for_degraded_session
+PASSED tests/unit/test_business_handlers.py::test_context_project_read_returns_own_scope
+PASSED tests/unit/test_business_handlers.py::test_context_project_read_includes_project_id
+PASSED tests/unit/test_business_handlers.py::test_reconnect_rejects_stale_connection_epoch
+PASSED tests/unit/test_business_handlers.py::test_unknown_payload_field_rejected
+PASSED tests/unit/test_checkpoint_materialization.py::test_rollback_has_no_effect_and_postcommit_reuses_frozen_input
+PASSED tests/unit/test_checkpoint_materialization.py::test_file_failure_then_retry_keeps_one_immutable_receipt[before_rename]
+PASSED tests/unit/test_checkpoint_materialization.py::test_file_failure_then_retry_keeps_one_immutable_receipt[before_pointer]
+PASSED tests/unit/test_checkpoint_materialization.py::test_crash_after_pointer_before_receipt_recovers_without_duplicate
+PASSED tests/unit/test_checkpoint_materialization.py::test_corrupt_job_input_is_never_materialized
+PASSED tests/unit/test_checkpoint_materialization.py::test_promoted_artifact_is_copied_and_git_anchor_checks_its_bytes
+PASSED tests/unit/test_checkpoint_materialization.py::test_corrupted_promoted_artifact_fails_after_commit_without_checkpoint
+PASSED tests/unit/test_checkpoint_materialization.py::test_public_checkpoint_text_redacts_embedded_paths_and_bearer_sentinels
+PASSED tests/unit/test_checkpoint_materialization.py::test_clone_preview_is_byte_for_byte_read_only_for_legacy_store
+PASSED tests/unit/test_checkpoint_materialization.py::test_parent_is_frozen_from_completed_operation_and_metadata_is_hashed
+PASSED tests/unit/test_checkpoint_materialization.py::test_staging_recovery_checks_content_and_repairs_damaged_pointer
+PASSED tests/unit/test_checkpoint_materialization.py::test_checkpoint_bytes_survive_clone_with_autocrlf_true
+PASSED tests/unit/test_checkpoint_materialization.py::test_projection_failure_does_not_block_independent_maintenance
+PASSED tests/unit/test_checkpoint_materialization.py::test_manifest_shape_and_legacy_provenance_are_explicit
+PASSED tests/unit/test_checkpoint_materialization.py::test_actual_process_exit_recovers_fsynced_staging_or_published_directory[before_rename]
+PASSED tests/unit/test_checkpoint_materialization.py::test_actual_process_exit_recovers_fsynced_staging_or_published_directory[after_rename]
+PASSED tests/unit/test_checkpoint_materialization.py::test_remote_ref_and_reflog_are_not_anchors_and_tree_symlinks_are_rejected
+PASSED tests/unit/test_checkpoints.py::test_checkpoint_is_deterministic_filtered_and_verifiable
+PASSED tests/unit/test_checkpoints.py::test_lineage_conflict_and_backup
+PASSED tests/unit/test_checkpoints.py::test_git_anchor_requires_manifest_content_on_local_ref
+PASSED tests/unit/test_cli.py::test_ticket_is_written_to_private_file_not_returned_in_output
+PASSED tests/unit/test_cli.py::test_ticket_file_is_owner_only
+PASSED tests/unit/test_cli.py::test_profile_identity_uses_the_conversation_not_the_display_profile
+PASSED tests/unit/test_cli.py::test_codex_executable_prefers_host_path
+PASSED tests/unit/test_cli.py::test_codex_executable_discovers_desktop_install
+PASSED tests/unit/test_codex_desktop.py::test_native_exchange_frames_and_checks_correlation
+PASSED tests/unit/test_codex_desktop.py::test_tool_fallback_ids_are_not_active_turn_claims
+PASSED tests/unit/test_codex_desktop.py::test_original_thread_accept_start_complete_are_distinct
+PASSED tests/unit/test_codex_desktop.py::test_busy_waits_without_starting_another_turn
+PASSED tests/unit/test_codex_desktop.py::test_unknown_reply_is_observed_without_resending
+PASSED tests/unit/test_codex_desktop.py::test_connection_loss_before_send_stays_queued_until_reconnected
+PASSED tests/unit/test_codex_desktop.py::test_restart_observes_original_turn_and_refresh_cannot_change_target
+PASSED tests/unit/test_codex_desktop.py::test_dispatcher_batches_busy_messages_and_records_failures
+PASSED tests/unit/test_codex_desktop.py::test_no_raw_host_context_in_dispatcher_records
+PASSED tests/unit/test_codex_probe.py::test_codex_probe_uses_explicit_writable_root_and_utf8_decode
+PASSED tests/unit/test_cognition.py::test_explicit_claim_difference_creates_deterministic_discrepancy_not_text_inference
+PASSED tests/unit/test_cognition.py::test_contract_requires_exact_digest_and_proxy_preserves_real_actor
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[False-withdrawn]
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[False-rejected]
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[False-superseded]
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[False-accepted]
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[True-withdrawn]
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[True-rejected]
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[True-superseded]
+PASSED tests/unit/test_cognition.py::test_terminal_proposal_cannot_be_accepted_again[True-accepted]
+PASSED tests/unit/test_cognition.py::test_invalid_participants_make_no_proposal[participants0]
+PASSED tests/unit/test_cognition.py::test_invalid_participants_make_no_proposal[participants1]
+PASSED tests/unit/test_cognition.py::test_invalid_participants_make_no_proposal[participants2]
+PASSED tests/unit/test_cognition.py::test_invalid_participants_make_no_proposal[participants3]
+PASSED tests/unit/test_cognition.py::test_invalid_participants_make_no_proposal[participants4]
+PASSED tests/unit/test_cognition.py::test_invalid_participants_make_no_proposal[participants5]
+PASSED tests/unit/test_cognition.py::test_invalid_participants_make_no_proposal[participants6]
+PASSED tests/unit/test_cognition.py::test_proxy_checks_identity_and_slots_and_preserves_partial_acceptance
+PASSED tests/unit/test_cognition.py::test_supersede_validates_before_mutation_and_preserves_owner
+PASSED tests/unit/test_cognition.py::test_risk_input_changes_invalidate_and_unknown_never_becomes_success
+PASSED tests/unit/test_coordination.py::test_assignments_allow_one_worker_many_tasks_and_status_is_a_task_projection
+PASSED tests/unit/test_coordination.py::test_duplicate_assignment_rejected_before_any_mutation
+PASSED tests/unit/test_credential_migration.py::test_preview_is_readonly_and_confirm_revokes_scrubs_quarantines_and_replays
+PASSED tests/unit/test_credential_migration.py::test_changed_plan_and_live_daemon_are_rejected
+PASSED tests/unit/test_credential_migration.py::test_interruption_fences_startup_and_original_plan_resumes
+PASSED tests/unit/test_credential_migration.py::test_unmarked_legacy_database_cannot_start_or_be_reopened_by_old_completed_marker
+PASSED tests/unit/test_credential_migration.py::test_old_plaintext_escrow_is_blocked_even_with_safe_database
+PASSED tests/unit/test_credential_migration.py::test_assembled_daemon_rejects_legacy_before_constructing_database_writer
+PASSED tests/unit/test_credential_migration.py::test_nonobject_or_incomplete_private_marker_fails_closed[value0]
+PASSED tests/unit/test_credential_migration.py::test_nonobject_or_incomplete_private_marker_fails_closed[None]
+PASSED tests/unit/test_credential_migration.py::test_nonobject_or_incomplete_private_marker_fails_closed[completed]
+PASSED tests/unit/test_credential_migration.py::test_nonobject_or_incomplete_private_marker_fails_closed[value3]
+PASSED tests/unit/test_credential_migration.py::test_nonobject_or_incomplete_private_marker_fails_closed[value4]
+PASSED tests/unit/test_credential_migration.py::test_migration_handles_corrupt_credential_result_without_guessing_fields[incomplete-json-with-sensitive-sentinel]
+PASSED tests/unit/test_credential_migration.py::test_migration_handles_corrupt_credential_result_without_guessing_fields[[]]
+PASSED tests/unit/test_credential_migration.py::test_migration_handles_corrupt_credential_result_without_guessing_fields[null]
+PASSED tests/unit/test_credential_migration.py::test_quarantine_report_survives_crash_after_unlink_before_marker
+PASSED tests/unit/test_credential_migration_cli.py::test_migration_cli_preview_confirm_and_live_writer_refusal
+PASSED tests/unit/test_credential_migration_cli.py::test_migration_cli_requires_same_plan_and_rejects_ambiguous_flags
+PASSED tests/unit/test_deepseek_probe.py::test_deepseek_probe_keeps_all_unknown_baseline_rows
+PASSED tests/unit/test_deepseek_probe.py::test_deepseek_evidence_shape_is_json_serializable
+PASSED tests/unit/test_evaluation.py::test_audit_is_read_only_and_filters_private_subject
+PASSED tests/unit/test_evaluation.py::test_experiment_digest_and_unavailable_usage_are_deterministic
+PASSED tests/unit/test_evaluation.py::test_secret_redaction_applies_to_exports
+PASSED tests/unit/test_foundation.py::test_health_route_and_version
+PASSED tests/unit/test_foundation.py::test_cli_exists
+PASSED tests/unit/test_handlers.py::test_enroll_t_principal_reaches_redeem_ticket
+PASSED tests/unit/test_handlers.py::test_enroll_ticket_is_single_use_and_mismatch_fails_closed
+PASSED tests/unit/test_handlers.py::test_enroll_requires_authority_and_conversation_identity
+PASSED tests/unit/test_handlers.py::test_issue_user_ticket_returns_redeemable_secret
+PASSED tests/unit/test_handlers.py::test_issue_user_ticket_can_request_main_without_agent_id
+PASSED tests/unit/test_handlers.py::test_appoint_requires_ready_session
+PASSED tests/unit/test_handlers.py::test_build_application_full_enrollment_chain
+PASSED tests/unit/test_handlers.py::test_build_application_fails_closed_without_control_token
+PASSED tests/unit/test_handlers.py::test_admission_only_baseline_grants_ready_and_b_auth
+PASSED tests/unit/test_handlers.py::test_full_baseline_still_required_by_release_gate
+PASSED tests/unit/test_handlers.py::test_review_changes_requested_closes_execution_lease_and_grant
+PASSED tests/unit/test_handlers.py::test_task_resource_requests_come_from_main_scope
+PASSED tests/unit/test_history_cli.py::test_history_cli_uses_authenticated_http_and_preserves_the_page
+PASSED tests/unit/test_history_cli.py::test_history_cli_rejects_invalid_page_without_printing_server_input
+PASSED tests/unit/test_history_cli.py::test_history_cli_keeps_auth_and_input_errors_distinct[401-3]
+PASSED tests/unit/test_history_cli.py::test_history_cli_keeps_auth_and_input_errors_distinct[403-3]
+PASSED tests/unit/test_history_cli.py::test_history_cli_keeps_auth_and_input_errors_distinct[400-2]
+PASSED tests/unit/test_history_cli.py::test_history_cli_keeps_auth_and_input_errors_distinct[422-2]
+PASSED tests/unit/test_history_cli.py::test_history_cli_keeps_auth_and_input_errors_distinct[503-5]
+PASSED tests/unit/test_history_cli.py::test_history_cli_missing_credential_and_invalid_limit_do_not_issue_requests
+PASSED tests/unit/test_history_cli.py::test_related_query_cli_commands_use_shared_routes_and_dto_validation
+PASSED tests/unit/test_hostwake.py::test_unix_websocket_client_handshake_and_masked_frames
+PASSED tests/unit/test_hostwake.py::test_desktop_attach_probe_rejects_a_different_thread_identity
+PASSED tests/unit/test_hostwake.py::test_desktop_attach_uses_the_shared_dispatcher_and_evidence
+PASSED tests/unit/test_hostwake.py::test_desktop_attach_rejects_a_stale_binding_after_reattach
+PASSED tests/unit/test_hostwake.py::test_desktop_attach_restart_keeps_retryable_wake_state
+PASSED tests/unit/test_hostwake.py::test_desktop_attach_requires_explicit_local_endpoint_and_confirmation
+PASSED tests/unit/test_hostwake.py::test_desktop_attach_probe_and_wake_never_creates_a_thread
+PASSED tests/unit/test_hostwake.py::test_private_binding_store_round_trip_keeps_raw_values_private
+PASSED tests/unit/test_hostwake.py::test_managed_provider_probe_and_wake_record_separate_evidence
+PASSED tests/unit/test_hostwake.py::test_wake_dispatcher_replays_same_delivery_without_second_turn
+PASSED tests/unit/test_hostwake.py::test_wake_dispatcher_finishes_running_turn_in_background
+PASSED tests/unit/test_hostwake.py::test_presentation_evidence_survives_background_event_update
+PASSED tests/unit/test_hostwake.py::test_restart_marks_running_attempt_unknown_then_allows_one_recovery
+PASSED tests/unit/test_hostwake.py::test_jsonl_client_correlates_responses_and_preserves_notifications
+PASSED tests/unit/test_hostwake.py::test_managed_binding_resumes_after_provider_restart
+PASSED tests/unit/test_hostwake.py::test_managed_binding_builds_private_bridge_overrides
+PASSED tests/unit/test_hostwake.py::test_managed_client_does_not_inherit_parent_codex_identity
+PASSED tests/unit/test_hostwake.py::test_user_http_binding_endpoint_returns_only_secret_free_reference
+PASSED tests/unit/test_hostwake.py::test_user_http_desktop_attach_routes_to_shared_registry
+PASSED tests/unit/test_hostwake.py::test_user_http_desktop_attach_requires_an_enrolled_active_agent
+PASSED tests/unit/test_install.py::test_source_only_install_does_not_guess_project_root
+PASSED tests/unit/test_install.py::test_explicit_project_root_initializes_then_bootstraps
+PASSED tests/unit/test_install.py::test_existing_project_manifest_skips_reinitialization
+PASSED tests/unit/test_install.py::test_explicit_source_overrides_registered_checkout
+PASSED tests/unit/test_install.py::test_selected_host_skills_do_not_touch_unselected_hosts
+PASSED tests/unit/test_interfaces.py::test_http_and_dispatcher_share_hash_and_mcp_hides_user_commands
+PASSED tests/unit/test_interfaces.py::test_http_rejects_spoofed_identity_headers_and_stale_session
+PASSED tests/unit/test_interfaces.py::test_user_control_credential_is_distinct_from_agent_credential
+PASSED tests/unit/test_interfaces.py::test_blackboard_filters_secrets_and_marks_truncation
+PASSED tests/unit/test_lifecycle.py::test_user_decision_exact_digest_and_completion_survives_checkpoint_failure
+PASSED tests/unit/test_lifecycle.py::test_reset_invalidates_old_runtime_and_unknown_resolution_is_append_only
+PASSED tests/unit/test_messaging.py::test_pull_ack_is_idempotent_and_recipient_scoped
+PASSED tests/unit/test_messaging.py::test_send_conflict_covers_all_semantic_fields
+PASSED tests/unit/test_messaging.py::test_ack_does_not_claim_presentation_and_obligation_requires_response
+PASSED tests/unit/test_messaging.py::test_expired_delivery_can_be_pulled_again_and_push_is_suppressed
+PASSED tests/unit/test_onboarding_request.py::test_prepare_observes_original_host_and_preserves_idempotent_private_request
+PASSED tests/unit/test_onboarding_request.py::test_missing_native_context_does_not_invent_an_identity
+PASSED tests/unit/test_onboarding_request.py::test_stop_does_not_kill_an_unrelated_service_at_reused_endpoint
+PASSED tests/unit/test_opencode_probe.py::test_opencode_probe_keeps_unknown_baseline_explicit
+PASSED tests/unit/test_opencode_probe.py::test_probe_output_is_json_serializable
+PASSED tests/unit/test_private_file_lock.py::test_lock_port_fallback_is_deterministic
+PASSED tests/unit/test_private_file_lock.py::test_private_path_mutex_is_exclusive_and_releases_after_exception
+PASSED tests/unit/test_project_integration.py::test_bootstrap_materializes_non_secret_project_entries
+PASSED tests/unit/test_project_integration.py::test_bootstrap_is_idempotent_and_preserves_user_agents_content
+PASSED tests/unit/test_project_integration.py::test_bootstrap_project_lock_filename_is_windows_safe_and_root_specific
+PASSED tests/unit/test_project_integration.py::test_bootstrap_requires_explicit_refresh_for_managed_changes
+PASSED tests/unit/test_project_integration.py::test_refresh_does_not_overwrite_unmanaged_exact_file
+PASSED tests/unit/test_project_integration.py::test_two_projects_keep_project_entries_and_ids_isolated
+PASSED tests/unit/test_project_integration.py::test_refresh_source_hint_does_not_change_project_id
+PASSED tests/unit/test_project_integration.py::test_codex_config_preserves_user_settings_and_rejects_unmanaged_collision
+PASSED tests/unit/test_projects.py::test_project_init_persists_without_commit_and_hides_local_paths
+PASSED tests/unit/test_projects.py::test_rule_intersection_and_link_escape_are_segment_aware
+PASSED tests/unit/test_projects.py::test_unbound_root_is_diagnostic_only
+PASSED tests/unit/test_projects.py::test_auto_wake_project_policy_is_explicit_and_persistent
+PASSED tests/unit/test_resources.py::test_prefix_conflict_matrix_and_all_or_none
+PASSED tests/unit/test_resources.py::test_elapsed_time_does_not_release_and_explicit_release_is_idempotent
+PASSED tests/unit/test_resources.py::test_repeated_reservation_requires_identical_owner_epoch_and_scope
+PASSED tests/unit/test_resources.py::test_root_aliases_conflict_and_distinct_named_resources_do_not
+PASSED tests/unit/test_resources.py::test_external_observation_does_not_invent_an_owner
+PASSED tests/unit/test_runtime_context.py::test_subdirectory_resolves_one_project_state_and_endpoint
+PASSED tests/unit/test_runtime_context.py::test_conflicting_project_inputs_never_choose_another_credential[root]
+PASSED tests/unit/test_runtime_context.py::test_conflicting_project_inputs_never_choose_another_credential[id]
+PASSED tests/unit/test_runtime_context.py::test_conflicting_project_inputs_never_choose_another_credential[state]
+PASSED tests/unit/test_runtime_context.py::test_conflicting_project_inputs_never_choose_another_credential[url]
+PASSED tests/unit/test_runtime_context.py::test_cli_explicit_root_is_scoped_to_one_invocation
+PASSED tests/unit/test_runtime_maintenance.py::test_maintenance_never_changes_silent_task_or_reservation
+PASSED tests/unit/test_runtime_maintenance.py::test_expired_job_lease_is_recovered_without_executing_effect
+PASSED tests/unit/test_secret_delivery.py::test_delivery_replay_restart_ack_and_actual_local_protection
+PASSED tests/unit/test_secret_delivery.py::test_delivery_exact_scope_ttl_recovery_window_and_revocation
+PASSED tests/unit/test_secret_delivery.py::test_delivery_ref_rejects_path_traversal[delivery:../outside]
+PASSED tests/unit/test_secret_delivery.py::test_delivery_ref_rejects_path_traversal[delivery:/root]
+PASSED tests/unit/test_secret_delivery.py::test_delivery_ref_rejects_path_traversal[delivery:..\\outside]
+PASSED tests/unit/test_secret_delivery.py::test_delivery_ref_rejects_path_traversal[delivery:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]
+PASSED tests/unit/test_secret_delivery.py::test_delivery_ref_rejects_path_traversal[delivery:C:\\outside]
+PASSED tests/unit/test_secret_delivery.py::test_delivery_ref_rejects_path_traversal[not-a-delivery]
+PASSED tests/unit/test_secret_delivery.py::test_acl_failure_never_writes_secret_or_replaces_previous_file
+PASSED tests/unit/test_secret_delivery.py::test_private_blob_wrong_format_and_windows_tampering_fail_closed
+PASSED tests/unit/test_secret_delivery.py::test_existing_vault_explicit_everyone_grant_is_removed
+PASSED tests/unit/test_storage_runtime.py::test_transaction_event_outbox_and_idempotency
+PASSED tests/unit/test_storage_runtime.py::test_rollback_does_not_leave_event_or_command
+PASSED tests/unit/test_storage_runtime.py::test_job_lease_fences_stale_worker_and_unknown_is_historical
+PASSED tests/unit/test_storage_runtime.py::test_resolution_payload_is_not_used_as_an_execution_retry
+PASSED tests/unit/test_storage_runtime.py::test_retry_backoff_and_expired_external_effect_becomes_unknown
+PASSED tests/unit/test_storage_runtime.py::test_runtime_epoch_rotation_rejects_stale_worker
+PASSED tests/unit/test_storage_runtime.py::test_audit_event_envelope_is_timestamped_filterable_and_cursor_stable
+PASSED tests/unit/test_storage_runtime.py::test_public_timestamp_parser_rejects_naive_values
+PASSED tests/unit/test_storage_runtime.py::test_sensitive_command_result_is_private_and_replayed
+PASSED tests/unit/test_storage_runtime.py::test_legacy_sensitive_rows_require_revocation_not_live_secret_replay
+PASSED tests/unit/test_task_execution.py::test_block_requires_new_attempt_and_stale_revision_cannot_take_ownership
+PASSED tests/unit/test_task_execution.py::test_only_required_accepted_contracts_and_real_task_dependencies_gate_begin
+PASSED tests/unit/test_tasks.py::test_concurrent_claim_has_one_owner
+PASSED tests/unit/test_tasks.py::test_resume_is_claimed_then_start_and_submit_review
+PASSED tests/unit/test_tasks.py::test_blocked_task_can_be_claimed_by_a_later_agent_without_old_lease
+PASSED tests/unit/test_tasks.py::test_orphaned_execution_returns_task_to_public_queue
+PASSED tests/unit/test_tasks.py::test_changes_requested_closes_old_attempt_and_parent_does_not_cascade
+PASSED tests/unit/test_tasks.py::test_blocks_dag_rejects_cycle_and_restore_is_atomic
+PASSED tests/unit/test_tasks.py::test_cancel_requires_ack_only_with_an_active_executor[draft]
+PASSED tests/unit/test_tasks.py::test_cancel_requires_ack_only_with_an_active_executor[ready]
+PASSED tests/unit/test_tasks.py::test_cancel_requires_ack_only_with_an_active_executor[open]
+PASSED tests/unit/test_tasks.py::test_cancel_requires_ack_only_with_an_active_executor[blocked]
+PASSED tests/unit/test_tasks.py::test_cancel_requires_ack_only_with_an_active_executor[submitted]
+PASSED tests/unit/test_tasks.py::test_cancel_requires_ack_only_with_an_active_executor[claimed]
+PASSED tests/unit/test_tasks.py::test_cancel_requires_ack_only_with_an_active_executor[running]
+PASSED tests/unit/test_tasks.py::test_main_reclaim_cancel_fences_active_attempt_and_terminal_recovery
+PASSED tests/unit/test_trace_audit.py::test_actual_actor_subject_causation_entity_times_and_noop_revisions
+PASSED tests/unit/test_trace_audit.py::test_signed_snapshot_pages_over_200_have_no_gaps_or_duplicates
+PASSED tests/unit/test_trace_audit.py::test_private_message_subject_and_refs_are_recipient_scoped
+PASSED tests/unit/test_trace_audit.py::test_visible_pagination_scans_over_full_batches_of_hidden_legacy_rows
+PASSED tests/unit/test_trace_audit.py::test_query_entity_times_use_own_identity_and_survive_restart
+PASSED tests/unit/test_trace_audit.py::test_legacy_unknown_times_are_not_migration_time
+PASSED tests/unit/test_trace_audit.py::test_audit_read_connections_are_closed
+PASSED tests/unit/test_trace_audit.py::test_rfc3339_offsets_and_exact_milliseconds
+PASSED tests/unit/test_trace_audit.py::test_audit_http_query_validation_and_schema
+PASSED tests/unit/test_trace_audit.py::test_task_event_checkpoint_and_export_queries_share_public_projection
+PASSED tests/unit/test_trace_audit.py::test_task_history_includes_related_entities_without_writing
+PASSED tests/unit/test_trace_audit.py::test_timeline_queries_fail_closed_without_user_authentication
+PASSED tests/unit/test_trace_secret_receipts.py::test_enrollment_replay_ack_and_sqlite_never_contain_usable_credentials
+PASSED tests/unit/test_trace_secret_receipts.py::test_lost_reconnect_response_accepts_only_exact_old_proof_then_safe_ack
+PASSED tests/unit/test_trace_secret_receipts.py::test_response_loss_after_commit_preserves_memory_and_restart_replays_identity
+PASSED tests/unit/test_trace_secret_receipts.py::test_vault_failure_before_commit_rolls_back_identity_and_can_retry
+PASSED tests/unit/test_trace_secret_receipts.py::test_delivery_expiry_and_superseded_session_do_not_reissue_identity
+PASSED tests/unit/test_trace_secret_receipts.py::test_parallel_exact_replays_share_one_receipt_and_ack_cannot_revive_it
+PASSED tests/unit/test_trace_secret_receipts.py::test_credential_http_handoff_and_ack_never_cache_or_echo_secrets
+PASSED tests/unit/test_trace_workspace_access.py::test_actual_http_authorizes_domain_before_blob_and_restores_after_restart
+PASSED tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[project_id-404]
+PASSED tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[lineage_id-404]
+PASSED tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[domain_ref-403]
+PASSED tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[owner_actor-403]
+PASSED tests/unit/test_trace_workspace_access.py::test_reference_bindings_are_checked_before_reading[scope_digest-403]
+PASSED tests/unit/test_trace_workspace_access.py::test_private_recipient_boundary_applies_to_main_and_user
+PASSED tests/unit/test_trace_workspace_access.py::test_corrupt_blob_returns_explicit_unavailable_without_content
+PASSED tests/unit/test_workspace_evidence.py::test_external_multiple_roots_use_task_scope_and_unambiguous_paths
+PASSED tests/unit/test_workspace_evidence.py::test_bound_root_cannot_expand_scope_and_rebind_invalidates_workspace
+PASSED tests/unit/test_workspace_evidence.py::test_invalid_scope_shape_fails_as_input_error[scope0]
+PASSED tests/unit/test_workspace_evidence.py::test_invalid_scope_shape_fails_as_input_error[scope1]
+PASSED tests/unit/test_workspace_evidence.py::test_invalid_scope_shape_fails_as_input_error[scope2]
+PASSED tests/unit/test_workspaces.py::test_workspace_reuses_task_policy_without_starting_git_mutation
+PASSED tests/unit/test_workspaces.py::test_git_port_rejects_mutation_and_network_commands
+PASSED tests/unit/test_workspaces.py::test_dirty_baseline_head_change_and_cleanup_barriers
+PASSED tests/unit/test_workspaces.py::test_main_integration_request_is_pending_and_no_push
+PASSED tests/unit/test_workspaces.py::test_scan_root_digest_changes_when_same_path_content_changes
+PASSED tests/unit/test_workspaces.py::test_scan_root_excludes_tsunagou_private_state
+PASSED tests/unit/test_workspaces.py::test_patch_cannot_reinclude_tracked_private_credential_files[.tsunagou]
+PASSED tests/unit/test_workspaces.py::test_patch_cannot_reinclude_tracked_private_credential_files[.TSUNAGOU]
+PASSED tests/unit/test_workspaces.py::test_scan_scope_filters_outside_paths_and_patch_bytes
+PASSED tests/unit/test_workspaces.py::test_scan_symlink_records_link_without_reading_target
+PASSED tests/unit/test_workspaces.py::test_result_scope_and_validation_receipt_do_not_self_elevate
+PASSED tests/unit/test_workspaces.py::test_full_tree_digest_changes_between_clean_commits
+PASSED tests/unit/test_workspaces.py::test_index_digest_hashes_blob_even_when_working_content_is_identical
+PASSED tests/unit/test_workspaces.py::test_nul_rename_keeps_destination_and_source
+PASSED tests/unit/test_workspaces.py::test_scan_bound_git_subdirectory_does_not_read_siblings
+PASSED tests/unit/test_workspaces.py::test_custom_artifact_directory_cannot_reenter_scan
+PASSED tests/unit/test_workspaces.py::test_nested_private_state_is_excluded_from_tree_index_and_patch
+PASSED tests/unit/test_workspaces.py::test_directory_scan_does_not_follow_links_or_collect_private_state
+PASSED tests/unit/test_workspaces.py::test_unreadable_file_is_observed_but_never_passed_to_patch
+PASSED tests/unit/test_workspaces.py::test_corrupt_existing_artifact_is_rejected
+PASSED tests/unit/test_workspaces.py::test_tracked_path_through_link_cannot_read_or_patch_outside_scope
+PASSED tests/unit/test_workspaces.py::test_scope_uses_literal_paths_and_index_excludes_other_names
+PASSED tests/unit/test_workspaces.py::test_windows_junction_cannot_export_external_content
+PASSED tests/unit/test_workspaces.py::test_symlink_only_result_preserves_observation_without_exporting_target
+PASSED tests/unit/test_workspaces.py::test_validation_receipts_reject_malformed_times_and_raw_output[started_at-1]
+PASSED tests/unit/test_workspaces.py::test_validation_receipts_reject_malformed_times_and_raw_output[finished_at-2026-09-27T16:59:00Z]
+PASSED tests/unit/test_workspaces.py::test_validation_receipts_reject_malformed_times_and_raw_output[finished_at-2026-09-27T17:00:01]
+PASSED tests/unit/test_workspaces.py::test_validation_receipts_reject_malformed_times_and_raw_output[exit_code-True]
+PASSED tests/unit/test_workspaces.py::test_validation_receipts_reject_malformed_times_and_raw_output[workspace_digest-not-a-workspace-hash]
+PASSED tests/unit/test_workspaces.py::test_validation_receipts_reject_malformed_times_and_raw_output[stdout_digest-raw-secret-sentinel]
+PASSED tests/unit/test_workspaces.py::test_validation_receipts_reject_malformed_times_and_raw_output[stderr_digest-sha256:not-hex]
+PASSED tests/unit/test_workspaces.py::test_self_reported_receipts_remain_weak_and_include_tool_version_digest[host_observed]
+PASSED tests/unit/test_workspaces.py::test_self_reported_receipts_remain_weak_and_include_tool_version_digest[system_verified]
+PASSED tests/unit/test_workspaces.py::test_self_reported_receipts_remain_weak_and_include_tool_version_digest[user_confirmed]
+SKIPPED [1] tests\unit\test_workspaces.py:251: Windows filenames cannot contain newlines
+SKIPPED [1] tests\unit\test_workspaces.py:384: Windows paths are case-insensitive
+SKIPPED [1] tests\unit\test_workspaces.py:409: POSIX FIFO regression

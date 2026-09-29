@@ -11,6 +11,27 @@ cli = importlib.import_module("tsunagou.cli.app")
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_diagnostic_cli_encodes_filters_without_mutation(monkeypatch):
+    calls = []
+
+    def request(method, path, **headers):
+        calls.append((method, path))
+        return {"project_id": "project-1", "items": []}
+
+    monkeypatch.setattr(cli, "_control_token", lambda: "private-sentinel")
+    monkeypatch.setattr(cli, "_daemon_request", request)
+    result = CliRunner().invoke(cli.app, ["project", "diagnostics", "project-1", "--json",
+        "--message-id", "message-1", "--task-id", "task-1", "--from", "2026-09-28T13:00:00+08:00",
+        "--to", "2026-09-28T14:00:00Z"])
+    assert result.exit_code == 0 and json.loads(result.output)["items"] == []
+    assert calls[0][0] == "GET"
+    assert parse_qs(urlparse(calls[0][1]).query) == {
+        "message_id": ["message-1"], "task_id": ["task-1"],
+        "from": ["2026-09-28T13:00:00+08:00"], "to": ["2026-09-28T14:00:00Z"],
+    }
+    assert "private-sentinel" not in result.output
+
+
 def test_history_cli_uses_authenticated_http_and_preserves_the_page(monkeypatch: pytest.MonkeyPatch) -> None:
     page = json.loads((ROOT / "protocol/fixtures/valid/audit-page.json").read_text())
     calls: list[tuple] = []

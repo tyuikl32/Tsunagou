@@ -1,0 +1,138 @@
+{
+  "recorded_at": "2026-09-28T13:43:37.863Z",
+  "source_root": "D:\\ALL.NET\\SegaImageManageTool",
+  "checkout_root": "D:\\ALL.NET\\SegaImageManageTool-fx20260928",
+  "base_commit": "863537ff4f528da88cdf7b2d6c6786c69f1105a8",
+  "copied_files": [
+    {
+      "path": "Backend/HttpBackend.cs",
+      "sha256": "f481d3df32081f71abcf869497b136234f19670d1295364fe8cc2f585a387a25"
+    },
+    {
+      "path": "Backend/RequestAuditMiddleware.cs",
+      "sha256": "3f4c1f166c76e2d760af50dd465e2834830b68efcd3ed64127798e0112c909b1"
+    },
+    {
+      "path": "docs/api-contract/http-v1.md",
+      "sha256": "ea4289e69030e651fe8eb41246026d5ba6508c89a899178df8b27ecfe04f7926"
+    },
+    {
+      "path": "docs/http-acceptance/README.md",
+      "sha256": "c29800d9bf2ad49b0c388226a746752646a1ec4e17c71117c397b3219ee23c33"
+    },
+    {
+      "path": "docs/ui-acceptance/README.md",
+      "sha256": "0e943e77d059440f7bedaaae522ee04f9f2f3e7ccb2f32e82a28ab29fb245c9a"
+    },
+    {
+      "path": "tests/Http/run.ps1",
+      "sha256": "b2a52d3f57c2f5b7932f4833c685cc6235a59c4f91dfbc8850d25bbea9e9894f"
+    },
+    {
+      "path": "tests/WebUI/api.test.mjs",
+      "sha256": "121eba78a74a0b8da8089d58a252c4318ba8f067df9e53c28d0a39059f832305"
+    },
+    {
+      "path": "tests/WebUI/mock_server.py",
+      "sha256": "ab28a8fcea4d1d72d7ac8bfa84ba66fdc29329125b002b3de9fbfd1317d56916"
+    },
+    {
+      "path": "tests/WebUI/sample.app",
+      "sha256": "5a3f9f19c4b0e229de621681fb0d6a249f7c2d64dc8be07f113042026a3ab734"
+    },
+    {
+      "path": "wwwroot/api.js",
+      "sha256": "99d7ae412eded6e9b788e28a8c74aeb81e625e4489c7f9117494a73e8f4d9563"
+    },
+    {
+      "path": "wwwroot/app.js",
+      "sha256": "35c7bd2d2759985d4a34a8ccf3918921f8892c80a5041870c3e88e6ef2ad489d"
+    },
+    {
+      "path": "wwwroot/index.html",
+      "sha256": "9323bb52164872861cfd3ff09739528ef6798a6c775e5d456343e08dd6929868"
+    },
+    {
+      "path": "wwwroot/package.json",
+      "sha256": "609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8"
+    },
+    {
+      "path": "wwwroot/styles.css",
+      "sha256": "74a6ef14c04d44c1bfd09d04b9fc2c835e40d014f2cdc2c2ab157a6b68389b60"
+    },
+    {
+      "path": ".gitattributes",
+      "sha256": "d8fb0de4792538f93822b2c0d235604921299d5e54a3d6ec7a6cb34536e8bf1e"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "64675dd39fd581287f3129cd2ba3fed4673564642b0930cb82869e6d940f20b2"
+    },
+    {
+      "path": "Interface/BtidInterface.cs",
+      "sha256": "c392fc4bdef501f2c203f5ada6002f36f044e1abe6ed768cac7d8e1e2b0d14af"
+    },
+    {
+      "path": "Modules/Btid.cs",
+      "sha256": "58524f6e3c707b67192a9567eb713a82cfbd2999d0014dff87025a07848f82eb"
+    },
+    {
+      "path": "Modules/Common/Date.cs",
+      "sha256": "39c358bfdd4851cf73de0739beed9ec4eb661bae2b6002d53c766a4d133199f3"
+    },
+    {
+      "path": "Modules/Common/IniReader.cs",
+      "sha256": "b7aa50b838d397c78ddcb952f2097f57ce7b53e216d54233a29749db75526412"
+    },
+    {
+      "path": "Modules/Common/VersionIcf.cs",
+      "sha256": "862b9cee168da039efd08a3900bd042d635e6c029bb72f4e2959fbfd578736e6"
+    },
+    {
+      "path": "Modules/Common/VersionNo.cs",
+      "sha256": "4fab380f1047f222af894796fa254ffa4c0bf7b861a8d72ea211d25494e84f4f"
+    },
+    {
+      "path": "Modules/DownloadId.cs",
+      "sha256": "58b3b6e2834e2a9945a2316cfc3baf696cb8c7270ddd6a2c12156d4e1c6c2ecb"
+    },
+    {
+      "path": "Modules/IcfImage.cs",
+      "sha256": "0998b4f97b3ed15abbb61a07137ff7b3fd2ac262c214d06a6522df15ac63eaae"
+    },
+    {
+      "path": "Program.cs",
+      "sha256": "27605e09ef0af93b2e7dd82096a2a58bd6db3bcbbd25eb4acc23757811cf0c7e"
+    },
+    {
+      "path": "README.md",
+      "sha256": "79af30f9a2ef0af4a129fddc9adc721e7f63545ec42a2e7aac37ccfabc3de849"
+    },
+    {
+      "path": "SegaImageManageTool.csproj",
+      "sha256": "b92728bfd99b5dae7523b524d16f62e0127b2226debd3901c73835a3c98da642"
+    },
+    {
+      "path": "SegaImageManageTool.sln",
+      "sha256": "5464c57b24a4e3ceb1c260d9c4010fa2e9a3c4230ed0a6ce08343b7c15281bab"
+    },
+    {
+      "path": "Utils/Aes.cs",
+      "sha256": "5c74eeb2cf8319e7803f0a593934371f84a5c6f8c9f571e8390615bcdeb77579"
+    },
+    {
+      "path": "Utils/Common.cs",
+      "sha256": "d9314586f959acff95311de86bccb9dde4ae6385574416be5b92096c3ff64d12"
+    },
+    {
+      "path": "Utils/Crc32.cs",
+      "sha256": "9ae91ae5fb18caf2548186a6bf2f9011d1f22e37b20af269902804943bb6d4ff"
+    }
+  ],
+  "excluded": [
+    ".tsunagou/",
+    ".agents/",
+    "AGENTS.md"
+  ],
+  "source_modified": false
+}

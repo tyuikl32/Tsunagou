@@ -1,0 +1,11 @@
+........................................................................ [ 58%]
+.................F.................................                      [100%]
+================================== FAILURES ===================================
+________________ test_clean_clone_preview_confirm_and_restart _________________
+tests\integration\test_clone_recovery.py:97: in test_clean_clone_preview_confirm_and_restart
+    assert not state.resources.lease_sets and not state.project_registry.local_bindings
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'ResourceService' object has no attribute 'lease_sets'
+=========================== short test summary info ===========================
+FAILED tests/integration/test_clone_recovery.py::test_clean_clone_preview_confirm_and_restart
+1 failed, 122 passed, 308 warnings in 27.09s

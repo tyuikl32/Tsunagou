@@ -1,0 +1,31 @@
+{
+  "observed_at": "2026-09-28T17:44:11Z",
+  "scenario": "Two original Desktop Workers independently inspect the same real UserDecision interface before seeing each other's report",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "workers": [
+    {
+      "agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+      "task_id": "53aabd07-9a50-477c-8f2a-19cc69f10646",
+      "attempt_id": "de703c52-e9ae-4644-99d1-5af9e9b304e0",
+      "result_id": "38a8821c-d20a-47c0-abd5-dd2d271b371b",
+      "result_digest": "sha256:5c51cfad944e1e47a77db1cc51003bc3ffd7420cfc121980f5b85b84a87c535b"
+    },
+    {
+      "agent_id": "cb2f1ff6-87de-4625-9afe-00b44ef5c182",
+      "task_id": "e877f316-1f3c-4b9d-a5ba-270eb893514a",
+      "attempt_id": "a8dff583-c8bb-4b7d-b180-6f02699e9c73",
+      "result_id": "d683c0f7-6fa0-4ba1-ba57-56ebec3d5458",
+      "result_digest": "sha256:7c4710cd0b975c9687d5daf071ac78aceb089035faf844769f4ae4dfdc3eb9e7"
+    }
+  ],
+  "independent_conclusion": {
+    "proposal_digest_on_propose": "optional; daemon computes it and verifies it when supplied",
+    "decision_id_on_resolve": "required",
+    "proposal_digest_on_resolve": "required",
+    "resolve_principal": "user_control_only",
+    "resolve_tool": "not exposed through shared Agent MCP; user CLI/HTTP path",
+    "agreement": true
+  },
+  "a5_status": "not_run",
+  "reason": "The two reports agreed. No genuine comprehension discrepancy was observed, so no discrepancy or contract negotiation was fabricated. This is evidence of independent wake/work/submit and agreement, not proof of a disagreement-resolution scenario."
+}

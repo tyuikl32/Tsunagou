@@ -4,7 +4,7 @@
 
 ## scope
 
-主 Agent 通过 Task 的 `execution_scope.resources` 或 `execution_scope.roots` 决定范围。worker 的 `workspace.prepare.root_binding_refs` 只能从该范围选取根，空列表表示使用全部已授权根；worker 不能传入绝对路径或自行设定 scope。没有显式 task scope 时继承已注册项目根，没有注册根时使用协调仓库。daemon 从本地 `ProjectRegistry` 的绑定解析相对路径 allow-list，并将 `scope_paths`、`scope_roots` 与 `scope_digest` 持久化。空的显式任务范围会被拒绝。
+main 通过 Task execution_scope.resources 或 roots 决定范围，并按 task/scope_revision 选择 workspace 策略。Worker begin 自动使用这些绑定；Worker 不传入绝对路径或额外 scope。空 scope 是非文件任务，不继承整个项目根。daemon 保存规范化 scope_paths/scope_roots/scope_digest，未绑定或 identity 变化明确拒绝。
 
 `scope_digest` 绑定排序后的每个根描述：
 
@@ -24,7 +24,7 @@ HTTP `GET /api/v1/artifacts/{artifact_ref}` 必须携带用户控制 Bearer 或�
 
 ## validation_metadata
 
-`workspace.result` 可携带验证回执数组。每项至少包含：
+`task.submit` 可携带验证回执数组。每项至少包含：
 
 ```json
 {
@@ -39,10 +39,10 @@ HTTP `GET /api/v1/artifacts/{artifact_ref}` 必须携带用户控制 Bearer 或�
 }
 ```
 
-`workspace_digest`、可选的 `stdout_digest` 和 `stderr_digest` 必须为完整 `sha256:<64 hex>`，不能放入输出正文。工具及版本同时生成 `tool_version_digest`。worker 自报的高等级会保留为 `reported_evidence_level`，规范等级仍为 `agent_asserted`。daemon 自己的扫描会追加独立的 `workspace.scan` 记录并标为 `system_verified`，版本来自实际安装包。结果的 `evidence_subject=workspace_filesystem_observation` 限定整体等级的对象；它不会验证 Agent 提交的测试结果、commit 意义或逐行作者。
+`workspace_digest`、可选的 stdout_digest/stderr_digest 为完整 SHA-256，不放原始输出。测试回执是 Agent 报告，evidence_level 规范为 agent_asserted。daemon 的文件观察保存在 root_observations/observed_at，系统等级仅表示观察到文件状态，不代表验证了测试、commit 意义或逐行作者。
 
 ## 查询和验收
 
 工作区查询至少显示 `scope_digest`、`changed_paths`、`patch_artifact_domain`、`patch_artifact_owner`、`evidence_level`、`validation_metadata` 和 `observed_at`。遇到基线摘要变化时记录 `baseline_conflict=true`，由主 Agent 决定是否继续；扫描器不执行命令、提交 Git 或接受逐行作者结论。
 
-对应协议来源是 [命令目录](command-catalog.md) 的 `workspace.prepare`/`workspace.result`、[数据库规范](../../.trellis/spec/backend/database-guidelines.md) 和 [隔离模块说明](modules/06-workspaces.md)。
+对应协议来源是 [命令目录](command-catalog.md) 的 task.begin/task.submit、[数据库规范](../../.trellis/spec/backend/database-guidelines.md) 和 [隔离模块说明](modules/06-workspaces.md)。

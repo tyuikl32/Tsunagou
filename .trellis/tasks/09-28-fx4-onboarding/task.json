@@ -1,0 +1,41 @@
+{
+  "id": "fx4-onboarding",
+  "name": "fx4-onboarding",
+  "title": "FX4 安装定位与一次接入",
+  "description": "统一安装来源、项目解析、进程生命周期与 bridge 接入，自动绑定原会话，更新项目规则和 Skill。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": "codex/live-test-repair",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-28-real-test-repair",
+  "relatedFiles": [
+    ".trellis/tasks/09-28-fx4-onboarding/prd.md",
+    ".trellis/tasks/09-28-fx4-onboarding/design.md",
+    ".trellis/tasks/09-28-fx4-onboarding/implement.md"
+  ],
+  "notes": "CLI prepare/connect, shared per-request MCP, selected Codex bootstrap, agent list and multi-project daemon implemented. Python 403 passed/3 platform skips; TS 34, credential 17 plus late-ticket smoke passed. Original-host ready/wake loop and observed external-service mutex collision remain. See implementation-progress.md and validation-connect-multiproject.json.",
+  "meta": {
+    "repair_id": "FX4",
+    "depends_on": [
+      "09-28-fx2-execution-flow",
+      "09-28-fx3-desktop-wake"
+    ],
+    "target_repository": "Tsunagou",
+    "requirements": [
+      "FX-R05"
+    ]
+  },
+  "updated_at": "2026-09-28T12:50:42.000Z"
+}

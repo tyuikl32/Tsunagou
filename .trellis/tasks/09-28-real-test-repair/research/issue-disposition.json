@@ -1,0 +1,400 @@
+{
+  "format_version": 1,
+  "recorded_at": "2026-09-28T09:49:14.027Z",
+  "source": "docs/acceptance/evidence/sega-image-manage-tool-2026-09-28/unexpected-deviations.json",
+  "source_entry_count": 42,
+  "planning_only": true,
+  "entries": [
+    {
+      "issue_id": "installer_reused_existing_checkout",
+      "original_status": "resolved_with_manual_correction",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "显式 source-root 与实际 runtime/commit 一致；人工修正不是安装器修复。"
+    },
+    {
+      "issue_id": "daemon_pty_lifetime",
+      "original_status": "mitigated_for_acceptance",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "隐藏独立进程启动、关闭调用终端后仍存活并可查询。"
+    },
+    {
+      "issue_id": "daemon_root_resolution",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "统一项目定位；显式项目/状态冲突报错。"
+    },
+    {
+      "issue_id": "uv_environment_mismatch_warning",
+      "original_status": "open_low_risk",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "安装入口绑定自己的 runtime，输出实际环境；不另建环境管理器。"
+    },
+    {
+      "issue_id": "credential_lock_excluded_port",
+      "original_status": "fixed_and_regression_tested",
+      "disposition": "regression_only",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "已有 Windows 排除端口修复，复用并回归，不重写锁机制。"
+    },
+    {
+      "issue_id": "pending_ticket_after_lock_failure",
+      "original_status": "mitigated_but_trace_pending",
+      "disposition": "repair",
+      "tasks": [
+        "FX4",
+        "FX5"
+      ],
+      "reason": "接入重试复用 ticket/身份，报告真实阶段并留下失败时间。"
+    },
+    {
+      "issue_id": "stale_mcp_bridge",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "逐请求接收晚到凭据、准确说明实际重载，不循环要求重启。"
+    },
+    {
+      "issue_id": "unsupported_agent_list_command",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "增加现有 Agent 投影的 CLI 查询入口。"
+    },
+    {
+      "issue_id": "thread_creation_without_readiness",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4",
+        "FX6"
+      ],
+      "reason": "会话存在或 ticket 发出不算接入完成；原会话实调 context 验证。"
+    },
+    {
+      "issue_id": "target_baseline_nullable_warnings",
+      "original_status": "baseline_nonblocking",
+      "disposition": "out_of_scope",
+      "tasks": [],
+      "reason": "原业务基线警告非阻塞，不混入本次协议修复。"
+    },
+    {
+      "issue_id": "otel_blame_evidence_missing",
+      "original_status": "open_design_gap",
+      "disposition": "repair",
+      "tasks": [
+        "FX5"
+      ],
+      "reason": "真实调用 span 和来源关联；不虚构模型思考或 token 用量。"
+    },
+    {
+      "issue_id": "cli_source_module_missing",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "独立安装入口在非源码目录仍加载正确发行版。"
+    },
+    {
+      "issue_id": "cli_control_credential_missing",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "同一个项目 resolver 定位 control credential；不自动扩大 Worker 权限。"
+    },
+    {
+      "issue_id": "auto_wake_project_opt_in_required",
+      "original_status": "resolved_for_test_but_policy_gap",
+      "disposition": "repair",
+      "tasks": [
+        "FX3",
+        "FX4"
+      ],
+      "reason": "一次用户 connect 授权登记原会话绑定，不再逐 Agent 手动开关。"
+    },
+    {
+      "issue_id": "a2a_message_accepted_without_delivery",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX3",
+        "FX5"
+      ],
+      "reason": "持久接收、宿主接受、回合开始与处理分别记录。"
+    },
+    {
+      "issue_id": "main_worker_bridge_route_mismatch",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "每个真实会话路由独立 session/Agent，不以 profile 共用身份。"
+    },
+    {
+      "issue_id": "main_inbox_fetch_failed",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX4",
+        "FX5"
+      ],
+      "reason": "验证主 Agent 读自己的 inbox 身份正确；失败可查。"
+    },
+    {
+      "issue_id": "wake_expired_retry_without_worker_pull",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX3"
+      ],
+      "reason": "不以过期重试掩盖未启动；修控制连接和 pending 恢复。"
+    },
+    {
+      "issue_id": "main_worker_inbox_access_denied",
+      "original_status": "expected_boundary_but_observability_gap",
+      "disposition": "preserve_boundary",
+      "tasks": [
+        "FX4",
+        "FX5"
+      ],
+      "reason": "main 无权读 Worker 私信属正确边界；提供可见调度/失败元数据。"
+    },
+    {
+      "issue_id": "wake_retry_exhausted_assignments_blocked",
+      "original_status": "open_blocker",
+      "disposition": "repair",
+      "tasks": [
+        "FX2",
+        "FX3"
+      ],
+      "reason": "宿主投递故障不变成业务任务阻塞，保留消息并修原会话唤醒。"
+    },
+    {
+      "issue_id": "message_send_idempotency_asymmetry",
+      "original_status": "open",
+      "disposition": "regression_only",
+      "tasks": [
+        "FX6"
+      ],
+      "reason": "后续真实 HTTP 同 ID 六次调用仅两条不同消息；重新验证跨 MCP/A2A 路径，失败再定位，不先重写。"
+    },
+    {
+      "issue_id": "wake_fallback_accepted_without_worker_pull",
+      "original_status": "open",
+      "disposition": "repair",
+      "tasks": [
+        "FX3",
+        "FX5"
+      ],
+      "reason": "应用开发工具补发不是 daemon 成功；来源不得合并。"
+    },
+    {
+      "issue_id": "user_cannot_see_worker_turns",
+      "original_status": "open_user_visible_blocker",
+      "disposition": "repair",
+      "tasks": [
+        "FX3",
+        "FX4",
+        "FX6"
+      ],
+      "reason": "触发原 Desktop 会话可见新回合；CLI 显示真实最近活动。"
+    },
+    {
+      "issue_id": "overdesigned_initial_execution_chain",
+      "original_status": "deferred_postmortem",
+      "disposition": "repair",
+      "tasks": [
+        "FX2"
+      ],
+      "reason": "一次 begin/submit；删除 ready 门槛、重复准备和模型续租。"
+    },
+    {
+      "issue_id": "path_glob_scope_incompatible_with_typed_resources",
+      "original_status": "mitigated_in_acceptance",
+      "disposition": "repair",
+      "tasks": [
+        "FX2"
+      ],
+      "reason": "从任务规范范围生成类型化资源，禁止 Worker 再猜字符串声明。"
+    },
+    {
+      "issue_id": "bootstrap_workspace_root_unbound",
+      "original_status": "mitigated_with_coordination_root_fallback",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "bootstrap 注册实际项目根并保留追加授权语义。"
+    },
+    {
+      "issue_id": "cross_task_test_scope_overlap",
+      "original_status": "resolved_for_acceptance",
+      "disposition": "regression_only",
+      "tasks": [
+        "FX2",
+        "FX6"
+      ],
+      "reason": "范围冲突本身有效；main 调整任务划分，不删除冲突检查。"
+    },
+    {
+      "issue_id": "lease_ttl_expires_during_agent_turn",
+      "original_status": "open_design_gap_with_recovery_in_progress",
+      "disposition": "repair",
+      "tasks": [
+        "FX2"
+      ],
+      "reason": "明确释放 ResourceReservation，不按时间回收。"
+    },
+    {
+      "issue_id": "workspace_decision_attempt_repetition",
+      "original_status": "open_efficiency_gap",
+      "disposition": "repair",
+      "tasks": [
+        "FX2"
+      ],
+      "reason": "策略归 task，基线归 Attempt；无 scope 变化不重选。"
+    },
+    {
+      "issue_id": "contract_participant_slot_encoding_and_proxy_revival",
+      "original_status": "completed_with_protocol_integrity_gap",
+      "disposition": "repair",
+      "tasks": [
+        "FX1"
+      ],
+      "reason": "结构化 slot/agent_id，终态不可接受或代理复活。"
+    },
+    {
+      "issue_id": "prestart_lease_consumption_and_renewal_race",
+      "original_status": "completed_after_repeated_recovery",
+      "disposition": "repair",
+      "tasks": [
+        "FX2"
+      ],
+      "reason": "原子 begin 且无资源 TTL；失败无半套执行权。"
+    },
+    {
+      "issue_id": "valid_btid_success_fixture_missing",
+      "original_status": "resolved_with_synthetic_fixture_and_live_browser",
+      "disposition": "regression_only",
+      "tasks": [
+        "FX7",
+        "FX6"
+      ],
+      "reason": "已有正样本；严格执行 CRC/HMAC 后重新核实其有效性并保留可再分发样例。"
+    },
+    {
+      "issue_id": "unexpected_opencode_root_config",
+      "original_status": "removed_from_delivery_root",
+      "disposition": "repair",
+      "tasks": [
+        "FX4"
+      ],
+      "reason": "只生成所选 --hosts 配置，保持用户文件区块。"
+    },
+    {
+      "issue_id": "mcp_transport_not_a2a_protocol_proof",
+      "original_status": "resolved_evidence_gap_separate_native_wake_failure",
+      "disposition": "regression_only",
+      "tasks": [
+        "FX6"
+      ],
+      "reason": "已有直接 A2A HTTP 证据；新验收继续使用真实 message/send 并独立查唤醒。"
+    },
+    {
+      "issue_id": "otel_instrumentation_absent",
+      "original_status": "incomplete_deferred_after_business_delivery",
+      "disposition": "repair",
+      "tasks": [
+        "FX5"
+      ],
+      "reason": "五个调用边界的实际 SDK spans，可选本机导出。"
+    },
+    {
+      "issue_id": "diagnostic_empty_despite_transport_and_denials",
+      "original_status": "open_traceability_gap",
+      "disposition": "repair",
+      "tasks": [
+        "FX5"
+      ],
+      "reason": "传输/拒绝/宿主失败可查询，不伪造领域成功事件。"
+    },
+    {
+      "issue_id": "legacy_btid_integrity_results_discarded",
+      "original_status": "source_observed_legacy_limitation",
+      "disposition": "repair",
+      "tasks": [
+        "FX7"
+      ],
+      "reason": "修业务解析器校验结果和短读，HTTP 复用 422 invalid_image。"
+    },
+    {
+      "issue_id": "native_wake_disabled_and_unbound_in_initial_run",
+      "original_status": "configuration_corrected_for_followup",
+      "disposition": "repair",
+      "tasks": [
+        "FX3",
+        "FX4"
+      ],
+      "reason": "接入授权即绑定，实际失败提示明确；人工配好并未解决产品体验。"
+    },
+    {
+      "issue_id": "codex_listener_private_directory_required",
+      "original_status": "resolved_in_acceptance_setup",
+      "disposition": "retired_path",
+      "tasks": [
+        "FX3"
+      ],
+      "reason": "不重开已解决的 listener 路径问题；Desktop 改走应用连接，managed 保持自己的目录规则。"
+    },
+    {
+      "issue_id": "desktop_thread_active_writer_blocks_external_resume",
+      "original_status": "verified_native_wake_blocker",
+      "disposition": "repair",
+      "tasks": [
+        "FX3"
+      ],
+      "reason": "应用原控制连接触发，不新建 listener 抢 writer。"
+    },
+    {
+      "issue_id": "provider_failure_missing_terminal_diagnostic",
+      "original_status": "verified_diagnostic_gap",
+      "disposition": "repair",
+      "tasks": [
+        "FX3",
+        "FX5"
+      ],
+      "reason": "统一终态更新，provider 无 evidence 也记录失败。"
+    },
+    {
+      "issue_id": "superseded_open_tasks_and_ownerless_cancel",
+      "original_status": "duplicate_claim_prevented_terminal_cancel_gap_remains",
+      "disposition": "repair",
+      "tasks": [
+        "FX1",
+        "FX2"
+      ],
+      "reason": "无执行者直接取消；活跃执行者须确认/明确回收，保留 main 处置重复任务职责。"
+    }
+  ]
+}

@@ -38,6 +38,7 @@ class Task:
     revision: int = 1
     scope_revision: int = 1
     execution_scope: dict[str, Any] = field(default_factory=dict)
+    required_contract_ids: tuple[str, ...] = ()
     block_reason: str | None = None
     orphan_reason: str | None = None
     suspension_snapshot: SuspensionSnapshot | None = None
@@ -121,6 +122,7 @@ class TaskService:
     def create_task(
         self, title: str, objective: str, *, parent_task_id: str | None = None,
         blocks: set[str] | None = None, execution_scope: dict[str, Any] | None = None,
+        required_contract_ids: tuple[str, ...] = (),
     ) -> Task:
         with self._lock:
             if parent_task_id is not None and parent_task_id not in self.tasks:
@@ -128,6 +130,7 @@ class TaskService:
             task = Task(
                 new_id(), title, objective, parent_task_id=parent_task_id,
                 blocks=set(blocks or ()), execution_scope=dict(execution_scope or {}),
+                required_contract_ids=required_contract_ids,
             )
             self.tasks[task.task_id] = task
             self._validate_dag()
@@ -166,15 +169,20 @@ class TaskService:
 
     def update_plan(
         self, task_id: str, *, title: str | None = None, objective: str | None = None,
+        required_contract_ids: tuple[str, ...] | None = None,
     ) -> Task:
         with self._lock:
             task = self._task(task_id)
-            if task.status not in {"draft", "ready", "changes_requested"} or task.current_attempt_id is not None:
+            attempt = self.attempts.get(task.current_attempt_id or "")
+            if (task.status not in {"draft", "ready", "open", "blocked", "changes_requested"}
+                    or (attempt is not None and attempt.status in {"claimed", "running"})):
                 raise TaskStateError("task_plan_not_editable")
             if title is not None:
                 task.title = title
             if objective is not None:
                 task.objective = objective
+            if required_contract_ids is not None:
+                task.required_contract_ids = required_contract_ids
             task.revision += 1
             return task
 
@@ -183,7 +191,15 @@ class TaskService:
             task = self._task(task_id)
             if task.status in TASK_TERMINAL:
                 raise TaskStateError("terminal_task")
-            task.status = "cancel_requested"
+            attempt = self.attempts.get(task.current_attempt_id or "")
+            if attempt is not None and attempt.status in {"claimed", "running"}:
+                task.status = "cancel_requested"
+            else:
+                task.status = "cancelled"
+                if attempt is not None and attempt.status == "blocked":
+                    attempt.status = "cancelled"
+                    attempt.ended_at = time.time()
+                    attempt.revision += 1
             task.block_reason = reason
             task.revision += 1
             return task
@@ -420,6 +436,7 @@ class TaskService:
             if attempt and attempt.status not in ATTEMPT_TERMINAL:
                 attempt.status = "cancelled"
                 attempt.ended_at = time.time()
+                attempt.revision += 1
             task.revision += 1
             return task
 
@@ -478,19 +495,22 @@ class TaskService:
     def recover(self, task_id: str, *, expected_attempt_id: str, disposition: str) -> Task:
         with self._lock:
             task = self._task(task_id)
+            if task.status in TASK_TERMINAL:
+                raise TaskStateError("terminal_task")
             attempt = self.attempts.get(expected_attempt_id)
             if attempt is None or attempt.task_id != task_id:
                 raise TaskStateError("attempt_not_found")
             if task.current_attempt_id is not None and task.current_attempt_id != expected_attempt_id:
                 raise TaskStateError("attempt_id_mismatch")
             if disposition == "reopen":
-                if task.status not in {"open", "blocked", "orphaned", "cancel_requested", "changes_requested"}:
+                if task.status not in {"open", "claimed", "running", "blocked", "orphaned", "cancel_requested", "changes_requested"}:
                     raise TaskStateError("task_not_recoverable")
                 if attempt.status not in {"claimed", "running", "blocked", "orphaned", "failed", "cancelled"}:
                     raise TaskStateError("attempt_not_recoverable")
                 if attempt.status not in ATTEMPT_TERMINAL:
                     attempt.status = "orphaned"
                     attempt.ended_at = time.time()
+                    attempt.revision += 1
                 task.current_attempt_id = None
                 task.status = "open"
                 task.block_reason = None
@@ -502,6 +522,7 @@ class TaskService:
                 if attempt.status not in ATTEMPT_TERMINAL:
                     attempt.status = "cancelled"
                     attempt.ended_at = time.time()
+                    attempt.revision += 1
                 task.revision += 1
                 return task
             if disposition == "fail":
@@ -509,6 +530,7 @@ class TaskService:
                 if attempt.status not in ATTEMPT_TERMINAL:
                     attempt.status = "failed"
                     attempt.ended_at = time.time()
+                    attempt.revision += 1
                 task.revision += 1
                 return task
             raise ValueError("invalid_recovery_disposition")
@@ -522,13 +544,13 @@ class TaskService:
             if request["status"] != "pending":
                 raise TaskStateError("scope_request_closed")
             task = self._task(request["task_id"])
+            if task.status in {"claimed", "running", "cancel_requested"} | TASK_TERMINAL:
+                raise TaskStateError("scope_change_requires_stopped_task")
             request.update({"status": "approved", "approved_scope": approved_scope, "approver": approver})
             task.execution_scope = dict(approved_scope)
             task.scope_revision += 1
-            if task.status == "running":
-                task.status = "blocked"
-                if revoke_grants is not None:
-                    revoke_grants(task.task_id)
+            if revoke_grants is not None:
+                revoke_grants(task.task_id)
             task.revision += 1
             return task
 
@@ -549,6 +571,18 @@ class TaskService:
             chain.append(current.parent_task_id)
             current = self._task(current.parent_task_id)
         return chain
+
+    def describe_task(self, task_id: str) -> dict[str, Any]:
+        task = self._task(task_id)
+        attempt = self.attempts.get(task.current_attempt_id or "")
+        return {
+            "task_id": task.task_id, "title": task.title, "objective": task.objective,
+            "status": task.status, "revision": task.revision, "scope_revision": task.scope_revision,
+            "execution_scope": task.execution_scope, "required_contract_ids": list(task.required_contract_ids),
+            "blocks": sorted(task.blocks), "current_attempt_id": task.current_attempt_id,
+            "owner_agent_id": attempt.owner_agent_id if attempt is not None else None,
+            "block_reason": task.block_reason,
+        }
 
     def _task(self, task_id: str) -> Task:
         if task_id not in self.tasks:

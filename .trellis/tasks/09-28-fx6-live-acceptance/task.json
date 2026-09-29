@@ -1,0 +1,45 @@
+{
+  "id": "fx6-live-acceptance",
+  "name": "fx6-live-acceptance",
+  "title": "FX6 双 Worker 真实协作验收",
+  "description": "从全新状态验证独立安装、手动 Desktop 原会话唤醒、简化执行、恢复和可查询时间线。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": "codex/live-test-repair",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-28-real-test-repair",
+  "relatedFiles": [
+    ".trellis/tasks/09-28-fx6-live-acceptance/prd.md",
+    ".trellis/tasks/09-28-fx6-live-acceptance/design.md",
+    ".trellis/tasks/09-28-fx6-live-acceptance/implement.md"
+  ],
+  "notes": "Real original Desktop workers enrolled; message/payload/reply loop verified. Scoped business tasks published in isolated Sega checkout; code work and full acceptance remain in progress.",
+  "meta": {
+    "repair_id": "FX6",
+    "depends_on": [
+      "09-28-fx1-state-integrity",
+      "09-28-fx2-execution-flow",
+      "09-28-fx3-desktop-wake",
+      "09-28-fx4-onboarding",
+      "09-28-fx5-traceability",
+      "09-28-fx7-btid-integrity"
+    ],
+    "target_repository": "Tsunagou + isolated Sega checkout",
+    "requirements": [
+      "FX-R07"
+    ]
+  },
+  "updated_at": "2026-09-28T13:57:26.121Z"
+}

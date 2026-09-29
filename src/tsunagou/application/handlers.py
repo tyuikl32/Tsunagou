@@ -16,15 +16,13 @@ surface lands, the bridge sends them in the payload and each handler fails with 
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from tsunagou import __version__
+from tsunagou.application.workflows.execution_commands import ExecutionCommands
 from tsunagou.application.workflows.lifecycle import LifecycleService
-from tsunagou.application.workflows.task_execution import TaskExecutionWorkflow
 from tsunagou.application.workspace_evidence import WorkspaceEvidence
 from tsunagou.modules.artifacts import ArtifactService
 from tsunagou.modules.authority import AuthorityService
@@ -32,13 +30,13 @@ from tsunagou.modules.cognition import Claim, CognitionService
 from tsunagou.modules.coordination import CoordinationService
 from tsunagou.modules.messaging import Message, MessageStore
 from tsunagou.modules.projects import ProjectRegistry, physical_identity
-from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceService
+from tsunagou.modules.resources import ResourceService
 from tsunagou.modules.tasks import TaskService
 from tsunagou.modules.workspaces import WorkspaceService
 from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore
 from tsunagou.shared_kernel.baseline import missing_admission_capabilities
-from tsunagou.shared_kernel.time import format_timestamp, now_ms
+from tsunagou.shared_kernel.digests import canonical_digest
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
@@ -78,7 +76,15 @@ def _admission_report(baseline: Any) -> dict[str, Any]:
     return {"missing_admission": sorted(missing_admission_capabilities(report))}
 
 
-def _message_view(message: Message, messages: MessageStore | None = None) -> dict[str, Any]:
+def _required_contracts(payload: dict[str, Any]) -> tuple[str, ...]:
+    values = payload.get("required_contract_ids", [])
+    if (not isinstance(values, list) or any(not isinstance(item, str) or not item.strip() for item in values)
+            or len(set(values)) != len(values)):
+        raise ValueError("invalid_required_contract_ids")
+    return tuple(values)
+
+
+def _message_view(message: Message, messages: MessageStore | None = None, *, include_payload: bool = False) -> dict[str, Any]:
     view: dict[str, Any] = {
         "message_id": message.message_id,
         "sender_agent_id": message.sender_agent_id,
@@ -86,7 +92,11 @@ def _message_view(message: Message, messages: MessageStore | None = None) -> dic
         "kind": message.kind,
         "subject_ref": message.subject_ref,
         "summary": message.summary,
+        "in_reply_to": message.in_reply_to,
+        "payload_digest": message.payload_digest,
     }
+    if include_payload:
+        view["payload"] = message.payload
     if messages is not None:
         obligations = [
             {
@@ -119,17 +129,12 @@ def _contract_view(proposal: Any) -> dict[str, Any]:
 
 
 def _slot(item: Any, required: bool) -> dict[str, Any]:
-    if isinstance(item, str):
-        return {"slot": item, "required": required}
-    if isinstance(item, dict):
-        slot = item.get("slot") or item.get("agent_id") or item.get("id")
-        if not isinstance(slot, str) or not slot:
-            raise ValueError("participant_slot_required")
-        entry: dict[str, Any] = {"slot": slot, "required": required}
-        if "agent_id" in item:
-            entry["agent_id"] = item["agent_id"]
-        return entry
-    raise ValueError("invalid_participant")
+    if not isinstance(item, dict) or set(item) != {"slot", "agent_id"}:
+        raise ValueError("invalid_contract_participant")
+    for field in ("slot", "agent_id"):
+        if not isinstance(item[field], str) or not item[field].strip():
+            raise ValueError(f"participant_{field}_required")
+    return {**item, "required": required}
 
 
 def _claim(item: Any) -> Claim:
@@ -147,90 +152,6 @@ def _claim(item: Any) -> Claim:
     )
 
 
-def _resource_requests(items: Any) -> list[ResourceRequest]:
-    if not isinstance(items, list) or not items:
-        raise ValueError("resource_intent_empty")
-    result: list[ResourceRequest] = []
-    for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("mode"), str):
-            raise ValueError("invalid_resource_request")
-        kind = item.get("kind", "path")
-        if kind == "path":
-            root_id = item.get("root_id")
-            segments = item.get("segments") or ()
-            if not isinstance(root_id, str) or not isinstance(segments, list | tuple):
-                raise ValueError("invalid_path_resource")
-            key = ResourceKey.path(root_id, *(str(segment) for segment in segments))
-        elif kind == "named":
-            namespace, name = item.get("namespace"), item.get("name")
-            if not isinstance(namespace, str) or not isinstance(name, str):
-                raise ValueError("invalid_named_resource")
-            key = ResourceKey.named(namespace, name)
-        else:
-            raise ValueError("invalid_resource_kind")
-        result.append(ResourceRequest(key, item["mode"]))
-    return result
-
-
-def _scope_allows_requests(scope: dict[str, Any], requests: list[ResourceRequest], supplied_digest: Any) -> None:
-    """Enforce the explicit task resource prefix without interpreting intent."""
-    if not scope:
-        return
-    expected_digest = scope.get("digest")
-    if expected_digest is not None and str(supplied_digest or "") != str(expected_digest):
-        raise ValueError("resource_scope_conflict")
-    entries = scope.get("resources")
-    roots = scope.get("roots")
-    if entries is None and isinstance(roots, list):
-        allowed_roots = {str(root) for root in roots}
-        if not allowed_roots:
-            raise PermissionError("task_scope_denied")
-        for request in requests:
-            if request.key.kind != "path" or str(request.key.root_id) not in allowed_roots:
-                raise PermissionError("task_scope_denied")
-        return
-    if not isinstance(entries, list):
-        raise ValueError("invalid_task_execution_scope")
-    if not entries:
-        raise PermissionError("task_scope_denied")
-    allowed = _resource_requests(entries)
-    for request in requests:
-        permitted = False
-        for candidate in allowed:
-            if candidate.mode != request.mode:
-                continue
-            if request.key.kind == "named":
-                permitted = candidate.key == request.key
-            elif candidate.key.kind == "path" and request.key.kind == "path":
-                permitted = (
-                    candidate.key.root_id == request.key.root_id
-                    and request.key.segments[:len(candidate.key.segments)] == candidate.key.segments
-                )
-            if permitted:
-                break
-        if not permitted:
-            raise PermissionError("task_scope_denied")
-
-
-class IllegalChangeRejected(ValueError):
-    """A submitted workspace result contradicts what the daemon observed.
-
-    Carries structured detail so the caller (bridge/agent) learns *what* is wrong,
-    not just that something is. The message stays a bare machine code, so the API
-    layer keeps its existing `detail["code"]` contract.
-    """
-
-    def __init__(
-        self, code: str, *, violations: list[str], allowed: list[str], next_steps: list[str]
-    ) -> None:
-        super().__init__(code)
-        self.detail: dict[str, Any] = {
-            "violations": violations,
-            "allowed": allowed,
-            "next_steps": next_steps,
-        }
-
-
 def build_handlers(
     *, authority: AuthorityService, tasks: TaskService | None = None,
     cognition: CognitionService | None = None, messages: MessageStore | None = None,
@@ -245,6 +166,7 @@ def build_handlers(
     project_registry: ProjectRegistry | None = None,
     coordination: CoordinationService | None = None,
     artifacts: ArtifactService | None = None,
+    preparers: dict[str, Handler] | None = None,
 ) -> dict[str, Handler]:
     tasks = tasks if tasks is not None else TaskService()
     cognition = cognition if cognition is not None else CognitionService()
@@ -252,10 +174,14 @@ def build_handlers(
     resources = resources if resources is not None else ResourceService()
     workspaces = workspaces if workspaces is not None else WorkspaceService()
     coordination = coordination if coordination is not None else CoordinationService()
-    execution_workflow = TaskExecutionWorkflow(
-        tasks=tasks, cognition=cognition, resources=resources, workspaces=workspaces,
-        strict_runtime=strict_runtime,
+    execution = ExecutionCommands(
+        authority=authority, tasks=tasks, cognition=cognition, resources=resources, workspaces=workspaces,
+        coordination=coordination, evidence=WorkspaceEvidence(workspaces, project_registry, project_root) if project_root else None,
+        artifacts=artifacts, lifecycle=lifecycle, project_id=project_id or "local-project", state_runtime=state_runtime,
+        messages=messages,
     )
+    if preparers is not None:
+        preparers.update({"task.begin": execution.prepare_begin, "task.submit": execution.prepare_submit})
 
     def _authorize(
         context: dict[str, Any], capability: str, *,
@@ -273,74 +199,6 @@ def build_handlers(
             agent_id=agent_id, session_id=session_id, grant_id=grant.grant_id,
             capability=capability, task_id=task_id, attempt_id=attempt_id,
         )
-
-    def _reconcile_expired_leases() -> None:
-        """Revoke execution state when a lease expires before the next request."""
-        # ``expire_due`` returns only rows whose status changed in this call.
-        # Include already-expired rows too: a prior maintenance pass may have
-        # persisted the Lease fence but crashed before reconciling the owning
-        # Attempt.  The attempt/status guards below make this replay-safe.
-        expired_ids = set(resources.expire_due())
-        expired_ids.update(
-            lease.lease_set_id for lease in resources.lease_sets.values()
-            if lease.status == "expired"
-        )
-        for lease_id in expired_ids:
-            lease = resources.lease_sets.get(lease_id)
-            if lease is None:
-                continue
-            attempt = tasks.attempts.get(lease.attempt_id)
-            if attempt is None:
-                continue
-            assignment = coordination.assignment_for_task(attempt.task_id)
-            if attempt.status in {"claimed", "running"}:
-                attempt.status = "orphaned"
-                attempt.revision += 1
-                task = tasks.tasks.get(attempt.task_id)
-                if task is not None and task.current_attempt_id == attempt.attempt_id:
-                    # Expiry fences only the old execution Attempt. The Task is
-                    # returned to the public queue so a later Agent can claim it;
-                    # the old Agent is not a prerequisite for recovery.
-                    task.current_attempt_id = None
-                    task.status = "open"
-                    task.orphan_reason = "resource_lease_expired"
-                    task.revision += 1
-                for key, grant in list(authority.grants.items()):
-                    if grant.attempt_id == attempt.attempt_id and grant.status == "active":
-                        authority.grants[key] = type(grant)(
-                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                        )
-            if assignment is not None:
-                coordination.mark_lease_expired(attempt.task_id, attempt.attempt_id)
-
-    def _assignment_id_for_task(task_id: str) -> str | None:
-        assignment = coordination.assignment_for_task(task_id)
-        return assignment.assignment_id if assignment is not None else None
-
-    def _lease_guidance(attempt_id: str | None = None) -> dict[str, Any]:
-        """Expose worker-owned renewal facts without renewing on its behalf."""
-        with resources._lock:  # noqa: SLF001 - snapshot lease guidance atomically
-            leases = [
-                lease for lease in resources.lease_sets.values()
-                if attempt_id is not None
-                and lease.attempt_id == attempt_id
-                and lease.status == "active"
-            ]
-            leases.sort(key=lambda item: item.lease_set_id)
-            return {
-                "renewal_owner": "worker",
-                "renew_with": ["task.progress", "resource.renew"],
-                "daemon_heartbeat": False,
-                "leases": [
-                    {
-                        "lease_set_id": lease.lease_set_id,
-                        "attempt_id": lease.attempt_id,
-                        "status": lease.status,
-                        "expires_at": lease.expires_at,
-                    }
-                    for lease in leases
-                ],
-            }
 
     def enroll(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         installation_id = payload.get("installation_id")
@@ -430,8 +288,25 @@ def build_handlers(
         role = payload.get("role", "worker")
         if role not in {"worker", "main"}:
             raise ValueError("invalid_requested_role")
+        host_binding = payload.get("host_binding")
+        if host_binding is not None:
+            if (not isinstance(host_binding, dict)
+                    or set(host_binding) != {"provider", "endpoint", "thread_id", "host_generation"}
+                    or host_binding.get("provider") != "codex_desktop_app"
+                    or host_binding.get("thread_id") != conversation_id
+                    or any(not isinstance(value, str) or not value for value in host_binding.values())):
+                raise ValueError("enrollment_host_binding_invalid")
+            if project_registry is None or project_registry.project is None:
+                raise ValueError("project_not_initialized")
+            host_binding = {
+                **host_binding, "adapter_profile": "codex", "cwd": str(project_registry.repository),
+                "scope_digest": canonical_digest({"project_id": project_id, "roots": list(project_registry.project.roots)}),
+                "policy_digest": canonical_digest({"requested_role": role, "host_policy": "inherit"}),
+                "attach_confirmed": True,
+            }
         secret = authority.issue_ticket(
             installation_id, conversation_id, ttl_seconds=int(ttl_seconds), requested_role=role,
+            host_binding=host_binding,
         )
         return {
             "installation_id": installation_id,
@@ -546,9 +421,9 @@ def build_handlers(
             raise ValueError("invalid_task_execution_scope")
         task = tasks.create_task(
             title, objective, parent_task_id=parent_task_id, blocks=blocks,
-            execution_scope=execution_scope,
+            execution_scope=execution_scope, required_contract_ids=_required_contracts(payload),
         )
-        return {"task_id": task.task_id, "title": title, "objective": objective, "status": task.status}
+        return {"task_id": task.task_id, "title": title, "objective": objective, "status": task.status, "revision": task.revision}
 
     def _check_task_revisions(task: Any, payload: dict[str, Any]) -> None:
         expected = payload.get("expected_revisions")
@@ -577,19 +452,20 @@ def build_handlers(
         _authorize(context, "task.manage")
         task_id = _required_str(payload, "task_id")
         task = tasks.ready(task_id)
-        return {"task_id": task_id, "status": task.status}
+        return {"task_id": task_id, "status": task.status, "revision": task.revision}
 
     def task_publish(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
         task_id = _required_str(payload, "task_id")
         task = tasks.publish(task_id)
-        return {"task_id": task_id, "status": task.status}
+        return {"task_id": task_id, "status": task.status, "revision": task.revision}
 
     def task_update_plan(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
         task = tasks.update_plan(
             _required_str(payload, "task_id"),
             title=payload.get("title"), objective=payload.get("objective"),
+            required_contract_ids=_required_contracts(payload) if "required_contract_ids" in payload else None,
         )
         return {"task_id": task.task_id, "status": task.status, "revision": task.revision}
 
@@ -609,253 +485,41 @@ def build_handlers(
         tasks.remove_block(source, target)
         return {"source_task_id": source, "target_task_id": target, "removed": True}
 
-    def task_claim(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "task.claim")
-        task_id = _required_str(payload, "task_id")
-        coordination.require_worker_ready(task_id, context["principal_id"])
-        attempt = tasks.claim(task_id, context["principal_id"])
-        coordination.mark_claimed(task_id, context["principal_id"], attempt.attempt_id)
-        return {
-            "task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status,
-            "lease_guidance": _lease_guidance(attempt.attempt_id),
-        }
 
-    def task_resume(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "task.coordinate_self")
-        task_id = _required_str(payload, "task_id")
-        task = tasks.tasks.get(task_id)
-        if task is None:
-            raise KeyError(task_id)
-        _check_task_revisions(task, payload)
-        attempt = tasks.resume(task_id, context["principal_id"])
-        expected_epoch = payload.get("expected_execution_epoch")
-        if expected_epoch is not None and int(expected_epoch) != attempt.execution_epoch:
-            raise ValueError("execution_epoch_conflict")
-        return {"task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status}
 
-    def task_preflight(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "task.coordinate_self")
-        task_id = _required_str(payload, "task_id")
-        attempt_id = payload.get("attempt_id")
-        task = tasks.tasks.get(task_id)
-        if task is None:
-            raise KeyError(task_id)
-        _check_task_revisions(task, payload)
-        evidence_refs = tuple(payload.get("evidence_refs") or ())
-        preflight = execution_workflow.preflight(
-            task_id, context["principal_id"], attempt_id=attempt_id, evidence_refs=evidence_refs,
-        )
-        return {
-            "task_id": task_id, "attempt_id": preflight.attempt_id,
-            "preflight_id": preflight.preflight_id, "status": preflight.status,
-            "input_digest": preflight.input_digest, "blockers": list(preflight.blockers),
-        }
 
-    def task_start(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "task.coordinate_self")
-        task_id = _required_str(payload, "task_id")
-        attempt_id = payload.get("attempt_id")
-        preflight_id = payload.get("preflight_id")
-        # ResourceService's lock is the execution fence shared with the
-        # runtime maintenance loop. Holding it across expiry reconciliation,
-        # TaskService.start, and execution-grant issuance prevents a lease
-        # from expiring in the gap after validation but before the running
-        # state/grant become visible together.
-        with resources._lock:  # noqa: SLF001 - shared in-process state fence
-            _reconcile_expired_leases()
-            current_task = tasks.tasks.get(task_id)
-            current_attempt = tasks.attempts.get(current_task.current_attempt_id or "") if current_task else None
-            if current_task is None or current_attempt is None:
-                if current_task is not None and current_task.orphan_reason == "resource_lease_expired":
-                    raise ValueError("resource_lease_expired")
-                raise KeyError(task_id)
-            if attempt_id is not None and attempt_id != current_attempt.attempt_id:
-                raise ValueError("attempt_id_mismatch")
-            expected_epoch = payload.get("expected_execution_epoch")
-            if expected_epoch is not None and int(expected_epoch) != current_attempt.execution_epoch:
-                raise ValueError("execution_epoch_conflict")
-            if preflight_id is None:
-                raise ValueError("preflight_required")
-            if preflight_id not in tasks.preflights:
-                raise ValueError("preflight_id_mismatch")
-            preflight = tasks.preflights[preflight_id]
-            if preflight.task_id != task_id or preflight.attempt_id != current_attempt.attempt_id:
-                raise ValueError("preflight_id_mismatch")
-            if strict_runtime and payload.get("input_digest") and payload["input_digest"] != preflight.input_digest:
-                raise ValueError("preflight_digest_mismatch")
-            try:
-                execution_workflow.start(preflight, agent_id=context["principal_id"])
-            except ValueError as exc:
-                # A failed start may have discovered a missing runtime
-                # condition after a preflight lease was reserved. Keep blocked
-                # work free of execution resources so another Agent can claim
-                # it later.
-                if str(exc) == "resource_lease_expired":
-                    # The lease may have crossed its deadline after the first
-                    # reconciliation pass but before the final start check.
-                    # Run the same orphan/open + grant-revocation path again
-                    # before releasing any remaining active rows.
-                    _reconcile_expired_leases()
-                resources.release_for_attempt(current_attempt.attempt_id, reason="task_start_blocked")
-                for grant_id, grant in list(authority.grants.items()):
-                    if grant.attempt_id == current_attempt.attempt_id and grant.status == "active":
-                        authority.grants[grant_id] = type(grant)(
-                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                        )
-                raise ValueError(str(exc)) from exc
-            attempt = tasks.attempts[preflight.attempt_id]
-            if attempt_id is not None and attempt_id != attempt.attempt_id:
-                raise ValueError("attempt_id_mismatch")
-            coordination.mark_started(task_id, context["principal_id"], attempt.attempt_id)
-            grant = authority.issue_execution_grant(
-                agent_id=context["principal_id"], session_id=context["session_id"],
-                task_id=task_id, attempt_id=attempt.attempt_id, execution_epoch=attempt.execution_epoch,
-            )
-            return {
-                "task_id": task_id, "attempt_id": attempt.attempt_id, "status": attempt.status,
-                "execution_grant_id": grant.grant_id,
-                "lease_guidance": _lease_guidance(attempt.attempt_id),
-            }
 
     def task_progress(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _reconcile_expired_leases()
-        task_id = _required_str(payload, "task_id")
-        attempt_id = _required_str(payload, "attempt_id")
+        task_id, attempt_id = _required_str(payload, "task_id"), _required_str(payload, "attempt_id")
         _authorize(context, "task.execute", task_id=task_id, attempt_id=attempt_id)
-        progress = tasks.progress(
-            task_id, context["principal_id"], attempt_id=attempt_id,
-            summary=payload.get("summary") or "",
-            evidence_refs=tuple(payload.get("evidence_refs") or ()),
-        )
-        renewed: list[dict[str, Any]] = []
-        # A progress report also renews the active Lease. The lease scope is
-        # read from the durable intent rather than caller input, so a worker
-        # cannot renew a different scope while reporting progress.
-        for lease in resources.lease_sets.values():
-            if lease.attempt_id != attempt_id or lease.status != "active":
-                continue
-            renewed_lease = resources.renew(
-                lease.lease_set_id, attempt_id=attempt_id,
-                execution_epoch=tasks.attempts[attempt_id].execution_epoch,
-                scope_digest=lease.scope_digest,
-            )
-            renewed.append({
-                "lease_set_id": renewed_lease.lease_set_id,
-                "expires_at": renewed_lease.expires_at,
-            })
-        coordination.record_event(
-            "task.progress", actor_id=context["principal_id"], task_id=task_id,
-            assignment_id=_assignment_id_for_task(task_id),
-            summary=str(payload.get("summary") or ""), important=False,
-        )
-        return {
-            "task_id": task_id, "attempt_id": attempt_id,
-            "progress_id": progress.progress_id, "summary": progress.summary,
-            "renewed_leases": renewed,
-        }
+        record = tasks.progress(task_id, context["principal_id"], attempt_id=attempt_id,
+                                summary=str(payload.get("summary") or ""), evidence_refs=tuple(payload.get("evidence_refs") or ()))
+        return {"task_id": task_id, "attempt_id": attempt_id, "progress_id": record.progress_id, "summary": record.summary}
 
     def task_block(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.coordinate_self")
-        task_id = _required_str(payload, "task_id")
-        current = tasks.tasks.get(task_id)
-        if current is None:
-            raise KeyError(task_id)
-        attempt = tasks.attempts.get(current.current_attempt_id or "")
-        if attempt is not None and attempt.owner_agent_id != context["principal_id"]:
+        task_id, attempt_id = _required_str(payload, "task_id"), _required_str(payload, "attempt_id")
+        task = tasks.tasks[task_id]
+        attempt = tasks.attempts.get(task.current_attempt_id or "")
+        if attempt is None or attempt.attempt_id != attempt_id or attempt.owner_agent_id != context["principal_id"]:
             raise PermissionError("attempt_owner_required")
-        previous_attempt_id = attempt.attempt_id if attempt is not None else None
-        reason = payload.get("reason_code") or payload.get("reason") or "blocked"
-        task = tasks.block(
-            task_id, str(reason), checkpoint_summary=payload.get("checkpoint_summary") or {},
-            dependency_refs=tuple(payload.get("dependency_refs") or ()),
-            evidence_refs=tuple(payload.get("evidence_refs") or ()),
-        )
-        coordination.record_event(
-            "task.blocked", actor_id=context["principal_id"], task_id=task_id,
-            assignment_id=_assignment_id_for_task(task_id),
-            summary=str(reason), important=True,
-        )
-        coordination.mark_blocked(task_id, context["principal_id"])
-        if previous_attempt_id is not None:
-            resources.release_for_attempt(previous_attempt_id, reason="task_blocked")
-            for grant_id, grant in list(authority.grants.items()):
-                if grant.attempt_id == previous_attempt_id and grant.status == "active":
-                    authority.grants[grant_id] = type(grant)(
-                        **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                    )
-        return {"task_id": task_id, "status": task.status}
-
-    def task_submit(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        task_id = _required_str(payload, "task_id")
-        attempt_id = _required_str(payload, "attempt_id")
-        _authorize(context, "task.execute", task_id=task_id, attempt_id=attempt_id)
-        # Capture the caller's attempt before reconciliation.  If a Lease is
-        # already due, reconciliation intentionally orphans that Attempt and
-        # revokes its execution grant; surface the deterministic Lease fence
-        # to this command instead of allowing a stale submit to succeed.
-        now = time.time()
-        attempt_leases = [
-            lease for lease in resources.lease_sets.values()
-            if lease.attempt_id == attempt_id
-        ]
-        lease_expired = any(
-            lease.status == "expired"
-            or (lease.status == "active" and lease.expires_at <= now)
-            for lease in attempt_leases
-        )
-        _reconcile_expired_leases()
-        if lease_expired:
-            raise ValueError("resource_lease_expired")
-        if strict_runtime and cognition.unaligned_contracts_for_task(task_id):
-            # A result must not be published while an agreement this task depends on
-            # is unsettled, or has been revised past the one it worked under. This is
-            # the "everyone is still working from the old agreement" failure.
-            raise ValueError("contract_not_accepted")
-        task = tasks.tasks.get(task_id)
-        if task is None:
-            raise KeyError(task_id)
-        # Delivery is the second place where "which contract version governs" has to be
-        # settled, and the same declaration the start boundary uses answers it here: a
-        # result must not be published on top of a superseded agreement. The refusal
-        # closes nothing — the attempt keeps running, its Lease stays held and its files
-        # stay in place — so the caller can read the current version, bring the work up
-        # to date and submit again, instead of starting over.
-        _check_task_revisions(task, payload)
-        work = {key: value for key, value in payload.items() if key not in {"task_id", "attempt_id"}}
-        try:
-            result = execution_workflow.submit(
-                task_id, context["principal_id"], work, attempt_id=attempt_id,
-            )
-        except ValueError as exc:
-            # A deadline may pass after the initial reconciliation but before
-            # the workflow's atomic check.  Re-run the normal orphan/revoke
-            # path before returning the failure to the caller.
-            if str(exc) == "resource_lease_expired":
-                _reconcile_expired_leases()
-            raise
-        coordination.mark_submitted(task_id, context["principal_id"], attempt_id)
-        coordination.record_event(
-            "task.submitted", actor_id=context["principal_id"], task_id=task_id,
-            assignment_id=_assignment_id_for_task(task_id),
-            summary=result.digest, important=True,
-        )
-        if strict_runtime and authority.main_agent_id and authority.main_agent_id != context["principal_id"]:
-            reviewer_session = next(
-                (session for session in authority.sessions.values()
-                 if session.agent_id == authority.main_agent_id and session.active and session.status == "ready"),
-                None,
-            )
-            if reviewer_session is not None:
-                authority.issue_grant(
-                    issuer_agent_id=authority.main_agent_id, kind="task_review",
-                    principal_id=authority.main_agent_id, session_id=reviewer_session.session_id,
-                    task_id=task_id, capabilities={"task.review"}, scope={"task_id": task_id},
-                )
-        return {"result_id": result.result_id, "task_id": task_id, "attempt_id": attempt_id, "digest": result.digest}
+        if task.status == "cancel_requested":
+            tasks.acknowledge_cancel(task_id, context["principal_id"], attempt_id=attempt_id)
+        elif task.status in {"claimed", "running"}:
+            tasks.block(task_id, str(payload.get("reason_code") or payload.get("reason") or "blocked"),
+                        checkpoint_summary=payload.get("checkpoint_summary") or {},
+                        dependency_refs=tuple(payload.get("dependency_refs") or ()),
+                        evidence_refs=tuple(payload.get("evidence_refs") or ()))
+        else:
+            raise ValueError("attempt_not_running")
+        execution.release(attempt_id, "task_blocked")
+        return {"task_id": task_id, "attempt_id": attempt_id, "status": task.status, "revision": task.revision}
 
     def task_cancel_request(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
         task = tasks.request_cancel(_required_str(payload, "task_id"), _required_str(payload, "reason"))
+        if task.status == "cancelled" and task.current_attempt_id is not None:
+            execution.release(task.current_attempt_id, "task_cancelled")
         return {"task_id": task.task_id, "status": task.status, "revision": task.revision}
 
     def task_cancel_ack(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -864,7 +528,7 @@ def build_handlers(
             _required_str(payload, "task_id"), context["principal_id"],
             attempt_id=_required_str(payload, "attempt_id"),
         )
-        resources.release_for_attempt(payload["attempt_id"], reason="task_cancelled")
+        execution.release(payload["attempt_id"], "task_cancelled")
         return {"task_id": task.task_id, "status": task.status, "revision": task.revision}
 
     def task_fail(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -873,8 +537,7 @@ def build_handlers(
             _required_str(payload, "task_id"), context["principal_id"],
             attempt_id=_required_str(payload, "attempt_id"), reason=_required_str(payload, "reason"),
         )
-        coordination.mark_failed(task.task_id, context["principal_id"])
-        resources.release_for_attempt(payload["attempt_id"], reason="task_failed")
+        execution.release(payload["attempt_id"], "task_failed")
         return {"task_id": task.task_id, "status": task.status, "revision": task.revision}
 
     def task_recover(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -884,12 +547,7 @@ def build_handlers(
             task_id, expected_attempt_id=_required_str(payload, "expected_attempt_id"),
             disposition=_required_str(payload, "disposition"),
         )
-        resources.release_for_attempt(payload["expected_attempt_id"], reason="task_recovered")
-        for grant_id, grant in list(authority.grants.items()):
-            if grant.attempt_id == payload["expected_attempt_id"] and grant.status == "active":
-                authority.grants[grant_id] = type(grant)(
-                    **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                )
+        execution.release(payload["expected_attempt_id"], "task_recovered")
         return {"task_id": task_id, "status": task.status, "revision": task.revision}
 
     def task_scope_request(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -950,301 +608,6 @@ def build_handlers(
         return {"task_id": task_id, "result_id": result.result_id, "status": tasks.tasks[task_id].status,
                 "decision": review.decision}
 
-    def resource_intent(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "resource.intent")
-        if project_registry is not None:
-            resources.set_root_aliases({
-                root_id: str(binding.get("physical_identity") or root_id)
-                for root_id, binding in project_registry.local_bindings.items()
-            })
-        task_id = _required_str(payload, "task_id")
-        attempt_id = _required_str(payload, "attempt_id")
-        attempt = tasks.attempts.get(attempt_id)
-        if attempt is None or attempt.task_id != task_id or attempt.owner_agent_id != context["principal_id"]:
-            raise PermissionError("attempt_owner_required")
-        task = tasks.tasks.get(task_id)
-        if task is None:
-            raise KeyError(task_id)
-        requests = _resource_requests(payload.get("resources"))
-        _scope_allows_requests(task.execution_scope, requests, payload.get("scope_digest"))
-        intent = resources.declare_intent(
-            task_id=task_id, attempt_id=attempt_id, owner_agent_id=context["principal_id"],
-            scope_digest=str(payload.get("scope_digest") or ""),
-            resources=requests, reason=str(payload.get("reason") or ""),
-        )
-        return {"intent_id": intent.intent_id, "revision": intent.revision,
-                "task_id": task_id, "attempt_id": attempt_id}
-
-    def resource_acquire(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _reconcile_expired_leases()
-        _authorize(context, "resource.acquire")
-        task_id = _required_str(payload, "task_id")
-        attempt_id = _required_str(payload, "attempt_id")
-        intent_id = _required_str(payload, "intent_id")
-        intent = resources.intents.get(intent_id)
-        attempt = tasks.attempts.get(attempt_id)
-        if intent is None or attempt is None or intent.task_id != task_id or intent.attempt_id != attempt_id:
-            raise ValueError("resource_intent_attempt_mismatch")
-        if attempt.owner_agent_id != context["principal_id"]:
-            raise PermissionError("attempt_owner_required")
-        coordination.require_worker_ready(task_id, context["principal_id"])
-        expected_revision = payload.get("intent_revision")
-        if expected_revision is not None and int(expected_revision) != intent.revision:
-            raise ValueError("resource_intent_revision_conflict")
-        scope_digest = payload.get("scope_digest")
-        if scope_digest is not None and str(scope_digest) != intent.scope_digest:
-            raise ValueError("resource_scope_conflict")
-        lease = resources.reserve_set(intent_id, execution_epoch=attempt.execution_epoch, attempt_status=attempt.status)
-        return {
-            "lease_set_id": lease.lease_set_id, "attempt_id": attempt_id,
-            "expires_at": lease.expires_at, "status": lease.status,
-            "lease_guidance": _lease_guidance(attempt_id),
-        }
-
-    def resource_release(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "resource.release")
-        attempt_id = _required_str(payload, "attempt_id")
-        attempt = tasks.attempts.get(attempt_id)
-        if attempt is None or attempt.owner_agent_id != context["principal_id"]:
-            raise PermissionError("attempt_owner_required")
-        return {"attempt_id": attempt_id, "released": resources.release_for_attempt(
-            attempt_id, reason=str(payload.get("reason") or "released"))}
-
-    def resource_renew(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _reconcile_expired_leases()
-        lease_id = _required_str(payload, "lease_set_id")
-        attempt_id = _required_str(payload, "attempt_id")
-        _authorize(context, "task.execute", attempt_id=attempt_id)
-        attempt = tasks.attempts.get(attempt_id)
-        lease = resources.lease_sets.get(lease_id)
-        if attempt is None or lease is None:
-            raise KeyError(lease_id)
-        renewed = resources.renew(
-            lease_id, attempt_id=attempt_id, execution_epoch=attempt.execution_epoch,
-            scope_digest=str(payload.get("scope_digest") or ""),
-        )
-        return {"lease_set_id": renewed.lease_set_id, "expires_at": renewed.expires_at, "status": renewed.status}
-
-    def workspace_select(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "workspace.select")
-        task_id = _required_str(payload, "task_id")
-        attempt_id = _required_str(payload, "attempt_id")
-        attempt = tasks.attempts.get(attempt_id)
-        if attempt is None or attempt.task_id != task_id:
-            raise ValueError("task_attempt_relationship_required")
-        decision = workspaces.record_isolation_decision(
-            task_id=task_id, attempt_id=attempt_id, driver_kind=_required_str(payload, "driver_kind"),
-            input_snapshot={"input_digest": payload.get("input_digest"), "task_id": task_id,
-                            "attempt_id": attempt_id},
-            hard_constraints=set(payload.get("hard_constraints") or ()),
-            evidence_refs=list(payload.get("evidence_refs") or ()), decided_by=context["principal_id"],
-        )
-        return {"decision_id": decision.decision_id, "decision_digest": decision.decision_digest,
-                "driver_kind": decision.driver_kind, "status": "selected"}
-
-    def workspace_prepare(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "workspace.prepare")
-        task_id = _required_str(payload, "task_id")
-        attempt_id = _required_str(payload, "attempt_id")
-        decision_id = _required_str(payload, "decision_id")
-        attempt = tasks.attempts.get(attempt_id)
-        decision = workspaces.decisions.get(decision_id)
-        if attempt is None or decision is None or attempt.task_id != task_id or decision.attempt_id != attempt_id:
-            raise ValueError("workspace_decision_attempt_mismatch")
-        if attempt.owner_agent_id != context["principal_id"]:
-            raise PermissionError("attempt_owner_required")
-        evidence = WorkspaceEvidence(workspaces, project_registry, project_root) if project_root else None
-        scope_roots = evidence.resolve_scope(tasks.tasks[task_id], list(payload.get("root_binding_refs") or ())) if evidence else []
-        scope_paths = evidence.virtual_paths(scope_roots) if evidence else None
-        workspace = workspaces.request_workspace(
-            decision_id, root_binding_refs=[root["root_id"] for root in scope_roots] or list(payload.get("root_binding_refs") or ()),
-            repository_id=payload.get("repository_id"), external_locator=payload.get("external_locator"),
-            current_main_id=authority.main_agent_id,
-            scope_paths=scope_paths, scope_roots=scope_roots,
-        )
-        baseline = payload.get("baseline") or {}
-        if not isinstance(baseline, dict):
-            raise ValueError("invalid_baseline")
-        if strict_runtime and evidence and decision.driver_kind == "shared":
-            observed = evidence.scan(workspace, tasks.tasks[task_id])
-            baseline = {**baseline, **observed}
-        manifest = workspaces.record_baseline(
-            workspace.workspace_id, head_commit=baseline.get("head_commit"), branch=baseline.get("branch"),
-            index_digest=str(baseline.get("index_digest") or ""),
-            tracked_state_digest=str(baseline.get("tracked_state_digest") or ""),
-            untracked_summary=list(baseline.get("untracked_summary") or ()),
-            root_identities=list(baseline.get("root_identities") or ()), dirty=bool(baseline.get("dirty", False)),
-            root_observations=list(baseline.get("root_observations") or ()),
-        )
-        return {"workspace_id": workspace.workspace_id, "status": workspace.status,
-                "baseline_manifest_id": manifest.manifest_id, "baseline_digest": manifest.digest,
-                "scope_digest": workspace.scope_digest, "scope_roots": list(workspace.scope_roots),
-                "observed_state_digest": manifest.tracked_state_digest}
-
-    def _reject_unreported_changes(
-        *, payload: dict[str, Any], observed: dict[str, Any], attempt_id: str
-    ) -> None:
-        """Reject a workspace result that leaves out a change made inside its own lease.
-
-        Runs *before* anything is written, so raising here rolls the whole command
-        back and leaves no state behind. That is what makes self-repair possible: the
-        agent declares or rolls the path back and simply re-submits (idempotent).
-
-        Scope compliance is deliberately *not* re-checked here. The recorded paths must
-        already be a subset of what the daemon observed, and every recorded path must
-        fall inside the workspace's prepared scope, so the forward direction already
-        has an owner. This gate owns only the reverse direction: a change the daemon
-        saw inside the Attempt's own leased area that the Attempt never declared.
-        """
-        reported = {str(path) for path in (payload.get("changed_paths") or ()) if str(path)}
-        # Newly created files land in untracked_summary, modified ones in
-        # changed_paths; both are candidate evidence of this Attempt's edits.
-        seen = {str(path) for path in (observed.get("changed_paths") or ()) if str(path)}
-        seen |= {str(path) for path in (observed.get("untracked_summary") or ()) if str(path)}
-        # `.tsunagou` / `.git` never reach either set: path normalisation refuses them
-        # and the scanner drops them, so no private-path filtering is needed here.
-        #
-        # A single-root workspace reports plain relative paths, while a multi-root one
-        # prefixes every path with `<root_id>/`. A lease key carries the root id plus
-        # case-folded segments, so it is matched in both shapes, with both sides
-        # case-folded to agree with the lease vocabulary itself.
-        prefixes: list[tuple[str, ...]] = []
-        allowed_labels: list[str] = []
-        for lease in resources.lease_sets.values():
-            if lease.attempt_id != attempt_id or lease.status != "active":
-                continue
-            for request in lease.resources:
-                if request.key.kind != "path":
-                    continue
-                if request.mode not in {"exclusive_write", "exclusive_use"}:
-                    continue
-                segments = tuple(part.casefold() for part in request.key.segments)
-                if not segments:
-                    continue
-                prefixes.append(segments)
-                root_id = str(request.key.root_id or "").casefold()
-                if root_id:
-                    prefixes.append((root_id, *segments))
-                allowed_labels.append("/".join(request.key.segments) or request.key.canonical)
-
-        def _covered(path: str) -> bool:
-            parts = tuple(part.casefold() for part in path.replace("\\", "/").split("/") if part)
-            return bool(parts) and any(parts[: len(prefix)] == prefix for prefix in prefixes)
-
-        # A change observed *inside* this Attempt's own leased area but never declared
-        # is the Attempt's doing. Outside that area ownership cannot be attributed
-        # (user edits, other attempts, the daemon's own writes), so those paths stay
-        # part of the recorded result instead of blocking the Attempt.
-        unreported = sorted(path for path in (seen - reported) if _covered(path))
-        if not unreported:
-            return
-        raise IllegalChangeRejected(
-            "unreported_changes",
-            violations=unreported,
-            allowed=sorted(set(allowed_labels)),
-            next_steps=[
-                "declare the paths listed above in changed_paths, or roll them back if they "
-                "were not intended; never restore the whole workspace (that would wipe the "
-                "user's uncommitted edits)",
-                "if these changes are genuinely required but outside this task's purpose, "
-                "request a wider execution scope or escalate a user decision",
-                "re-submit the same result after the fix; repeated submission is safe",
-            ],
-        )
-
-    def workspace_result(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        task_id = _required_str(payload, "task_id")
-        attempt_id = _required_str(payload, "attempt_id")
-        workspace_id = _required_str(payload, "workspace_id")
-        _authorize(context, "task.execute", task_id=task_id, attempt_id=attempt_id)
-        workspace = workspaces.workspaces.get(workspace_id)
-        if workspace is None or workspace.attempt_id != attempt_id:
-            raise ValueError("workspace_attempt_mismatch")
-        attempt = tasks.attempts.get(attempt_id)
-        if attempt is None or attempt.status != "running":
-            # Recording a result is part of the execution, not a postscript: a
-            # submitted or fenced Attempt has already released its Lease, so the
-            # adjudication below could no longer attribute anything to it. Pinning
-            # the order (result first, submit second) is what keeps it sound.
-            raise ValueError("attempt_not_running")
-        observed: dict[str, Any] = {}
-        started_at = now_ms()
-        if strict_runtime and project_root and workspace.driver_kind == "shared":
-            observed = WorkspaceEvidence(workspaces, project_registry, project_root).scan(
-                workspace, tasks.tasks[task_id], include_patch=True,
-            )
-        # Caller supplied paths are evidence claims, never an authorization
-        # expansion.  record_result re-checks every path against the persisted
-        # scope; observed paths are the daemon's independent facts.
-        changed_paths = list(observed["changed_paths"] if observed else payload.get("changed_paths") or ())
-        untracked_summary = list(observed["untracked_summary"] if observed else payload.get("untracked_summary") or ())
-        if observed and not set(payload.get("changed_paths") or ()).issubset(changed_paths):
-            raise ValueError("workspace_changed_paths_mismatch")
-        supplied_patch_ref = payload.get("patch_artifact_ref")
-        patch_artifact_ref = supplied_patch_ref
-        if supplied_patch_ref is not None:
-            if artifacts is None or state_runtime is None:
-                raise PermissionError("artifact_service_required")
-            supplied_bytes = artifacts.validate_workspace_ref(
-                supplied_patch_ref, workspace_id=workspace_id, actor=context["principal_id"],
-                project_id=project_id or "local-project", lineage_id=state_runtime.lineage_id,
-                scope_digest=workspace.scope_digest or "",
-            )
-            if observed and supplied_bytes != observed["patch_bytes"]:
-                raise ValueError("workspace_patch_artifact_mismatch")
-        if observed.get("patch_bytes") and supplied_patch_ref is None:
-            if artifacts is None or state_runtime is None:
-                raise RuntimeError("artifact_service_required")
-            reference = artifacts.record_workspace_patch(
-                observed["patch_bytes"], workspace_id=workspace_id, actor=context["principal_id"],
-                project_id=project_id or "local-project", lineage_id=state_runtime.lineage_id,
-                scope_digest=workspace.scope_digest or "",
-            )
-            patch_artifact_ref = reference.artifact_ref
-        if strict_runtime:
-            # Submit-time adjudication. Reject before writing anything so the
-            # transaction rolls back cleanly and a retry can succeed after repair.
-            _reject_unreported_changes(payload=payload, observed=observed, attempt_id=attempt_id)
-        baseline = workspaces.baselines.get(workspace.baseline_manifest_id or "")
-        observed_state_digest = observed.get("tracked_state_digest")
-        baseline_conflict = bool(observed_state_digest and baseline and observed_state_digest != baseline.tracked_state_digest)
-        result = workspaces.record_result(
-            workspace_id, attempt_id=attempt_id, baseline_digest=_required_str(payload, "baseline_digest"),
-            commit_refs=list(payload.get("commit_refs") or ()), patch_artifact_ref=patch_artifact_ref,
-            changed_paths=changed_paths,
-            untracked_summary=untracked_summary,
-            validation_refs=list(payload.get("validation_refs") or ()),
-            observed_state_digest=observed_state_digest,
-            baseline_conflict=baseline_conflict,
-            submitted_by=context["principal_id"],
-            root_observations=list(observed.get("root_observations") or ()),
-            evidence_level="system_verified" if observed else "agent_asserted",
-            validation_metadata=list(payload.get("validation_metadata") or ()),
-            observed_validation_metadata=([
-                {
-                    "started_at": format_timestamp(started_at),
-                    "finished_at": format_timestamp(now_ms()),
-                    "command": "workspace.scan",
-                    "exit_code": 0,
-                    "tool": "tsunagou",
-                    "tool_version": __version__,
-                    "workspace_digest": observed.get("tracked_state_digest") or "unknown",
-                    "evidence_level": "system_verified",
-                }
-            ] if observed else None),
-        )
-        return {"result_manifest_id": result.manifest_id, "digest": result.digest,
-                "workspace_id": workspace_id, "status": workspace.status,
-                "baseline_conflict": result.baseline_conflict,
-                "observed_state_digest": result.observed_state_digest,
-                "scope_digest": result.scope_digest,
-                "submitted_by": result.submitted_by, "observed_at": format_timestamp(result.observed_at),
-                "evidence_level": result.evidence_level,
-                "observed_by": "daemon" if observed else None,
-                "evidence_subject": "workspace_filesystem_observation" if observed else "agent_assertion",
-                "validation_metadata": list(result.validation_metadata),
-                **({"patch_artifact_ref": result.patch_artifact_ref} if result.patch_artifact_ref else {})}
-
     def workspace_integrate(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         """Create a Main-only, no-push integration request from a worker result."""
         _authorize(context, "workspace.select")
@@ -1268,40 +631,20 @@ def build_handlers(
         }
 
     def task_review(payload: dict[str, Any], context: dict[str, Any], *, decision: str) -> dict[str, Any]:
-        task_id = _required_str(payload, "task_id")
-        result_id = _required_str(payload, "result_id")
+        task_id, result_id = _required_str(payload, "task_id"), _required_str(payload, "result_id")
         _authorize(context, "task.review", task_id=task_id)
         result = tasks.results.get(result_id)
         if result is None or result.task_id != task_id:
             raise ValueError("result_task_mismatch")
         if payload.get("result_digest") != result.digest:
             raise ValueError("result_digest_mismatch")
-        review = tasks.review(
-            task_id, context["principal_id"], result_id, decision=decision,
-            reason=payload.get("reason"),
-        )
-        if decision == "accepted":
-            resources.release_for_attempt(result.attempt_id, reason="review_accepted")
-            coordination.mark_completed(task_id, result.submitted_by, result.attempt_id)
-        elif decision == "changes_requested":
-            # A review that sends work back closes the current execution just as
-            # a recovery does.  The next attempt must receive a fresh claim,
-            # preflight, lease set and execution grant.
-            resources.release_for_attempt(result.attempt_id, reason="review_changes_requested")
-            for grant_id, grant in list(authority.grants.items()):
-                if grant.attempt_id == result.attempt_id and grant.status == "active":
-                    authority.grants[grant_id] = type(grant)(
-                        **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                    )
-            assignment = coordination.assignment_for_task(task_id)
-            wake = coordination.rework(
-                assignment.assignment_id, reason=str(payload.get("reason") or "review_changes_requested"),
-            ) if assignment is not None else None
-            return {"task_id": task_id, "result_id": result_id, "decision": review.decision,
-                    "status": tasks.tasks[task_id].status,
-                    "wake_attempt_id": wake.wake_attempt_id if wake is not None else None}
-        return {"task_id": task_id, "result_id": result_id, "decision": review.decision,
-                "status": tasks.tasks[task_id].status}
+        review = tasks.review(task_id, context["principal_id"], result_id, decision=decision, reason=payload.get("reason"))
+        execution.release(result.attempt_id, "review_" + decision)
+        if result.submitted_by != context["principal_id"]:
+            messages.send(command_id=context["command_id"] + ":review", sender_agent_id=context["principal_id"],
+                          recipient_agent_id=result.submitted_by, kind="task.reviewed", subject_ref="task/" + task_id,
+                          summary=decision, payload={"task_id": task_id, "result_id": result_id, "decision": decision})
+        return {"task_id": task_id, "result_id": result_id, "decision": review.decision, "status": tasks.tasks[task_id].status}
 
     def user_decision_propose(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "user.decision.propose")
@@ -1318,16 +661,15 @@ def build_handlers(
         if supplied and supplied != decision.input_digest:
             raise ValueError("proposal_digest_mismatch")
         related_task = tasks.tasks.get(decision.subject_ref)
-        if related_task is not None and related_task.status not in {"completed", "cancelled"}:
-            previous_attempt_id = related_task.current_attempt_id
-            tasks.block(related_task.task_id, f"user_decision_pending:{decision.decision_id}")
-            if previous_attempt_id is not None:
-                resources.release_for_attempt(previous_attempt_id, reason="user_decision_pending")
-                for grant_id, grant in list(authority.grants.items()):
-                    if grant.attempt_id == previous_attempt_id and grant.status == "active":
-                        authority.grants[grant_id] = type(grant)(
-                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                        )
+        if related_task is not None:
+            attempt = tasks.attempts.get(related_task.current_attempt_id or "")
+            if attempt is not None and attempt.status in {"claimed", "running"}:
+                # A decision request cannot assert that a running host stopped.
+                # The owner releases resources with task.block; main may recover explicitly.
+                messages.send(command_id=context["command_id"] + ":decision", sender_agent_id=context["principal_id"],
+                              recipient_agent_id=attempt.owner_agent_id, kind="user_decision.pending",
+                              subject_ref="task/" + related_task.task_id, summary="Pause work affected by the pending decision",
+                              payload={"task_id": related_task.task_id, "decision_id": decision.decision_id})
         return {"decision_id": decision.decision_id, "proposal_digest": decision.input_digest,
                 "revision": decision.expected_revision, "status": decision.status,
                 "related_task_id": related_task.task_id if related_task is not None else None}
@@ -1347,6 +689,20 @@ def build_handlers(
             decision_id, actor_kind="user_control", decision=_required_str(payload, "choice"),
             input_digest=_required_str(payload, "proposal_digest"), reason=payload.get("reason"),
         )
+        if authority.main_agent_id is not None:
+            messages.send(
+                command_id=context["command_id"] + ":decision-resolved",
+                sender_agent_id=context["principal_id"], recipient_agent_id=authority.main_agent_id,
+                kind="user_decision.resolved", subject_ref="decision/" + resolved.decision_id,
+                summary="User decision resolved: " + str(resolved.decision),
+                payload={
+                    "decision_id": resolved.decision_id, "kind": resolved.kind,
+                    "subject_ref": resolved.subject_ref, "revision": resolved.expected_revision,
+                    "proposal_digest": resolved.input_digest, "status": resolved.status,
+                    "decision": resolved.decision, "reason": resolved.reason,
+                    "related_task_id": resolved.subject_ref if resolved.subject_ref in tasks.tasks else None,
+                },
+            )
         return {"decision_id": resolved.decision_id, "status": resolved.status, "decision": resolved.decision,
                 "related_task_id": resolved.subject_ref if resolved.subject_ref in tasks.tasks else None}
 
@@ -1586,21 +942,28 @@ def build_handlers(
         revised = payload.get("supersedes_id") or None
         if revised is not None and not isinstance(revised, str):
             raise ValueError("invalid_supersedes_id")
+        required = payload.get("participants_required")
+        optional = payload.get("participants_optional", [])
+        if not isinstance(required, list) or not isinstance(optional, list):
+            raise ValueError("contract_participant_arrays_required")
         participants = [
-            _slot(item, True) for item in (payload.get("participants_required") or [])
+            _slot(item, True) for item in required
         ] + [
-            _slot(item, False) for item in (payload.get("participants_optional") or [])
+            _slot(item, False) for item in optional
         ]
-        if not participants and revised:
-            # A revision defaults to the participants of the contract it replaces, so
-            # it cannot quietly narrow who has to agree.
-            previous = cognition.proposals.get(revised)
-            if previous is not None:
-                participants = list(previous.participants)
-        proposal = cognition.propose_contract(
-            payload.get("payload") or {}, participants,
-            proposed_by=context["principal_id"], supersedes_id=revised,
-        )
+        for participant in participants:
+            if participant["agent_id"] not in authority.agents:
+                raise ValueError("contract_participant_not_member")
+        body = payload.get("payload")
+        if not isinstance(body, dict):
+            raise ValueError("contract_payload_object_required")
+        if revised is not None:
+            old = cognition.proposals[_required_str(payload, "supersedes_id")]
+            if old.proposed_by != context["principal_id"]:
+                raise PermissionError("proposal_owner_required")
+            proposal = cognition.supersede_contract(old.proposal_id, body, participants)
+        else:
+            proposal = cognition.propose_contract(body, participants, proposed_by=context["principal_id"])
         _announce_contract_proposal(proposal, context)
         return {
             "proposal_id": proposal.proposal_id, "digest": proposal.digest,
@@ -1622,23 +985,28 @@ def build_handlers(
             # This acceptance completed the proposal: its predecessor has just been
             # retired, and the dependants need to hear about it.
             _announce_contract_revision(proposal, context)
-        return {"proposal_id": proposal_id, "participant_slot": participant_slot, "status": "accepted"}
+        return {"proposal_id": proposal_id, "participant_slot": participant_slot, "status": "accepted",
+                "proposal_status": cognition.proposals[proposal_id].status}
 
     def contract_accept_proxy(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "contract.accept_proxy")
         slot = _required_str(payload, "participant_slot_id")
-        proposal = cognition.proposals.get(_required_str(payload, "proposal_id"))
-        was_accepted = proposal is not None and proposal.status == "accepted"
+        proposal = cognition.proposals[_required_str(payload, "proposal_id")]
+        was_accepted = proposal.status == "accepted"
+        participant = next((item for item in proposal.participants if item["slot"] == slot), None)
+        if participant is None:
+            raise PermissionError("participant_slot_denied")
         acceptance = cognition.accept_proxy(
-            _required_str(payload, "proposal_id"), participant_slot=slot,
+            proposal.proposal_id, participant_slot=slot,
             proposal_digest=_required_str(payload, "proposal_digest"),
-            real_actor_id=context["principal_id"], represented_participant=slot,
+            real_actor_id=context["principal_id"], represented_participant=participant["agent_id"],
             main_allowed=True,
         )
         if proposal is not None and not was_accepted and proposal.status == "accepted":
             _announce_contract_revision(proposal, context)
         return {"proposal_id": acceptance.proposal_id, "participant_slot": acceptance.participant_slot,
-                "status": "accepted", "via_proxy": True}
+                "status": "accepted", "proposal_status": proposal.status, "via_proxy": True,
+                "real_actor_id": acceptance.real_actor_id, "represented_participant": acceptance.represented_participant}
 
     def contract_reject(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "contract.accept")
@@ -1665,11 +1033,11 @@ def build_handlers(
 
     def inbox_fetch(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
-        message_id = payload.get("delivery_lease_id") or _required_str(payload, "message_id")
+        message_id = _required_str(payload, "message_id")
         message = messages.messages.get(message_id)
         if message is None or message.recipient_agent_id != context["principal_id"]:
             raise PermissionError("inbox_access_denied")
-        return _message_view(message, messages)
+        return _message_view(message, messages, include_payload=True)
 
     def inbox_presented(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
@@ -1710,190 +1078,71 @@ def build_handlers(
         return {"obligation_id": obligation_id, "response_message_id": response_message_id, "status": "responded"}
 
     def coordination_plan(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        """Create an atomic Main-owned assignment plan and wake records.
-
-        Host wake itself is an adapter concern.  This handler only creates the
-        durable assignment/wake facts that the adapter consumes.
-        """
         _authorize(context, "coordination.write")
-        if context["principal_id"] != authority.main_agent_id:
-            raise PermissionError("main_authority_required")
-        objective = _required_str(payload, "objective")
-        raw_assignments = payload.get("assignments")
-        if not isinstance(raw_assignments, list) or not raw_assignments:
+        rows = payload.get("assignments")
+        if not isinstance(rows, list) or not rows:
             raise ValueError("assignments_required")
-        # Auto-wake is an explicit opt-in for this new coordination plan;
-        # legacy tasks and plans without the flag retain pull-first behavior.
-        requested_auto_wake = payload.get("auto_wake")
-        if requested_auto_wake is not None and not isinstance(requested_auto_wake, bool):
-            raise ValueError("auto_wake_boolean_required")
-        configured_auto_wake = bool(
-            project_registry is not None and project_registry.project is not None
-            and project_registry.project.settings.get("auto_wake_multi_agent", False)
-        )
-        if requested_auto_wake is True and project_registry is not None and not configured_auto_wake:
-            raise ValueError("auto_wake_project_opt_in_required")
-        if requested_auto_wake is True and strict_runtime and project_registry is None:
-            raise ValueError("project_opt_in_required")
-        auto_wake = configured_auto_wake if requested_auto_wake is None else bool(requested_auto_wake)
-        deadline = float(payload.get("wake_deadline_seconds", 60))
-        if deadline <= 0:
-            raise ValueError("invalid_wake_deadline")
-        # Validate all worker identities before creating any task so a bad
-        # assignment cannot leave a partially published plan.
-        ready_workers = {
-            agent_id for agent_id, agent in authority.agents.items()
-            if agent_id != authority.main_agent_id and agent.status == "active"
-            and any(session.agent_id == agent_id and session.active and session.status == "ready"
-                    for session in authority.sessions.values())
-        }
-        normalized: list[dict[str, Any]] = []
-        assigned_workers: set[str] = set()
-        for item in raw_assignments:
-            if not isinstance(item, dict):
+        normalized = []
+        for row in rows:
+            if not isinstance(row, dict):
                 raise ValueError("invalid_assignment")
-            worker_id = _required_str(item, "assigned_worker_id")
-            if worker_id not in ready_workers:
-                raise ValueError("worker_not_ready")
-            if worker_id in assigned_workers:
-                raise ValueError("duplicate_assignment_worker")
-            assigned_workers.add(worker_id)
-            title = _required_str(item, "title")
-            task_objective = _required_str(item, "task_objective")
-            normalized.append({**item, "assigned_worker_id": worker_id, "title": title, "task_objective": task_objective})
-        # When three workers are available, a healthy auto-wake plan must cover
-        # all three.  With fewer ready workers the plan scales to what exists.
-        if auto_wake and len(normalized) < min(3, len(ready_workers)):
-            raise ValueError("worker_coverage_required")
-        created_tasks: list[Any] = []
-        try:
-            for item in normalized:
-                task = tasks.create_task(
-                    item["title"], item["task_objective"],
-                    parent_task_id=item.get("parent_task_id"),
-                    # Assignment dependencies are recorded by coordination;
-                    # task graph edges require IDs that already exist and are
-                    # added by a later Main command.
-                    blocks=set(),
-                    execution_scope=item.get("execution_scope") or {},
-                )
-                tasks.ready(task.task_id)
-                tasks.publish(task.task_id)
-                created_tasks.append(task)
-            assignment_specs = []
-            for task, item in zip(created_tasks, normalized, strict=True):
-                assignment_specs.append({
-                    "task_id": task.task_id,
-                    "assigned_worker_id": item["assigned_worker_id"],
-                    "dependencies": item.get("dependencies") or (),
-                    "acceptance_conditions": item.get("acceptance_conditions") or {},
-                    "workspace": item.get("workspace") or {},
-                    "resource_intent": item.get("resource_intent") or {},
-                    "auto_wake": auto_wake,
-                })
-            plan = coordination.create_plan(
-                main_agent_id=context["principal_id"], objective=objective,
-                assignments=assignment_specs, auto_wake=auto_wake,
-                wake_deadline_seconds=deadline,
-            )
-        except Exception:
-            # In-memory callers do not have dispatcher snapshot rollback. Remove
-            # only tasks created by this command if coordination registration
-            # fails before the command can be persisted.
-            for task in created_tasks:
-                tasks.tasks.pop(task.task_id, None)
-            raise
-        return {
-            "plan_id": plan.plan_id,
-            "objective": plan.objective,
-            "status": plan.status,
-            "assignments": [
-                {
-                    "assignment_id": item.assignment_id,
-                    "task_id": item.task_id,
-                    "assigned_worker_id": item.assigned_worker_id,
-                    "status": item.status,
-                    "wake_attempt_id": item.wake_attempt_id,
-                }
-                for item in (coordination.assignments[item_id] for item_id in plan.assignment_ids)
-            ],
-            "coverage": coordination.coverage(plan.plan_id),
-        }
+            worker_id = _required_str(row, "assigned_worker_id")
+            worker = authority.agents.get(worker_id)
+            if worker is None or worker.status != "active" or worker_id == authority.main_agent_id:
+                raise ValueError("worker_not_member")
+            for dependency in row.get("dependencies") or ():
+                if dependency not in tasks.tasks:
+                    raise ValueError("dependency_task_not_found")
+            normalized.append(row)
+        auto_wake = payload.get("auto_wake", True)
+        if not isinstance(auto_wake, bool):
+            raise ValueError("auto_wake_boolean_required")
+        specs = []
+        for row in normalized:
+            task = tasks.create_task(_required_str(row, "title"), _required_str(row, "task_objective"),
+                                     parent_task_id=row.get("parent_task_id"), blocks=set(row.get("dependencies") or ()),
+                                     execution_scope=row.get("execution_scope") or {},
+                                     required_contract_ids=_required_contracts(row))
+            if row.get("workspace"):
+                execution.select_workspace({**row["workspace"], "task_id": task.task_id}, context)
+            tasks.ready(task.task_id)
+            tasks.publish(task.task_id)
+            specs.append({**row, "task_id": task.task_id})
+        plan = coordination.create_plan(main_agent_id=context["principal_id"], objective=_required_str(payload, "objective"),
+                                        assignments=specs, auto_wake=auto_wake)
+        result = []
+        for assignment_id in plan.assignment_ids:
+            item = coordination.assignments[assignment_id]
+            if auto_wake:
+                message = messages.send(command_id=context["command_id"] + ":" + item.assignment_id,
+                                        sender_agent_id=context["principal_id"], recipient_agent_id=item.assigned_worker_id,
+                                        kind="task.assigned", subject_ref="task/" + item.task_id, summary="Task available",
+                                        payload={"task_id": item.task_id, "assignment_id": item.assignment_id})
+                item.message_id = message.message_id
+            result.append({"assignment_id": item.assignment_id, "task_id": item.task_id,
+                           "assigned_worker_id": item.assigned_worker_id, "status": tasks.tasks[item.task_id].status,
+                           "message_id": item.message_id})
+        return {"plan_id": plan.plan_id, "objective": plan.objective, "assignments": result,
+                "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}, plan.plan_id)}
 
-    def worker_ready(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        _authorize(context, "coordination.report")
-        assignment_id = _required_str(payload, "assignment_id")
-        wake = coordination.record_worker_ready(
-            assignment_id, worker_id=context["principal_id"],
-            wake_attempt_id=_required_str(payload, "wake_attempt_id"),
-        )
-        assignment = coordination.assignment(assignment_id)
-        coordination.record_event(
-            "worker.ready", actor_id=context["principal_id"],
-            assignment_id=assignment_id, task_id=assignment.task_id,
-            summary="worker bridge round confirmed", important=True,
-        )
-        return {
-            "assignment_id": assignment_id, "task_id": assignment.task_id,
-            "wake_attempt_id": wake.wake_attempt_id, "status": "ready",
-            "lease_guidance": _lease_guidance(assignment.claimed_attempt_id),
-        }
 
     def coordination_takeover(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "coordination.write")
         if context["principal_id"] != authority.main_agent_id:
             raise PermissionError("main_authority_required")
-        assignment_id = _required_str(payload, "assignment_id")
-        assignment = coordination.assignment(assignment_id)
-        previous_attempt_id = assignment.claimed_attempt_id
-        if previous_attempt_id is not None:
-            previous = tasks.attempts.get(previous_attempt_id)
-            if previous is not None and previous.status not in {"completed", "submitted", "failed", "cancelled", "orphaned"}:
-                tasks.orphan(assignment.task_id, reason="coordination_takeover")
-                resources.release_for_attempt(previous_attempt_id, reason="coordination_takeover")
-                for grant_id, grant in list(authority.grants.items()):
-                    if grant.attempt_id == previous_attempt_id and grant.status == "active":
-                        authority.grants[grant_id] = type(grant)(
-                            **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"}
-                        )
-        assignment = coordination.takeover(
-            assignment_id, main_agent_id=context["principal_id"],
-            reason=_required_str(payload, "takeover_reason"),
-        )
-        coordination.record_event(
-            "coordination.takeover", actor_id=context["principal_id"],
-            assignment_id=assignment_id, task_id=assignment.task_id,
-            summary=assignment.takeover_reason or "", important=True,
-        )
-        attempt = tasks.claim(assignment.task_id, context["principal_id"])
-        assignment.claimed_attempt_id = attempt.attempt_id
-        return {
-            "assignment_id": assignment_id, "task_id": assignment.task_id,
-            "attempt_id": attempt.attempt_id, "status": assignment.status,
-            "takeover_reason": assignment.takeover_reason,
-        }
-
-    def coordination_host_accepted(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        """Internal adapter hook; host wake adapters call the service directly.
-
-        The D-principal registry entry is an internal daemon callback rather
-        than a worker-facing tool. Keeping the transition here gives adapters
-        and tests one idempotent state change.
-        """
-        if context.get("kind") != "D":
-            raise PermissionError("daemon_principal_required")
-        wake = coordination.record_host_accepted(
-            _required_str(payload, "assignment_id"),
-            host_turn_id=payload.get("host_turn_id"),
-            wake_attempt_id=_required_str(payload, "wake_attempt_id"),
-        )
         assignment = coordination.assignment(_required_str(payload, "assignment_id"))
-        coordination.record_event(
-            "worker.host_accepted", assignment_id=assignment.assignment_id,
-            task_id=assignment.task_id, summary=wake.host_turn_id or "",
-            important=True,
-        )
-        return {"wake_attempt_id": wake.wake_attempt_id, "status": wake.status}
+        task = tasks.tasks[assignment.task_id]
+        if task.status in {"completed", "submitted", "cancelled", "failed"}:
+            raise ValueError("task_not_recoverable")
+        if task.current_attempt_id is not None:
+            previous_id = task.current_attempt_id
+            tasks.recover(task.task_id, expected_attempt_id=previous_id, disposition="reopen")
+            execution.release(previous_id, "coordination_takeover")
+        assignment = coordination.takeover(assignment.assignment_id, main_agent_id=context["principal_id"],
+                                           reason=_required_str(payload, "takeover_reason"))
+        return {"assignment_id": assignment.assignment_id, "task_id": task.task_id, "status": task.status,
+                "takeover_reason": assignment.takeover_reason, "revision": task.revision}
+
 
     def context_project_read(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         # A read-only, self-scoped project context snapshot. The actor is the
@@ -1909,13 +1158,19 @@ def build_handlers(
             for cap in grant.capabilities
         })
         owned_tasks = [
-            {
-                "task_id": task.task_id, "title": task.title,
-                "objective": task.objective, "status": task.status,
-            }
+            tasks.describe_task(task.task_id)
             for task in tasks.tasks.values()
             if (attempt := tasks.attempts.get(task.current_attempt_id or "")) is not None
             and attempt.owner_agent_id == agent_id
+        ]
+        open_tasks = [
+            tasks.describe_task(task.task_id)
+            for task in tasks.tasks.values()
+            if task.status in {"open", "blocked"}
+            and (
+                (assignment := coordination.assignment_for_task(task.task_id)) is None
+                or agent_id == (assignment.takeover_agent_id or assignment.assigned_worker_id)
+            )
         ]
         visible_assignments = [
             {
@@ -1923,8 +1178,8 @@ def build_handlers(
                 "plan_id": assignment.plan_id,
                 "task_id": assignment.task_id,
                 "assigned_worker_id": assignment.assigned_worker_id,
-                "status": assignment.status,
-                "wake_attempt_id": assignment.wake_attempt_id,
+                "status": tasks.tasks[assignment.task_id].status,
+                "message_id": assignment.message_id,
                 "takeover_agent_id": assignment.takeover_agent_id,
                 "takeover_reason": assignment.takeover_reason,
             }
@@ -1972,11 +1227,15 @@ def build_handlers(
             "agent_id": agent_id,
             "role": agent.role if agent is not None else "worker",
             "main_agent_id": authority.main_agent_id,
+            "session": {"session_id": context["session_id"],
+                        "connection_epoch": authority.sessions[context["session_id"]].connection_epoch,
+                        "status": authority.sessions[context["session_id"]].status},
             "scope": {"capabilities": capabilities},
             "tasks": owned_tasks,
+            "open_tasks": open_tasks,
             "contracts": {"tasks": contracts_by_task, "participating": participating_contracts},
             "coordination": {
-                "coverage": coordination.coverage(),
+                "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}),
                 "assignments": visible_assignments,
                 "events": visible_events,
                 "auto_wake_multi_agent": bool(
@@ -2003,13 +1262,10 @@ def build_handlers(
         "task.update_plan": task_update_plan,
         "task.edge.add": task_edge_add,
         "task.edge.remove": task_edge_remove,
-        "task.claim": task_claim,
-        "task.resume": task_resume,
-        "task.preflight": task_preflight,
-        "task.start": task_start,
         "task.progress": task_progress,
         "task.block": task_block,
-        "task.submit": task_submit,
+        "task.begin": execution.begin,
+        "task.submit": execution.submit,
         "task.cancel_request": task_cancel_request,
         "task.cancel_ack": task_cancel_ack,
         "task.fail": task_fail,
@@ -2017,13 +1273,7 @@ def build_handlers(
         "task.scope.request": task_scope_request,
         "task.scope.resolve": task_scope_resolve,
         "task.self_accept": task_self_accept,
-        "resource.intent": resource_intent,
-        "resource.acquire": resource_acquire,
-        "resource.release": resource_release,
-        "resource.renew": resource_renew,
-        "workspace.select": workspace_select,
-        "workspace.prepare": workspace_prepare,
-        "workspace.result": workspace_result,
+        "workspace.select": execution.select_workspace,
         "workspace.integrate": workspace_integrate,
         "task.review.accept": lambda payload, context: task_review(payload, context, decision="accepted"),
         "task.review.request_changes": lambda payload, context: task_review(payload, context, decision="changes_requested"),
@@ -2043,9 +1293,7 @@ def build_handlers(
         "message.send": message_send,
         "message.respond": message_respond,
         "coordination.plan": coordination_plan,
-        "worker.ready": worker_ready,
         "coordination.takeover": coordination_takeover,
-        "coordination.wake.accepted": coordination_host_accepted,
         "context.project_read": context_project_read,
         "user_decision.propose": user_decision_propose,
         "user_decision.resolve": user_decision_resolve,

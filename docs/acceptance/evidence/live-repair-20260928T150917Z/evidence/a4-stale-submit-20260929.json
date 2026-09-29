@@ -1,0 +1,46 @@
+{
+  "schema": "tsunagou.live-repair.a4-stale-submit.v1",
+  "observed_at": "2026-09-29T04:45:48.644Z",
+  "timezone": "UTC",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "prior_restart_and_recovery_ref": "evidence/a4-restart-recovery-20260928T1951Z.json",
+  "task_id": "357de2e9-8990-4c1e-b99f-365057d29732",
+  "original_owner_agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+  "old_attempt_id": "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+  "recovery": {
+    "action": "task.recover",
+    "disposition": "reopen",
+    "occurred_at": "2026-09-28T19:16:44.430Z",
+    "task_status_after": "open",
+    "task_revision_after": 6,
+    "attempt_status_after": "orphaned"
+  },
+  "original_desktop_worker_probe": {
+    "trigger": "daemon durable message delivery",
+    "wake_host_accepted_at": "2026-09-29T02:33:19.013Z",
+    "turn_completed_at": "2026-09-29T02:41:22Z",
+    "message_fetched_and_acknowledged": "a6f3fb06-9458-4c06-b505-823cc6c349f9",
+    "action": "task.submit",
+    "call_count": 1,
+    "used_original_owner_identity": true,
+    "attempt_id": "6c6b53f3-64b7-4f63-beb8-504276e8c8f4",
+    "accepted": false,
+    "result_id": null,
+    "error_code": "capability_denied",
+    "worker_report_message_id": "a82cbfa9-8899-4858-b64a-0e91b503b112"
+  },
+  "daemon_diagnostic": {
+    "kind": "command_rejected",
+    "occurred_at": "2026-09-29T02:38:32.406Z",
+    "command_id": "5d758711-56ff-4dc4-bf2b-a0be275e7759",
+    "agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+    "error_code": "capability_denied"
+  },
+  "state_after_probe": {
+    "task_status": "open",
+    "task_revision": 6,
+    "attempt_status": "orphaned",
+    "result_created": false
+  },
+  "assessment": "The original Desktop owner was woken and attempted a single stale submit after explicit recovery. The daemon rejected it and created no Result. Rejection occurred at the capability gate before task binding; this is evidence of the external no-stale-submit behavior, not of the deeper Attempt-specific error code."
+}

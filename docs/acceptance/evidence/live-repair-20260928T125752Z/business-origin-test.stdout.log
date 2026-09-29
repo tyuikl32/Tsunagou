@@ -1,0 +1,180 @@
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:57065
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: D:\ALL.NET\SegaImageManageTool-fx20260928
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/health - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /health => Health'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'HealthResponse' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /health => Health'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=1e4659f2ed7c4f36acfcc90f0cba98bb traceId=21948bfb214baf54f8be4c9c06d3a293 method=GET path=/health status=200 contentLength=(null) elapsedMs=17
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/health - 200 - application/json;+charset=utf-8 44.1997ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/ - - -
+info: Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware[2]
+      Sending file. Request path: '/index.html'. Physical path: 'D:\ALL.NET\SegaImageManageTool-fx20260928\wwwroot\index.html'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=0e1c441232b14ea8828b16e31e9c30cd traceId=d8ae11b0bb3e33603f6675e1919c46e8 method=GET path=/index.html status=200 contentLength=(null) elapsedMs=9
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/index.html - 200 5692 text/html 10.3961ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/styles.css - - -
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/app.js - - -
+info: Microsoft.AspNetCore.Cors.Infrastructure.CorsService[4]
+      CORS policy execution successful.
+info: Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware[2]
+      Sending file. Request path: '/styles.css'. Physical path: 'D:\ALL.NET\SegaImageManageTool-fx20260928\wwwroot\styles.css'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=b877ff3250744dfd8fae4755beab6559 traceId=2c0d1bbd84cbb57c467d9d82280f73a8 method=GET path=/styles.css status=200 contentLength=(null) elapsedMs=3
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/styles.css - 200 12712 text/css 3.8984ms
+info: Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware[2]
+      Sending file. Request path: '/app.js'. Physical path: 'D:\ALL.NET\SegaImageManageTool-fx20260928\wwwroot\app.js'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=74e8dd0ef2f14a1599e2ebbf67b60670 traceId=97b2598343f3d43d6f84678d1b690a9d method=GET path=/app.js status=200 contentLength=(null) elapsedMs=4
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/app.js - 200 7713 text/javascript 4.4410ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/api.js - - -
+info: Microsoft.AspNetCore.Cors.Infrastructure.CorsService[4]
+      CORS policy execution successful.
+info: Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware[2]
+      Sending file. Request path: '/api.js'. Physical path: 'D:\ALL.NET\SegaImageManageTool-fx20260928\wwwroot\api.js'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=09a8df2a65284d178876580b27a0ffe9 traceId=478fdbfaedbfdb04462434c7605723d6 method=GET path=/api.js status=200 contentLength=(null) elapsedMs=0
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/api.js - 200 3272 text/javascript 1.0270ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/health - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /health => Health'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'HealthResponse' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /health => Health'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=c4008df6326742db947d24cf12c4c26b traceId=bbd341d124aae51792eab243b2dd79dd method=GET path=/health status=200 contentLength=(null) elapsedMs=0
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/health - 200 - application/json;+charset=utf-8 0.8412ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/favicon.ico - - -
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=e25d884d4d7645dcacab8122bd7733f3 traceId=0b886c1e2a1778bf8703a95ea307ae7b method=GET path=/favicon.ico status=404 contentLength=(null) elapsedMs=0
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/favicon.ico - 404 0 - 0.5570ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[16]
+      Request reached the end of the middleware pipeline without being handled by application code. Request path: GET http://127.0.0.1:57065/favicon.ico, Response status code: 404
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/health - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /health => Health'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'HealthResponse' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /health => Health'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=0e1b423ea88a46aca0089ba38143dd8e traceId=87dd763cfa4a462100706253cc48ed84 method=GET path=/health status=200 contentLength=(null) elapsedMs=0
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/health - 200 - application/json;+charset=utf-8 0.7789ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/ - - -
+info: Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware[2]
+      Sending file. Request path: '/index.html'. Physical path: 'D:\ALL.NET\SegaImageManageTool-fx20260928\wwwroot\index.html'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=f4508eb8d4904d57ba5e562fe477f9f7 traceId=a4591d412489289e320f8f34f8f4309e method=GET path=/index.html status=200 contentLength=(null) elapsedMs=8
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/index.html - 200 5692 text/html 12.9273ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:57065/health - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /health => Health'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'HealthResponse' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /health => Health'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=109f9ea3741d41beb2a3a08f5bd74805 traceId=86f69c5ac230ef963f0c0ff35b5c79a5 method=GET path=/health status=200 contentLength=(null) elapsedMs=4
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:57065/health - 200 - application/json;+charset=utf-8 4.8363ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - multipart/form-data;+boundary=----WebKitFormBoundaryX4ppAtN3DHCxLVkS 32965
+info: Microsoft.AspNetCore.Cors.Infrastructure.CorsService[4]
+      CORS policy execution successful.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'InspectResponse' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=4de4db0b-e85a-4ad9-9b65-b56694d0131a traceId=0bd057b3a4258a3af52d667aa782dafe method=POST path=/api/images/inspect status=200 contentLength=32965 elapsedMs=91
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - 200 - application/json;+charset=utf-8 106.2491ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - multipart/form-data;+boundary=----WebKitFormBoundaryDU5qQnOWAxg1CZNv 32971
+info: Microsoft.AspNetCore.Cors.Infrastructure.CorsService[4]
+      CORS policy execution successful.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: Microsoft.AspNetCore.Http.Result.JsonResult[1]
+      Setting HTTP status code 422.
+info: Microsoft.AspNetCore.Http.Result.JsonResult[3]
+      Writing value of type 'ApiErrorEnvelope' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=e1a6dfa2-27c2-4334-891c-04540b8601f1 traceId=238f1b4c8f4c08684add05090ac5877b method=POST path=/api/images/inspect status=422 contentLength=32971 elapsedMs=22
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - 422 - application/json;+charset=utf-8 22.9526ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - multipart/form-data;+boundary=----WebKitFormBoundaryCiZTBTrOtNr8T2ZZ 32975
+info: Microsoft.AspNetCore.Cors.Infrastructure.CorsService[4]
+      CORS policy execution successful.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: Microsoft.AspNetCore.Http.Result.JsonResult[1]
+      Setting HTTP status code 422.
+info: Microsoft.AspNetCore.Http.Result.JsonResult[3]
+      Writing value of type 'ApiErrorEnvelope' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=c6712b79-2e44-47b4-89ea-2c794253290a traceId=0e3155c8bc772a6160cad5eb622da353 method=POST path=/api/images/inspect status=422 contentLength=32975 elapsedMs=2
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - 422 - application/json;+charset=utf-8 2.9753ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - multipart/form-data;+boundary=----WebKitFormBoundary48LKjiFJl5cB1ECG 32965
+info: Microsoft.AspNetCore.Cors.Infrastructure.CorsService[4]
+      CORS policy execution successful.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'InspectResponse' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /api/images/inspect => InspectImageAsync'
+info: SegaImageManageTool.Backend.RequestAuditMiddleware[0]
+      HTTP completed requestId=bbd85a30-41dd-42b4-9f8e-27552c31db86 traceId=e01c436e585f8fab9c3348d1ceca345a method=POST path=/api/images/inspect status=200 contentLength=32965 elapsedMs=3
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://127.0.0.1:57065/api/images/inspect - 200 - application/json;+charset=utf-8 4.2193ms

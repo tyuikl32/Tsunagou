@@ -22,6 +22,7 @@ export interface SessionCredential {
 }
 
 export interface PersistedSession extends SessionCredential {
+  host_binding_generation?: string;
   host_conversation_id_digest?: string;
   conversation_binding_digest?: string;
   credential_command_id?: string;
@@ -35,6 +36,7 @@ export interface TicketFile {
   conversation_id: string;
   secret: string;
   requested_role?: "worker" | "main";
+  host_binding_generation?: string;
 }
 
 type CredentialKind = "agent.enroll" | "session.rebind" | "session.reconnect";
@@ -43,6 +45,7 @@ interface PendingRequest {
   kind: CredentialKind;
   conversation_binding_digest: string;
   host_conversation_id_digest?: string;
+  host_binding_generation?: string;
   auth_binding_digest: string;
   ticket_digest?: string;
   expected_agent_id?: string;
@@ -113,7 +116,7 @@ export function loadSession(path: string): PersistedSession | undefined {
   if (value === undefined) return undefined;
   const raw = object(value)!;
   const session: PersistedSession = parseCredential(value);
-  for (const key of ["host_conversation_id_digest", "conversation_binding_digest",
+  for (const key of ["host_conversation_id_digest", "conversation_binding_digest", "host_binding_generation",
     "credential_command_id", "credential_auth_binding_digest", "credential_ticket_digest"] as const) {
     if (raw[key] !== undefined) {
       if (!nonempty(raw[key])) throw new Error("credential_private_file_invalid");
@@ -160,6 +163,7 @@ interface HandoffOptions {
   conversationBindingDigest: string;
   hostDigest?: string;
   fetch?: typeof fetch;
+  projectId?: string;
   /** File writer injection is only for failure-window tests. */
   writePrivate?: typeof writePrivateJson;
 }
@@ -169,6 +173,11 @@ interface RecoveryInput {
   ticketFile?: string;
   baseline?: Record<string, unknown>;
   forceReconnect?: boolean;
+  hostBindingRefresh?: {
+    provider: "codex_desktop_app";
+    endpoint: string;
+    host_generation: string;
+  };
 }
 
 type PreparedHandoff = { finished: true; session?: PersistedSession } | {
@@ -205,7 +214,7 @@ export class CredentialHandoff {
     try {
       const response = await this.request(
         `${this.options.baseUrl}/api/v1/credential-deliveries/${encodeURIComponent(session.delivery_ref)}/ack`,
-        { method: "POST", headers: this.headers(session), body: "{}" },
+        { method: "POST", headers: this.headers(session), body: "{}", signal: AbortSignal.timeout(10000) },
       );
       if (!response.ok) return session;
       // Never overwrite credentials to persist ACK state: this response can
@@ -226,6 +235,7 @@ export class CredentialHandoff {
       "content-type": "application/json", authorization: `Bearer ${session.secret_token}`,
       "tsunagou-session-id": session.session_id,
       "tsunagou-connection-epoch": String(session.connection_epoch),
+      ...(this.options.projectId ? { "tsunagou-project-id": this.options.projectId } : {}),
     };
   }
 
@@ -262,6 +272,11 @@ export class CredentialHandoff {
     const session = loadSession(this.options.sessionFile);
     let pending = readPending(this.pendingFile);
     this.assertBinding(session, pending);
+    // The generation comparison belongs inside this session-file mutex. A
+    // startup restore and a real tool call may both have observed the old
+    // session before the first one finishes refreshing it.
+    const reconnect = input.forceReconnect || !!(session && input.hostBindingRefresh
+      && session.host_binding_generation !== input.hostBindingRefresh.host_generation);
 
     if (pending && session?.credential_command_id === pending.envelope.command_id) {
       // Crash after save and before journal/ticket cleanup: never redeem again.
@@ -273,9 +288,15 @@ export class CredentialHandoff {
     if (ticket && session?.credential_ticket_digest === ticketDigest(ticket)) {
       cleanup.push([input.ticketFile, session.credential_ticket_digest]);
       ticket = undefined;
-      if (!pending && !input.forceReconnect) return { finished: true, session };
+      if (!pending && !reconnect) return { finished: true, session };
     }
-    if (!pending && session?.delivery_ack_pending && !input.forceReconnect && !ticket) {
+    if (!pending && session?.delivery_ack_pending && !reconnect && !ticket) {
+      return { finished: true, session };
+    }
+    // Nothing to do without a ticket — except when the saved session is not known to be
+    // ready: a degraded host has to re-report its baseline on its next call, because that
+    // fresh report is the one thing the daemon re-judges it by.
+    if (!pending && session && !ticket && !reconnect && session.baseline_status === "ready") {
       return { finished: true, session };
     }
     if (!pending && !ticket && !session) return { finished: true };
@@ -284,7 +305,8 @@ export class CredentialHandoff {
     if (kind !== "session.reconnect" && !ticket) throw new Error("credential_pending_original_ticket_required");
     if (kind === "session.reconnect" && !session) throw new Error("credential_pending_original_session_required");
     const headers = kind === "session.reconnect" ? this.headers(session!)
-      : { "content-type": "application/json", authorization: `Bearer ${ticket!.secret}` };
+      : { "content-type": "application/json", authorization: `Bearer ${ticket!.secret}`,
+        ...(this.options.projectId ? { "tsunagou-project-id": this.options.projectId } : {}) };
     const authDigest = hash([kind, headers.authorization, headers["tsunagou-session-id"],
       headers["tsunagou-connection-epoch"], kind === "session.reconnect" ? undefined : ticketDigest(ticket!)]);
     if (pending && pending.auth_binding_digest !== authDigest) {
@@ -301,6 +323,7 @@ export class CredentialHandoff {
         // flaky startup probe must not downgrade a host that is already working, and
         // the nonce + epoch replay is the normal way back in.
         ...(session!.baseline_status === "ready" ? {} : { probe_payload: input.baseline ?? {} }),
+        ...(input.hostBindingRefresh ? { host_binding_refresh: input.hostBindingRefresh } : {}),
       } : {
         installation_id: ticket!.installation_id,
         conversation_evidence: { conversation_id: ticket!.conversation_id },
@@ -310,6 +333,8 @@ export class CredentialHandoff {
       pending = {
         version: 1, kind, conversation_binding_digest: this.options.conversationBindingDigest,
         host_conversation_id_digest: this.options.hostDigest, auth_binding_digest: authDigest,
+        host_binding_generation: kind === "session.reconnect" ? input.hostBindingRefresh?.host_generation
+          : ticket?.host_binding_generation,
         ticket_digest: kind === "session.reconnect" ? undefined : ticketDigest(ticket!),
         expected_agent_id: session?.agent_id,
         envelope: {
@@ -356,7 +381,7 @@ export class CredentialHandoff {
     let response: Response;
     try {
       response = await this.request(`${this.options.baseUrl}/api/v1/commands/${kind}`, {
-        method: "POST", headers, body: JSON.stringify(pending.envelope),
+        method: "POST", headers, body: JSON.stringify(pending.envelope), signal: AbortSignal.timeout(10000),
       });
     } catch {
       throw new Error("credential_transport_failed:retry_pending_request");
@@ -391,6 +416,7 @@ export class CredentialHandoff {
       const updated: PersistedSession = {
         ...credential, host_conversation_id_digest: pending.host_conversation_id_digest,
         conversation_binding_digest: pending.conversation_binding_digest,
+        host_binding_generation: pending.host_binding_generation ?? session?.host_binding_generation,
         credential_command_id: pending.envelope.command_id,
         credential_auth_binding_digest: pending.auth_binding_digest,
         credential_ticket_digest: pending.ticket_digest ?? session?.credential_ticket_digest,

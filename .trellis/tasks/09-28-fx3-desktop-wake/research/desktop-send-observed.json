@@ -1,0 +1,12 @@
+{
+  "observed_at": "2026-09-28T10:02:07.892+00:00",
+  "thread_status": {
+    "type": "idle"
+  },
+  "turn_status": "completed",
+  "turn_digest": "sha256:73cf38f7060d7f484fb6324abe6a958b3b10b0b184b6abdf47175350bc7e9fbb",
+  "reply": [
+    "FX3_DESKTOP_WAKE_OK"
+  ],
+  "error": null
+}

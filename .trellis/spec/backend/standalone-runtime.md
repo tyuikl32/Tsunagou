@@ -1,63 +1,68 @@
-# Standalone runtime repair contract
+# Standalone execution contract (FX2)
 
 ## 1. Scope / Trigger
 
-Apply to R1–R6 changes in bootstrap, CLI, HTTP, dispatcher, repositories or workflow wiring. Source: [implementation plan](../../../docs/standalone/implementation-plan.md), [runtime audit](../../../docs/standalone/status-and-gaps.md), [D183](../../../docs/decisions/2026-09-20-standalone-priority.md). This is the current M1 runtime contract; delivered behavior is evidenced in `docs/standalone/`, and remaining gaps stay tracked by the active R1-R6 tasks until their acceptance evidence is recorded.
+Apply to Task execution, resource reservations, workspace observation, coordination assignments and their HTTP/MCP paths. FX-D01/02 replace the earlier M1 TTL/preflight contracts. See [FX2 design](../../tasks/09-28-fx2-execution-flow/design.md).
 
 ## 2. Signatures
 
-- Existing diagnostic: `python tools/dev/audit_standalone.py [--output <path>]`.
-- Writes: `handle(command: TypedCommand, ctx: PrincipalContext, uow: UnitOfWork) -> CommandResult`.
-- Reads: `query(query: TypedQuery, ctx: PrincipalContext, read: ReadSnapshot) -> TypedView`.
-- CLI is an HTTP client of the running daemon; it must not instantiate a separate application for business writes.
+- HTTP: POST /api/v1/commands/task.begin, B/task.claim. Payload: task_id:string, expected_task_revision:integer.
+- HTTP: POST /api/v1/commands/task.submit, B/task.execute. Payload: task_id, attempt_id, summary; optional artifact_refs, evidence_refs, validation_metadata.
+- MCP: task__begin / task__submit map to the same dispatcher/handlers.
+- Main workspace.select: task_id, driver_kind, optional root_binding_refs/repository_id/external_locator/hard_constraints/evidence_refs/reason.
+- ResourceService.reserve_set(*, task_id, attempt_id, owner_agent_id, execution_epoch, scope_digest, requests) -> ResourceReservation | None.
+- release_for_attempt(attempt_id, *, reason) -> count; idempotent, no timer.
+- CommandDispatcher.register_preparer(kind, handler); ProjectDatabase.dispatch(..., prepare=callback) invokes preparation after replay lookup, before BEGIN IMMEDIATE.
 
 ## 3. Contracts
 
-Project SQLite is the sole live fact store. All participating domain writes, grants, leases, events and idempotency records share one transaction. Validate actor/owner/revisions before mutation; recheck current authorization before serving cached results. Attempt ownership is immutable. Block/resume require current owner; resume cannot create a foreign owner's replacement Attempt.
+Task/Attempt owns execution truth. Assignment records designated worker/takeover, message reference and main's plan only; query derives status from Task. No worker.ready or assignment execution state.
 
-Execution Lease is an execution fence, not a background liveness signal. Before `task.start` changes an Attempt to `running` or issues an execution grant, recheck every active Lease under the ResourceService lock and reject an expired Lease even if the maintenance tick has not run. Worker progress may renew its own active Lease; daemon maintenance must never renew a silent worker. WakeAttempt deadlines are a separate mechanical state machine: maintenance may expire/retry wakes and persist Main-visible events, but it must not acquire, renew, or release execution Leases.
+begin returns task_id/attempt_id/owner_agent_id/status=running/revision/scope_revision/execution_scope/workspace_id/reservation_id. No cached execution token or Grant ID. Scope {} means no file work; named-only scope needs no workspace. Required contracts default empty and only explicitly listed IDs gate execution.
 
-When an execution Lease expires, the mechanical fence covers all three public coordination views: the Attempt becomes `orphaned`, its Task returns to `open`, and the matching coordination Assignment becomes `blocked` with `claimed_attempt_id` and `started_at` cleared. The reconciliation is keyed by the current Attempt id, is idempotent, preserves WakeAttempt history, and never creates a replacement wake implicitly. Project integration lock names must be derived from the full root digest while replacing filename-unsafe digest punctuation (including `:`) so per-root isolation remains stable on Windows.
+SQLite module_state is the sole live domain store. File/Git scans and immutable patch materialization run before the write UoW under the existing process serialization lock. UoW revalidates and commits Task/Attempt, workspace, reservations, Grant, events/outbox atomically. Replay skips preparation. Failure restores all domain state; unreferenced content-addressed bytes are not an accepted result.
 
-`task.submit` follows the same execution workflow boundary. It must recheck the Attempt's Lease under the resource lock before creating a result; an active Lease that has crossed its deadline is fenced and the submit produces no result. A successful submit releases all Lease rows for that Attempt. Do not call `TaskService.submit` directly from the command handler.
+Reservations have active/released and UTC millisecond created_at/released_at/release_reason. No expiry/renewal/heartbeat. submit, owner block/fail/cancel_ack, main recover/takeover release and revoke together. Cancellation request and pending UserDecision do not assert that a running host stopped.
 
-Worker lifecycle responses may expose `lease_guidance` with `renewal_owner=worker`, `renew_with=[task.progress, resource.renew]`, active Lease expiry facts, and `daemon_heartbeat=false`. Main reminders reuse durable `message.send` with assignment/task/attempt references; a reminder never changes Lease state.
+Same-database restart preserves owner/Attempt/baseline/reservation and revokes old execution Grants. Original owner issues a new begin command to reuse the Attempt and obtain current authority. New checkpoint replica imports no live credential/reservation. Job execution leases retain their internal deadlines.
 
-Package protocol files as distribution resources and read them with importlib.resources. Repository-relative parents traversal cannot be required at runtime. Only explicitly implemented CLI actions may report success. Local M1 admission still requires valid bound tickets and private credentials; host capability reporting is outside its completion criteria.
+CLI addresses the running daemon. Never fabricate Agent ownership using control credentials. Package protocol resources and preserve full-root filename-safe integration locks. No Git mutation in daemon.
 
 ## 4. Validation & Error Matrix
 
-- Foreign task owner: 403; owner/status/revision unchanged.
-- Missing/stale revision: 428/412; no write.
-- Reused command ID with changed semantics: 409; original result preserved.
-- Invalid attempt in start: reject before any Task/Grant/Lease mutation.
-- Active Lease expired at `task.start`: fence the Attempt, revoke execution authority, return the task to recovery/open handling, and never report `running`.
-- Active Lease expired at `task.submit`: reject with `resource_lease_expired`, create no TaskResult, and run normal orphan/revocation recovery; successful submit leaves the Attempt Lease `released`.
-- WakeAttempt deadline passed: reject late `host_accepted`/`worker.ready`; maintenance may create at most two retries after the initial attempt, then records an important failure event.
-- Missing preflight/resources/workspace: 423 or stale-condition 409; never default ready.
-- Missing daemon: CLI infrastructure failure, never fixed submitted/ok output.
-- Failed audit prerequisites: diagnostic exit 2; reproduced defects: exit 1; no checked defects: exit 0.
+| Input/state | HTTP/error | Mutation |
+|---|---|---|
+| Missing/non-integer expected_task_revision | 400 expected_task_revision_required | none |
+| Stale task revision | 409 task_revision_conflict | none |
+| Different running owner | 403 attempt_owner_required | none |
+| Wrong assigned worker | 403 assignment_worker_mismatch | none |
+| Overlapping exclusive resources | 409 resource_conflict, blockers with owner/task/attempt/resource | none |
+| Missing file-task workspace policy | 400 main_workspace_selection_required | none |
+| Required contract pending | 400 required_contract_not_accepted:<id> | none |
+| Related pending user decision | 400 user_decision_pending:<id> | none |
+| Duplicate command ID, changed input | 409 idempotency_conflict | original result preserved |
+| Old Grant submit after restart/reclaim | 403 capability_denied | none |
+| Same owner running begin | same Attempt; fresh Grant if needed | no second baseline/reservation |
+| Terminal task new begin | 400 task_not_beginable | none |
 
 ## 5. Good / Base / Bad Cases
 
-Good: create a task through HTTP, restart the process, query the same ID and replay the original command without duplication.
+Good: main chooses shared once; Worker begins, blocks, then begins a new Attempt with a fresh baseline. Main does not repeat unchanged policy.
 
-Good: a worker calls `task.progress` or `resource.renew` before expiry and receives the renewed expiry; a silent worker's Lease expires and is reclaimed normally.
+Base: a long build has no API traffic. Ownership stays active. User or main may request cancellation, but only owner acknowledgement or explicit main recovery releases it.
 
-Base: daemon restarts while an Attempt is running; preserve ownership and historical progress while invalidating execution authority until explicit recovery preparation.
-
-Bad: MessageStore survives in JSON but TaskService is reconstructed empty, or a wrong-attempt start returns 400 after the task became running.
-
-Bad: a maintenance thread silently renews a worker's Lease, or `task.start` trusts a preflight captured before Lease expiry.
+Bad: pending user decision or a wall clock tick silently releases resources while the Worker can still write.
 
 ## 6. Tests Required
 
-Run real uvicorn processes and requests in a disposable Git project. Assert restart persistence, atomic failures, same-ID replay, foreign-owner rejection, user decision waiting, resource expiration, actual file results and installed-wheel startup outside the repository. Existing unit tests remain required but cannot substitute for these assertions. The current audit is a regression reproducer of the legacy API, not the complete future M1 acceptance suite.
-
-For Lease/Wake changes, use an injected clock or controlled expiry and assert: stale `task.start` never produces `running` or an active execution grant; Lease expiry synchronizes Task, Attempt, and Assignment exactly once; WakeAttempt retries are exactly three total and late callbacks are rejected; maintenance never changes a live Lease expiry; lifecycle responses expose worker-owned renewal guidance; and a Main `message.send` reminder is durable and correlated. Project bootstrap tests must also assert that lock paths are filename-safe and distinct for distinct roots.
+- test_execution_begin.py: parallel owner, file conflict/all-or-none, replay/no scan, failure rollback, preparation outside SQLite write transaction, policy reuse/new baseline, assigned worker, explicit contracts, user wait, all release paths, same-DB restart.
+- test_resources.py: path prefix/physical aliases, shared consistent readers, distinct named resources, no elapsed-time expiry, idempotent release.
+- test_runtime_maintenance.py: no task mutations; expired internal Job still recovered.
+- tools/dev/execution_flow_probe.py --output <report>: actual CLI daemon stop/start, two HTTP workers and two independent Node MCP bridges; save UTC times/IDs/status. This is execution acceptance, not Desktop wake acceptance.
+- Full Python/TypeScript checks, protocol generation/mirrors, architecture/docs validation.
 
 ## 7. Wrong vs Correct
 
-Wrong: CLI calls build_application() and mutates a fresh in-memory service; append a JSON write after SQL commit and call it atomic.
+Wrong: issue claimed ownership, ask the LLM to select/acquire/preflight/start in separate calls, then expire it while it is planning.
 
-Correct: CLI authenticates to the running project runtime; module public ports persist all related changes under one UoW. Use outbox/Jobs for post-commit external work and preserve unknown external outcomes.
+Correct: begin prepares observations before the transaction and commits the whole execution once. submit automatically captures file results and releases. Main handles semantic decisions; code enforces only declared identity, scope, version, dependency, owner and status.

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi import HTTPException, Response
+from jsonschema import Draft202012Validator
 
 from tsunagou.api.app import CommandRequest, create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
@@ -40,11 +42,14 @@ def _harness(
     tasks = TaskService()
     cognition = CognitionService()
     messages = MessageStore()
+    preparers = {}
     for kind, handler in build_handlers(
         authority=authority, tasks=tasks, cognition=cognition, messages=messages,
-        project_id=project_id,
+        project_id=project_id, preparers=preparers,
     ).items():
         dispatcher.register(kind, handler)
+    for kind, prepare in preparers.items():
+        dispatcher.register_preparer(kind, prepare)
     app = create_app(dispatcher, authenticator=LocalCommandAuthenticator(authority=authority))
     endpoint = next(
         route.endpoint for route in app.routes
@@ -74,69 +79,40 @@ def _open_task(tasks: TaskService, title: str = "t") -> str:
     return task.task_id
 
 
-def test_task_lifecycle_claim_preflight_start_progress_submit(tmp_path: Path) -> None:
+def test_task_lifecycle_begin_progress_submit(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-
-    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
-    assert claimed["status"] == "claimed"
-    attempt_id = claimed["attempt_id"]
-
-    preflight = _call(endpoint, "task.preflight", {
-        "task_id": task_id, "attempt_id": attempt_id, "evidence_refs": ["pf"], "expected_revisions": 1,
-    }, receipt)
-    assert preflight["status"] == "preflighted"
-    assert preflight["preflight_id"] in tasks.preflights
-
-    started = _call(endpoint, "task.start", {
-        "task_id": task_id, "attempt_id": attempt_id,
-        "preflight_id": preflight["preflight_id"], "expected_execution_epoch": 1, "input_digest": "d",
-    }, receipt)
+    started = _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision}, receipt)
     assert started["status"] == "running"
-    assert started["execution_grant_id"]
-
+    attempt_id = started["attempt_id"]
     progressed = _call(endpoint, "task.progress", {
         "task_id": task_id, "attempt_id": attempt_id, "summary": "halfway", "evidence_refs": [],
     }, receipt)
     assert progressed["progress_id"] in tasks.progress_records
-
-    submitted = _call(endpoint, "task.submit", {
-        "task_id": task_id, "attempt_id": attempt_id,
-        "summary": "done", "artifact_refs": [], "evidence_refs": [], "workspace_result_ref": "w",
-    }, receipt)
-    assert submitted["result_id"]
-    assert tasks.tasks[task_id].status == "submitted"
+    submitted = _call(endpoint, "task.submit", {"task_id": task_id, "attempt_id": attempt_id, "summary": "done"}, receipt)
+    assert submitted["result_id"] and tasks.tasks[task_id].status == "submitted"
 
 
-def test_task_start_rejects_bogus_preflight_id(tmp_path: Path) -> None:
+def test_task_begin_rejects_stale_revision(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
     with pytest.raises(HTTPException) as exc:
-        _call(endpoint, "task.start", {
-            "task_id": task_id, "attempt_id": claimed["attempt_id"], "preflight_id": "bogus",
-        }, receipt)
-    assert exc.value.status_code == 400
-    assert exc.value.detail["code"] == "preflight_id_mismatch"
-    # The attempt must remain claimed (not running) after the failed start.
-    assert tasks.attempts[claimed["attempt_id"]].status == "claimed"
+        _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": 0}, receipt)
+    assert exc.value.status_code == 409
+    assert tasks.tasks[task_id].status == "open" and not tasks.attempts
 
 
 def test_task_submit_fails_closed_without_execution_grant(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    claimed = _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
-
+    attempt = tasks.claim(task_id, receipt.agent_id)
+    tasks.start(task_id, receipt.agent_id)
     with pytest.raises(HTTPException) as exc:
-        _call(endpoint, "task.submit", {
-            "task_id": task_id, "attempt_id": claimed["attempt_id"],
-            "summary": "done", "artifact_refs": [], "evidence_refs": [], "workspace_result_ref": "w",
-        }, receipt)
-    assert exc.value.status_code == 403
-    assert exc.value.detail["code"] == "capability_denied"
+        _call(endpoint, "task.submit", {"task_id": task_id, "attempt_id": attempt.attempt_id, "summary": "done"}, receipt)
+    assert exc.value.status_code == 403 and exc.value.detail["code"] == "capability_denied"
 
 
 def test_cognition_report_roundtrip(tmp_path: Path) -> None:
@@ -226,7 +202,7 @@ def test_contract_propose_accept_roundtrip(tmp_path: Path) -> None:
     proposed = _call(endpoint, "contract.propose", {
         "contract_id": "c1", "contract_kind": "kind", "payload": {"x": 1},
         "participants_required": [{"slot": "self", "agent_id": receipt.agent_id}],
-        "participants_optional": [], "subject_ref": "s", "input_refs": [], "supersedes_id": "",
+        "participants_optional": [], "subject_ref": "s", "input_refs": [],
     }, receipt)
     accepted = _call(endpoint, "contract.accept", {
         "proposal_id": proposed["proposal_id"], "participant_slot": "self",
@@ -254,7 +230,7 @@ def test_a_contract_proposal_asks_its_required_slots_to_answer(tmp_path: Path) -
         "participants_optional": [], "subject_ref": "s", "input_refs": [], "supersedes_id": "",
     }, proposer)
 
-    claimed = _call(endpoint, "inbox.claim", {"limit": 10, "max_bytes": 65536}, peer)
+    claimed = _call(endpoint, "inbox.claim", {"limit": 10}, peer)
     assert claimed["count"] == 1
     notice = claimed["messages"][0]
     assert notice["kind"] == "contract.proposed"
@@ -292,24 +268,23 @@ def test_a_contract_proposal_asks_its_required_slots_to_answer(tmp_path: Path) -
     assert cognition.proposals[proposed["proposal_id"]].status == "proposed"
 
 
-def test_preflight_refuses_a_contract_version_that_is_not_in_force(tmp_path: Path) -> None:
+def test_begin_refuses_a_contract_that_is_not_settled(tmp_path: Path) -> None:
     """Starting work is where "which contract version governs" has to be settled.
 
-    The caller declares the versions it read; a declaration that is not what is in
-    force is refused, which is what makes "read the current contract first" enforceable
-    rather than advisory. Reading and running preflight again is the way out, and a
-    caller that declares nothing is left alone.
+    A task declares the contracts it depends on by naming itself in their payload. While a
+    declared contract has nothing accepted yet, or a revision is still under discussion,
+    the start boundary is held: otherwise the work would begin from a version that can
+    still move. Accepting it is the way out, and the console reads the same facts back
+    through ``context.project_read``.
     """
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    attempt_id = _call(
-        endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, agent
-    )["attempt_id"]
 
-    def propose(payload: dict[str, Any], supersedes_id: str = "") -> dict[str, Any]:
+    def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
         return _call(endpoint, "contract.propose", {
-            "contract_id": "api", "contract_kind": "interface", "payload": payload,
+            "contract_id": "api", "contract_kind": "interface",
+            "payload": {"task_id": task_id, "label": label},
             "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
             "participants_optional": [], "subject_ref": task_id, "input_refs": [],
             "supersedes_id": supersedes_id,
@@ -321,49 +296,41 @@ def test_preflight_refuses_a_contract_version_that_is_not_in_force(tmp_path: Pat
             "proposal_digest": proposal["digest"], "evidence_refs": [],
         }, agent)
 
-    def preflight(revisions: dict[str, Any] | None = None) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "task_id": task_id, "attempt_id": attempt_id, "evidence_refs": ["pf"],
-        }
-        if revisions is not None:
-            payload["expected_revisions"] = revisions
-        return _call(endpoint, "task.preflight", payload, agent)
+    def begin() -> dict[str, Any]:
+        return _call(endpoint, "task.begin", {
+            "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
+        }, agent)
 
-    agreed = propose({"task_id": task_id, "label": "接口契约 v1"})
+    agreed = propose("接口契约 v1")
+    with pytest.raises(HTTPException) as failure:
+        begin()
+    assert failure.value.detail["code"] == "contract_not_accepted"
+
     accept(agreed)
-    in_force = [f"{agreed['proposal_id']}:{agreed['digest']}"]
+    assert begin()["status"] == "running"
 
-    assert preflight({"contract": in_force})["status"] == "preflighted"
-    assert preflight()["status"] == "preflighted"
-
+    # A revision retires its predecessor on the spot (contract.supersede), so nothing is
+    # in force again until the revision is accepted — which is exactly why both boundaries
+    # hold while one is under discussion.
+    revision = propose("接口契约 v2", agreed["proposal_id"])
     with pytest.raises(HTTPException) as failure:
-        preflight({"contract": ["some-other-proposal:sha256:nope"]})
-    assert failure.value.detail["code"] == "contract_revision_conflict"
+        begin()
+    assert failure.value.detail["code"] == "contract_not_accepted"
 
-    # A revision moves what is in force: the declaration from before it no longer
-    # matches, and only reading the new version and declaring it gets through.
-    revision = propose({"task_id": task_id, "label": "接口契约 v2"}, agreed["proposal_id"])
-    assert revision["supersedes_id"] == agreed["proposal_id"]
-    accept(revision)
-
-    with pytest.raises(HTTPException) as failure:
-        preflight({"contract": in_force})
-    assert failure.value.detail["code"] == "contract_revision_conflict"
-    assert preflight(
-        {"contract": [f"{revision['proposal_id']}:{revision['digest']}"]}
-    )["status"] == "preflighted"
-
-    # The read is what makes the declaration possible, so it has to carry the version
-    # in force *and* the body the participant is being asked to agree to.
     view = _call(endpoint, "context.project_read", {}, agent)
     entry = view["contracts"]["tasks"][0]
     assert entry["task_id"] == task_id
-    assert entry["in_force"] == [f"{revision['proposal_id']}:{revision['digest']}"]
+    assert entry["in_force"] == []
     by_status = {item["status"]: item for item in entry["proposals"]}
-    assert set(by_status) == {"accepted", "superseded"}
-    assert by_status["accepted"]["payload"] == {"task_id": task_id, "label": "接口契约 v2"}
-    assert by_status["accepted"]["supersedes_id"] == agreed["proposal_id"]
+    assert by_status["proposed"]["payload"] == {"task_id": task_id, "label": "接口契约 v2"}
+    assert by_status["proposed"]["supersedes_id"] == agreed["proposal_id"]
     assert by_status["superseded"]["payload"] == {"task_id": task_id, "label": "接口契约 v1"}
+
+    accept(revision)
+    view = _call(endpoint, "context.project_read", {}, agent)
+    entry = view["contracts"]["tasks"][0]
+    assert entry["in_force"] == [f"{revision['proposal_id']}:{revision['digest']}"]
+    assert {item["status"] for item in entry["proposals"]} == {"accepted", "superseded"}
     assert len(view["contracts"]["participating"]) == 2
 
 
@@ -374,7 +341,9 @@ def test_a_refused_proposal_is_readable_with_its_reason(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, agent)
+    _call(endpoint, "task.begin", {
+        "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
+    }, agent)
     proposed = _call(endpoint, "contract.propose", {
         "contract_id": "api", "contract_kind": "interface", "payload": {"task_id": task_id},
         "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
@@ -393,23 +362,21 @@ def test_a_refused_proposal_is_readable_with_its_reason(tmp_path: Path) -> None:
     assert entry["proposals"][0]["resolution_reason"] == "接口字段对不上"
 
 
-def test_submit_refuses_a_contract_version_that_is_not_in_force(tmp_path: Path) -> None:
+def test_submit_refuses_while_a_revision_is_under_discussion(tmp_path: Path) -> None:
     """Delivery is the second boundary that has to settle which contract version governs.
 
-    A result must not be published on top of a superseded agreement — and the refusal has
-    to be *repairable*: the attempt keeps running, so bringing the work up to date and
-    submitting again is enough. Nothing has to be started over.
+    A result must not be published on top of an agreement that is being revised — and the
+    refusal has to be *repairable*: the attempt keeps running, so settling the revision
+    and submitting again is enough. Nothing has to be started over.
     """
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    attempt_id = _call(
-        endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, agent
-    )["attempt_id"]
 
-    def propose(payload: dict[str, Any], supersedes_id: str = "") -> dict[str, Any]:
+    def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
         return _call(endpoint, "contract.propose", {
-            "contract_id": "api", "contract_kind": "interface", "payload": payload,
+            "contract_id": "api", "contract_kind": "interface",
+            "payload": {"task_id": task_id, "label": label},
             "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
             "participants_optional": [], "subject_ref": task_id, "input_refs": [],
             "supersedes_id": supersedes_id,
@@ -421,42 +388,29 @@ def test_submit_refuses_a_contract_version_that_is_not_in_force(tmp_path: Path) 
             "proposal_digest": proposal["digest"], "evidence_refs": [],
         }, agent)
 
-    def declare(proposal: dict[str, Any]) -> dict[str, Any]:
-        return {"contract": [f"{proposal['proposal_id']}:{proposal['digest']}"]}
-
-    first = propose({"task_id": task_id, "label": "接口契约 v1"})
+    first = propose("接口契约 v1")
     accept(first)
-    preflight = _call(endpoint, "task.preflight", {
-        "task_id": task_id, "attempt_id": attempt_id, "evidence_refs": ["pf"],
-        "expected_revisions": declare(first),
-    }, agent)
-    _call(endpoint, "task.start", {
-        "task_id": task_id, "attempt_id": attempt_id,
-        "preflight_id": preflight["preflight_id"], "expected_execution_epoch": 1,
-        "input_digest": "d",
+    started = _call(endpoint, "task.begin", {
+        "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
     }, agent)
 
-    def submit(revisions: dict[str, Any] | None = None) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "task_id": task_id, "attempt_id": attempt_id, "summary": "done",
-            "artifact_refs": [], "evidence_refs": [], "workspace_result_ref": "w",
-        }
-        if revisions is not None:
-            payload["expected_revisions"] = revisions
-        return _call(endpoint, "task.submit", payload, agent)
+    def submit() -> dict[str, Any]:
+        return _call(endpoint, "task.submit", {
+            "task_id": task_id, "attempt_id": started["attempt_id"], "summary": "done",
+        }, agent)
 
     # The revision lands while the attempt is already running.
-    second = propose({"task_id": task_id, "label": "接口契约 v2"}, first["proposal_id"])
-    accept(second)
+    revision = propose("接口契约 v2", first["proposal_id"])
 
     with pytest.raises(HTTPException) as failure:
-        submit(declare(first))
-    assert failure.value.detail["code"] == "contract_revision_conflict"
+        submit()
+    assert failure.value.detail["code"] == "contract_not_accepted"
     # The refusal closed nothing: same attempt, still running and still able to deliver.
-    assert tasks.attempts[attempt_id].status == "running"
+    assert tasks.attempts[started["attempt_id"]].status == "running"
     assert tasks.tasks[task_id].status == "running"
 
-    assert submit(declare(second))["result_id"]
+    accept(revision)
+    assert submit()["result_id"]
     assert tasks.tasks[task_id].status == "submitted"
 
 
@@ -465,14 +419,21 @@ def test_inbox_claim_fetch_ack_roundtrip(tmp_path: Path) -> None:
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     messages.send(
         command_id="cmd1", sender_agent_id="other", recipient_agent_id=receipt.agent_id,
-        kind="message", subject_ref="s", summary="hello",
+        kind="message", subject_ref="s", summary="hello", payload={"request": "private-action-sentinel"},
     )
-    claimed = _call(endpoint, "inbox.claim", {"limit": 50, "max_bytes": 1000}, receipt)
+    claimed = _call(endpoint, "inbox.claim", {"limit": 50}, receipt)
     assert claimed["count"] == 1
     message_id = claimed["messages"][0]["message_id"]
+    assert "payload" not in claimed["messages"][0]
 
-    fetched = _call(endpoint, "inbox.fetch", {"delivery_lease_id": message_id}, receipt)
+    fetched = _call(endpoint, "inbox.fetch", {"message_id": message_id}, receipt)
     assert fetched["message_id"] == message_id
+    assert fetched["payload"] == {"request": "private-action-sentinel"}
+    assert fetched["payload_digest"].startswith("sha256:")
+    other = _enroll_ready(authority, installation="install-b", conversation="conversation-b")
+    with pytest.raises(HTTPException) as denied:
+        _call(endpoint, "inbox.fetch", {"message_id": message_id}, other)
+    assert denied.value.status_code == 403
 
     acked = _call(endpoint, "inbox.ack", {"message_id": message_id, "reason": "done"}, receipt)
     assert acked["acked"] is True
@@ -485,6 +446,58 @@ def test_message_send_idempotent_dedup(tmp_path: Path) -> None:
     first = _call(endpoint, "message.send", payload, receipt)
     second = _call(endpoint, "message.send", payload, receipt)
     assert first["message_id"] == second["message_id"]
+
+
+def test_canonical_message_payloads_complete_recipient_reply_flow(tmp_path: Path) -> None:
+    from uuid import uuid4
+
+    _, authority, _, _, messages, endpoint = _harness(tmp_path)
+    sender = _enroll_ready(authority, installation="sender", conversation="sender-conversation")
+    recipient = _enroll_ready(authority, installation="recipient", conversation="recipient-conversation")
+
+    def invoke(name, payload, identity):
+        schema = json.loads((ROOT / "protocol/schemas/commands" / (name.replace(".", "/") + ".schema.json"))
+                            .read_text(encoding="utf-8"))
+        Draft202012Validator(schema).validate(payload)
+        request = _request(payload).model_copy(update={"command_id": uuid4().hex})
+        return endpoint(name, request, Response(), f"Bearer {identity.secret_token}",
+                        identity.session_id, identity.connection_epoch)["result"]
+
+    payload = json.loads((ROOT / "protocol/fixtures/valid/message-send.json").read_text(encoding="utf-8"))
+    payload["recipient_agent_id"] = recipient.agent_id
+    sent = invoke("message.send", payload, sender)
+    message_id = sent["message_id"]
+    claimed = invoke("inbox.claim", {}, recipient)
+    assert claimed["count"] == 1 and "payload" not in claimed["messages"][0]
+    fetched = invoke("inbox.fetch", {"message_id": message_id}, recipient)
+    assert fetched["payload"] == payload["payload"] and fetched["in_reply_to"] is None
+    obligation_id = fetched["response_obligations"][0]["obligation_id"]
+    with pytest.raises(HTTPException) as denied:
+        invoke("inbox.fetch", {"message_id": message_id}, sender)
+    assert denied.value.status_code == 403
+    invoke("inbox.presented", {"message_id": message_id, "evidence_kind": "agent_asserted",
+                               "evidence_digest": fetched["payload_digest"]}, recipient)
+    invoke("inbox.ack", {"message_id": message_id}, recipient)
+    assert messages.obligations[obligation_id].status == "open"
+    reply = invoke("message.send", {"recipient_agent_id": sender.agent_id, "summary": "verified",
+                                    "in_reply_to": message_id, "payload": {"status": "passed"}}, recipient)
+    result = invoke("message.respond", {"obligation_id": obligation_id, "response_message_id": reply["message_id"]}, recipient)
+    assert result["status"] == "responded"
+    returned = invoke("inbox.fetch", {"message_id": reply["message_id"]}, sender)
+    assert returned["payload"] == {"status": "passed"} and returned["in_reply_to"] == message_id
+
+
+@pytest.mark.parametrize("name,payload", [
+    ("inbox.claim", {"max_bytes": 1000}),
+    ("inbox.fetch", {"delivery_lease_id": "old-alias"}),
+    ("message.respond", {"obligation_id": "o", "response_message_id": "m", "response_payload": {}}),
+])
+def test_retired_message_arguments_are_rejected_by_real_dispatch(tmp_path: Path, name, payload) -> None:
+    _, authority, _, _, _, endpoint = _harness(tmp_path)
+    receipt = _enroll_ready(authority, installation="worker", conversation="worker-conversation")
+    with pytest.raises(HTTPException) as rejected:
+        _call(endpoint, name, payload, receipt)
+    assert rejected.value.status_code == 400 and rejected.value.detail["code"] == "unknown_payload_field"
 
 
 def test_message_respond_closes_obligation(tmp_path: Path) -> None:
@@ -586,7 +599,7 @@ def test_business_commands_denied_for_degraded_session(tmp_path: Path) -> None:
     assert receipt.baseline_status == "degraded"
     with pytest.raises(HTTPException) as exc:
         endpoint(
-            "task.claim", _request({"task_id": "t", "capability_snapshot_id": "x"}), Response(),
+            "task.begin", _request({"task_id": "t", "capability_snapshot_id": "x"}), Response(),
             f"Bearer {receipt.secret_token}", receipt.session_id, receipt.connection_epoch,
         )
     assert exc.value.status_code == 401
@@ -596,7 +609,7 @@ def test_context_project_read_returns_own_scope(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+    _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision}, receipt)
 
     snapshot = _call(endpoint, "context.project_read", {}, receipt)
     assert snapshot["agent_id"] == receipt.agent_id
@@ -609,7 +622,7 @@ def test_context_project_read_includes_project_id(tmp_path: Path) -> None:
     _, authority, tasks, _, _, endpoint = _harness(tmp_path, project_id="project-1")
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
     task_id = _open_task(tasks)
-    _call(endpoint, "task.claim", {"task_id": task_id, "capability_snapshot_id": "x"}, receipt)
+    _call(endpoint, "task.begin", {"task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision}, receipt)
 
     snapshot = _call(endpoint, "context.project_read", {}, receipt)
     assert snapshot["project_id"] == "project-1"

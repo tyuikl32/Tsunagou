@@ -28,7 +28,7 @@ bridge 自己读取宿主 conversation ID，与 installation_id 归一成服务�
 
 凭据首次经 bridge 私有交付通道返回，绝不进入模型或普通查询，服务端只持久保存哈希。交付响应丢失时同一 ticket+command_id+nonce 只能取回同一次接入的非秘密 receipt，不能新建 Agent；bridge 未安全保存 token 时通过 session_rebind_ticket 恢复。不要为了重放明文 token 引入加密缓存和密钥生命周期。T02/T06 必须验证 Windows 私有文件 ACL 和无 secret 日志路径。
 
-reconnect 用 session token、可信 continuity evidence、单次 reconnect nonce 与 expected connection_epoch CAS；成功推进 epoch 并更换 nonce，旧连接 commit 前被拒绝。重复同 nonce/command_id返回同一次连接结果，其他并发方失败。没有应用 heartbeat 不标 ended；显式 SessionEnd/rebind 才关闭身份。执行 Lease 的超时是独立机制，只撤当前 Attempt 的执行资格，不把 Task 绑定在旧 conversation 上。
+reconnect 用 session token、连续性证据、单次 nonce 与 expected connection_epoch CAS；成功推进 epoch，旧连接拒绝。没有 heartbeat 不标 ended。资源占用无到期：重连或同库重启保留任务 owner，原 owner begin 恢复执行授权。
 
 ## 主 Agent 与继任
 

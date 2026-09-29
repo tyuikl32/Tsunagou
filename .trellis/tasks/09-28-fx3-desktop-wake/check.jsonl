@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": "docs/decisions/2026-09-28-clean-break-upgrade.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-fx3-desktop-wake/design.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/spec/adapters/index.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": "docs/decisions/2026-09-28-desktop-wake-required.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": "docs/decisions/2026-09-28-codex-local-app-interface.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-real-test-repair/research/codex-wake-control.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-fx3-desktop-wake/prd.md", "reason": "Verify every acceptance criterion; build success alone is insufficient."}

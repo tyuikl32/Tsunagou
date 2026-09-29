@@ -1,16 +1,16 @@
 {
   "$id": "https://tsunagou.local/schema/commands/inbox.fetch",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InboxFetchPayload",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
-    "delivery_lease_id": {
-      "minLength": 1,
-      "type": "string"
+    "message_id": {
+      "type": "string",
+      "minLength": 1
     }
   },
   "required": [
-    "delivery_lease_id"
-  ],
-  "title": "InboxFetchPayload",
-  "type": "object"
+    "message_id"
+  ]
 }

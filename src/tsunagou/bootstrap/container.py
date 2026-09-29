@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import sqlite3
+from collections.abc import Mapping
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from fastapi import FastAPI
 
 from tsunagou.api.app import create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
-from tsunagou.application.handlers import build_handlers
+from tsunagou.application.handlers import Handler, build_handlers
 from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.hostwake import (
     DesktopAttachProvider,
@@ -39,8 +40,11 @@ from tsunagou.platform.audit_cursor import AuditCursorCodec
 from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore, GitAnchorScanner
 from tsunagou.platform.db.sqlite import ProjectDatabase, ProjectLock
+from tsunagou.platform.host_delivery import HostDeliveryWorker
 from tsunagou.platform.maintenance import RuntimeMaintenance
+from tsunagou.platform.runtime_context import running_source_root
 from tsunagou.platform.state import ServiceStateRuntime
+from tsunagou.platform.telemetry import Telemetry
 from tsunagou.shared_kernel.baseline import (
     OPERATIONAL_CAPABILITIES,
     missing_admission_capabilities,
@@ -56,19 +60,20 @@ def _registry_path() -> Path:
     return Path(str(_REGISTRY_RESOURCE))
 
 
-def build_application() -> FastAPI:
-    state_dir = os.environ.get("TSUNAGOU_STATE_DIR")
-    project_root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
+def build_application(config: Mapping[str, str] | None = None) -> FastAPI:
+    config = dict(os.environ if config is None else config)
+    state_dir = config.get("TSUNAGOU_STATE_DIR")
+    project_root = config.get("TSUNAGOU_PROJECT_ROOT")
     if state_dir and project_root:
         shared = Path(project_root) / ".tsunagou"
         with ProjectLock(shared / "bootstrap.lock"):
             if not (Path(state_dir) / "state.sqlite3").exists() and (shared / "checkpoints" / "current.json").is_file():
                 raise RuntimeError("checkpoint_restore_required")
-            return _build_application()
-    return _build_application()
+            return _build_application(config)
+    return _build_application(config)
 
 
-def _build_application() -> FastAPI:
+def _build_application(config: Mapping[str, str]) -> FastAPI:
     """Assemble the real application with authority, handlers and control credentials.
 
     Credentials come only from the environment, never from request headers or hardcoded
@@ -78,7 +83,8 @@ def _build_application() -> FastAPI:
     - ``TSUNAGOU_STATE_DIR`` points at the durable authority state directory; without it,
       authority state is in-memory only and does not survive a restart.
     """
-    state_dir = os.environ.get("TSUNAGOU_STATE_DIR")
+    telemetry = Telemetry(config.get("TSUNAGOU_OTEL_ENDPOINT"))
+    state_dir = config.get("TSUNAGOU_STATE_DIR")
     state_path = Path(state_dir) if state_dir else None
     if state_path is not None:
         from tsunagou.platform.credential_migration import assert_credential_migration_ready
@@ -92,9 +98,9 @@ def _build_application() -> FastAPI:
     resources = ResourceService()
     workspaces = WorkspaceService()
     artifacts = ArtifactService(state_path / "artifacts") if state_path else None
-    project_id = _project_id()
+    project_id = _project_id(config)
     project_registry = None
-    project_root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
+    project_root = config.get("TSUNAGOU_PROJECT_ROOT")
     if project_root:
         durable = _durable_project_snapshot(state_path)
         project_registry = ProjectRegistry(project_root, load_files=durable is None)
@@ -143,12 +149,11 @@ def _build_application() -> FastAPI:
         except OSError:
             pass
         maintenance = RuntimeMaintenance(
-            database=database, state_runtime=state_runtime, resources=resources,
-            tasks=tasks, authority=authority, coordination=coordination,
-            interval_seconds=float(os.environ.get("TSUNAGOU_MAINTENANCE_INTERVAL", "1")),
+            database=database,
+            interval_seconds=float(config.get("TSUNAGOU_MAINTENANCE_INTERVAL", "1")),
             checkpoint_worker=checkpoint_worker,
         )
-        if os.environ.get("TSUNAGOU_HOST_WAKE", "").casefold() == "managed":
+        if config.get("TSUNAGOU_HOST_WAKE", "").casefold() in {"managed", "desktop", "auto"}:
             binding_store = PrivateBindingStore(state_path / "host-bindings.json")
             hostwake_provider = HostWakeProviderRegistry(
                 ManagedCodexProvider(binding_store),
@@ -163,6 +168,9 @@ def _build_application() -> FastAPI:
         _registry_path(), database=database, state_runtime=state_runtime,
         checkpoint_worker=checkpoint_worker,
     )
+    if wake_dispatcher is not None:
+        dispatcher.record_failure = wake_dispatcher.record_command_failure
+    preparers: dict[str, Handler] = {}
     for command_kind, handler in build_handlers(
         authority=authority, tasks=tasks, cognition=cognition, messages=messages,
         resources=resources, workspaces=workspaces, lifecycle=lifecycle,
@@ -173,11 +181,13 @@ def _build_application() -> FastAPI:
         checkpoint_worker=checkpoint_worker,
         project_root=project_root, artifact_root=str(state_path.parent / "artifacts") if state_path else None,
         project_registry=project_registry,
-        artifacts=artifacts,
+        artifacts=artifacts, preparers=preparers,
     ).items():
         dispatcher.register(command_kind, handler)
+    for command_kind, prepare in preparers.items():
+        dispatcher.register_preparer(command_kind, prepare)
     authenticator = LocalCommandAuthenticator(
-        authority=authority, control_token=os.environ.get("TSUNAGOU_CONTROL_TOKEN")
+        authority=authority, control_token=config.get("TSUNAGOU_CONTROL_TOKEN")
     )
     application = create_app(
         dispatcher, authenticator=authenticator,
@@ -194,13 +204,26 @@ def _build_application() -> FastAPI:
         ),
         wake_dispatcher=wake_dispatcher,
         hostwake_provider=hostwake_provider,
+        telemetry=telemetry,
     )
     application.state.project_database = database
+    application.state.runtime_info = {
+        "pid": os.getpid(), "runtime_id": database.runtime_epoch if database is not None else None,
+        "project_ids": [project_id] if project_id else [],
+        "source_root": str(running_source_root()), "schema_bundle_digest": schema_bundle_digest,
+    }
     application.state.state_runtime = state_runtime
     application.state.checkpoint_store = checkpoint_store
     application.state.checkpoint_worker = checkpoint_worker
     application.state.maintenance = maintenance
     application.state.hostwake_provider = hostwake_provider
+    if database is not None and wake_dispatcher is not None:
+        host_delivery = HostDeliveryWorker(database, wake_dispatcher, telemetry)
+        application.state.host_delivery = host_delivery
+
+        @application.on_event("startup")
+        def start_host_delivery() -> None:
+            host_delivery.start()
     if maintenance is not None:
         @application.on_event("startup")
         def start_runtime_maintenance() -> None:
@@ -351,6 +374,35 @@ def _query_provider(
         )
         return refs
 
+    def visible_event(event: dict[str, Any], viewer: PrincipalContext) -> dict[str, Any] | None:
+        if can_read_event(event, viewer):
+            return event
+        subject = event.get("subject_ref") or event.get("aggregate_ref", "")
+        action = str(event["event_type"]).removeprefix("command.")
+        # A compound domain command may also emit a private notification. Its
+        # shared fact remains visible; the notification and private references
+        # do not. Unknown/legacy message audiences still fail closed.
+        if action.startswith(("message.", "inbox.")) or not subject.startswith((
+            "task/", "attempt/", "result/", "workspace/", "contract/", "decision/", "project/",
+        )):
+            return None
+        payload = event.get("payload") or {}
+        # Explicit evidence defines the claim itself, so it must be authorized
+        # in full. Only ancillary entity changes may be omitted.
+        if not can_read_event({**event, "payload": {**payload, "changes": []}}, viewer):
+            return None
+        def readable_ref(ref: str) -> bool:
+            probe = {**event, "subject_ref": ref, "payload": {}, "evidence_refs": []}
+            return can_read_event(probe, viewer)
+
+        if not readable_ref(subject):
+            return None
+        return {**event, "payload": {
+            **payload,
+            "changes": [change for change in payload.get("changes", [])
+                        if readable_ref(change.get("subject_ref", ""))],
+        }}
+
     def event_matches_subject_refs(event: dict[str, Any], refs: set[str]) -> bool:
         if event.get("subject_ref") in refs or event.get("aggregate_ref") in refs:
             return True
@@ -374,6 +426,7 @@ def _query_provider(
         subject_ref: str | None = None,
         viewer: PrincipalContext | None = None,
         task_id: str | None = None,
+        message_id: str | None = None,
         project_filter: str | None = None,
         verify: bool = False,
     ) -> dict[str, Any]:
@@ -479,19 +532,7 @@ def _query_provider(
             return {
                 "project_id": requested_project_id,
                 "items": [
-                    {
-                        "task_id": task.task_id, "title": task.title,
-                        "objective": task.objective, "status": task.status,
-                        "revision": task.revision, "scope_revision": task.scope_revision,
-                        "current_attempt_id": task.current_attempt_id,
-                        "parent_task_id": task.parent_task_id,
-                        "blocks": sorted(task.blocks),
-                        "execution_scope": task.execution_scope,
-                        # Why a task is sitting still is part of its state, not an extra:
-                        # "blocked because it is waiting on a user decision" is invisible
-                        # to anyone who cannot read the reason.
-                        "block_reason": task.block_reason, "orphan_reason": task.orphan_reason,
-                    }
+                    tasks.describe_task(task.task_id)
                     for task in tasks.tasks.values()
                 ],
             }
@@ -499,7 +540,7 @@ def _query_provider(
             plans = [
                 {
                     "plan_id": plan.plan_id, "objective": plan.objective,
-                    "main_agent_id": plan.main_agent_id, "status": plan.status,
+                    "main_agent_id": plan.main_agent_id,
                     "assignment_ids": list(plan.assignment_ids),
                 }
                 for plan in coordination.plans.values()
@@ -508,25 +549,14 @@ def _query_provider(
                 {
                     "assignment_id": item.assignment_id, "plan_id": item.plan_id,
                     "task_id": item.task_id, "assigned_worker_id": item.assigned_worker_id,
-                    "status": item.status, "wake_attempt_id": item.wake_attempt_id,
-                    "claimed_attempt_id": item.claimed_attempt_id,
+                    "status": tasks.tasks[item.task_id].status, "message_id": item.message_id,
+                    "current_attempt_id": tasks.tasks[item.task_id].current_attempt_id,
                     "takeover_agent_id": item.takeover_agent_id,
                     "takeover_reason": item.takeover_reason,
                 }
                 for item in coordination.assignments.values()
             ]
-            wakes = [
-                {
-                    "wake_attempt_id": item.wake_attempt_id, "assignment_id": item.assignment_id,
-                    "task_id": item.task_id, "worker_id": item.worker_id,
-                    "wake_id": item.wake_id, "retry_count": item.retry_count,
-                    "status": item.status, "host_accepted": item.host_accepted,
-                    "host_turn_id": item.host_turn_id,
-                    "worker_ready": item.worker_ready, "deadline": item.deadline,
-                    "failure_reason": item.failure_reason,
-                }
-                for item in coordination.wake_attempts.values()
-            ]
+            wakes = list(wake_dispatcher.attempts.values()) if wake_dispatcher is not None else []
             events = [
                 {
                     "event_id": item.event_id, "kind": item.kind,
@@ -538,7 +568,7 @@ def _query_provider(
             ]
             if kind == "assignments":
                 return {"project_id": requested_project_id, "items": assignments,
-                        "coverage": coordination.coverage(),
+                        "coverage": coordination.coverage({key: task.status for key, task in tasks.tasks.items()}),
                         "auto_wake_multi_agent": bool(
                             project_registry is not None and project_registry.project is not None
                             and project_registry.project.settings.get("auto_wake_multi_agent", False)
@@ -550,7 +580,7 @@ def _query_provider(
             return {"project_id": requested_project_id, "plans": plans,
                     "assignments": assignments, "wake_attempts": wakes,
                     "events": events,
-                    "coverage": coordination.coverage(),
+                    "coverage": coordination.coverage({key: task.status for key, task in tasks.tasks.items()}),
                     "auto_wake_multi_agent": bool(
                         project_registry is not None and project_registry.project is not None
                         and project_registry.project.settings.get("auto_wake_multi_agent", False)
@@ -666,13 +696,33 @@ def _query_provider(
                 ],
             }
         if kind == "agents":
+            activity = {}
+            if database is not None:
+                with contextlib.closing(database._connect()) as conn:
+                    activity = {
+                        row["principal_id"]: format_timestamp(row["last_activity"])
+                        for row in conn.execute(
+                            "SELECT principal_id,MAX(created_at) AS last_activity FROM commands WHERE project_id=? GROUP BY principal_id",
+                            (project_id,),
+                        )
+                    }
             return {
                 "items": [
-                    {
-                        "agent_id": item.agent_id, "status": item.status, "role": item.role,
-                        "conversation_digest": item.conversation_digest,
-                        **_agent_features(authority, item.agent_id),
-                    }
+                    # ``_agent_features`` first: it also answers ``session_status`` (None when
+                    # the Agent has no live session), and the explicit value below is the more
+                    # accurate one — an Agent with no session is ``inactive``, not ``unknown``.
+                    # Everything else it adds (``connection_epoch``, ``missing_admission``,
+                    # ``missing_operational``) survives as the console's capability columns.
+                    {**_agent_features(authority, item.agent_id),
+                     "agent_id": item.agent_id, "status": item.status, "role": item.role,
+                     "conversation_digest": item.conversation_digest,
+                     "session_status": next((s.status for s in authority.sessions.values()
+                                             if s.agent_id == item.agent_id and s.active), "inactive"),
+                     "current_task_ids": [task.task_id for task in tasks.tasks.values()
+                                          if task.status in {"claimed", "running", "cancel_requested"}
+                                          and (attempt := tasks.attempts.get(task.current_attempt_id or "")) is not None
+                                          and attempt.owner_agent_id == item.agent_id],
+                     "last_activity_at": activity.get(item.agent_id)}
                     for item in authority.agents.values()
                 ],
                 "main_agent_id": authority.main_agent_id,
@@ -707,34 +757,24 @@ def _query_provider(
         if kind == "resources":
             return {
                 "items": [
-                    {"lease_set_id": lease.lease_set_id, "attempt_id": lease.attempt_id,
-                     "status": lease.status, "expires_at": lease.expires_at,
-                     # A lease is held by an attempt, and the console wants to name the
-                     # holder; resolving that here keeps every reader from redoing it.
-                     "owner_agent_id": (
-                         attempt.owner_agent_id
-                         if (attempt := tasks.attempts.get(lease.attempt_id)) is not None else None
-                     ),
-                     "resources": [request.key.canonical for request in lease.resources]}
-                    for lease in resources.lease_sets.values()
+                    {"reservation_id": item.reservation_id, "task_id": item.task_id, "attempt_id": item.attempt_id,
+                     "owner_agent_id": item.owner_agent_id, "status": item.status,
+                     "created_at": format_timestamp(item.created_at), "released_at": format_timestamp(item.released_at),
+                     "release_reason": item.release_reason, "resources": [request.key.canonical for request in item.resources]}
+                    for item in resources.reservations.values()
                 ],
             }
         if kind == "intents":
-            return {
-                "project_id": requested_project_id,
-                "items": [
-                    {
-                        "intent_id": intent.intent_id, "task_id": intent.task_id,
-                        "attempt_id": intent.attempt_id, "owner_agent_id": intent.owner_agent_id,
-                        "revision": intent.revision, "reason": intent.reason,
-                        "resources": [
-                            {"key": request.key.canonical, "mode": request.mode}
-                            for request in intent.resources
-                        ],
-                    }
-                    for intent in resources.intents.values()
-                ],
-            }
+            # The base model's resource *intents* (declare → wait → acquire, with a lease
+            # that expired on its own) were replaced by explicit reservations in the FX
+            # line — see docs/decisions/2026-09-28-explicit-resource-release.md: occupancy
+            # is taken and released explicitly, and elapsed time never releases anything.
+            # There is no intent object left to read, and reconstructing one here would be
+            # a second resource model. The exit therefore answers honestly with nothing:
+            # the console's audit screen keeps its 意图 column empty instead of showing
+            # invented rows or a 500. How that screen should read the new model is a
+            # front-end design decision, not a merge decision.
+            return {"project_id": requested_project_id, "items": []}
         if kind == "conflicts":
             # A refusal is a shared fact, not an error string: the HTTP layer already
             # records every structured rejection as ``command.<kind>.denied``. This exit
@@ -744,7 +784,6 @@ def _query_provider(
             # Capped at the first 200 refusals (oldest first in the ledger).
             if database is None:
                 return {"project_id": requested_project_id, "items": []}
-            now_seconds = now_ms() / 1000
             refusals: list[dict[str, Any]] = []
             for refusal_event in database.list_events(limit=200, event_type_like="%.denied"):
                 refusal = refusal_event.get("payload")
@@ -759,13 +798,19 @@ def _query_provider(
                 ]
                 holders: list[dict[str, Any]] = []
                 for entry in entries:
-                    attempt = tasks.attempts.get(str(entry.get("holder_attempt_id") or ""))
+                    # Two generations of refusal payloads live in the ledger: the older
+                    # ``holder_*`` rows written when occupancy was a timed lease, and the
+                    # reservation-era ``attempt_id``/``reservation_id``/``resource_key``
+                    # rows. A ledger is a history, so both shapes are read rather than
+                    # pretending old rows do not exist.
+                    holder_attempt_id = entry.get("holder_attempt_id") or entry.get("attempt_id")
+                    attempt = tasks.attempts.get(str(holder_attempt_id or ""))
                     holders.append({
-                        "attempt_id": entry.get("holder_attempt_id"),
-                        "agent_id": attempt.owner_agent_id if attempt is not None else None,
-                        "task_id": attempt.task_id if attempt is not None else None,
-                        "lease_set_id": entry.get("holder_lease_set_id"),
-                        "held_key": entry.get("held_key"),
+                        "attempt_id": holder_attempt_id,
+                        "agent_id": attempt.owner_agent_id if attempt is not None else entry.get("owner_agent_id"),
+                        "task_id": attempt.task_id if attempt is not None else entry.get("task_id"),
+                        "lease_set_id": entry.get("holder_lease_set_id") or entry.get("reservation_id"),
+                        "held_key": entry.get("held_key") or entry.get("resource_key"),
                         "resource": entry.get("resource"),
                         "mode": entry.get("mode"),
                         "expires_at": entry.get("holder_expires_at"),
@@ -773,17 +818,19 @@ def _query_provider(
                 requester_attempt_id = str(requester.get("attempt_id") or "")
                 wanted = {str(item) for item in (requester.get("resource_keys") or [])}
                 # Asking the current state is what keeps this honest: nobody reports an
-                # outcome, so "what happened next" has to be read off the leases and
-                # attempts that exist now.
+                # outcome, so "what happened next" has to be read off the reservations and
+                # attempts that exist now. Occupancy no longer expires by itself, so
+                # "still active" is the only thing that makes a holder a holder.
                 acquired_afterwards = any(
-                    lease.status == "active" and lease.attempt_id == requester_attempt_id
-                    and any(request.key.canonical in wanted for request in lease.resources)
-                    for lease in resources.lease_sets.values()
+                    reservation.status == "active" and reservation.attempt_id == requester_attempt_id
+                    and any(request.key.canonical in wanted for request in reservation.resources)
+                    for reservation in resources.reservations.values()
                 )
                 requester_attempt = tasks.attempts.get(requester_attempt_id)
                 holders_gone = bool(holders) and all(
-                    (lease := resources.lease_sets.get(str(entry.get("holder_lease_set_id") or "")))
-                    is None or lease.status != "active" or lease.expires_at <= now_seconds
+                    (reservation := resources.reservations.get(
+                        str(entry.get("holder_lease_set_id") or entry.get("reservation_id") or "")))
+                    is None or reservation.status != "active"
                     for entry in entries
                 )
                 if acquired_afterwards:
@@ -887,7 +934,8 @@ def _query_provider(
             event = database.get_event(requested_project_id)
             if event is None:
                 raise KeyError("audit_event_not_found")
-            if not can_read_event(event, viewer):
+            event = visible_event(event, viewer)
+            if event is None:
                 raise PermissionError("audit_event_access_denied")
             return project_audit_event(event)
 
@@ -923,9 +971,41 @@ def _query_provider(
                 raise PermissionError("authentication_failed")
             if wake_dispatcher is None:
                 return {"project_id": requested_project_id, "items": []}
+            from_ms, to_ms = parse_timestamp(from_timestamp), parse_timestamp(to_timestamp)
+            if from_ms is not None and to_ms is not None and from_ms > to_ms:
+                raise ValueError("invalid_time_range")
+            diagnostic_items = []
+            for item in wake_dispatcher.diagnostics(project_id=requested_project_id):
+                if message_id is not None and item.get("message_id") != message_id:
+                    continue
+                if task_id is not None and item.get("task_id") != task_id:
+                    continue
+                occurred = parse_timestamp(item.get("occurred_at"))
+                if from_ms is not None and (occurred is None or occurred < from_ms):
+                    continue
+                if to_ms is not None and (occurred is None or occurred > to_ms):
+                    continue
+                # Diagnostics expose transport facts only. Private references
+                # still follow the message audience; U/main can see shared task
+                # delivery failures without gaining the private message ID.
+                ref = item.get("message_id")
+                message = messages.messages.get(ref) if ref else None
+                audience = message is not None and viewer.principal_id in {
+                    message.sender_agent_id, message.recipient_agent_id,
+                }
+                if not ref and viewer.kind != "U" and authority.main_agent_id != viewer.principal_id:
+                    if item.get("agent_id") != viewer.principal_id:
+                        continue
+                if ref and not audience:
+                    if message_id is not None:
+                        continue
+                    if viewer.kind != "U" and authority.main_agent_id != viewer.principal_id:
+                        continue
+                    item = {**item, "message_id": None}
+                diagnostic_items.append(item)
             return {
                 "project_id": requested_project_id,
-                "items": wake_dispatcher.diagnostics(project_id=requested_project_id),
+                "items": diagnostic_items,
             }
 
         if kind == "audit":
@@ -967,7 +1047,8 @@ def _query_provider(
                     break
                 for event in batch:
                     scanned = event["event_seq"]
-                    if can_read_event(event, viewer) and (
+                    event = visible_event(event, viewer)
+                    if event is not None and (
                         related_refs is None or event_matches_subject_refs(event, related_refs)
                     ):
                         audit_events.append(event)
@@ -1037,18 +1118,32 @@ def _query_provider(
                 "projection_version": "v1",
                 "as_of_event_seq": watermark, "snapshot_event_seq": watermark,
             }
-        if kind == "decisions" and lifecycle is not None:
+        if kind == "decisions":
+            if viewer is None:
+                raise PermissionError("authentication_failed")
             return {
+                "project_id": project_id,
                 "items": [
                     {"decision_id": decision.decision_id, "kind": decision.kind,
-                     "subject_ref": decision.subject_ref, "expected_revision": decision.expected_revision,
-                     "input_digest": decision.input_digest, "status": decision.status,
+                     "subject_ref": decision.subject_ref,
+                     # Two spellings for the same two values, on purpose: the console reads
+                     # ``expected_revision``/``input_digest`` (the model's own attribute
+                     # names), while the daemon's resolve command and the Codex-side tests
+                     # read ``revision``/``proposal_digest``. Dropping either name would
+                     # silently break a live consumer, so both are served until one
+                     # canonical name is agreed.
+                     "expected_revision": decision.expected_revision,
+                     "revision": decision.expected_revision,
+                     "input_digest": decision.input_digest,
+                     "proposal_digest": decision.input_digest,
+                     "status": decision.status, "choices": decision.choices,
+                     "summary": decision.summary,
                      "decision": decision.decision, "reason": decision.reason,
                      # What is being decided, including the choices offered: a pending
                      # decision nobody can read is one nobody can answer.
                      "payload": decision.payload}
                     for decision in lifecycle.decisions.values()
-                ],
+                ] if lifecycle is not None else [],
             }
         if kind == "operations" and database is not None:
             with database._connect() as conn:
@@ -1148,10 +1243,6 @@ def _query_provider(
                 "project_id": project_id, "current": current, "items": items,
                 "projection_version": "v1", "as_of_event_seq": database.last_event_seq() if database else 0,
             }
-        if kind == "decisions":
-            # Decision persistence is introduced with the lifecycle task. Keep
-            # this endpoint explicit so a CLI query never fabricates success.
-            return {"items": []}
         if kind == "recovery":
             return {
                 "project_id": project_id,
@@ -1171,7 +1262,7 @@ def _query_provider(
             "results": ("result", "result_id"), "reports": ("report", "report_id"),
             "contracts": ("contract", "proposal_id"), "discrepancies": ("discrepancy", "discrepancy_id"),
             "decisions": ("decision", "decision_id"), "agents": ("agent", "agent_id"),
-            "workspaces": ("workspace", "workspace_id"), "resources": ("lease", "lease_set_id"),
+            "workspaces": ("workspace", "workspace_id"), "resources": ("reservation", "reservation_id"),
             "plans": ("plan", "plan_id"), "assignments": ("assignment", "assignment_id"),
             "wake_attempts": ("wake_attempt", "wake_attempt_id"), "events": ("coordination_event", "event_id"),
             "messages": ("message", "message_id"), "roots": ("root", "root_id"),
@@ -1193,10 +1284,10 @@ def _query_provider(
     return query_with_entity_times
 
 
-def _project_id() -> str | None:
+def _project_id(config: Mapping[str, str]) -> str | None:
     """Resolve a project id from the environment or the coordination repo."""
-    configured = os.environ.get("TSUNAGOU_PROJECT_ID")
-    state_dir = os.environ.get("TSUNAGOU_STATE_DIR")
+    configured = config.get("TSUNAGOU_PROJECT_ID")
+    state_dir = config.get("TSUNAGOU_STATE_DIR")
     durable = _durable_project_snapshot(Path(state_dir) if state_dir else None)
     if durable is not None:
         durable_id = str(durable["project"]["project_id"])
@@ -1205,7 +1296,7 @@ def _project_id() -> str | None:
         return durable_id
     if configured:
         return configured
-    project_root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
+    project_root = config.get("TSUNAGOU_PROJECT_ROOT")
     if not project_root:
         return None
     project_file = Path(project_root) / ".tsunagou" / "project.json"

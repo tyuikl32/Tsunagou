@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tsunagou.platform.telemetry import active_telemetry
 from tsunagou.shared_kernel.digests import canonical_digest
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
@@ -21,10 +22,9 @@ Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 # rejects these before any handler runs.
 PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "coordination.plan": frozenset({
-        "objective", "assignments", "auto_wake", "wake_deadline_seconds",
+        "objective", "assignments", "auto_wake",
     }),
     "coordination.takeover": frozenset({"assignment_id", "takeover_reason"}),
-    "coordination.wake.accepted": frozenset({"assignment_id", "wake_attempt_id", "host_turn_id"}),
     "project.configure": frozenset({"policy_patch", "reason"}),
     "agent.enroll": frozenset({
         "installation_id", "conversation_evidence", "probe_payload", "client_nonce",
@@ -36,9 +36,10 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     }),
     "session.reconnect": frozenset({
         "reconnect_nonce", "expected_connection_epoch", "probe_payload", "continuity_evidence",
+        "host_binding_refresh",
     }),
     "agent.ticket.create.user": frozenset({
-        "installation_id", "conversation_evidence", "ttl_seconds", "kind", "role",
+        "installation_id", "conversation_evidence", "ttl_seconds", "kind", "role", "host_binding",
     }),
     "authority.appoint": frozenset({
         "agent_id", "expected_authority_epoch", "ceiling_template", "reason",
@@ -47,21 +48,13 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "root.register": frozenset({"name", "kind", "repository_id", "required", "binding_request", "reason"}),
     "root.bind": frozenset({"root_id", "absolute_path", "expected_physical_identity", "reason"}),
     "repository.register": frozenset({"name", "root_id", "required"}),
-    "task.create": frozenset({"title", "objective", "parent_task_id", "blocks", "execution_scope"}),
+    "task.create": frozenset({"title", "objective", "parent_task_id", "blocks", "execution_scope", "required_contract_ids"}),
+    "task.begin": frozenset({"task_id", "expected_task_revision"}),
     "task.ready": frozenset({"task_id", "reason"}),
     "task.publish": frozenset({"task_id", "reason"}),
-    "task.update_plan": frozenset({"task_id", "title", "objective", "execution_scope", "acceptance_policy", "reason"}),
+    "task.update_plan": frozenset({"task_id", "title", "objective", "required_contract_ids", "reason"}),
     "task.edge.add": frozenset({"source_task_id", "target_task_id", "kind", "expected_revisions"}),
     "task.edge.remove": frozenset({"edge_id", "source_task_id", "target_task_id", "reason", "expected_revisions"}),
-    "task.claim": frozenset({"task_id", "capability_snapshot_id"}),
-    "task.resume": frozenset({
-        "task_id", "attempt_id", "evidence_refs", "input_digest", "expected_revisions",
-        "expected_execution_epoch",
-    }),
-    "task.preflight": frozenset({"task_id", "attempt_id", "evidence_refs", "expected_revisions"}),
-    "task.start": frozenset({
-        "task_id", "attempt_id", "preflight_id", "expected_execution_epoch", "input_digest",
-    }),
     "task.progress": frozenset({"task_id", "attempt_id", "summary", "evidence_refs"}),
     "task.block": frozenset({
         "task_id", "attempt_id", "reason_code", "reason", "checkpoint_summary",
@@ -69,7 +62,7 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     }),
     "task.submit": frozenset({
         "task_id", "attempt_id", "summary", "evidence_refs", "artifact_refs",
-        "workspace_result_ref", "expected_revisions",
+        "validation_metadata",
     }),
     "task.cancel_request": frozenset({"task_id", "reason"}),
     "task.cancel_ack": frozenset({"task_id", "attempt_id", "stop_evidence", "reason"}),
@@ -104,31 +97,18 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "durability.reconcile": frozenset({"scope_refs", "reason"}),
     "checkpoint.create.user": frozenset({"reason", "retry_operation_id", "minimum_event_seq"}),
     "checkpoint.create": frozenset({"reason", "minimum_event_seq"}),
-    "inbox.claim": frozenset({"limit", "max_bytes"}),
-    "inbox.fetch": frozenset({"message_id", "delivery_lease_id"}),
+    "inbox.claim": frozenset({"limit"}),
+    "inbox.fetch": frozenset({"message_id"}),
     "inbox.presented": frozenset({"message_id", "evidence_digest", "evidence_kind"}),
     "inbox.ack": frozenset({"message_id", "reason"}),
     "message.send": frozenset({
         "recipient_agent_id", "kind", "subject_ref", "summary", "payload", "priority",
         "response_contract", "in_reply_to",
     }),
-    "message.respond": frozenset({
-        "obligation_id", "response_message_id", "response_payload", "summary",
-        "evidence_refs",
-    }),
+    "message.respond": frozenset({"obligation_id", "response_message_id"}),
     "context.project_read": frozenset(),
-    "resource.intent": frozenset({"task_id", "attempt_id", "reason", "resources", "scope_digest"}),
-    "resource.acquire": frozenset({"task_id", "attempt_id", "intent_id", "intent_revision", "scope_digest"}),
-    "resource.release": frozenset({"task_id", "attempt_id", "reason"}),
-    "resource.renew": frozenset({"lease_set_id", "task_id", "attempt_id", "scope_digest"}),
-    "workspace.select": frozenset({"task_id", "attempt_id", "driver_kind", "evidence_refs", "hard_constraints",
-                                     "input_digest", "risk_submission_ref"}),
-    "workspace.prepare": frozenset({"task_id", "attempt_id", "decision_id", "input_digest", "root_binding_refs",
-                                     "repository_id", "external_locator", "baseline"}),
-    "workspace.result": frozenset({"workspace_id", "task_id", "attempt_id", "baseline_digest", "changed_paths",
-                                    "commit_refs", "patch_artifact_ref", "untracked_summary", "validation_refs",
-                                    "validation_metadata"}),
-    "worker.ready": frozenset({"assignment_id", "wake_attempt_id"}),
+    "workspace.select": frozenset({"task_id", "driver_kind", "root_binding_refs", "repository_id", "external_locator",
+                                     "hard_constraints", "evidence_refs", "reason"}),
     "workspace.git.report": frozenset({"request_id", "evidence_refs", "exact_input_digest", "outcome", "result_manifest"}),
     "task.review.accept": frozenset({"task_id", "attempt_id", "result_id", "evidence_refs", "reason", "result_digest", "slot_id"}),
     "task.review.request_changes": frozenset({"task_id", "attempt_id", "result_id", "evidence_refs", "reason", "result_digest", "slot_id"}),
@@ -170,13 +150,54 @@ class CommandDispatcher:
         self.state_runtime = state_runtime
         self.checkpoint_worker = checkpoint_worker
         self.handlers: dict[str, Handler] = {}
+        self.preparers: dict[str, Handler] = {}
+        self.record_failure: Callable[..., None] | None = None
 
     def register(self, command_kind: str, handler: Handler) -> None:
         if command_kind not in self.registry:
             raise KeyError(f"unregistered_command:{command_kind}")
         self.handlers[command_kind] = handler
 
+    def register_preparer(self, command_kind: str, prepare: Handler) -> None:
+        if command_kind not in self.handlers:
+            raise KeyError(f"unregistered_handler:{command_kind}")
+        self.preparers[command_kind] = prepare
+
     def dispatch(
+        self, command_kind: str, envelope: dict[str, Any], *,
+        principal: PrincipalContext,
+    ) -> DispatchResponse:
+        payload = envelope.get("payload")
+        attrs = {"command_id": envelope.get("command_id"), "command_kind": command_kind,
+                 "project_id": getattr(self.database, "project_id", None),
+                 "actor_id": None if principal.kind == "T" else principal.principal_id}
+        if isinstance(payload, dict):
+            attrs.update({key: payload.get(key) for key in ("task_id", "attempt_id", "message_id")})
+        telemetry = active_telemetry()
+        try:
+            # Context reads intentionally create neither trace nor domain noise.
+            if command_kind in {"context.project_read", "inbox.fetch"}:
+                return self._dispatch(command_kind, envelope, principal=principal)
+            with telemetry.span("command.execute", attrs) as span:
+                if command_kind in {"agent.enroll", "session.reconnect", "session.rebind"}:
+                    with telemetry.span("onboarding.restore", attrs) as restore_span:
+                        response = self._dispatch(command_kind, envelope, principal=principal)
+                        telemetry.annotate(restore_span, {"agent_id": response.result.get("agent_id")})
+                else:
+                    response = self._dispatch(command_kind, envelope, principal=principal)
+                telemetry.annotate(span, {key: response.result.get(key)
+                                          for key in ("agent_id", "task_id", "attempt_id", "message_id")})
+                telemetry.outcome(span, "accepted")
+                return response
+        except Exception as exc:
+            recorder = getattr(self, "record_failure", None)
+            if recorder is not None:
+                recorder(project_id=attrs["project_id"], actor_id=attrs["actor_id"],
+                         command_id=attrs["command_id"], command_kind=command_kind,
+                         error_code=getattr(exc, "code", str(exc)))
+            raise
+
+    def _dispatch(
         self, command_kind: str, envelope: dict[str, Any], *,
         principal: PrincipalContext,
     ) -> DispatchResponse:
@@ -219,7 +240,7 @@ class CommandDispatcher:
             "payload": envelope["payload"],
         }
         command_hash = canonical_digest(semantic)
-        context = {
+        context: dict[str, Any] = {
             "kind": principal.kind,
             "principal_id": principal.principal_id,
             "session_id": principal.session_id,
@@ -227,9 +248,15 @@ class CommandDispatcher:
             "command_hash": command_hash,
             "command_id": envelope["command_id"],
         }
+        def prepare() -> None:
+            observer = self.preparers.get(command_kind)
+            if observer is not None:
+                context["_prepared"] = observer(envelope["payload"], context)
+
         if self.database is None:
             if principal.replay_only:
                 raise PermissionError("authentication_failed")
+            prepare()
             result = handler(envelope["payload"], context)
         else:
             snapshot = None
@@ -268,6 +295,7 @@ class CommandDispatcher:
                 auth_proof_hash=principal.credential_proof_hash,
                 replay_only=principal.replay_only,
                 on_rollback=restore_rolled_back_state,
+                prepare=prepare,
             )
             response_result = stored.result
             if self.checkpoint_worker is not None:
@@ -321,8 +349,10 @@ class BlackboardComposer:
 
 PROMPT_FRAGMENTS = {
     "identity": "Use the authenticated project identity supplied by the bridge; never invent actor IDs.",
-    "task_boundary": "Claim and resume prepare work. Only task.start begins execution.",
+    "task_boundary": ("Call task.begin with the current task revision before work. "
+                      "Call task.submit for automatic result capture and resource release; "
+                      "block explicitly before waiting. Resource ownership has no timer."),
     "coordination": "Report explicit assumptions, uncertainty, and contract changes through project tools.",
 }
-PROMPT_VERSION = "1.0"
+PROMPT_VERSION = "2.0"
 PROMPT_DIGEST = canonical_digest({"version": PROMPT_VERSION, "fragments": PROMPT_FRAGMENTS})

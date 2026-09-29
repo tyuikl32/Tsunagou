@@ -1,0 +1,37 @@
+{
+  "id": "fx3-desktop-wake",
+  "name": "fx3-desktop-wake",
+  "title": "FX3 Codex 原会话自动唤醒",
+  "description": "实现应用本机管道适配、原会话绑定与真实消息唤醒；保留 managed，真实 Desktop 验收必达。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": "codex/live-test-repair",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "09-28-real-test-repair",
+  "relatedFiles": [
+    ".trellis/tasks/09-28-fx3-desktop-wake/prd.md",
+    ".trellis/tasks/09-28-fx3-desktop-wake/design.md",
+    ".trellis/tasks/09-28-fx3-desktop-wake/implement.md"
+  ],
+  "notes": "Native Desktop IPC provider, durable outbox delivery and binding refresh implemented; original-chat and idle-caller probes passed. Full product enrollment and two-worker wake acceptance pending FX4/FX6.",
+  "meta": {
+    "repair_id": "FX3",
+    "depends_on": [],
+    "target_repository": "Tsunagou",
+    "requirements": [
+      "FX-R03"
+    ]
+  }
+}

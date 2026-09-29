@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -11,21 +12,26 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, cast
 
 from tsunagou.platform import host_registration
-from tsunagou.platform.bridge_files import (
-    profile_identity,
-    read_bridge_config,
-    write_bridge_config,
-    write_ticket_file,
-)
+from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
+from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
 
-# 这两个名字以前住在本文件里，CLI 自己的测试按老名字导入它们；实现现在只有一份，
-# 在 `tsunagou.platform.bridge_files`（中间层也用它）。
+_selected_project_root: ContextVar[Path | None] = ContextVar("cli_project_root", default=None)
+
+
+# The one-time ticket writer lives in ``tsunagou.platform.bridge_files`` so that the
+# middle layer and the CLI share one implementation and one process-owned lock; the CLI
+# tests import it under this older name.
 _write_ticket_private = write_ticket_file
-_profile_identity = profile_identity
+
+
+def _runtime_context() -> RuntimeContext:
+    return resolve_runtime(_selected_project_root.get())
+
 
 try:
     import typer
@@ -61,14 +67,41 @@ if typer is not None:
         ctx: typer.Context,
         version: bool = typer.Option(False, "--version", is_eager=True),
         json_output: bool = typer.Option(False, "--json"),
+        project_root: Path | None = typer.Option(None, "--project-root"),  # noqa: B008
     ) -> None:
         ctx.ensure_object(dict)
         ctx.obj["json"] = json_output
+        selection = _selected_project_root.set(project_root)
+        ctx.call_on_close(lambda: _selected_project_root.reset(selection))
+        if project_root is not None:
+            try:
+                _runtime_context()
+            except RuntimeError as exc:
+                print(json.dumps({"status": "error", "error": str(exc)}))
+                raise typer.Exit(4) from exc
         if version:
             print("0.1.0")
             raise typer.Exit()
         if ctx.invoked_subcommand is None:
             print("Tsunagou 0.1.0 — local coordination runtime")
+
+    @app.command("installation-info")
+    def installation_info(
+        json_output: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Read installed source/version/timing metadata without opening project credentials."""
+        from tsunagou.platform.runtime_context import read_object
+
+        path = Path.home() / ".tsunagou/installation.json"
+        try:
+            record = read_object(path)
+        except (RuntimeError, OSError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": "installation_registration_invalid"}))
+            raise typer.Exit(4) from exc
+        fields = ("source_root", "python", "launcher", "bridge_entry", "commit", "source_dirty", "python_version",
+                  "bridge_version", "installed_at", "install_started_at", "install_finished_at", "duration_ms")
+        print(json.dumps({"status": "installed" if record else "not_installed",
+                          **{key: record.get(key) for key in fields}}, sort_keys=True))
 
     @app.command("doctor")
     def doctor(ctx: typer.Context) -> None:
@@ -267,11 +300,60 @@ if typer is not None:
         if page.next_cursor:
             print(f"next_cursor: {page.next_cursor}")
 
+    @project_app.command("timings")
+    def project_timings(
+        ctx: typer.Context,
+        project_id: str = typer.Argument(...),
+        task_id: str | None = typer.Option(None, "--task-id"),
+        json_output: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Read per-Attempt elapsed times with their public timestamp sources."""
+        from tsunagou.application.workflows.project_timings import read_project_timings
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}))
+            raise typer.Exit(3)
+        try:
+            page = read_project_timings(
+                project_id, lambda path: _daemon_request("GET", path, authorization=f"Bearer {token}"), task_id=task_id,
+            )
+        except RuntimeError as exc:
+            cause = exc.__cause__
+            status = cause.code if isinstance(cause, urllib.error.HTTPError) else None
+            # Daemon error details are not an authorized timing projection.
+            error = f"http_{status}" if status is not None else (
+                str(exc) if str(exc) in {"daemon_unreachable", "daemon_endpoint_not_configured"} else "timing_query_failed"
+            )
+            print(json.dumps({"status": "error", "error": error}))
+            raise typer.Exit(3 if status in {401, 403} else 2 if status in {400, 422} else 5) from exc
+        except ValueError as exc:
+            print(json.dumps({"status": "error", "error": "invalid_timing_response"}))
+            raise typer.Exit(5) from exc
+        if json_output or ctx.obj.get("json"):
+            print(page.model_dump_json())
+            return
+        print(f"Project {page.project_id} — Attempt elapsed times (not pure work time)")
+        for item in page.items:
+            print(f"{item.attempt_id}\t{item.task_id}\t{item.owner_agent_id}\t{item.state}")
+            for label in ("started", "submitted", "reviewed"):
+                print(f"  {label}: {getattr(item, label + '_at') or 'unknown_time'} "
+                      f"({getattr(item, label + '_source') or 'unknown'})")
+            print(f"  visible events: begin={item.begin_events}, submit={item.submit_events}")
+            for label, elapsed in (("work_elapsed", item.work_elapsed), ("review_wait_elapsed", item.review_wait_elapsed)):
+                print(f"  {label}: {elapsed.elapsed_ms if elapsed.elapsed_ms is not None else 'unknown'} ms ({elapsed.clock_status})")
+        if not page.items:
+            print("No visible Attempts match this query.")
+
     @project_app.command("diagnostics")
     def project_diagnostics(
         ctx: typer.Context,
         project_id: str = typer.Argument(...),
         json_output: bool = typer.Option(False, "--json"),
+        message_id: str | None = typer.Option(None, "--message-id"),
+        task_id: str | None = typer.Option(None, "--task-id"),
+        since: str | None = typer.Option(None, "--from"),
+        until: str | None = typer.Option(None, "--to"),
     ) -> None:
         """Read host-wake/A2A transport evidence without changing domain history."""
         from tsunagou.shared_kernel.query_models import DiagnosticPageModel
@@ -282,6 +364,10 @@ if typer is not None:
             raise typer.Exit(3)
         try:
             path = f"/api/v1/projects/{urllib.parse.quote(project_id, safe='')}/diagnostics"
+            filters = {key: value for key, value in {"message_id": message_id, "task_id": task_id,
+                                                    "from": since, "to": until}.items() if value is not None}
+            if filters:
+                path += "?" + urllib.parse.urlencode(filters)
             page = DiagnosticPageModel.model_validate(
                 _daemon_request("GET", path, authorization=f"Bearer {token}")
             )
@@ -294,8 +380,8 @@ if typer is not None:
             return
         print(f"Project {page.project_id} — diagnostic_events={len(page.items)}")
         for item in page.items:
-            print(f"{item.observed_at}\t{item.kind}\t{item.agent_id}\t{item.message_id}\t"
-                  f"{item.wake_attempt_id or '-'}\t{item.evidence_digest or '-'}")
+            print(f"{item.occurred_at or '-'}\t{item.kind}\t{item.agent_id}\t{item.message_id or '-'}\t"
+                  f"{item.trigger_source}\t{item.error_code or '-'}\t{item.wake_attempt_id or '-'}")
 
     @task_app.command("history")
     def task_history(
@@ -398,38 +484,18 @@ if typer is not None:
             pass
 
     def _project_root() -> Path:
-        configured = os.environ.get("TSUNAGOU_PROJECT_ROOT")
-        if configured:
-            return Path(configured).expanduser().resolve()
-        return Path.cwd().resolve()
+        return _runtime_context().project_root
 
     def _cli_project_id(explicit: str | None = None) -> str:
         if explicit:
             return explicit
-        configured = os.environ.get("TSUNAGOU_PROJECT_ID")
-        if configured:
-            return configured
-        root = _project_root()
-        project_file = root / ".tsunagou" / "project.json"
-        try:
-            value = json.loads(project_file.read_text(encoding="utf-8")).get("project_id")
-        except (OSError, json.JSONDecodeError):
-            value = None
-        if isinstance(value, str) and value:
-            return value
+        project_id = _runtime_context().project_id
+        if project_id:
+            return project_id
         raise RuntimeError("project_id_required")
 
     def _state_dir_from_environment() -> Path | None:
-        value = os.environ.get("TSUNAGOU_STATE_DIR")
-        if value:
-            return Path(value)
-        root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
-        if root:
-            return _coordination_state_dir(Path(root))
-        candidate = _coordination_state_dir(Path.cwd())
-        if candidate.is_dir():
-            return candidate
-        return None
+        return _runtime_context().state_dir
 
     def _control_token() -> str | None:
         value = os.environ.get("TSUNAGOU_CONTROL_TOKEN")
@@ -445,41 +511,99 @@ if typer is not None:
         return value or None
 
     def _endpoint_manifest(coordination_root: Path) -> Path:
-        return _coordination_state_dir(coordination_root) / "endpoint.json"
+        selected = _selected_project_root.get()
+        if selected is not None and coordination_root.resolve() != selected.resolve():
+            raise RuntimeError("project_context_conflict")
+        return resolve_runtime(coordination_root).state_dir / "endpoint.json"
 
     def _choose_port(host: str) -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind((host, 0))
             return int(sock.getsockname()[1])
 
-    def _wait_for_daemon(url: str, process: subprocess.Popen[bytes], timeout: float = 10.0) -> None:
+    def _read_daemon_health(url: str) -> dict[str, Any]:
+        with urllib.request.urlopen(url.rstrip("/") + "/api/v1/health", timeout=2) as response:
+            return cast(dict[str, Any], json.load(response))
+
+    def _verify_daemon_identity(health: dict[str, Any], manifest: dict[str, Any], project_id: str | None) -> None:
+        runtime = health.get("runtime") or {}
+        if health.get("status") != "ok" or (project_id and project_id not in runtime.get("project_ids", [])):
+            raise RuntimeError("daemon_project_mismatch")
+        for key in ("pid", "runtime_id", "source_root"):
+            if manifest.get(key) is not None and runtime.get(key) != manifest[key]:
+                raise RuntimeError("daemon_runtime_mismatch")
+
+    def _wait_for_daemon(url: str, process: subprocess.Popen[bytes], timeout: float = 10.0) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
-        request = urllib.request.Request(url.rstrip("/") + "/api/v1/health", method="GET")
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError("daemon_exited_during_start")
             try:
-                with urllib.request.urlopen(request, timeout=0.5) as response:
-                    if response.status == 200:
-                        return
+                health = _read_daemon_health(url)
+                if health.get("status") == "ok":
+                    return health
             except (urllib.error.URLError, TimeoutError, OSError):
                 time.sleep(0.1)
         raise RuntimeError("daemon_start_timeout")
 
+    def _daemon_process_running(pid: int) -> bool:
+        """Check OS liveness; an unavailable HTTP endpoint does not prove exit."""
+        if pid <= 0:
+            raise ValueError("invalid_daemon_pid")
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel.WaitForSingleObject.restype = wintypes.DWORD
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only
+            if not handle:
+                if ctypes.get_last_error() == 87:  # ERROR_INVALID_PARAMETER: PID no longer exists
+                    return False
+                raise ctypes.WinError(ctypes.get_last_error())
+            try:
+                result = kernel.WaitForSingleObject(handle, 0)
+                if result == 0:  # WAIT_OBJECT_0: process exited (possibly still held by another handle)
+                    return False
+                if result == 258:  # WAIT_TIMEOUT
+                    return True
+                raise ctypes.WinError(ctypes.get_last_error())
+            finally:
+                kernel.CloseHandle(handle)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        if sys.platform == "linux":
+            # A container's PID 1 may leave an exited orphan as a zombie.
+            try:
+                return Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0] != "Z"
+            except FileNotFoundError:
+                return False
+        return True
+
     @daemon_app.command("start")
     def daemon_start(
-        coordination_root: Path = typer.Option(Path("."), "--coordination-root"),  # noqa: B008
+        coordination_root: Path | None = typer.Option(None, "--coordination-root"),  # noqa: B008
         host: str = typer.Option("127.0.0.1", "--host"),
         port: int = typer.Option(0, "--port", min=0, max=65535),
         name: str = typer.Option("Tsunagou project", "--name"),
         objective: str = typer.Option("Coordinate local agents", "--objective"),
-        host_wake: str = typer.Option("disabled", "--host-wake"),
+        host_wake: str = typer.Option("auto", "--host-wake"),
+        reuse: Path | None = typer.Option(None, "--reuse"),  # noqa: B008
     ) -> None:
         from tsunagou.modules.projects import ProjectRegistry
 
-        if host_wake not in {"disabled", "managed"}:
-            raise typer.BadParameter("host-wake must be disabled or managed")
-        root = coordination_root.expanduser().resolve()
+        if host_wake not in {"disabled", "managed", "desktop", "auto"}:
+            raise typer.BadParameter("host-wake must be disabled, managed, desktop or auto")
+        root = (coordination_root or _project_root()).expanduser().resolve()
+        manifest_path = _endpoint_manifest(root)
         try:
             registry = ProjectRegistry.initialize(root, name=name, objective=objective)
         except (OSError, RuntimeError, ValueError) as exc:
@@ -487,21 +611,62 @@ if typer is not None:
             raise typer.Exit(1) from exc
         assert registry.project is not None
         _remember_project(registry.project, root)
-        state_dir = _coordination_state_dir(root)
+        state_dir = manifest_path.parent
         if not (state_dir / "state.sqlite3").exists() and (root / ".tsunagou/checkpoints/current.json").is_file():
             print(json.dumps({"status": "error", "error": "checkpoint_restore_required",
                               "next": "project restore --coordination-root <clone> --checkpoint-digest <digest>"}))
             raise typer.Exit(4)
         state_dir.mkdir(parents=True, exist_ok=True)
-        manifest_path = state_dir / "endpoint.json"
+        existing: dict[str, Any] = {}
+        if reuse is not None:
+            try:
+                target = resolve_runtime(reuse, environ={})
+                if target.daemon_url is None:
+                    raise RuntimeError("daemon_endpoint_not_configured")
+                health = _read_daemon_health(target.daemon_url)
+                _verify_daemon_identity(health, target.endpoint, target.project_id)
+                if health["runtime"].get("source_root") != str(running_source_root()):
+                    raise RuntimeError("daemon_source_mismatch")
+                if manifest_path.exists():
+                    current = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if current.get("url") != target.daemon_url:
+                        try:
+                            _read_daemon_health(current["url"])
+                        except (OSError, KeyError, urllib.error.URLError):
+                            pass
+                        else:
+                            raise RuntimeError("project_daemon_already_running")
+                owner_state = Path(target.endpoint.get("daemon_owner_state_dir", str(target.state_dir)))
+                owner_token = (owner_state / "control.token").read_text(encoding="utf-8").strip()
+                request = urllib.request.Request(
+                    target.daemon_url + "/api/v1/daemon/projects",
+                    data=json.dumps({"project_root": str(root), "state_dir": str(state_dir)}).encode(),
+                    headers={"Authorization": f"Bearer {owner_token}", "Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    attached = json.load(response)
+                print(json.dumps({"status": "attached", **attached}, sort_keys=True))
+                return
+            except (OSError, RuntimeError, ValueError, urllib.error.URLError) as exc:
+                code = str(exc) if isinstance(exc, RuntimeError) else "daemon_attach_failed"
+                print(json.dumps({"status": "error", "error": code}))
+                raise typer.Exit(4) from exc
         if manifest_path.is_file():
             try:
                 existing = json.loads(manifest_path.read_text(encoding="utf-8"))
                 existing_url = existing.get("url")
                 if isinstance(existing_url, str):
-                    with urllib.request.urlopen(existing_url.rstrip("/") + "/api/v1/health", timeout=1):
-                        print(json.dumps({"status": "already_running", **existing}, sort_keys=True))
-                        return
+                    health = _read_daemon_health(existing_url)
+                    _verify_daemon_identity(health, existing, registry.project.project_id)
+                    current_source = str(running_source_root())
+                    if health["runtime"].get("source_root") != current_source:
+                        raise RuntimeError("daemon_source_mismatch")
+                    print(json.dumps({"status": "already_running", **existing}, sort_keys=True))
+                    return
+            except RuntimeError as exc:
+                print(json.dumps({"status": "error", "error": str(exc)}))
+                raise typer.Exit(4) from exc
             except (OSError, urllib.error.URLError, json.JSONDecodeError):
                 pass
         token_path = state_dir / "control.token"
@@ -523,92 +688,126 @@ if typer is not None:
             "TSUNAGOU_STATE_DIR": str(state_dir),
             "TSUNAGOU_CONTROL_TOKEN": token,
             "TSUNAGOU_HOST_WAKE": host_wake,
+            "TSUNAGOU_DAEMON_URL": url,
+            "TSUNAGOU_DAEMON_REGISTRY": existing.get("daemon_registry", str(state_dir / "daemon-projects.json")),
             "PYTHONPATH": os.pathsep.join(
                 [str(Path(__file__).resolve().parents[2]), child_env.get("PYTHONPATH", "")]
             ).rstrip(os.pathsep),
         })
-        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        with open(log_path, "ab") as log_handle:
-            process = subprocess.Popen(
-                [sys.executable, "-m", "uvicorn", "tsunagou.bootstrap.container:build_application",
-                 "--factory", "--host", host, "--port", str(selected_port)],
-                cwd=str(root), env=child_env, stdout=log_handle, stderr=log_handle,
-                creationflags=flags,
-            )
+        # Console isolation alone still inherits a host's kill-on-close Job.
+        # Windows permits breakaway only when that Job allows it; never retry
+        # without this flag and silently launch a daemon tied to the host.
+        flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                 | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                 | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
         try:
-            _wait_for_daemon(url, process)
-        except RuntimeError as exc:
-            if process.poll() is None:
-                process.terminate()
-            print(json.dumps({"status": "error", "error": str(exc), "log": str(log_path)}, sort_keys=True))
+            with open(log_path, "ab") as log_handle:
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "uvicorn", "tsunagou.bootstrap.daemon:build_daemon",
+                     "--factory", "--host", host, "--port", str(selected_port)],
+                    cwd=str(root), env=child_env, stdout=log_handle, stderr=log_handle,
+                    stdin=subprocess.DEVNULL, creationflags=flags, start_new_session=os.name != "nt",
+                )
+        except OSError as exc:
+            print(json.dumps({"status": "error", "error": "daemon_launch_failed", "log": str(log_path),
+                              "os_error": getattr(exc, "winerror", None) or exc.errno,
+                              "next": "Run daemon start from a standalone terminal allowed to launch independent processes."},
+                             sort_keys=True))
             raise typer.Exit(1) from exc
-        manifest = {
-            "url": url, "pid": process.pid, "project_id": registry.project.project_id,
-            "state_dir": str(state_dir), "host_wake": host_wake, "started_at": int(time.time()),
-        }
-        manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+        try:
+            health = _wait_for_daemon(url, process)
+            _verify_daemon_identity(health, {"source_root": str(running_source_root())}, registry.project.project_id)
+        except (OSError, RuntimeError) as exc:
+            if process.poll() is None:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False)
+                else:
+                    process.terminate()
+            print(json.dumps({"status": "error", "error": str(exc) if isinstance(exc, RuntimeError) else "daemon_identity_unverified",
+                              "log": str(log_path)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        # The daemon writes all member endpoints after registering their containers.
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         print(json.dumps({"status": "started", **manifest}, sort_keys=True))
 
     @daemon_app.command("status")
     def daemon_status(
-        coordination_root: Path = typer.Option(Path("."), "--coordination-root"),  # noqa: B008
+        coordination_root: Path | None = typer.Option(None, "--coordination-root"),  # noqa: B008
     ) -> None:
-        path = _endpoint_manifest(coordination_root)
+        path = _endpoint_manifest(coordination_root or _project_root())
         if not path.is_file():
             print(json.dumps({"status": "stopped", "manifest": str(path)}, sort_keys=True))
             raise typer.Exit(3)
+        manifest: dict[str, Any] = {}
         try:
             manifest = json.loads(path.read_text(encoding="utf-8"))
-            with urllib.request.urlopen(manifest["url"].rstrip("/") + "/api/v1/health", timeout=2) as response:
-                running = response.status == 200
-        except (OSError, urllib.error.URLError, KeyError, json.JSONDecodeError):
-            running = False
-        print(json.dumps({**manifest, "status": "running" if running else "stopped"}, sort_keys=True))
-        if not running:
-            raise typer.Exit(3)
+            health = _read_daemon_health(manifest["url"])
+            _verify_daemon_identity(health, manifest, manifest.get("project_id"))
+            status = "running"
+        except (OSError, urllib.error.URLError, KeyError, json.JSONDecodeError, RuntimeError):
+            try:
+                status = "unverified" if _daemon_process_running(int(manifest["pid"])) else "stopped"
+            except (OSError, ValueError, TypeError, KeyError):
+                status = "unverified"
+        print(json.dumps({**manifest, "status": status,
+                          "project_ids": health["runtime"]["project_ids"] if status == "running" else [],
+                          **({"error": "daemon_identity_unverified"} if status == "unverified" else {})}, sort_keys=True))
+        if status != "running":
+            raise typer.Exit(3 if status == "stopped" else 4)
 
     @daemon_app.command("stop")
     def daemon_stop(
-        coordination_root: Path = typer.Option(Path("."), "--coordination-root"),  # noqa: B008
+        coordination_root: Path | None = typer.Option(None, "--coordination-root"),  # noqa: B008
     ) -> None:
-        path = _endpoint_manifest(coordination_root)
+        path = _endpoint_manifest(coordination_root or _project_root())
         if not path.is_file():
             print(json.dumps({"status": "already_stopped"}, sort_keys=True))
             return
         try:
             manifest = json.loads(path.read_text(encoding="utf-8"))
             pid = int(manifest["pid"])
+            if pid <= 0:
+                raise ValueError("invalid_daemon_pid")
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
             print(json.dumps({"status": "error", "error": "invalid_endpoint_manifest"}, sort_keys=True))
             raise typer.Exit(1) from exc
         try:
+            health = _read_daemon_health(manifest["url"])
+            _verify_daemon_identity(health, manifest, manifest.get("project_id"))
+        except (OSError, ValueError, RuntimeError, KeyError) as exc:
+            try:
+                exited = not _daemon_process_running(pid)
+            except OSError:
+                exited = False
+            if exited:
+                print(json.dumps({"status": "already_stopped", "pid": pid}, sort_keys=True))
+                return
+            print(json.dumps({"status": "error", "error": "daemon_identity_unverified"}))
+            raise typer.Exit(4) from exc
+        try:
             if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
+                stopped = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                                         capture_output=True, check=False, timeout=10)
+                if stopped.returncode != 0 and _daemon_process_running(pid):
+                    raise RuntimeError("daemon_stop_failed")
             else:
                 os.kill(pid, 15)
-        except OSError:
-            pass
-        path.unlink(missing_ok=True)
-        print(json.dumps({"status": "stopped", "pid": pid}, sort_keys=True))
+            deadline = time.monotonic() + 5
+            while _daemon_process_running(pid):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("daemon_stop_timeout")
+                time.sleep(0.05)
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc) if isinstance(exc, RuntimeError) else "daemon_stop_failed",
+                              "pid": pid}, sort_keys=True))
+            raise typer.Exit(4) from exc
+        # Retain the selected registry so restart from any member rejoins the same daemon.
+        print(json.dumps({"status": "stopped", "pid": pid, "project_ids": health["runtime"]["project_ids"]}, sort_keys=True))
 
     def _daemon_url() -> str:
-        value = os.environ.get("TSUNAGOU_DAEMON_URL")
+        value = _runtime_context().daemon_url
         if value:
-            return value.rstrip("/")
-        state_dir = os.environ.get("TSUNAGOU_STATE_DIR")
-        if not state_dir:
-            project_root = os.environ.get("TSUNAGOU_PROJECT_ROOT")
-            if project_root:
-                state_dir = str(_coordination_state_dir(Path(project_root)))
-        if state_dir:
-            manifest = Path(state_dir) / "endpoint.json"
-            if manifest.is_file():
-                try:
-                    value = json.loads(manifest.read_text(encoding="utf-8")).get("url")
-                    if isinstance(value, str) and value:
-                        return value.rstrip("/")
-                except (OSError, json.JSONDecodeError):
-                    pass
+            return value
         raise RuntimeError("daemon_endpoint_not_configured")
 
     def _daemon_request(
@@ -617,6 +816,9 @@ if typer is not None:
         connection_epoch: int | None = None,
     ) -> dict[str, Any]:
         headers = {"Content-Type": "application/json"}
+        project_id = _runtime_context().project_id
+        if project_id:
+            headers["Tsunagou-Project-Id"] = project_id
         if authorization:
             headers["Authorization"] = authorization
         if session_id:
@@ -693,22 +895,103 @@ if typer is not None:
         host = host_registration.host_for("codex")
         return host_registration.find_executable(host) if host is not None else None
 
-    def _register_codex_mcp(*, profile: str, bridge_config_path: Path) -> str:
-        """Register the bridge with Codex, in Codex's own dialect (see the host table)."""
+    def _register_codex_mcp(
+        *, profile: str, bridge_config_path: Path, legacy_project_root: Path | None = None,
+    ) -> str:
+        from tsunagou.platform.db.sqlite import ProjectLock
 
-        config = read_bridge_config(bridge_config_path)
-        result = host_registration.register(
-            "codex", profile=profile,
-            project_root=Path(str(config.get("env", {}).get("TSUNAGOU_PROJECT_ROOT", ""))),
-            bridge=config,
-        )
-        if result.status == host_registration.REGISTERED:
-            return f"registered:{result.name}"
-        if result.status == host_registration.EXECUTABLE_MISSING:
+        # Different conversations have different connect locks but update the
+        # same user config. Serialize the whole get/add/forward-env sequence.
+        home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+        with ProjectLock(home / "tsunagou-mcp-registration.lock", timeout=10):
+            return _register_codex_mcp_locked(
+                profile=profile,
+                bridge_config_path=bridge_config_path,
+                legacy_project_root=legacy_project_root,
+            )
+
+    def _legacy_codex_server_names(codex: str, *, project_root: Path, bridge: dict[str, Any]) -> list[str]:
+        """Return only fixed-session MCP entries created by the pre-routing bridge."""
+        listed = subprocess.run([codex, "mcp", "list", "--json"], capture_output=True, text=True, check=False)
+        if listed.returncode != 0:
+            return []
+        try:
+            servers = json.loads(listed.stdout)
+        except ValueError:
+            return []
+        if not isinstance(servers, list):
+            return []
+        names: list[str] = []
+        for server in servers:
+            if not isinstance(server, dict):
+                continue
+            name, transport = server.get("name"), server.get("transport")
+            if (not isinstance(name, str) or not re.fullmatch(r"tsunagou-[A-Za-z0-9_-]+-[0-9a-f]{8}", name)
+                    or not isinstance(transport, dict)):
+                continue
+            environment = transport.get("env")
+            if not isinstance(environment, dict) or "TSUNAGOU_ROUTING_DIR" in environment:
+                continue
+            root = environment.get("TSUNAGOU_PROJECT_ROOT")
+            session = environment.get("TSUNAGOU_SESSION_FILE")
+            if not isinstance(root, str) or not isinstance(session, str):
+                continue
+            try:
+                same_root = Path(root).expanduser().resolve() == project_root.expanduser().resolve()
+            except OSError:
+                same_root = False
+            if (same_root and transport.get("command") == bridge.get("command")
+                    and transport.get("args") == bridge.get("args")):
+                names.append(name)
+        return names
+
+    def _remove_legacy_codex_servers(codex: str, *, project_root: Path, bridge: dict[str, Any]) -> None:
+        for name in _legacy_codex_server_names(codex, project_root=project_root, bridge=bridge):
+            subprocess.run([codex, "mcp", "remove", name], capture_output=True, text=True, check=False)
+
+    def _register_codex_mcp_locked(
+        *, profile: str, bridge_config_path: Path, legacy_project_root: Path | None = None,
+    ) -> str:
+        codex = _resolve_codex_executable()
+        if codex is None:
             return "codex_not_found"
-        if result.status == host_registration.UNSUPPORTED:
-            return "codex_not_supported"
-        return "codex_registration_failed"
+        config = json.loads(bridge_config_path.read_text(encoding="utf-8"))
+        safe_profile = re.sub(r"[^A-Za-z0-9_-]+", "-", profile).strip("-") or "session"
+        project_root = str(config.get("env", {}).get("TSUNAGOU_PROJECT_ROOT", ""))
+        project_tag = hashlib.sha256(project_root.encode("utf-8")).hexdigest()[:8]
+        name = "tsunagou" if "TSUNAGOU_ROUTING_DIR" in config["env"] else f"tsunagou-{safe_profile}-{project_tag}"
+        existing = subprocess.run([codex, "mcp", "get", name, "--json"], capture_output=True, text=True, check=False)
+        if existing.returncode == 0:
+            try:
+                transport = json.loads(existing.stdout).get("transport", {})
+                if (transport.get("command") == config["command"] and transport.get("args") == config["args"]
+                        and transport.get("env") == config["env"]):
+                    if name == "tsunagou":
+                        from tsunagou.application.onboarding import configure_codex_host_environment
+                        environment_updated = configure_codex_host_environment()
+                        if legacy_project_root is not None:
+                            _remove_legacy_codex_servers(codex, project_root=legacy_project_root, bridge=config)
+                        return f"registered:{name}" if environment_updated else f"unchanged:{name}"
+                    return f"unchanged:{name}"
+            except (ValueError, TypeError):
+                pass
+        # This name is generated by Tsunagou, so replacing an earlier entry is
+        # safe and makes re-enrollment/recovery idempotent.
+        subprocess.run([codex, "mcp", "remove", name], capture_output=True, text=True, check=False)
+        command = [codex, "mcp", "add", name]
+        for key, value in sorted(config["env"].items()):
+            if value:
+                command.extend(["--env", f"{key}={value}"])
+        command.extend(["--", config["command"], *config["args"]])
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            return "codex_registration_failed"
+        if name == "tsunagou":
+            from tsunagou.application.onboarding import configure_codex_host_environment
+            configure_codex_host_environment()
+            if legacy_project_root is not None:
+                _remove_legacy_codex_servers(codex, project_root=legacy_project_root, bridge=config)
+        return f"registered:{name}"
 
     @host_app.command("bind")
     def host_bind(
@@ -840,6 +1123,86 @@ if typer is not None:
             raise typer.Exit(1) from exc
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
+    def _profile_identity(output_dir: Path, adapter: str, profile: str) -> tuple[str, str]:
+        """Use a host-provided identity; a display profile is never a Worker."""
+        from tsunagou.platform.private_files import write_private_bytes
+        from tsunagou.platform.runtime_context import read_object
+
+        conversation_id = os.environ.get("TSUNAGOU_HOST_CONVERSATION_ID")
+        if not conversation_id and adapter == "codex":
+            conversation_id = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+        if not conversation_id:
+            raise RuntimeError("host_conversation_required:run_agent_prepare_inside_the_host")
+        installation_id = os.environ.get("TSUNAGOU_INSTALLATION_ID") or f"{adapter}:local"
+        identity_path = output_dir / "host-identity.json"
+        prior = read_object(identity_path)
+        if prior and prior.get("conversation_id") != conversation_id:
+            raise RuntimeError("profile_conversation_conflict")
+        value = {"adapter": adapter, "profile": profile, "installation_id": installation_id, "conversation_id": conversation_id}
+        if value != prior:
+            write_private_bytes(identity_path, (json.dumps(value, sort_keys=True) + "\n").encode())
+        return installation_id, conversation_id
+
+    @agent_app.command("prepare")
+    def agent_prepare(
+        adapter: str = typer.Option(..., "--adapter"),
+        role: str = typer.Option("worker", "--role"),
+    ) -> None:
+        """Privately observe the current host; return one fully filled user command."""
+        from tsunagou.application.onboarding import powershell_quote, prepare_codex_request
+        from tsunagou.hostwake.port import HostWakeError
+
+        if adapter != "codex" or role not in {"worker", "main"}:
+            raise typer.BadParameter("prepare currently supports codex and role worker/main")
+        try:
+            runtime = _runtime_context()
+            path = prepare_codex_request(runtime)
+        except (RuntimeError, OSError, HostWakeError) as exc:
+            code = exc.code if isinstance(exc, HostWakeError) else str(exc) if isinstance(exc, RuntimeError) else "onboarding_io_error"
+            print(json.dumps({"status": "error", "error": code}))
+            raise typer.Exit(4) from exc
+        command = (f"& {powershell_quote(sys.executable)} -m tsunagou --project-root {powershell_quote(runtime.project_root)} "
+                   f"agent connect --adapter codex --request-file {powershell_quote(path)} --role {role}")
+        print(json.dumps({"status": "prepared", "project_id": runtime.project_id, "request_file": str(path),
+                          "command": command, "creates_agent": False}, ensure_ascii=False))
+
+    def _ensure_project_daemon() -> None:
+        try:
+            context = _runtime_context()
+            health = _daemon_request("GET", "/api/v1/health")
+            _verify_daemon_identity(health, context.endpoint, context.project_id)
+            return
+        except RuntimeError as exc:
+            if str(exc) not in {"daemon_endpoint_not_configured", "daemon_unreachable"}:
+                raise
+        result = subprocess.run(
+            [sys.executable, "-m", "tsunagou", "--project-root", str(_project_root()), "daemon", "start"],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+        if result.returncode:
+            raise RuntimeError("daemon_start_failed")
+        context = _runtime_context()
+        _verify_daemon_identity(_daemon_request("GET", "/api/v1/health"), context.endpoint, context.project_id)
+
+    def _bridge_bootstrap(config: Path, request: Path | None) -> dict[str, Any]:
+        source = running_source_root()
+        if source is None:
+            raise RuntimeError("installation_source_unavailable")
+        command = ["node", str(source / "packages/bridge-server/scripts/connect-context.mjs"), str(config)]
+        if request is not None:
+            command.append(str(request))
+        result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=40)
+        try:
+            value = json.loads(result.stdout)
+        except ValueError as exc:
+            raise RuntimeError("bridge_bootstrap_failed") from exc
+        if result.returncode:
+            code = value.get("error", "")
+            raise RuntimeError(code if re.fullmatch(r"[a-z][a-z0-9_:]{0,180}", code) else "bridge_bootstrap_failed")
+        if not value.get("agent_id") or not value.get("project_id"):
+            raise RuntimeError("bridge_context_invalid")
+        return cast(dict[str, Any], value)
+
     @agent_app.command("connect")
     def agent_connect(
         adapter: str = typer.Option(..., "--adapter"),
@@ -847,61 +1210,136 @@ if typer is not None:
         profile: str = typer.Option("current", "--profile"),
         mode: str = typer.Option("attach", "--mode"),
         output_dir: Path | None = typer.Option(None, "--output-dir"),  # noqa: B008
+        request_file: Path | None = typer.Option(None, "--request-file"),  # noqa: B008
         register_host: bool = typer.Option(True, "--register-host/--no-register-host"),
     ) -> None:
-        """Prepare one host conversation in one user-control action.
+        """Enroll the actual conversation and register its route in one user action."""
+        from tsunagou.application.onboarding import (
+            codex_routing_directory,
+            conversation_key,
+            prepare_codex_request,
+            read_codex_request,
+            write_codex_route,
+        )
+        from tsunagou.hostwake.port import HostWakeError
+        from tsunagou.platform.db.sqlite import ProjectLock
+        from tsunagou.platform.private_files import write_private_bytes
+        from tsunagou.platform.runtime_context import read_object
+        from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
-        The daemon still creates the Agent/session/token. ``--role main`` is
-        an explicit user request carried by the one-time ticket; an Agent
-        cannot invoke this command through its bridge.
-        """
-        if mode not in {"attach", "launch"}:
-            raise typer.BadParameter("mode must be attach or launch")
-        if role not in {"worker", "main"}:
-            raise typer.BadParameter("role must be worker or main")
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", adapter):
-            raise typer.BadParameter("adapter must contain only letters, digits, '_' or '-'")
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
-            raise typer.BadParameter("profile must contain only letters, digits, '_' or '-'")
-        token = _control_token()
-        if not token:
-            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
-            raise typer.Exit(1)
-        root = _project_root()
-        destination = (output_dir or (root / ".tsunagou" / "bridges" / f"{adapter}-{profile}")).expanduser().resolve()
-        installation_id, conversation_id = _profile_identity(destination, adapter, profile)
-        ticket_file = destination / "ticket.json"
-        result = _invoke_command(
-            "agent.ticket.create.user",
-            {
-                "kind": role, "role": role,
-                "installation_id": installation_id,
-                "conversation_evidence": {"conversation_id": conversation_id},
-            },
-            authorization=f"Bearer {token}",
-        )
-        ticket_path = _write_ticket_private(
-            installation_id, conversation_id, result["secret"], ticket_file, role,
-        )
-        _ack_private_delivery(result, token)
-        bridge_config_path = _write_bridge_config(
-            adapter=adapter, mode=mode, installation_id=installation_id,
-            output_dir=destination, ticket_path=ticket_path,
-        )
-        registration = "not_requested"
-        if register_host and adapter == "codex":
-            registration = _register_codex_mcp(profile=profile, bridge_config_path=bridge_config_path)
-        print(json.dumps({
-            "adapter": adapter,
-            "mode": mode,
-            "status": "ticket_issued",
-            "requested_role": role,
-            "profile": profile,
-            "installation_id": installation_id,
-            "bridge_config": str(bridge_config_path),
-            "host_registration": registration,
-            "next": "restart_or_reload_host_then_call_context__project_read",
-        }, sort_keys=True))
+        started_ns = time.monotonic_ns()
+        connect_started_at = format_timestamp(now_ms())
+        enrolled_at = None
+
+        def timing() -> dict[str, Any]:
+            return {"connect_started_at": connect_started_at, "connect_finished_at": format_timestamp(now_ms()),
+                    "enrolled_at": enrolled_at, "duration_ms": (time.monotonic_ns() - started_ns) // 1_000_000}
+
+        try:
+            if mode not in {"attach", "launch"} or role not in {"worker", "main"}:
+                raise typer.BadParameter("mode must be attach/launch; role must be worker/main")
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", adapter) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
+                raise typer.BadParameter("adapter/profile must contain only letters, digits, '_' or '-'")
+            runtime = _runtime_context()
+            request = None
+            if request_file is not None or (adapter == "codex" and register_host):
+                if adapter != "codex":
+                    raise RuntimeError("onboarding_request_adapter_mismatch")
+                request_file = request_file or prepare_codex_request(runtime)
+                request = read_codex_request(request_file, runtime)
+                installation_id, conversation_id = request["installation_id"], request["conversation_id"]
+                destination = request_file.parent.resolve()
+                if output_dir and output_dir.resolve() != destination:
+                    raise RuntimeError("onboarding_request_output_conflict")
+            else:
+                identity = (os.environ.get("TSUNAGOU_HOST_CONVERSATION_ID") or os.environ.get("CODEX_THREAD_ID")
+                            or os.environ.get("CODEX_SESSION_ID"))
+                if not identity:
+                    raise RuntimeError("host_conversation_required:run_agent_prepare_inside_the_host")
+                destination = (
+                    output_dir or runtime.project_root / ".tsunagou/bridges" / f"{adapter}-{conversation_key(identity)[:16]}"
+                ).resolve()
+                installation_id, conversation_id = _profile_identity(destination, adapter, profile)
+            _ensure_project_daemon()
+            token = _control_token()
+            if not token:
+                raise RuntimeError("control_credential_missing")
+            source = running_source_root()
+            if source is None:
+                raise RuntimeError("installation_source_unavailable")
+            if request is not None and Path(request["source_root"]).resolve() != source:
+                raise RuntimeError("onboarding_source_mismatch")
+            destination.mkdir(parents=True, exist_ok=True)
+            ticket_file, session_file = destination / "ticket.json", destination / "bridge-session.json"
+            # Connect serializes only its own conversation. CredentialHandoff
+            # continues to own session rotation and ticket cleanup separately.
+            with ProjectLock(destination / "connect.lock"):
+                if request is not None:
+                    write_codex_route(request, runtime, destination)
+                    bridge_config_path = destination / "bridge-config.json"
+                    config = {"command": "node", "args": [str(source / "packages/bridge-server/dist/server.js")],
+                              "env": {"TSUNAGOU_ROUTING_DIR": str(codex_routing_directory())}, "secret_fields": []}
+                    write_private_bytes(bridge_config_path, (json.dumps(config, indent=2) + "\n").encode())
+                else:
+                    bridge_config_path = _write_bridge_config(
+                        adapter=adapter, mode=mode, installation_id=installation_id, output_dir=destination, ticket_path=ticket_file,
+                    )
+                if not ticket_file.exists() and not session_file.exists():
+                    payload: dict[str, Any] = {
+                        "kind": role, "role": role, "installation_id": installation_id,
+                        "conversation_evidence": {"conversation_id": conversation_id},
+                    }
+                    if request:
+                        payload["host_binding"] = {
+                            "provider": "codex_desktop_app", "endpoint": request["endpoint"],
+                            "thread_id": conversation_id, "host_generation": request["host_generation"],
+                        }
+                    result = _invoke_command("agent.ticket.create.user", payload, authorization=f"Bearer {token}")
+                    _write_ticket_private(installation_id, conversation_id, result["secret"], ticket_file, role,
+                                          request["host_generation"] if request else None)
+                    _ack_private_delivery(result, token)
+                context = _bridge_bootstrap(bridge_config_path, request_file)
+                if context["project_id"] != runtime.project_id:
+                    raise RuntimeError("onboarding_project_mismatch")
+                if role == "main" and context["role"] != "main":
+                    _invoke_command("authority.appoint", {"agent_id": context["agent_id"]}, authorization=f"Bearer {token}")
+                    context = _bridge_bootstrap(bridge_config_path, request_file)
+                if role == "worker" and context["role"] != "worker":
+                    raise RuntimeError("current_agent_is_main:explicit_revoke_required")
+                # This verifies enrollment through a helper bridge. Original-host
+                # MCP readiness remains a separate observation after connect.
+                enrolled_at = format_timestamp(now_ms())
+                registration = (_register_codex_mcp(
+                                    profile=profile,
+                                    bridge_config_path=bridge_config_path,
+                                    legacy_project_root=runtime.project_root,
+                                )
+                                if register_host and adapter == "codex" else "not_requested")
+
+                public_context = {key: context[key] for key in ("project_id", "agent_id", "role")}
+                for name, fields in (("session", ("status", "connection_epoch", "baseline_status")),
+                                     ("host_binding", ("provider", "status", "binding_revision", "connection_epoch"))):
+                    value = context.get(name)
+                    public_context[name] = {key: value[key] for key in fields if key in value} if isinstance(value, dict) else None
+                connected = {"status": "enrolled", **public_context, "adapter": adapter, "mode": mode,
+                             "requested_role": role, "profile": profile, "installation_id": installation_id,
+                             "bridge_config": str(bridge_config_path), "host_registration": registration,
+                             "source_root": str(source),
+                             "version": _daemon_request("GET", "/api/v1/health")["version"],
+                             "next": "call_context__project_read_in_original_conversation"}
+                connection_file = destination / "connection.json"
+                previous = read_object(connection_file)
+                connected["connected_at"] = previous.get("connected_at") if connection_file.exists() else enrolled_at
+                connected.update(timing())
+                write_private_bytes(connection_file, (json.dumps(connected, sort_keys=True) + "\n").encode())
+                print(json.dumps(connected, sort_keys=True))
+        except typer.BadParameter as exc:
+            print(json.dumps({"status": "error", "error": str(exc), **timing()}))
+            raise typer.Exit(2) from exc
+        except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired, HostWakeError) as exc:
+            code = exc.code if isinstance(exc, HostWakeError) else str(exc) if isinstance(exc, RuntimeError) else "onboarding_failed"
+            print(json.dumps({"status": "error", "error": code, **timing()}))
+            raise typer.Exit(4) from exc
 
     @agent_app.command("enroll")
     def agent_enroll(
@@ -951,6 +1389,20 @@ if typer is not None:
             **({"bridge_config": str(bridge_config_path)} if bridge_config_path else {}),
         }, sort_keys=True))
 
+    @agent_app.command("list")
+    def agent_list(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")) -> None:
+        try:
+            result = _daemon_request("GET", f"/api/v1/projects/{_cli_project_id()}/agents")
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}))
+            raise typer.Exit(4) from exc
+        if json_output or ctx.obj.get("json"):
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        else:
+            for item in result["items"]:
+                print(f"{item['agent_id']} {item['role']} session={item['session_status']} "
+                      f"tasks={','.join(item['current_task_ids']) or '-'} last_activity={item['last_activity_at'] or 'unknown'}")
+
     @agent_app.command("appoint")
     def agent_appoint(agent_id: str = typer.Argument(...)) -> None:
         token = _control_token()
@@ -968,7 +1420,10 @@ if typer is not None:
     @decision_app.command("list")
     def decision_list() -> None:
         try:
-            result = _daemon_request("GET", "/api/v1/decisions")
+            token = _control_token()
+            if not token:
+                raise RuntimeError("control_credential_missing")
+            result = _daemon_request("GET", "/api/v1/decisions", authorization=f"Bearer {token}")
         except RuntimeError as exc:
             print(json.dumps({"status": "unavailable", "error": str(exc)}, sort_keys=True))
             raise typer.Exit(5) from exc

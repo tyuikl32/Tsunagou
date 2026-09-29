@@ -34,15 +34,18 @@ def test_ticket_file_is_owner_only(tmp_path: Path) -> None:
         assert (path.stat().st_mode & 0o777) == 0o600
 
 
-def test_profile_identity_is_stable_and_separate(tmp_path: Path) -> None:
+def test_profile_identity_uses_the_conversation_not_the_display_profile(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("TSUNAGOU_INSTALLATION_ID", raising=False)
+    monkeypatch.setenv("TSUNAGOU_HOST_CONVERSATION_ID", "host-thread-one")
     main_dir = tmp_path / "main"
     worker_dir = tmp_path / "worker"
     main_first = _profile_identity(main_dir, "codex", "main")
     main_second = _profile_identity(main_dir, "codex", "main")
+    monkeypatch.setenv("TSUNAGOU_HOST_CONVERSATION_ID", "host-thread-two")
     worker = _profile_identity(worker_dir, "codex", "worker")
     assert main_first == main_second
     assert main_first[1] != worker[1]
-    assert main_first[0] != worker[0]
+    assert main_first[0] == worker[0]
 
 
 def test_codex_executable_prefers_host_path(monkeypatch, tmp_path: Path) -> None:

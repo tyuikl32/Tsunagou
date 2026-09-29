@@ -2,6 +2,8 @@
 
 本目录于 2026-09-18 整理。目标是让用户能够理解和演示项目，让后续实施 Agent 有唯一、可追溯的开发基线。
 
+**2026-09-28 修复入口：**[实测修复方案](implementation/live-test-repair-plan.md)、[FX1–FX7 任务索引](implementation/live-test-repair-tasks.json)。用户已授权实施，进度和未通过验收见任务索引；四项 FX 决定明确资源占用、破坏兼容升级、原 Desktop 唤醒和本机接口边界。先读此方案，避免沿历史 M1/PT 说明重复建任务。
+
 ## 分类
 
 | 目录 | 读者与用途 | 是否直接约束新实现 |
@@ -24,13 +26,15 @@
 
 [决策追溯表](decisions/traceability.md) 将本轮每项决定映射到当前规范和具体实施任务。
 
-2026-09-20 用户要求关闭旧 Trellis 任务，当前执行索引为 [M1 / R1–R6](implementation/roadmap.md)。27 个历史任务（含此前已归档的 bootstrap 与文档任务）已按 20 项完成、7 项放弃归档，见[迁移清单](standalone/trellis-transition-2026-09-20.json)；旧任务和路线图仅保留追溯，不再参与当前依赖调度。2026-09-27 新增的 PT 持久化溯源计划已获用户后续实施授权，PT1 已验收、PT2 正在进行，详见[修复方案](implementation/persistence-traceability-plan.md)和[机器任务索引](implementation/persistence-traceability-tasks.json)；PT1–PT7 尚未整体验收。
+2026-09-20 用户要求关闭旧 Trellis 任务，当时执行索引为 [M1 / R1–R6](implementation/roadmap.md)。27 个历史任务（含此前已归档的 bootstrap 与文档任务）已按 20 项完成、7 项放弃归档，见[迁移清单](standalone/trellis-transition-2026-09-20.json)。2026-09-27 新增 PT 持久化溯源计划，其[机器索引](implementation/persistence-traceability-tasks.json)已记录 PT1–PT7 completed，当前源码包含这些产物；这不表示本轮 Desktop 实测问题已解决。新问题按 FX 索引推进，不整体重开旧任务；原[PT 方案](implementation/persistence-traceability-plan.md)保留追溯。
 
 文档以中文说明、英文标识符组成。一个概念只使用一个规范英文名；界面可以显示中文。术语、状态和跨模块字段见[数据模型](implementation/data-model.md)，命令名字、权限和 URI 见[命令目录](implementation/command-catalog.md)。同一命令不在适配器中另起名字或更改权限语义。
 
 新读者可以从[Agent快速接入](overview/agent-quick-start.md)、[子Agent加入与协作](overview/subagent-guide.md)、[CLI/HTTP说明书](overview/cli-http-manual.md)理解使用方式；A2A wire 边界和 wake 证据见[A2A边界实现](implementation/a2a-boundary.md)。本机控制台（中间层 + 页面）的组成、数据流、怎么验收与当前边界见[本机控制台](implementation/console.md)，前端侧逐字段契约在 [web/method.md](../web/method.md)。从 GitHub 安装的入口和 skill 行为见[安装 skill](../.agents/skills/tsunagou-install/SKILL.md)。实施Agent可从[搭建步骤](implementation/build-guide.md)、[预期目录](implementation/directory-layout.md)、[三Agent事实轨迹](implementation/coordination-walkthrough.md)开始。关键官方知识统一在[参考索引](implementation/references.md)，不要自行用不同SDK年代的示例替换当前协议。
 
 ## 更新约定
+
+故障查询、时间戳与可选 SDK 追踪见[失败时间线与技术追踪](overview/diagnostics-and-tracing.md)。
 
 1. 公共语义改变：先补决策记录，再同步实施规范、Schema、fixtures、命令目录、关联任务。不得只改一个 adapter。
 2. 已明确授权的普通工程选择由实施 Agent 决定并留证；不要再次询问已确认的问题。

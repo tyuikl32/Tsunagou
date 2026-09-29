@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import tomllib
 from importlib.resources import files
 from pathlib import Path
 
@@ -23,8 +24,7 @@ def _project(root: Path) -> str:
 def test_bootstrap_materializes_non_secret_project_entries(tmp_path: Path) -> None:
     root = tmp_path / "project"
     project_id = _project(root)
-    source = tmp_path / "tsunagou"
-    (source / ".git").mkdir(parents=True)
+    source = Path(__file__).resolve().parents[2]
     result = ProjectIntegration(root).bootstrap(source_root=source, hosts=["codex"])
 
     assert result["project_id"] == project_id
@@ -38,6 +38,11 @@ def test_bootstrap_materializes_non_secret_project_entries(tmp_path: Path) -> No
     assert list(Draft202012Validator(schema).iter_errors(manifest)) == []
     assert manifest["project_id"] == project_id
     assert manifest["source"]["install_path_hint"] == str(source.resolve())
+    assert manifest["updated_at"].endswith("Z")
+    config = tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
+    assert config["mcp_servers"]["tsunagou"]["env"].keys() == {"TSUNAGOU_ROUTING_DIR"}
+    assert config["mcp_servers"]["tsunagou"]["env_vars"] == ["CODEX_APP_TOOLS_PIPE_PATH"]
+    assert not (root / ".opencode").exists()
     for path in root.rglob("*"):
         if path.is_file() and path.name not in {"project-integration.json", "agent-context.md", "AGENTS.md", "SKILL.md", ".gitignore"}:
             continue
@@ -142,3 +147,20 @@ def test_refresh_source_hint_does_not_change_project_id(tmp_path: Path) -> None:
     assert refreshed["project_id"] == project_id
     assert manifest["project_id"] == project_id
     assert manifest["source"]["install_path_hint"] == str(new_source.resolve())
+
+
+def test_codex_config_preserves_user_settings_and_rejects_unmanaged_collision(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    _project(root)
+    config = root / ".codex/config.toml"
+    config.parent.mkdir()
+    config.write_text('model = "user-choice"\n', encoding="utf-8")
+    integration = ProjectIntegration(root)
+    integration.bootstrap(hosts=["codex"])
+    assert config.read_text(encoding="utf-8").startswith('model = "user-choice"\n')
+    assert all(item["status"] == "unchanged" for item in integration.bootstrap(hosts=["codex"])["files"])
+    before = (root / ".tsunagou/project-integration.json").read_bytes()
+    config.write_text('[mcp_servers.tsunagou]\ncommand = "user-command"\n', encoding="utf-8")
+    with pytest.raises(ProjectIntegrationError, match="host_config_conflict"):
+        integration.bootstrap(hosts=["codex"], refresh=True)
+    assert (root / ".tsunagou/project-integration.json").read_bytes() == before

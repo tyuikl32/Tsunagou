@@ -1,0 +1,54 @@
+{
+  "schema": "tsunagou.live-repair.a5-discrepancy-contract.v1",
+  "observed_at": "2026-09-29T04:45:48.644Z",
+  "timezone": "UTC",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "subject": "Whether task.cancel immediately cancels an active task or first requests cancellation from its executor",
+  "independent_reports": [
+    {
+      "report_id": "2a1488a4-4a23-4eed-a8f7-5c29a0a19715",
+      "agent_id": "1a20b513-3efd-48c6-81c9-479335f7572a",
+      "task_id": "cc7ada9e-d7e7-433d-915b-4e0cadf3341e",
+      "created_at": "2026-09-29T03:06:54.448Z",
+      "position": "No executor enters cancel_requested"
+    },
+    {
+      "report_id": "87f9cdb3-e538-4cab-84b2-2523d2390bfa",
+      "agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+      "task_id": "a57f7596-61da-435a-b0ed-b236a811ed3a",
+      "created_at": "2026-09-29T03:14:09.040Z",
+      "position": "No active executor cancels immediately; an active executor first enters cancel_requested"
+    }
+  ],
+  "discrepancy": {
+    "discrepancy_id": "f7bf105d-ebe5-4512-b828-bd480fa04c3a",
+    "severity": "hard",
+    "created_at": "2026-09-29T03:16:38.625Z",
+    "resolved_at": "2026-09-29T03:41:28.999Z"
+  },
+  "live_probes": [
+    {
+      "task_id": "6852ad5d-a6d5-45c3-babd-d41832b9aa26",
+      "condition": "no active executor",
+      "final_status": "cancelled",
+      "cancelled_at": "2026-09-29T03:18:42.921Z"
+    },
+    {
+      "task_id": "a89caf35-7f00-4693-be59-b70b5633524b",
+      "condition": "active executor",
+      "intermediate_status": "cancel_requested",
+      "final_status": "cancelled",
+      "cancelled_at": "2026-09-29T03:21:31.054Z"
+    }
+  ],
+  "contract": {
+    "contract_id": "b3e8f48c-e1c7-4c55-9ced-2c1dc1421c25",
+    "accepted_at": "2026-09-29T03:40:10.703Z",
+    "accepted_by_agent_ids": [
+      "1a20b513-3efd-48c6-81c9-479335f7572a",
+      "cb2f1ff6-87de-4625-9afe-00b44ef5c182"
+    ],
+    "conclusion": "An unowned task cancels immediately. A task with an active executor enters cancel_requested and becomes cancelled after executor acknowledgement."
+  },
+  "limitation": "The reporting Worker did not accept the final contract. Its first proposed contract, e3d5c259-595e-4bff-84cb-23332e7d4e90, was withdrawn after it invoked an earlier exit intent. A second Worker independently reviewed and accepted the final contract with main."
+}

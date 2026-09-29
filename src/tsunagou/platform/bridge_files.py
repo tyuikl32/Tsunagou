@@ -47,6 +47,7 @@ def bridge_entry_path() -> Path:
 def write_ticket_file(
     installation_id: str, conversation_id: str, secret: str, ticket_file: Path | None,
     requested_role: str = "worker",
+    host_binding_generation: str | None = None,
 ) -> Path:
     """Deliver a one-time enrollment ticket through a private file, never stdout.
 
@@ -70,6 +71,7 @@ def write_ticket_file(
             "conversation_id": conversation_id,
             "secret": secret,
             "requested_role": requested_role,
+            **({"host_binding_generation": host_binding_generation} if host_binding_generation else {}),
         }, sort_keys=True) + "\n").encode("utf-8"))
     return path
 

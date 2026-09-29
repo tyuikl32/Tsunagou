@@ -16,7 +16,7 @@
 
 ### 用户怎样加入两个子 Agent
 
-用户先执行 `tsunagou project bootstrap --coordination-root <path> --source-root <tsunagou-checkout> --host <kind>`，让项目目录出现 `AGENTS.md`、项目 skill 和 `.tsunagou/agent-context.md`。再在已装 adapter 的宿主中分别打开两个新对话，并对每个 profile 执行一条 `tsunagou agent connect --adapter <kind> --profile <profile> --role worker|main`。命令负责逐 profile 的本地绑定、一次性 ticket、bridge 配置和 Codex MCP 登记；用户不再手工查找 `conversation_id`、复制 JSON 或查找 `agent_id`。目标 bridge 私下兑换 ticket；不把票据或 session token 粘贴到模型里。支持 managed_launch 时可由系统启动，不支持时手动打开再 attach。
+用户指定业务仓库后，安装向导完成 project init/bootstrap，写入 AGENTS、项目 Skill、agent-context 和选定宿主配置。用户分别打开原 Codex 对话并指示加入；各 Agent 执行 agent prepare，得到已填好路径的 connect 命令。已有授权就自行执行，必要时给用户这一个命令。真实会话决定独立身份，profile 仅作显示；connect 自动启动或验证 daemon、兑换票据并登记原会话绑定。原对话自己调用 context__project_read 后才 ready，不把 enrolled 或配置文件存在当作就绪。详见[快速接入](agent-quick-start.md)。
 
 当前 CLI 没有 `agent list/show`；通过 bridge 的 `context__project_read`、`/api/v1/projects/{project_id}/agents` 或主 Agent typed tools 查看两个不同 `agent_id` 和各自 HostSession。能力检查通过才 ready；同目录工作不共享身份。用户只需设定目标、选择 main 和必要边界，主 Agent 随后负责普通任务拆分。它创建/发布子任务，子 Agent 各自读取黑板、claim 并准备执行；加入项目本身不自动获得任务 owner 或执行 Grant。
 
@@ -24,7 +24,7 @@
 
 ## 3. 开始协作
 
-主 Agent 创建任务与明确依赖；参与者查询黑板，原子领取符合条件的开放任务。开始前提交理解与假设，检查契约、风险建议、工作空间和所需资源 Lease。所有前置条件满足后进入 running。
+主 Agent 创建任务、范围、明确依赖和必要契约，文件任务选择工作区策略；参与者读取任务版本后调用 begin，一次完成领取、基线、占用和授权。出现实际分歧再提交认知报告，不强迫所有任务先填写报告。
 
 例如 API Agent 认为 `status` 是可空字符串，而调用方认为它必填。两者提交报告，创建 Discrepancy，协商出一个 `data_schema` 契约。所有必需参与者接受同一 proposal digest 后，依赖契约的任务解除相关阻塞。
 
@@ -46,4 +46,4 @@ Agent 提交结果 manifest 和验证证据，由指定验收方式处理。需�
 
 主 Agent 提议项目完成，当前 Attempt 与执行授权先收敛，用户通过专门completion confirm控制接口确认精确 proposal revision/digest（见[手册](cli-http-manual.md)路由表）。Project 立即变为 completed，同时生成必须完成的 checkpoint Operation。checkpoint 失败不撤销用户完成结论，但阻塞需要它的归档、发布或迁移。
 
-daemon 崩溃后恢复 Job、outbox 和会话连接；clone 或回退旧 checkpoint 会建立新的运行身份，回退产生新 lineage。旧运行令牌、Grant 与 Lease 不能恢复使用。用户重新任命主 Agent，主 Agent 显式挑选需要继续的非终态任务。
+同库 daemon 重启恢复任务、消息和 outbox，保留原 owner/占用，只撤旧执行 Grant；原 owner begin 恢复同一 Attempt。独立 clone/checkpoint 导入不继承本地凭据或活动占用，用户重新接入/任命后由 main 选择恢复任务。

@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-09-28T12:12:11.676Z",
+  "status": "partial",
+  "task": "FX4",
+  "python_full": {
+    "passed": 400,
+    "skipped": 3,
+    "seconds": 65.5,
+    "log": "test-full-batch.log"
+  },
+  "final_targeted": {
+    "passed": 6,
+    "seconds": 4.96
+  },
+  "mypy": {
+    "source_files": 71,
+    "status": "passed"
+  },
+  "ruff": "passed",
+  "typescript_build_and_check": "passed",
+  "architecture": "passed",
+  "protocol": {
+    "commands": 99,
+    "schemas": 115,
+    "status": "passed"
+  },
+  "process_report": "research/runtime-process-probe-fixed.json",
+  "pending": [
+    "CLI prepare/connect",
+    "MCP per-request thread routing",
+    "agent list",
+    "selected host bootstrap configuration",
+    "multi-project daemon routing",
+    "original Desktop enrollment and wake acceptance"
+  ]
+}

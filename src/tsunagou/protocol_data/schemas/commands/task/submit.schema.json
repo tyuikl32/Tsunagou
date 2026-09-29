@@ -1,22 +1,103 @@
 {
-  "$id": "https://tsunagou.local/schema/commands/task.submit",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/commands/task.submit",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
-    "artifact_refs": {},
-    "evidence_refs": {},
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attempt_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "summary": {
-      "maxLength": 4096,
       "type": "string"
     },
-    "workspace_result_ref": {}
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "validation_metadata": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidence_level": {
+            "enum": [
+              "agent_asserted",
+              "host_observed",
+              "system_verified",
+              "user_confirmed"
+            ]
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stderr_digest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "stdout_digest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "tool": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tool_version": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspace_digest": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "command",
+          "exit_code",
+          "tool",
+          "tool_version",
+          "workspace_digest"
+        ],
+        "type": "object"
+      },
+      "maxItems": 100,
+      "type": "array"
+    }
   },
   "required": [
-    "artifact_refs",
-    "evidence_refs",
-    "summary",
-    "workspace_result_ref"
-  ],
-  "title": "TaskSubmitPayload",
-  "type": "object"
+    "task_id",
+    "attempt_id",
+    "summary"
+  ]
 }

@@ -11,15 +11,15 @@
 
 ## 从任务到结果
 
-主 Agent create→ready→publish；worker claim 获得唯一 Attempt；报告理解与风险请求；main 提交风险建议和隔离选择；worker 请求准备 workspace；必要 GitActionRequest 由 main 执行并报告，后台只读验证；worker 获取完整 Lease set、preflight、start；最后记录 workspace result、submit，指定 reviewer/automated/self policy 完成验收。
+main create→选择任务范围与工作区策略→ready→publish；Worker begin 一次取得 Attempt、基线、资源占用和执行授权，完成后 submit 自动采集结果，main review。
 
-claim 只建立所有权；start 验证当前全部输入后授执行权；submit 固化 result、撤执行 Grant/Lease、创建 review；review 全槽满足才 completed。工作空间准备、测试与 Git 均在事务外，结果带 input digest，旧证据不能套入新状态。
+begin 的领域写在一个 UoW 成功或整体回滚；文件观察/物化在写事务外。submit 固化 Result 并释放占用、撤执行 Grant、通知 main；review 接受普通任务，项目完成仍需用户。
 
 ## 分歧、等待与恢复
 
 报告触发确定性规则或参与者显式创建 Discrepancy；cognition 保存协商和契约，participants 接受 exact hash。需要用户方向判断时 main 创建 UserDecision 和精确 action blocker；相关 owner 提交 SuspensionSnapshot，释放 Lease，Task blocked，正常结束当前 LLM 轮次。
 
-用户批准/拒绝只解决决定与相关领域状态，不直接恢复 Attempt。黑板显示 blocker 变化和派生 resume_eligible。原 owner 通过连续 HostSession 调用 resume：重新校验身份、依赖和已有证据，进入 claimed；准备 workspace/Lease 后再 preflight/start 进入 running。无关任务继续。没有用户等待计时器或自动失败升级。
+用户批准/拒绝只解决决定，不自动恢复执行。相关 owner 挂起后重新读取黑板和任务版本，再 begin；无关任务继续，没有用户等待计时器。
 
 ## 主权限移交和 Agent 继任
 
@@ -53,7 +53,7 @@ main 可以在可授权范围内留证接受风险、证明结果或授权新 Op
 | DB 事务失败 | 无部分任务/Grant/消息变更 | 原 command_id 重试 |
 | commit 后响应丢失 | 业务只执行一次 | 幂等重放；秘密交付丢失专门 rebind |
 | push/SSE 失败 | 持久 inbox 仍在 | pull sync |
-| Lease 到期 | 系统许可失效，物理进程可能仍在 | 旧 Attempt orphaned、撤执行权；Task 回到 open 公共队列，保留 residual risk |
+| 长时间静默或断线 | 不能据此推断宿主已停止 | 保留 owner/占用；owner 显式 block 或 main recover 才释放 |
 | Git 效果不明 | 已提交逻辑责任不回滚 | unknown、核验、显式 Resolution |
 | checkpoint 失败 | DB 已提交状态仍成立 | repair、barrier，不撤销用户完成 |
 | 用户未回答 | decision pending、相关 Task blocked | 持久等待，无关任务继续 |

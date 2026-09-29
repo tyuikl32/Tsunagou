@@ -47,7 +47,7 @@ SQL TEXT 存 ID、UTC 时间和 canonical JSON；INTEGER 存 revision/epoch/coun
 | Attempt.status | `claimed,running,blocked,submitted,cancel_requested,orphaned,closed`；closed 带 close_reason，不复活 |
 | Discrepancy.status | `open,clarifying,negotiating,resolved,dismissed,overridden` |
 | ContractProposal.status | `proposed,accepted,rejected,superseded,withdrawn`；payload 与 participants 不改写 |
-| Lease.status | `active,released,expired` |
+| ResourceReservation.status | `active,released`；created_at/released_at 只用于溯源，无 expires_at |
 | Workspace.status | `requested,preparing,ready,in_use,result_recorded,cleanup_pending,cleaned,failed` |
 | Operation.status | `pending,running,retry_wait,cancel_requested,succeeded,failed,cancelled,outcome_unknown` |
 | Job.status | `queued,running,retry_wait,succeeded,failed,cancelled` |
@@ -64,7 +64,7 @@ Attempt 身份、owner、创建输入不可变，status/revision 是事件支持
 - Agent → HostSession → Connection / CapabilitySnapshot；Agent → Delivery，Authority → Agent，由 agents 管。
 - Task → TaskAttempt → TaskResult / ReviewRound，由 tasks 管；parent_task_id 是委派导航，`blocks` 是显式依赖，两者不互推。
 - Report/Discrepancy/Contract 引用 task/attempt/participants；cognition 不持有任务状态。
-- ResourceIntent 和 Lease 引用 attempt/effective_scope_digest；resources 不持有 workspace 生命周期。
+- ResourceReservation 引用 task/attempt/owner/execution_epoch/scope_digest；范围来自 main 的 Task，resources 不持有 workspace 生命周期。
 - IsolationDecision / Workspace 引用 task attempt、driver、roots/repos；GitActionRequest 由 workspaces 发出，main 提交 evidence。
 - Event/Outbox/Operation/Job/Checkpoint/ArtifactBlob 由 durability 管；ArtifactRef 和读取规则由引用它的领域管理。
 

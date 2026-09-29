@@ -1,0 +1,59 @@
+{
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "root_id": "31887111-59e1-4d81-8bc5-9179e0cd59c7",
+  "tasks": [
+    {
+      "label": "parser",
+      "task_id": "74f34f37-f3df-44ef-a5f0-8991de6243b7",
+      "worker_agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+      "paths": [
+        [
+          "Modules",
+          "Btid.cs"
+        ]
+      ]
+    },
+    {
+      "label": "verification",
+      "task_id": "b335f087-790b-421f-bb39-e65a961774d7",
+      "worker_agent_id": "cb2f1ff6-87de-4625-9afe-00b44ef5c182",
+      "paths": [
+        [
+          "tests",
+          "Http",
+          "btid-integrity.ps1"
+        ],
+        [
+          "tests",
+          "Fixtures",
+          "Btid"
+        ],
+        [
+          "tests",
+          "WebUI",
+          "api.test.mjs"
+        ]
+      ]
+    },
+    {
+      "label": "ui-origin",
+      "task_id": "a4bf07a7-acf8-4253-94c8-f69a193ba276",
+      "worker_agent_id": "cb2f1ff6-87de-4625-9afe-00b44ef5c182",
+      "paths": [
+        [
+          "wwwroot",
+          "app.js"
+        ],
+        [
+          "wwwroot",
+          "api.js"
+        ],
+        [
+          "tests",
+          "WebUI",
+          "api.test.mjs"
+        ]
+      ]
+    }
+  ]
+}

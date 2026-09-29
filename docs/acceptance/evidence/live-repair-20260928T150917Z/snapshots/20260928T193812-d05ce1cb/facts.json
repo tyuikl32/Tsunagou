@@ -1,0 +1,79 @@
+{
+  "daemon_contains_selected_project": true,
+  "daemon_process_id": 103048,
+  "daemon_project_ids": [
+    "450286e4-8d1b-4220-840c-e540fe696913"
+  ],
+  "daemon_runtime_id": "432243a5-9041-4979-89f9-83c20ddc9cf0",
+  "daemon_status": "reachable",
+  "history_complete": true,
+  "independent_agent_ids": true,
+  "installation": {
+    "bridge_version": "0.1.0",
+    "commit": "1fb86e08b9cfaab312a9210a3eb15d0108314c36",
+    "duration_ms": 2528,
+    "install_finished_at": "2026-09-28T13:53:56.462Z",
+    "install_started_at": "2026-09-28T13:53:53.933Z",
+    "installed_at": "2026-09-28T13:53:56.462Z",
+    "python_version": "Python 3.13.13",
+    "source_dirty": true,
+    "status": "installed"
+  },
+  "installation_record_matches_source": true,
+  "main_count": 1,
+  "model_tool_calls": null,
+  "observed_at": "2026-09-28T19:38:14.040Z",
+  "original_conversation_readiness": "requires_original_conversation_evidence",
+  "project_id": "450286e4-8d1b-4220-840c-e540fe696913",
+  "query_status": {
+    "agents": {
+      "duration_ms": 253.8857,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T19:38:12.777Z",
+      "observed_at": "2026-09-28T19:38:12.523Z",
+      "status": "ok"
+    },
+    "diagnostics": {
+      "duration_ms": 323.7705,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T19:38:13.337Z",
+      "observed_at": "2026-09-28T19:38:13.013Z",
+      "status": "ok"
+    },
+    "doctor": {
+      "duration_ms": 235.5898,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T19:38:13.013Z",
+      "observed_at": "2026-09-28T19:38:12.777Z",
+      "status": "ok"
+    },
+    "history": [
+      {
+        "duration_ms": 369.2554,
+        "exit_code": 0,
+        "finished_at": "2026-09-28T19:38:14.040Z",
+        "observed_at": "2026-09-28T19:38:13.670Z",
+        "status": "ok"
+      }
+    ],
+    "installation": {
+      "duration_ms": 209.9232,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T19:38:12.523Z",
+      "observed_at": "2026-09-28T19:38:12.313Z",
+      "status": "ok"
+    },
+    "timings": {
+      "duration_ms": 331.2144,
+      "exit_code": 0,
+      "finished_at": "2026-09-28T19:38:13.668Z",
+      "observed_at": "2026-09-28T19:38:13.337Z",
+      "status": "ok"
+    }
+  },
+  "ready_agent_count": 3,
+  "recorded_recovery_events": 7,
+  "runtime_version": "0.1.0",
+  "token_usage": "unavailable",
+  "worker_count": 2
+}

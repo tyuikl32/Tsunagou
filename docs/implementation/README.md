@@ -1,10 +1,12 @@
 # 实施指导总入口
 
+**2026-09-28 当前工作：**[实测修复方案](live-test-repair-plan.md)及 [FX1–FX7 任务依赖](live-test-repair-tasks.json)已获用户实施授权，正在推进。四项 FX 决定覆盖本轮的旧 TTL/续租、多段准备、Desktop 唤醒降级及旧版本迁移语义；实现时同步所属规范。下面 M1/R1–R6 的阶段说明是较早的历史基线，不能据此忽略已完成的 PT 修复或重新创建旧任务。
+
 本组文件保留完整产品的规范基线。2026-09-21运行审计确认：R1/R2 已补齐协议资源、SQLite runtime、事务幂等、真实 CLI 和 daemon lifecycle；项目完成确认的第一轮 checkpoint 也已能物化并查询。R3-R6 仍需完成真实文件 workspace、认知分歧、认证 bridge 闭环、审查/恢复和后台 Job。当前先按[最小独立成品方案](../standalone/README.md)推进；八模块差距、R1–R6步骤和可执行调试都在其中。能力报告及研究实验不阻塞该阶段，见[D183](../decisions/2026-09-20-standalone-priority.md)。
 
 ## 必读顺序
 
-当前活动任务已切换为 [M1 / R1–R6](roadmap.md)。旧 24 项与 V1 总任务全部关闭归档；完整模块规范继续保留，旧任务状态不作为新计划的完成依据。
+原独立成品任务为 [M1 / R1–R6](roadmap.md)。旧 24 项与 V1 总任务全部关闭归档；本轮按 FX 方案处理实测缺陷，完整模块规范继续保留，旧任务状态不作为新计划的完成依据。
 
 1. [设计与运行原则](../overview/principles.md)、[D161–D181](../decisions/2026-09-18-boundary-decisions.md)、[工程消歧](../decisions/engineering-resolutions.md)。
 2. [架构与事务](architecture.md)、[术语与数据模型](data-model.md)、[协议](protocol.md)、[命令目录](command-catalog.md)。
@@ -15,6 +17,7 @@
 
 | 需要解决的问题 | 详细指导 |
 |---|---|
+| 本次真实协作暴露的问题如何修复和简化 | [实测修复方案（已收敛，待最终审阅）](live-test-repair-plan.md)、[FX1–FX7 任务索引](live-test-repair-tasks.json) |
 | 具体先建什么、如何逐阶段验证 | [从空工程到首发的搭建步骤](build-guide.md) |
 | 文件放在哪里、谁拥有、哪些是生成物 | [预期目录与文件责任](directory-layout.md) |
 | 三个Agent实际怎样接入、协商、挂起与恢复 | [逐步协作事实轨迹](coordination-walkthrough.md) |
@@ -44,7 +47,7 @@
 | 02 `agents` | [接入与消息](modules/02-agents.md) | 身份/会话/主权限/收件箱 |
 | 03 `tasks` | [任务调度](modules/03-tasks.md) | 单 owner、Attempt、阻塞、验收、委派 |
 | 04 `cognition` | [认知协商](modules/04-cognition.md) | 报告/分歧/契约/风险 |
-| 05 `resources` | [资源协调](modules/05-resources.md) | 意图/冲突/等待/Lease |
+| 05 `resources` | [资源协调](modules/05-resources.md) | 范围冲突、显式占用与释放 |
 | 06 `workspaces` | [工作空间](modules/06-workspaces.md) | 隔离/基线/结果/整合/清理 |
 | 07 `durability` | [持久化与恢复](modules/07-durability.md) | UoW/事件/Operation/Job/checkpoint/附件 |
 | 08 `evaluation` | [观测与评估](modules/08-evaluation.md) | 审计/指标/实验/故障验证 |

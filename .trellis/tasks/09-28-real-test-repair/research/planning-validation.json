@@ -1,0 +1,78 @@
+{
+  "recorded_at": "2026-09-28T09:56:55.987Z",
+  "scope": "planning artifacts only",
+  "product_tests_run": false,
+  "checks": {
+    "tasks": 7,
+    "parent_tasks": 1,
+    "requirements": 8,
+    "source_observations": 42,
+    "all_observations_mapped_once": true,
+    "dependencies_acyclic": true,
+    "metadata_matches_manifest": true,
+    "recommended_order_valid": true,
+    "required_contexts_nonempty": true
+  },
+  "commands": [
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe tools/docs/validate_docs.py",
+      "exit_code": 0,
+      "stdout": "PASS: 48 unchanged archived sources; 351 Markdown files; 927 local links; 6 implementation tasks; 1145 context entries; acyclic dependencies; D161-D182 present.",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-real-test-repair",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-real-test-repair\n\n  \u001b[0;32mimplement.jsonl: ✓ (6 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (6 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-fx1-state-integrity",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-fx1-state-integrity\n\n  \u001b[0;32mimplement.jsonl: ✓ (4 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (5 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-fx2-execution-flow",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-fx2-execution-flow\n\n  \u001b[0;32mimplement.jsonl: ✓ (5 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (6 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-fx3-desktop-wake",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-fx3-desktop-wake\n\n  \u001b[0;32mimplement.jsonl: ✓ (7 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (8 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-fx4-onboarding",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-fx4-onboarding\n\n  \u001b[0;32mimplement.jsonl: ✓ (7 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (8 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-fx5-traceability",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-fx5-traceability\n\n  \u001b[0;32mimplement.jsonl: ✓ (6 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (7 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-fx6-live-acceptance",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-fx6-live-acceptance\n\n  \u001b[0;32mimplement.jsonl: ✓ (6 entries)\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (7 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "D:\\Tsunagou\\.venv\\Scripts\\python.exe .trellis/scripts/task.py validate .trellis/tasks/09-28-fx7-btid-integrity",
+      "exit_code": 0,
+      "stdout": "\u001b[0;34m=== Validating Context Files ===\u001b[0m\nTarget dir: D:\\Tsunagou\\.trellis\\tasks\\09-28-fx7-btid-integrity\n\n  \u001b[1;33mimplement.jsonl:4: Warning: docs/acceptance/evidence/sega-image-manage-tool-2026-09-28/unexpected-deviations.md is 34733 bytes, exceeds context_injection.max_file_bytes (32768); injection will truncate it\u001b[0m\n  \u001b[0;32mimplement.jsonl: ✓ (4 entries)\u001b[0m\n  \u001b[1;33mcheck.jsonl:4: Warning: docs/acceptance/evidence/sega-image-manage-tool-2026-09-28/unexpected-deviations.md is 34733 bytes, exceeds context_injection.max_file_bytes (32768); injection will truncate it\u001b[0m\n  \u001b[0;32mcheck.jsonl: ✓ (5 entries)\u001b[0m\n\n\u001b[0;32m✓ All validations passed\u001b[0m",
+      "stderr": ""
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

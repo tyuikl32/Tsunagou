@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "agent_id": "1a20b513-3efd-48c6-81c9-479335f7572a",
+      "created_at": "2026-09-28T12:58:58.884Z",
+      "current_task_ids": [],
+      "last_activity_at": "2026-09-28T15:31:48.560Z",
+      "role": "main",
+      "session_status": "ready"
+    },
+    {
+      "agent_id": "cb2f1ff6-87de-4625-9afe-00b44ef5c182",
+      "created_at": "2026-09-28T13:00:42.002Z",
+      "current_task_ids": [],
+      "last_activity_at": "2026-09-28T14:46:13.694Z",
+      "role": "worker",
+      "session_status": "ready"
+    },
+    {
+      "agent_id": "e5a866e0-3c1c-4ab5-8d11-5becd613cc48",
+      "created_at": "2026-09-28T13:00:44.921Z",
+      "current_task_ids": [
+        "357de2e9-8990-4c1e-b99f-365057d29732"
+      ],
+      "last_activity_at": "2026-09-28T14:39:58.213Z",
+      "role": "worker",
+      "session_status": "ready"
+    }
+  ]
+}

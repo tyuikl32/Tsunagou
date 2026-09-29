@@ -76,8 +76,7 @@ def test_answering_the_obligation_turns_the_message_answered(runtime: Runtime) -
 
     runtime.call(
         "message.respond",
-        {"obligation_id": obligation_id, "response_message_id": reply["message_id"],
-         "summary": "草案在这里"},
+        {"obligation_id": obligation_id, "response_message_id": reply["message_id"]},
         worker,
     )
 

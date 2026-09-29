@@ -47,14 +47,31 @@ class Runtime:
 
     @staticmethod
     def credentials(receipt: dict[str, Any] | None = None) -> dict[str, Any]:
-        return ({"authorization": f"Bearer {receipt['secret_token']}",
-                 "session_id": receipt["session_id"], "connection_epoch": receipt["connection_epoch"]}
-                if receipt else {"authorization": "Bearer control", "session_id": None, "connection_epoch": None})
+        return (
+            {
+                "authorization": f"Bearer {receipt['secret_token']}",
+                "session_id": receipt["session_id"],
+                "connection_epoch": receipt["connection_epoch"],
+            }
+            if receipt
+            else {"authorization": "Bearer control", "session_id": None, "connection_epoch": None}
+        )
 
-    def call(self, kind: str, payload: dict[str, Any], receipt: dict[str, Any] | None = None,
-             *, command_id: str | None = None, ticket: str | None = None) -> dict[str, Any]:
-        request = CommandRequest(command_id=command_id or new_id(), protocol_version="1.0",
-                                 schema_bundle_digest=self.registry["schema_bundle_digest"], payload=payload)
+    def call(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        receipt: dict[str, Any] | None = None,
+        *,
+        command_id: str | None = None,
+        ticket: str | None = None,
+    ) -> dict[str, Any]:
+        request = CommandRequest(
+            command_id=command_id or new_id(),
+            protocol_version="1.0",
+            schema_bundle_digest=self.registry["schema_bundle_digest"],
+            payload=payload,
+        )
         credentials = self.credentials(receipt)
         if ticket:
             credentials["authorization"] = f"Bearer {ticket}"
@@ -63,9 +80,16 @@ class Runtime:
     def enroll(self, conversation: str) -> tuple[dict[str, Any], str]:
         identity = {"installation_id": "same-ide", "conversation_evidence": {"conversation_id": conversation}}
         ticket = self.call("agent.ticket.create.user", identity)["secret"]
-        receipt = self.call("agent.enroll", {**identity, "probe_payload": {"baseline": {
-            name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]} for name in ADMISSION_CAPABILITIES
-        }}}, ticket=ticket)
+        receipt = self.call(
+            "agent.enroll",
+            {
+                **identity,
+                "probe_payload": {
+                    "baseline": {name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]} for name in ADMISSION_CAPABILITIES}
+                },
+            },
+            ticket=ticket,
+        )
         return receipt, ticket
 
     def page(self, receipt: dict[str, Any] | None = None, **filters: Any) -> dict[str, Any]:
@@ -127,13 +151,17 @@ def test_actual_actor_subject_causation_entity_times_and_noop_revisions(runtime:
     assert runtime.db.last_event_seq() == watermark
     runtime.call("task.ready", {"task_id": task["task_id"]}, main)
     runtime.call("task.publish", {"task_id": task["task_id"]}, main)
-    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+    claim = runtime.call(
+        "task.begin",
+        {"task_id": task["task_id"], "expected_task_revision": runtime.app.state.state_runtime.tasks.tasks[task["task_id"]].revision},
+        worker,
+    )
     event = runtime.page(subject_ref=task_ref)["items"][-1]
     assert event["actor_ref"] == worker["agent_id"]
-    assert event["action"] == "task.claim"
+    assert event["action"] == "task.begin"
     changes = {item["subject_ref"]: item for item in event["changes"]}
     assert changes[task_ref]["state_before"] == "open"
-    assert changes[task_ref]["state_after"] == "claimed"
+    assert changes[task_ref]["state_after"] == "running"
     assert f"attempt/{claim['attempt_id']}" in changes
     assert changes[task_ref]["created_at"] == original["occurred_at"]
     task_view = runtime.endpoint("/api/v1/projects/{project_id}/tasks")(runtime.project_id)["items"][0]
@@ -151,14 +179,20 @@ def test_signed_snapshot_pages_over_200_have_no_gaps_or_duplicates(runtime: Runt
     genesis_events = runtime.db.last_event_seq()
     with runtime.db.transaction("many-events") as uow:
         for number in range(451):
-            uow.append_event(lineage_id=runtime.db.lineage_id, event_type="fixture.updated",
-                             aggregate_ref=f"task/{number}", actor_ref="worker-a" if number % 2 else "worker-b", payload={})
+            uow.append_event(
+                lineage_id=runtime.db.lineage_id,
+                event_type="fixture.updated",
+                aggregate_ref=f"task/{number}",
+                actor_ref="worker-a" if number % 2 else "worker-b",
+                payload={},
+            )
     first = runtime.page(limit=200)
     assert len(first["items"]) == 200 and first["next_cursor"]
     assert first["as_of_event_seq"] == genesis_events + 451
     with runtime.db.transaction("later") as uow:
-        uow.append_event(lineage_id=runtime.db.lineage_id, event_type="fixture.updated",
-                         aggregate_ref="task/later", actor_ref="worker-a", payload={})
+        uow.append_event(
+            lineage_id=runtime.db.lineage_id, event_type="fixture.updated", aggregate_ref="task/later", actor_ref="worker-a", payload={}
+        )
     second = runtime.page(limit=200, cursor=first["next_cursor"])
     third = runtime.page(limit=200, cursor=second["next_cursor"])
     assert len(second["items"]) == 200 and len(third["items"]) == genesis_events + 51
@@ -166,8 +200,7 @@ def test_signed_snapshot_pages_over_200_have_no_gaps_or_duplicates(runtime: Runt
     seqs = [item["event_seq"] for page in (first, second, third) for item in page["items"]]
     assert seqs == list(range(1, genesis_events + 452))
     assert all(page["snapshot_event_seq"] == genesis_events + 451 for page in (first, second, third))
-    for filters in ({"actor_ref": "worker-a"}, {"limit": 199}, {"cursor": "1"},
-                    {"cursor": first["next_cursor"][:-10] + "tampered"}):
+    for filters in ({"actor_ref": "worker-a"}, {"limit": 199}, {"cursor": "1"}, {"cursor": first["next_cursor"][:-10] + "tampered"}):
         kwargs = {"limit": 200, "cursor": first["next_cursor"], **filters}
         with pytest.raises(HTTPException) as invalid:
             runtime.page(**kwargs)
@@ -183,8 +216,16 @@ def test_private_message_subject_and_refs_are_recipient_scoped(runtime: Runtime)
     sender, _ = runtime.enroll("sender")
     recipient, _ = runtime.enroll("recipient")
     runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
-    sent = runtime.call("message.send", {"recipient_agent_id": recipient["agent_id"], "summary": "private summary",
-                                         "payload": {"private": "DO-NOT-EXPOSE"}, "subject_ref": "private-subject"}, sender)
+    sent = runtime.call(
+        "message.send",
+        {
+            "recipient_agent_id": recipient["agent_id"],
+            "summary": "private summary",
+            "payload": {"private": "DO-NOT-EXPOSE"},
+            "subject_ref": "private-subject",
+        },
+        sender,
+    )
     message_ref = f"message/{sent['message_id']}"
     for outsider in (None, main):
         assert runtime.page(outsider, subject_ref=message_ref)["items"] == []
@@ -194,17 +235,27 @@ def test_private_message_subject_and_refs_are_recipient_scoped(runtime: Runtime)
         assert page["items"][0]["subject_ref"] == message_ref
         assert "DO-NOT-EXPOSE" not in json.dumps(page) and "private summary" not in json.dumps(page)
     with runtime.db.transaction("private-evidence") as uow:
-        uow.append_event(lineage_id=runtime.db.lineage_id, event_type="task.progress", aggregate_ref="task/public",
-                         actor_ref=sender["agent_id"], payload={}, evidence_refs=[message_ref])
+        uow.append_event(
+            lineage_id=runtime.db.lineage_id,
+            event_type="task.progress",
+            aggregate_ref="task/public",
+            actor_ref=sender["agent_id"],
+            payload={},
+            evidence_refs=[message_ref],
+        )
     assert not runtime.page(main, subject_ref="task/public")["items"]
     assert runtime.page(sender, subject_ref="task/public")["items"][0]["evidence_refs"] == [message_ref]
     # Older rows kept evidence only in payload; visibility must use the same
     # fallback as the projection, including message aliases and unknown IDs.
     for evidence in (message_ref, f"message:{sent['message_id']}", "message/unknown-private-message"):
         with runtime.db.transaction("legacy-private-evidence") as uow:
-            uow.append_event(lineage_id=runtime.db.lineage_id, event_type="task.progress",
-                             aggregate_ref="task/legacy-evidence", actor_ref=sender["agent_id"],
-                             payload={"evidence_refs": [evidence]})
+            uow.append_event(
+                lineage_id=runtime.db.lineage_id,
+                event_type="task.progress",
+                aggregate_ref="task/legacy-evidence",
+                actor_ref=sender["agent_id"],
+                payload={"evidence_refs": [evidence]},
+            )
     assert not runtime.page(main, subject_ref="task/legacy-evidence")["items"]
     assert not runtime.page(subject_ref="task/legacy-evidence")["items"]
     assert len(runtime.page(sender, subject_ref="task/legacy-evidence")["items"]) == 2
@@ -212,8 +263,12 @@ def test_private_message_subject_and_refs_are_recipient_scoped(runtime: Runtime)
         runtime.audit(runtime.project_id)
     assert unauthenticated.value.status_code == 401
     with pytest.raises(HTTPException) as stale:
-        runtime.audit(runtime.project_id, authorization=f"Bearer {sender['secret_token']}",
-                      session_id=sender["session_id"], connection_epoch=sender["connection_epoch"] + 1)
+        runtime.audit(
+            runtime.project_id,
+            authorization=f"Bearer {sender['secret_token']}",
+            session_id=sender["session_id"],
+            connection_epoch=sender["connection_epoch"] + 1,
+        )
     assert stale.value.status_code == 401
 
 
@@ -223,8 +278,11 @@ def test_visible_pagination_scans_over_full_batches_of_hidden_legacy_rows(runtim
         for number in range(405):
             public = number in {0, 202, 404}
             uow.append_event(
-                lineage_id=runtime.db.lineage_id, event_type="task.progress" if public else "command.message.send",
-                aggregate_ref="project/legacy", actor_ref="legacy-actor", payload={},
+                lineage_id=runtime.db.lineage_id,
+                event_type="task.progress" if public else "command.message.send",
+                aggregate_ref="project/legacy",
+                actor_ref="legacy-actor",
+                payload={},
             )
     first = runtime.page(actor_ref="legacy-actor", limit=1)
     second = runtime.page(actor_ref="legacy-actor", limit=1, cursor=first["next_cursor"])
@@ -244,19 +302,32 @@ def test_query_entity_times_use_own_identity_and_survive_restart(runtime: Runtim
     runtime.call("task.ready", {"task_id": task["task_id"]}, main)
     runtime.call("task.publish", {"task_id": task["task_id"]}, main)
     clock += 1_000
-    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, main)
+    claim = runtime.call(
+        "task.begin",
+        {"task_id": task["task_id"], "expected_task_revision": runtime.app.state.state_runtime.tasks.tasks[task["task_id"]].revision},
+        main,
+    )
     clock += 1_000
     state = runtime.app.state.state_runtime
     before = state.capture()
     # Domain-owned result fixture; persistence and public queries are the real runtime.
     state.tasks.results["result-fixture"] = TaskResult(
-        "result-fixture", task["task_id"], claim["attempt_id"], {}, "digest", main["agent_id"],
+        "result-fixture",
+        task["task_id"],
+        claim["attempt_id"],
+        {},
+        "digest",
+        main["agent_id"],
     )
     with runtime.db.transaction("result-observed") as uow:
-        state.persist(uow, actor_ref=main["agent_id"], command_kind="task.submit", before=before,
-                      result={"task_id": task["task_id"], "result_id": "result-fixture"})
-    expected = {"agents": 1_790_520_000_001, "tasks": 1_790_520_001_001,
-                "attempts": 1_790_520_002_001, "results": 1_790_520_003_001}
+        state.persist(
+            uow,
+            actor_ref=main["agent_id"],
+            command_kind="task.submit",
+            before=before,
+            result={"task_id": task["task_id"], "result_id": "result-fixture"},
+        )
+    expected = {"agents": 1_790_520_000_001, "tasks": 1_790_520_001_001, "attempts": 1_790_520_002_001, "results": 1_790_520_003_001}
     for kind, expected_time in expected.items():
         items = runtime.endpoint(f"/api/v1/projects/{{project_id}}/{kind}")(runtime.project_id)["items"]
         assert items[0]["created_at"] == format_timestamp(expected_time)
@@ -265,7 +336,7 @@ def test_query_entity_times_use_own_identity_and_survive_restart(runtime: Runtim
     rebuilt = build_application()
     try:
         restored = Runtime(rebuilt, runtime.project_id)
-        assert restored.page()["items"][:len(events_before)] == events_before
+        assert restored.page()["items"][: len(events_before)] == events_before
         result_view = restored.endpoint("/api/v1/projects/{project_id}/results")(runtime.project_id)["items"][0]
         assert result_view["created_at"] == format_timestamp(expected["results"])
     finally:
@@ -278,9 +349,23 @@ def test_legacy_unknown_times_are_not_migration_time(tmp_path: Path) -> None:
         conn.execute("""CREATE TABLE events(project_id TEXT,event_seq INTEGER,event_id TEXT,lineage_id TEXT,
                      event_type TEXT,schema_version TEXT,aggregate_ref TEXT,actor_ref TEXT,command_id TEXT,
                      occurred_at INTEGER,payload_json TEXT,digest TEXT)""")
-        conn.execute("INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (
-            "legacy", 1, "old-event", "old-lineage", "old.action", "1", "task/old", "old-actor", "old-command", None, "{}", "old",
-        ))
+        conn.execute(
+            "INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "legacy",
+                1,
+                "old-event",
+                "old-lineage",
+                "old.action",
+                "1",
+                "task/old",
+                "old-actor",
+                "old-command",
+                None,
+                "{}",
+                "old",
+            ),
+        )
     db = ProjectDatabase(path, project_id="legacy")
     row = db.list_events()[0]
     assert row["occurred_at"] is None and row["recorded_at"] is None
@@ -288,8 +373,9 @@ def test_legacy_unknown_times_are_not_migration_time(tmp_path: Path) -> None:
     assert db.entity_metadata(db.lineage_id) == {}
     assert db.list_events(from_ms=0) == []  # No false placement at migration time.
     with db.transaction("first-observed-update") as uow:
-        change = uow.record_entity_change(lineage_id=db.lineage_id, subject_ref="task/old", existed=True,
-                                          revision_before=4, revision_after=5)
+        change = uow.record_entity_change(
+            lineage_id=db.lineage_id, subject_ref="task/old", existed=True, revision_before=4, revision_after=5
+        )
     assert change["created_at"] is None and isinstance(change["updated_at"], int)
     assert db.entity_metadata(db.lineage_id)["task/old"]["created_at"] is None
 
@@ -323,8 +409,15 @@ def test_rfc3339_offsets_and_exact_milliseconds() -> None:
     assert format_timestamp(parse_timestamp("2026-09-27T07:39:38.123-07:00")) == "2026-09-27T14:39:38.123Z"
     assert format_timestamp(-1) == "1969-12-31T23:59:59.999Z"
     assert parse_timestamp("1969-12-31T23:59:59.999Z") == -1
-    for invalid in ("2026-09-27", "2026-09-27 14:00:00Z", "20260927T14:00:00Z", "2026-09-27T14:00:00+0800",
-                    "2026-09-27T14:00:00+00:60", "9999-12-31T23:59:59.999-23:59", "0001-01-01T00:00:00+23:59"):
+    for invalid in (
+        "2026-09-27",
+        "2026-09-27 14:00:00Z",
+        "20260927T14:00:00Z",
+        "2026-09-27T14:00:00+0800",
+        "2026-09-27T14:00:00+00:60",
+        "9999-12-31T23:59:59.999-23:59",
+        "0001-01-01T00:00:00+23:59",
+    ):
         with pytest.raises(ValueError):
             parse_timestamp(invalid)
 
@@ -340,11 +433,14 @@ def test_audit_http_query_validation_and_schema(runtime: Runtime) -> None:
         assert server.started
         port = server.servers[0].sockets[0].getsockname()[1]
         url = f"http://127.0.0.1:{port}/api/v1/projects/{runtime.project_id}/audit"
-        for query, expected_status in (({"limit": 201}, 422), ({"limit": 0}, 422),
-                                       ({"from": "2026-09-27T00:00:00"}, 400),
-                                       ({"from": "2026-09-27T14:00:00+00:60"}, 400),
-                                       ({"from": "9999-12-31T23:59:59.999-23:59"}, 400),
-                                       ({"from": "2026-09-28T00:00:00Z", "to": "2026-09-27T00:00:00Z"}, 400)):
+        for query, expected_status in (
+            ({"limit": 201}, 422),
+            ({"limit": 0}, 422),
+            ({"from": "2026-09-27T00:00:00"}, 400),
+            ({"from": "2026-09-27T14:00:00+00:60"}, 400),
+            ({"from": "9999-12-31T23:59:59.999-23:59"}, 400),
+            ({"from": "2026-09-28T00:00:00Z", "to": "2026-09-27T00:00:00Z"}, 400),
+        ):
             with pytest.raises(HTTPError) as invalid:
                 urlopen(Request(url + "?" + urlencode(query), headers={"Authorization": "Bearer control"}), timeout=5)
             assert invalid.value.code == expected_status
@@ -365,7 +461,10 @@ def test_task_event_checkpoint_and_export_queries_share_public_projection(runtim
     task = runtime.call("task.create", {"title": "timeline", "objective": "query me"}, main)
     task_page_route = runtime.endpoint("/api/v1/projects/{project_id}/tasks/{task_id}/history")
     page = task_page_route(
-        runtime.project_id, task["task_id"], authorization="Bearer control", limit=50,
+        runtime.project_id,
+        task["task_id"],
+        authorization="Bearer control",
+        limit=50,
     )
     AuditPageModel.model_validate(page)
     assert page["items"] and any(item["subject_ref"] == f"task/{task['task_id']}" for item in page["items"])
@@ -389,8 +488,7 @@ def test_task_event_checkpoint_and_export_queries_share_public_projection(runtim
     checkpoints = checkpoints_route(runtime.project_id, authorization="Bearer control", verify=True)
     CheckpointPageModel.model_validate(checkpoints)
     assert checkpoints["current"]["digest"] == checkpoint["checkpoint_digest"]
-    assert any(item["digest"] == checkpoint["checkpoint_digest"] and item["status"] == "verified"
-               for item in checkpoints["items"])
+    assert any(item["digest"] == checkpoint["checkpoint_digest"] and item["status"] == "verified" for item in checkpoints["items"])
     verify_route = runtime.endpoint("/api/v1/checkpoints/{checkpoint_digest:path}/verify")
     verified = verify_route(checkpoint["checkpoint_digest"], authorization="Bearer control")
     CheckpointVerificationModel.model_validate(verified)
@@ -405,7 +503,11 @@ def test_task_history_includes_related_entities_without_writing(runtime: Runtime
     task = runtime.call("task.create", {"title": "related", "objective": "trace relations"}, main)
     runtime.call("task.ready", {"task_id": task["task_id"]}, main)
     runtime.call("task.publish", {"task_id": task["task_id"]}, main)
-    claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+    claim = runtime.call(
+        "task.begin",
+        {"task_id": task["task_id"], "expected_task_revision": runtime.app.state.state_runtime.tasks.tasks[task["task_id"]].revision},
+        worker,
+    )
     task_ref = f"task/{task['task_id']}"
     message = runtime.call(
         "message.send",

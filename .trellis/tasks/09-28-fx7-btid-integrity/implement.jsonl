@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": "docs/decisions/2026-09-28-clean-break-upgrade.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": ".trellis/tasks/09-28-fx7-btid-integrity/design.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
+{"file": "docs/acceptance/evidence/sega-image-manage-tool-2026-09-28/unexpected-deviations.md", "reason": "Applicable contract and implementation boundary; confirmed FX decisions override superseded rules."}
