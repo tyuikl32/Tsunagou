@@ -306,10 +306,13 @@ def test_a_view_gathers_several_exits_and_reports_the_one_that_refused(
 
 def test_the_console_reports_its_own_config_and_stores_the_profile(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    config.demo = True
     app = create_console_app(config)
 
-    assert _endpoint(app, "/api/v1/console/config")()["mode"] == "demo"
+    reported = _endpoint(app, "/api/v1/console/config")()
+    assert reported["console"] is True
+    # No demo switch survives: the page has exactly one source of data.
+    assert "demo" not in reported
+    assert "mode" not in reported
     assert _endpoint(app, "/api/v1/console/profile", "GET")()["agents"] == {}
     stored = _endpoint(app, "/api/v1/console/profile", "PUT")({
         "nickname": "我", "theme": "dark", "agents": {"a-1": {"nickname": "熊猫", "vendor": "codex"}},

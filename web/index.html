@@ -600,13 +600,10 @@
     </section>
 
     <!-- 控制台配置：由中间层（tsunagou web start）在同源下生成；
-         直接双击打开本文件时用仓库里那份（默认演示模式）。
-         它只决定「演示 / 连真后端」和轮询间隔，不影响布局。 -->
+         直接双击打开本文件时用仓库里那份。
+         它只决定接口前缀和轮询间隔，不影响布局。 -->
     <script src="./console.config.js"></script>
     <script src="./assets/js/behavior.js"></script>
-    <!-- 演示后端：只在演示模式下接管 fetch（见文件头的三条纪律）。
-         连真后端时它什么都不做，页面请求直达中间层。 -->
-    <script src="./assets/js/mock-backend.js"></script>
 </body>
 
 </html>

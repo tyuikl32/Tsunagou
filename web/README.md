@@ -7,20 +7,19 @@ Tsunagou 的**本机控制台界面**：零构建、零依赖（一个 `index.ht
 
 ```
 tsunagou web start        # 起中间层 + 托管本目录 + 打印地址
-tsunagou web start --demo # 同上，但数据全部来自演示后端（不碰任何真项目）
 tsunagou web status       # 看它还在不在
 ```
 
-## 三种打开方式（用哪一份数据由这个决定）
+## 数据只有一份来源
 
-| 怎么开 | 数据来自 | 页面模式 |
-|---|---|---|
-| `tsunagou web start`（默认） | 真项目：daemon 的查询出口（中间层代发并补令牌） | live |
-| `tsunagou web start --demo`，或配置里 `"demo": true` | `assets/js/mock-backend.js` 里的演示数据 | 演示（所有展示文字带 `[演示]` 前缀） |
-| 直接双击 `index.html`（file://，不起任何服务） | 同上，演示数据 | 演示 |
+页面里**没有任何本地假数据**，也不认识“离线模式”：所有内容都来自中间层转发的 daemon 出口。
 
-开关只有一个：`console.config.js` 里的 `mode`。中间层托管时会**在同名路径上生成一份替换品**
-（`mode: 'live'` 或 `'demo'`），所以不用改任何文件；双击打开时用的就是仓库里那份（`mode: 'demo'`）。
+| 怎么开 | 会看到什么 |
+|---|---|
+| `tsunagou web start`，打开它打印的地址（推荐） | 真数据：本机项目列表 + 当前项目各屏的出口 |
+| 直接双击 `index.html`（file://，不起任何服务） | 只有空骨架 + 拉取失败的提示 |
+
+`console.config.js` 里只有两个字段：`baseUrl` 与 `poll_ms`。中间层托管时会**在同名路径上生成一份替换品**（见 `src/tsunagou/console/app.py`），所以不用改任何文件。
 
 ## 改样式时不想被刷新（地址栏开发开关）
 
@@ -35,6 +34,13 @@ tsunagou web status       # 看它还在不在
 两个一起用就是改 `dag.css` 时的姿势：`http://127.0.0.1:8791/?poll_ms=0&shape=dag`。
 （`poll_ms` 与 `console.config.js` 里那个是同一个意思：`0` 或负数 = 不自动重拉；
 生效时控制台会打一行 `[开发开关]`。）
+
+## 怎么验收
+
+```powershell
+uv run python tools/dev/console_smoke.py --reset   # 一键冒烟：沙箱内起真 daemon + 真控制台，逐个出口断言
+corepack pnpm exec vitest run web/tests            # 前端结构冒烟（不需要后端）
+```
 
 ## 三条铁律（改这个目录时必须遵守）
 
@@ -51,8 +57,8 @@ tsunagou web status       # 看它还在不在
 |---|---|
 | `index.html` | 纯静态骨架：9 个标签页 + 6 个侧栏 + 窗口；`onclick` 全指 `Tsunagou.app.*` |
 | `assets/js/behavior.js` | 整个应用（单文件 IIFE，`§0–§8` 分节，**改前先读 `method.md` §2 的分节索引**） |
-| `assets/js/mock-backend.js` | 演示模式的数据源：拦 `window.fetch`，按后端字段造样例数据（**只在 demo 模式用**） |
-| `assets/js/console.config.js` | 前端可读的运行配置（模式、地址、轮询间隔） |
+| `console.config.js` | 前端可读的运行配置（接口前缀、轮询间隔） |
+| `tests/behavior.smoke.test.ts` | 前端结构冒烟（vitest + jsdom）：断言总路径行的选择器层级、验收格的多行 `.colu-t` 结构 |
 | `method.md` | **前端侧契约文档**：API 总览、dispatch 类型表、HTTP 接口表、字段对照、事件表、DOM 契约、改动清单。**改代码必须同步它。** |
 | `assets/css/`、`assets/img/`、`assets/webfonts/` | 样式与素材（**不要改**，见铁律 1）。`assets/css/dag.css` 是总路径 DAG 图的样式（与 `style.css` 分开，不合并） |
 

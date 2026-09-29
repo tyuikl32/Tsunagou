@@ -362,7 +362,7 @@ def forget(
 ) -> dict[str, Any]:
     """Delete one whole project: its daemon, its host registrations, its line, its files.
 
-    There is deliberately no step-by-step undo in this demo console, so this is the
+    There is deliberately no step-by-step undo in this console, so this is the
     single "get rid of it" action. The order matters — stop the daemon first (it owns
     the state directory), take the bridge registrations back out next (a live
     registration would keep pointing at a project nobody can see), then forget the

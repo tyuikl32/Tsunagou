@@ -29,9 +29,8 @@
 ## 1. 30 秒上手
 
 ```js
-// ① 接后端：切到 live 模式，把地址指过去，然后拉一次数据
+// ① 接后端：把地址指过去，然后拉一次数据
 Tsunagou.config.setBaseUrl('http://127.0.0.1:8000/api'); // 默认 '/api'（同源）
-Tsunagou.config.setMode('live');
 await Tsunagou.refresh(['projects', 'agentsWindow', 'settings']); // 全局数据
 await Tsunagou.app.openProject('p-xxx');                          // 开某个协作（会拉它的项目数据）
 
@@ -43,10 +42,9 @@ Tsunagou.dispatch('notify.success', { title: '后端已同步' });
 Tsunagou.events.on('form:commit', e => console.log(e.key, e.value));
 ```
 
-> 本仓库自带的 **模拟后端**（`assets/js/mock-backend.js`）已经把上面这套跑通了：
-> 它拦下 `window.fetch`，按 §6 的接口表应答两个完整协作项目的数据。
-> 接真实后端时只做两件事：删掉 `index.html` 里那一行 `<script src="...mock-backend.js">`，
-> 再把 `setBaseUrl` / `setMode` 指向真后端（mock 文件末尾就是这两行）。
+> 后端的**中间层**（`src/tsunagou/console/`）按 §6 的接口表应答页面：`tsunagou web start`
+> 起它、托管本目录、并在同源下生成一份 `console.config.js`。
+> 页面里**没有任何本地假数据** —— 直接双击打开 `index.html` 只会得到空骨架（§7）。
 
 页面加载完成时会派发一次 `ready` 事件，宿主脚本可以：
 
@@ -63,13 +61,13 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | 区段 | 内容 |
 |---|---|
 | `§0 基础工具` | 查询 / 显隐 / 转义 / DOM 构造 / 事件委托原语 |
-| `§1 配置·事件·状态` | `config`（地址、端点表、模式）、事件总线、`state`（数据模型） |
+| `§1 配置·事件·状态` | `config`（地址、端点表）、事件总线、`state`（数据模型） |
 | `§2 UI 原语` | 工作区、左侧栏、模态窗口、标签页、区块标签组、设置标签、向导、侧栏面板、选择框、侧栏拖拽 |
 | `§3 反馈组件` | `notify.*`（成功/提示/错误/加载）、`dialog.confirm`、`dialog.decision` |
 | `§4 通信层` | `api`（fetch 封装、响应解包、错误对象）、`form`（收集、失焦提交、按钮提交） |
 | `§5 渲染层` | 通用小件 + 11 个页面渲染器 + 侧栏详情渲染器 + 总路径的 DAG（它自己再用 `§D1`…`§D4` 分小段：数据→图 / 摆位 / 渲染 / 对外接口，**前缀 D 就是 DAG，别和上面这套 §0…§8 撞名**） |
 | `§6 动作与分发` | 点击路由、`actions`（业务动作）、`app`（页面命令）、`dispatch`（反向通道）、`refresh`、主题 |
-| `§7 演示数据` | `DEMO`：与后端 JSON 同构的完整样例数据 |
+| `§7 初始（空）状态` | `EMPTY_STATE`：空骨架，保证渲染器不缺字段、也不编数据 |
 | `§8 启动` | 绑事件 → 铺数据 → 摆初始状态，最后调用 `init()` |
 
 加载方式没有变：`index.html` 底部 `<script src="./assets/js/behavior.js"></script>`，没有构建、没有依赖。
@@ -97,7 +95,6 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | 方法 | 说明 |
 |---|---|
 | `setBaseUrl(url)` / `setToken(t)` / `setHeaders({})` / `setTimeout(ms)` | 请求相关 |
-| `setMode('demo'\|'live')` | `demo`＝不发任何请求、用内置演示数据；`live`＝走 HTTP。默认 `demo` |
 | `Tsunagou.startPolling()` / `stopPolling()` | 自动重拉开关；间隔来自 `console.config.js` 的 `poll_ms`（0 = 不轮询），页面在后台时不发请求。改样式时不想被定时重画：地址栏加 `?poll_ms=0`；`?shape=dag` 则一进来就停在总路径的 DAG |
 | `setPaths({...})` / `setPath(key, path)` / `path(key)` | 覆盖接口路径（端点表见 §6） |
 | `get()` / `snapshot()` | 读当前配置（只读副本） |
@@ -236,7 +233,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 `actions.saveAgentProfile(agentId, {nickname})` —— 只写昵称（界面上不传 `vendor`）；成功后重拉
 `agents / tasks / audits / conflicts / project / agentsWindow / projects`（名字是按 id 现算的，
 所以左栏卡片与 Agent 列表也得跟着重画）。
-`actions.removeAgent(id)` —— **demo 放弃**（不是待做项）：按钮留着，点了只说一句
+`actions.removeAgent(id)` —— **暂不实现**（不是待做项）：按钮留着，点了只说一句
 「撤回功能当前尚未实现」（`NOT_IMPLEMENTED_TEXT`，`notImplemented()`）。
 **不再有 `GET /agents/detect` 探测请求**（后端没有"Agent 地址"这个概念）。
 
@@ -376,7 +373,6 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > 点击时先在动作表里找，找不到就直接当 dispatch 执行 —— 这是机制，不代表页面上已经用了它。
 
 ### 5.4 `Tsunagou.refresh(keys?)`
-- `demo` 模式：不发请求，直接按 state 重绘，返回 `{demo:true, rendered:true}`。
 - `live` 模式：并发拉取 §6 里所有"读取类"接口并逐项 dispatch，返回 `{results, failed}`；
   有失败项时统一弹一次错误提示。
 - 传 `keys` 可以只刷新其中几项，例如 `refresh(['tasks','acceptance'])`。
@@ -422,7 +418,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `projectCreate` | `POST /projects` | `{name, objective}` 在中间层配的 `projects_root` 下新建；传 `{path}` 则登记一个已存在的项目 |
 | `projectForget` | `POST /console/projects/{project}:forget` | `{delete_files}`（默认 false）。**一次删掉整个项目**：停 daemon + 注销该项目的 bridge + 忘票 + 删索引条目 + （可选）删目录；路径里带的是**卡片那个** id，所以页面直接拼字面路径，不走 `WRITE_COMMANDS` 的 `{project}` 模板 |
 | `acceptanceArchive` | —— | **已从界面撤掉**（决定 11）：`project.archive` 未装配，留着按钮只能弹「尚未实现」；`WRITE_COMMANDS` 里那条 `null` 还在，用于“后端没这个能力”的报错文案 |
-| `agentRemove` | —— | **demo 放弃**（决定 11）：`agent.retire` 未装配；同上 |
+| `agentRemove` | —— | **暂不实现**（决定 11）：`agent.retire` 未装配；同上 |
 | `pathRecord` | —— | 后端无此概念 |
 
 > **哪些真能发出去**（2026-09-29 更新）：`settingSave`（`PUT /console/profile`）与
@@ -439,47 +435,19 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 
 ---
 
-## 6.1 模拟后端（`assets/js/mock-backend.js`）
+## 6.1 页面没有“演示后端”
 
-演示用的假后端。它**拦下 `window.fetch`**，只接管路径里带 `/api` 的请求，其余放行；
-页面因此走的是与真实后端**完全相同**的代码路径：`Tsunagou.api` → 响应解包 → `dispatch` → 渲染器 → DOM。
+页面里没有任何本地假数据，也没有“离线数据集”：所有内容都来自中间层转发的 daemon 出口。
 
-### 怎么开（三种打开方式，数据来源就这三行）
-
-| 怎么开 | 数据来自 | `console.config.js` 的 `mode` |
+| 怎么开 | 数据来自 | `console.config.js` |
 |---|---|---|
-| `tsunagou web start`（默认） | 真项目：daemon 的查询出口（中间层代发 + 补令牌） | `live` |
-| `tsunagou web start --demo`，或配置里 `"demo": true` | 本文件的演示数据 | `demo` |
-| 直接双击 `index.html`（file://，不起任何服务） | 同上 | `demo`（仓库里那份） |
+| `tsunagou web start`（推荐） | 真项目：daemon 的查询出口（中间层代发 + 补令牌） | 中间层在同名路径上生成一份 |
+| 直接双击 `index.html`（file://，不起任何服务） | 没有：只有空骨架 + 拉取失败的提示 | 仓库里那份（`baseUrl` + `poll_ms`） |
 
-机制：中间层托管页面时会在同名路径上**生成**一份 `/console.config.js`（见
-`src/tsunagou/console/app.py`），页面读到的就是它；双击打开读的是仓库里那份。
-本文件只在“中间层没说 live”时接入；接入后会把页面设回 `mode:'live'`，
-因为 `behavior.js` 的 `mode:'demo'` 意思是“一个请求都不发”（那是给宿主脚本准备的空骨架模式）。
-
-演示数据里所有展示用文字都带 `[演示]` 前缀；项目卡的右下角会写“演示数据”，
-免得截图被当成真后端跑出来的结果。写命令（`POST /commands/*`）本文件一律 501——
-替身没有领域逻辑，假装成功等于伪造结果。
-
-- 数据全部写在文件开头的常量里（`PROJECTS` / `AGENTS` / `TASKS` / `ATTEMPTS` / `RESULTS` /
-  `WORKSPACES` / `RESOURCES` / `INTENTS` / `CONFLICT_LEDGER` / `CONTRACTS` / `MESSAGES` /
-  `DECISIONS` / `PROFILE` / `AUDIT_EVENTS` / `CHECKPOINT_CURRENT`），字段与 §7 一一对应。
-- 一个项目 `[演示] 用户服务重构`；左栏卡片靠 `daemon: {running:true, demo:true}` 显示"演示中 / 演示数据"。
-  `PROJECTS` 里也带 `main_agent_id` / `agents` / `agents_fetched_at`（形状与中间层的 `?agents=1` 一致）。
-- 应答包就是真后端的**裸 JSON**（不是 `{code,message,data}`），错误体是 `{"detail":{"code":…}}`
-  并跟着改 HTTP 状态码。
-- `AUDIT_EVENTS`（总路径）写成 `event_seq` **升序**、动作名不带 `command.` 前缀、
-  `subject_ref` 写成 `task/<id>` / `project/<id>`（指向 Agent 的那几条本来就是裸 id）——
-  与真后端 `platform/db/sqlite.py` / `container.py` 的 audit 出口一致，别改成"最新在前"。
-  被拒的那条只给了 `payload.code`，**输出**里必须是填好的 `reason_code`：真后端也是这么兜底的。
-  会话那两行（`agent.enroll`）带上 `session_status: 'degraded'` + `missing_admission`，
-  与 `AGENTS` 里那个降级的子 Agent 是同一件事的两个侧面（缺 `identity.continuity_evidence`）。
-- 控制台里可以直接玩：`MockBackend.open()`、`MockBackend.refresh()`、`MockBackend.projects`、`MockBackend.current()`。
-- `DELAY` 常量控制模拟网络延迟（默认 120ms），设 0 可关掉。
-- **注意**：`file://` 页面下 `new URL('/api/x', href)` 的 pathname 会带盘符（`/E:/api/x`），
-  所以模拟后端是拿“`/api` 之后的部分”去匹配路由的，不要改回前缀比较。
-
-> 接真实后端：删掉 `index.html` 里那一行 script，把 `setBaseUrl/setMode` 指向真后端即可。
+以前这里有一份 `assets/js/mock-backend.js`：拦 `window.fetch`、按 §6 的接口表造样例数据。
+它已在 2026-09-29 删掉 —— 它的代价是“页面看起来能用”与“后端真的能用”分不清，
+而本仓库要交付的是后者。要看页面在真数据上的样子，用 `tsunagou web start`（真 daemon），
+或跑一次 `uv run python tools/dev/console_smoke.py --reset`（沙箱里起真 daemon + 真控制台）。
 
 ---
 
@@ -781,9 +749,9 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 | `ui:workspace` / `ui:sidebar` / `ui:settingtab` / `ui:wizard` / `ui:choosebox` | 相应上下文 | 对应控件变化 |
 | `form:commit` | `{input, key, value, previous, window, label}` | input 失焦提交（核心事件） |
 | `form:submit` | `{window, values, valuesList}` | 点主按钮提交整表单 |
-| `api:success` / `api:error` / `api:demo` | `{method, url, data\|error}` | 请求结果 |
+| `api:success` / `api:error` | `{method, url, data\|error}` | 请求结果 |
 | `state:change` / `state:reset` | `{reason, path, value?}` | 数据变化 |
-| `config:change` | 当前配置快照 | `setMode` 等改了配置 |
+| `config:change` | 当前配置快照 | `setBaseUrl` / `setPath` 等改了配置 |
 | `theme:change` | `{mode, resolved:'dark'|'light'}` | 主题切换 |
 | `render:all` | `null` | 整页重绘完成 |
 | `action:request` | `{name, id}` | 点了没注册处理函数的动作（后端可以在这里兜底） |
@@ -847,6 +815,9 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 
 **`assets/js/behavior.js`**：整文件重写（旧版备份在 `%TEMP%\tsunagou-behavior-legacy-20260925.js`）。
 **`assets/css/*`**：未改动。
+
+> 2026-09-29 更新：`assets/js/mock-backend.js` 与 `index.html` 里那一行 script 都已删除，
+> 页面不再有“演示后端”（见 §6.1）。本节其余内容是当时的迁移记录，按历史保留。
 
 **已补齐的逻辑缺陷**
 - Agent 管理页那个大加号（`.itemAdd`）现在会打开「添加子 Agent」；向导第 3 步的小加号同样有效。
@@ -928,9 +899,9 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 
 | 项 | 说明 |
 |---|---|
-| Agent 卡片上的三个按钮 | 2026-09-28 定稿：**「修改」真能用**（开详情窗口改昵称，存中间层用户档案）、**「设为主 Agent」真能用**（`authority.appoint`；主 Agent 自己的卡片不显示它）；**「删除」= demo 放弃**，点了只弹「撤回功能当前尚未实现」。按钮由 `agents[].actions[]` 驱动：后端在那一项里给 `action` 就出现（可用名：`agent.setMain:<id>` / `agent.edit:<id>` / `agent.remove:<id>`，未注册的名字会以 `action:request` 事件抛给宿主兜底）。 |
+| Agent 卡片上的三个按钮 | 2026-09-28 定稿：**「修改」真能用**（开详情窗口改昵称，存中间层用户档案）、**「设为主 Agent」真能用**（`authority.appoint`；主 Agent 自己的卡片不显示它）；**「删除」= 暂不实现**，点了只弹「撤回功能当前尚未实现」。按钮由 `agents[].actions[]` 驱动：后端在那一项里给 `action` 就出现（可用名：`agent.setMain:<id>` / `agent.edit:<id>` / `agent.remove:<id>`，未注册的名字会以 `action:request` 事件抛给宿主兜底）。 |
 | 「改昵称」的两个入口 | Agent 管理卡片上的「修改」→ `app.editAgent(id)`；Agent 列表里点某一行 → `app.openAgentInfo(id)`。两者开的是**同一个** `#mgrAgentInfo`：昵称可改，项目/任务只读，**不列厂商那一栏**（logo 已经标出厂商）。窗口「确定」= 保存昵称（值没变就只关窗，不发请求）。 |
-| 向导的「上一步」与子 Agent 的「×」 | **demo 放弃**（2026-09-28 你定）：按钮留着，点了只弹「撤回功能当前尚未实现」。理由：上一步想做的事 = 撤回上一步的效果，而分步后撤不在 demo 范围内（子 Agent 那个 `×` 是 CSS 画的 `.itemC::before`，点它就是"删掉这个 Agent"）。低层导航 `ui.wizard.prev()` 仍在，只是页面按钮不再用它。 |
+| 向导的「上一步」与子 Agent 的「×」 | **暂不实现**（2026-09-28 你定）：按钮留着，点了只弹「撤回功能当前尚未实现」。理由：上一步想做的事 = 撤回上一步的效果，而分步后撤不在本轮范围内（子 Agent 那个 `×` 是 CSS 画的 `.itemC::before`，点它就是"删掉这个 Agent"）。低层导航 `ui.wizard.prev()` 仍在，只是页面按钮不再用它。 |
 | 「添加子 Agent」的两个入口 | 已区分：两个入口都走同一条真接入（见 §7.1），只是收尾不同 —— 向导第 3 步的小加号把结果记进向导第 3 步的列表；Agent 管理页的大加号成功后重拉名单/卡片/昵称。 |
 | 向导第 2 步的"你所选的 Agent" | 厂商由选择框决定（**默认 Codex**，见 §3.4 的“表单清空时回到哪一项”）；这个预览框显示的是**你在名称输入框里填的 Agent 名字**（图标才是厂商），名字为空就留空。**不再有 `GET /agents/detect` 探测请求**（后端没有"Agent 地址"这个概念）。<br>**整块（标签 + 预览框）的显隐**：名字与厂商**两样都给了才显示**，否则一块空板子不占位置（`actions.detectMainAgent()` 里顺带定，只动 `display`）。 |
 | 向导遇到接不了的宿主 | Codex 是现在唯一有注册命令的厂商（表在中间层）。选别的厂商：页面照实说"还没实现"，**停在第 2 步**（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。 |
@@ -949,6 +920,10 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 
 ## 12. 中间层接线（2026-09-28）
 
+> 2026-09-29 注：本节及其子节里提到的“演示数据 / `mock-backend.js`”是当时的做法，
+> 那个文件与 `--demo` 开关都已删除（见 §6.1）；`Tsunagou 前端/` 也已并入 `web/`。
+> 以下按日期保留原记录。
+
 本日把页面从"演示后端"接到了"中间层 + daemon"。这一节是那次接线的真实记录；
 上面 §5 / §6 的表已按接线后的实际路径改过，以它们为准。
 
@@ -963,9 +938,8 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
   页面永远拿不到它（所以页面不需要 `config.setToken()`）。
 - **同源**：页面、`/api/v1/*`、`/console.config.js` 都来自同一个地址，没有 CORS。
 - **页面怎么知道自己连哪儿**：`index.html` 在 `behavior.js` 之前引了 `console.config.js`（铁律：不改布局）。
-  - 直接双击打开页面 → 用仓库里那份（`mode: 'demo'`，走 `mock-backend.js`）；
-  - 由中间层托管 → 中间层在同一个路径上生成替换品（`mode: 'live'`、`baseUrl`、`poll_ms`）。
-  - `mock-backend.js` 看到 `mode: 'live'` 会**完全不介入**（否则真后端的请求会被它拦掉）。
+  - 直接双击打开页面 → 用仓库里那份（`baseUrl` + `poll_ms`）；
+  - 由中间层托管 → 中间层在同一个路径上生成替换品（`baseUrl`、`poll_ms`）。
 - **`Tsunagou-Project` 请求头**：项目作用域的路径里已经有 id，但 `/commands/*`、`/decisions`、
   `/checkpoints` 这类路由没有，所以 `api.request` 统一带一个头，中间层靠它知道这次请求属于哪个项目。
   daemon 自己会忽略这个头。
@@ -1014,9 +988,9 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 存档点「立即存档」/「校验」 | **2026-09-29 接通**：`checkpoint.create.user` **不带** `retry_operation_id` 就是新建一个存档点（同一条命令的两种语义）；「校验」走 `GET /checkpoints/{digest}/verify`（会真去比对 manifest 与 git 锚点，失败是 409）。以前两个都只有后端能力、没有入口 |
 | 验收「确认完成」 | 四件套原样转发（已接，2026-09-28）：`expected_project_revision` 用**当前** `policy_revision`（后端拿它与当前值做 CAS）；以前 mapper 回 `{}`，后端必然回 400 `proposal_id_required` |
 | 设为主 Agent | 本来就能用：`appoint_main` 只读 `agent_id`，白名单里的 `ceiling_template`/`expected_authority_epoch` 运行时没人读（旧注释说“缺代次”是错的，已改） |
-| 归档 / 退席 / 路径记录 | **demo 放弃**（归档按钮已于 2026-09-29 从验收页撤掉）：`project.archive` / `agent.retire` 未装配；路径记录后端没这个事实
+| 归档 / 退席 / 路径记录 | **暂不实现**（归档按钮已于 2026-09-29 从验收页撤掉）：`project.archive` / `agent.retire` 未装配；路径记录后端没这个事实
 | 存档点回退 | **不做**（2026-09-28 你定的，撤掉）：没有 restore 命令，界面也不做"假装回退"；存档点只读不漏 |
-| Agent 删除 / agent 地位变更（完整版） | **demo 放弃**（不是待做项）：`agent.retire` 未装配；「撤销主 Agent / 代次上限」那一整套没人实现 —— 「设为主 Agent」本身仍然能用 |
+| Agent 删除 / agent 地位变更（完整版） | **暂不实现**（不是待做项）：`agent.retire` 未装配；「撤销主 Agent / 代次上限」那一整套没人实现 —— 「设为主 Agent」本身仍然能用 |
 
 ### 12.4 新补的界面
 
@@ -1027,7 +1001,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
   `#mgrAgentInfo` 也因此从"整窗只读 + 确定=关窗"变成"昵称可改、项目/任务只读 + 确定=保存"
   （原先多摆过一栏只读的「厂商」，后来去掉了：logo 已经说明厂商，不用再写一遍）。
   向导的「上一步」与第 3 步子 Agent 胶囊上的 `×`（CSS 的 `.itemC::before`）同样保留；
-  **所有撤回类动作都标成 demo 放弃**（不再算待做），点了只弹一句「撤回功能当前尚未实现」
+  **所有撤回类动作都标成“暂不实现”**（不再算待做），点了只弹一句「撤回功能当前尚未实现」
   —— 统一走 `notImplemented()` / `NOT_IMPLEMENTED_TEXT`，不摆原因、不假成功、不静默。
 
 - **时间显示统一走 `util.time()`**（2026-09-28）：表格/卡片里是 `9月28日16:05:02`——本年略去年份、
@@ -1149,7 +1123,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
     `task/<id>` / `project/<id>`（真后端的形状）、被拒那条**输入只有 `payload.code`、输出必须有
     `reason_code`**（走的就是上面那条兜底），契约内容里写上 `task_id` 好让「契约」那一格亮起来。
 
-- **顶层出口的取法修对了**（2026-09-29）：跑真后端冒烟（`tools/dev/console_demo.py`）才发现
+- **顶层出口的取法修对了**（2026-09-29）：跑真后端冒烟（`tools/dev/console_smoke.py`）才发现
   `acceptance` 那一屏一直是 `missing=['decisions']` —— daemon 的 `decisions` 不挂项目
   （`/api/v1/decisions`），而中间层把每个出口名都拼上了 `/api/v1/projects/{id}` 前缀，
   拼出来的是 404。后果不是报错而是两处**静默空着**：验收页的收尾提案卡与「确认完成」拿不到东西；
@@ -1333,7 +1307,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
     是项目自己的，不跟着某个 Agent 变）；**DAG 按负责人（`ownerId`）过滤**（过滤放在摆位那一层，
     于是边、居中、空状态都自动跟着变）。空状态说清楚是哪种：「这个视角没有任务：主 Agent 视角
     没有负责的任务。」选的 Agent 不在了（换项目/名单变了）就静默退回总视角。
-  · **真后端联调（真 daemon + 真命令通道）**：用 `tools/dev/console_demo.py --keep` 起一个沙箱
+  · **真后端联调（真 daemon + 真命令通道）**：用 `tools/dev/console_smoke.py --keep` 起一个沙箱
     （项目 + daemon + 中间层控制台），再用它的 `control.token` 在真命令通道上
     `agent.ticket.create.user` → `agent.enroll` → `authority.appoint` → `task.create` ×3
     （后两个各带 `blocks`）建出一条 A→B→C 的依赖链。页面（live 模式）实测：视图出口里
@@ -1458,4 +1432,4 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 主视图的"计划进度" | 形状照 §7 的 `progress:{total:'12%', plan:[{text,state}]}`：左边是百分数（已完成/全部，没任务就是 0%），右边是可滚动的任务清单（✓ 已完成 / ● 在做 / 无图标 未完成）。**后端没有"计划"这个对象**，这份清单是从任务列表推出来的，不是真计划。**2026-09-29 你定：就这样保持现状（不加"据任务推算"之类的注释）** |
 | 用户档案里的另两项 | **2026-09-29 你定：都不算缺口**。**用户昵称**：用户不必有昵称（档案里那个 `nickname` 就让它空着）；**Agent 图标**：创建协作时选厂商就定了，页面按厂商现算（`agentIconFor(agentVendor(a))`），不拿档案里那个 `icon`。能改的仍是主题（设置窗口）与 Agent 昵称（Agent 管理「修改」） |
 | 降级会话的另外两条路 | `session.reprobe`（原地重出证据）与 `session.end`（自行退场）**只在 registry 里声明、`handlers.py` 没装配**；现在能走的仍只有"带报告重连"（`session.reconnect` + `probe_payload`）与"拿新票重接"（`session.rebind`）。另外降级**不动正在跑的活**（只撤已有 grant），在跑的 Attempt 只由租约到期那条独立机制回收 |
-| 一键演示 / 冒烟 | `uv run python tools/dev/console_demo.py`（建沙箱项目 + 起 daemon + 起控制台 + 逐个接口断言） |
+| 一键演示 / 冒烟 | `uv run python tools/dev/console_smoke.py --reset`（建沙箱项目 + 起 daemon + 起控制台 + 逐个接口与视图源断言） |

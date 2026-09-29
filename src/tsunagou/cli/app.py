@@ -1099,7 +1099,7 @@ if typer is not None:
         print(json.dumps(result, sort_keys=True))
 
     def _console_settings(
-        ctx: typer.Context, config: Path | None, host: str | None, port: int | None, demo: bool | None,
+        ctx: typer.Context, config: Path | None, host: str | None, port: int | None,
     ) -> Any:
         """Load the console config, apply command-line overrides, or exit with a reason."""
 
@@ -1114,8 +1114,6 @@ if typer is not None:
             settings.host = host
         if port is not None:
             settings.port = port
-        if demo is not None:
-            settings.demo = demo
         ctx.ensure_object(dict)
         return settings
 
@@ -1125,12 +1123,11 @@ if typer is not None:
         config: Path | None = typer.Option(None, "--config"),  # noqa: B008
         host: str | None = typer.Option(None, "--host"),
         port: int | None = typer.Option(None, "--port"),
-        demo: bool | None = typer.Option(None, "--demo/--live"),
     ) -> None:
         """Serve the console page and forward it to the projects' daemons."""
         from tsunagou.console.service import serve
 
-        settings = _console_settings(ctx, config, host, port, demo)
+        settings = _console_settings(ctx, config, host, port)
 
         def announce(record: dict[str, Any]) -> None:
             if ctx.obj.get("json"):
@@ -1153,7 +1150,7 @@ if typer is not None:
         """Report whether the console is running, and where."""
         from tsunagou.console.service import status as console_status
 
-        settings = _console_settings(ctx, config, None, None, None)
+        settings = _console_settings(ctx, config, None, None)
         result = console_status(settings)
         if ctx.obj.get("json"):
             print(json.dumps(result, sort_keys=True))

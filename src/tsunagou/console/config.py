@@ -44,7 +44,6 @@ class ConsoleConfig:
     profile_path: Path = field(default_factory=lambda: Path.home() / ".tsunagou" / "console-profile.json")
     poll_ms: int = 5000
     daemon_autostart: bool = False
-    demo: bool = False
     web_root: Path | None = None
     path: Path | None = None
 
@@ -96,8 +95,6 @@ class ConsoleConfig:
 
         return {
             "poll_ms": self.poll_ms,
-            "demo": self.demo,
-            "mode": "demo" if self.demo else "live",
             "projects_root": str(self.projects_root),
             "scan_roots": [str(root) for root in self.resolved_scan_roots()],
             "daemon_autostart": self.daemon_autostart,

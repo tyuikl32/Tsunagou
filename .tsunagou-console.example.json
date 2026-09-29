@@ -8,6 +8,5 @@
   "index_path": "~/.tsunagou/projects.json",
   "profile_path": "~/.tsunagou/console-profile.json",
   "poll_ms": 5000,
-  "daemon_autostart": false,
-  "demo": false
+  "daemon_autostart": false
 }

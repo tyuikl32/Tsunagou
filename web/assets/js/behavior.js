@@ -228,7 +228,7 @@
            不会拼出坏地址去打扰后端。见 method.md 的"后端缺口"清单。*/
         /* —— 已与 Tsunagou 后端对齐（路径即后端真实路由） —— */
         /* 左栏列表由中间层提供：一个 daemon 只服务一个项目，回答不了
-           "本机有哪些项目"；接口形状见 mock-backend.js 的 PROJECTS。
+           "本机有哪些项目"；接口形状见中间层 console/projects.py 的 /projects。
            agents=1 让中间层顺便回答"每个项目由谁负责"—— 它自己维护这份名单，
            只在首次读到与 daemon 存储变动时去问项目（见 console/agents.py）。*/
         projects: '/projects?agents=1',
@@ -394,9 +394,6 @@
     };
 
     const config = {
-        /* 'demo'：不发任何请求，页面停在空骨架（或宿主自己 dispatch 填的数据）；
-           'live'：走 HTTP（本仓库的模拟后端就是在 live 模式下应答的）。*/
-        mode: 'demo',
         baseUrl: '/api/v1',
         timeout: 10000,
         token: '',
@@ -417,7 +414,6 @@
 
     function configSnapshot() {
         return {
-            mode: config.mode,
             baseUrl: config.baseUrl,
             timeout: config.timeout,
             token: config.token,
@@ -428,16 +424,12 @@
     }
 
     /* 中间层（`tsunagou web start`）在同源下生成 /console.config.js：
-       window.TSUNAGOU_CONSOLE_CONFIG = {mode, baseUrl, poll_ms}
-       双击 index.html 打开时用仓库里那份（默认 demo）。这里只读它、不改布局。*/
+       window.TSUNAGOU_CONSOLE_CONFIG = {baseUrl, poll_ms}
+       双击 index.html 打开时用仓库里那份。这里只读它、不改布局。*/
     function applyConsoleConfig() {
         const provided = window.TSUNAGOU_CONSOLE_CONFIG;
         if (!isPlainObject(provided)) return null;
         if (provided.baseUrl) config.baseUrl = toText(provided.baseUrl).replace(/\/+$/, '');
-        /* 只有 'live' 会改模式。'demo' 的意思是"这一页由演示后端起答"，
-           而演示后端要的是页面走真请求那条代码路径（它自己会把 mode 设成 live），
-           所以这里绝不能把它改为 'demo' —— 那等于让页面什么请求都不发。*/
-        if (provided.mode === 'live') config.mode = 'live';
         const interval = Number(provided.poll_ms);
         if (isFinite(interval)) config.pollMs = interval;
         emit('config:change', configSnapshot());
@@ -648,11 +640,6 @@
         get: configSnapshot,
         snapshot: configSnapshot,
         joinUrl: joinUrl,
-        setMode: function (mode) {
-            config.mode = (mode === 'live') ? 'live' : 'demo';
-            emit('config:change', configSnapshot());
-            return config.mode;
-        },
         setBaseUrl: function (url) {
             config.baseUrl = toText(url).replace(/\/+$/, '');
             return config.baseUrl;
@@ -2159,16 +2146,6 @@
         const url = config.joinUrl(path) + buildQuery(opts.query);
         const timeout = Number(opts.timeout) || config.timeout;
 
-        /* 演示模式：不发请求。写操作假装成功，读操作由 refresh() 直接从 state 拿。*/
-        if (config.mode === 'demo') {
-            const delay = opts.delay === undefined ? 240 : Number(opts.delay);
-            return wait(delay).then(function () {
-                const fake = { ok: true, demo: true, method: method, path: path, body: deepClone(opts.body || null) };
-                emit('api:demo', fake);
-                return fake;
-            });
-        }
-
         const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         let timer = null;
         if (controller) timer = setTimeout(function () { controller.abort(); }, timeout);
@@ -2407,7 +2384,7 @@
         emit('form:commit', detail);
 
         /* 后端可以用 events.on('form:commit') 接管；默认按配置里的地址提交 */
-        if (opts.local || (config.mode === 'demo' && opts.post !== true)) {
+        if (opts.local) {
             if (opts.toast !== false) notify.success({ title: opts.title || '改动已成功保存' });
             return Promise.resolve(value);
         }
@@ -2757,8 +2734,7 @@
         const done = list.filter(function (item) { return item.group === 'done'; });
         /* 哪一张是"选中"的：整列一次算清，**最多一张**。
            优先"当前项目"（currentProjectId），没有再看第一条自称 selected 的
-           （演示模式下新建的那张会自带 selected；id 为空的条目一律不算 ——
-           空 id 对上空的"当前项目"会把整列都点亮）。*/
+           （id 为空的条目一律不算 —— 空 id 对上空的"当前项目"会把整列都点亮）。*/
         const currentId = toText(state.get('currentProjectId'));
         let selectedAt = -1;
         if (currentId) {
@@ -4316,30 +4292,8 @@
             return notify.track('正在创建协作', api.post('projectCreate', data)).then(function (result) {
                 const project = (result && result.project) || null;
                 notify.success({ title: '协作已创建', sub: data.name });
-                /* live 模式：以后端为准，重新拉一次列表 */
-                if (config.mode === 'live') {
-                    return Tsunagou.refresh(['projects']).then(function () { return project; });
-                }
-                /* demo 模式：没有后端，就在本地插一张卡片让界面有反馈 */
-                const list = toArray(state.get('projects', [])).slice();
-                const local = {
-                    id: 'p' + Date.now(),
-                    name: data.name,
-                    objective: data.objective || '',
-                    status: 'preparing',
-                    time: '刚刚',
-                    mainAgent: data.mainAgent,
-                    agents: toArray(data.subAgents).map(function (agent) {
-                        return { name: agent.name, icon: agent.icon };
-                    }),
-                    extra: toArray(data.subAgents).length,
-                    selected: true
-                };
-                list.unshift(local);
-                list.forEach(function (item, index) { item.selected = (index === 0); });
-                state.set('projects', list);
-                render.list(list);
-                return { project_id: local.id, name: local.name, objective: local.objective };
+                /* 列表以后端为准：重新拉一次，别自己造一张卡片 */
+                return Tsunagou.refresh(['projects']).then(function () { return project; });
             }, function () { return false; });   /* 失败提示由 api.request 弹，这里只表态"没建成" */
         },
 
@@ -4350,10 +4304,6 @@
         deleteProject: function (projectId) {
             const id = toText(projectId);
             if (!id) return Promise.resolve(false);
-            if (config.mode !== 'live') {
-                notify.info('演示模式没有中间层，删不了协作');
-                return Promise.resolve(false);
-            }
             const project = findById(state.get('projects', []), id) || {};
             const name = toText(project.name) || shortId(id);
             return dialog.confirm({
@@ -4507,7 +4457,7 @@
             }, function () { return false; });
         },
 
-        /* 删除 / 退席一个 Agent：demo 范围里放弃（决定 11 起就不做）。
+        /* 删除 / 退席一个 Agent：暂不实现（决定 11 起就不做）。
            按钮留着（设计里就有这个位置），点了就一句话说清楚。*/
         removeAgent: function () {
             return notImplemented();
@@ -5002,7 +4952,7 @@
         },
         wizardNext: function () { return ui.wizard.next(); },
         /* 向导的「上一步」：按钮留着，但它想做的事 = 撤回上一步的效果，而这件事
-           demo 范围里放弃 —— 一句话说清楚。（低层导航 ui.wizard.prev() 仍在，给宿主脚本用）*/
+           暂不实现 —— 一句话说清楚。（低层导航 ui.wizard.prev() 仍在，给宿主脚本用）*/
         wizardPrev: function () { return notImplemented(); },
         wizardFinish: function () { return ui.wizard.finish(); },
 
@@ -5325,7 +5275,7 @@
         'conflicts', 'acceptance', 'checkpoints', 'checkpointFailures', 'timeline'
     ];
 
-    /* 前端主动拉取的唯一入口。demo 模式直接重绘本地数据，不发请求。*/
+    /* 前端主动拉取的唯一入口：一次 GET 配一个 dispatch 处理器（见下表）。*/
     const REFRESH_ROUTES = [
         ['projects', 'project.list'],
         ['agentsWindow', 'agent.window'],
@@ -5631,16 +5581,11 @@
          expired    —— 票过期，这次作废
          cancelled  —— 人在确认框里选了取消接入
          dismissed  —— 遮罩被别的操作收掉了，停止等待（票还有效）
-         failed     —— 请求本身失败（提示已由 api 弹过）
-         unavailable—— 演示模式没有中间层，做不了这件事（不假装成功）*/
+         failed     —— 请求本身失败（提示已由 api 弹过）*/
     function connectAgent(options) {
         const opts = options || {};
         const host = opts.host || {};
         const nickname = toText(opts.nickname).trim();
-        if (config.mode !== 'live') {
-            notify.info('演示模式没有中间层，无法准备 Agent 接入');
-            return Promise.resolve({ status: 'unavailable' });
-        }
         let prepared = null;
         let cancelled = false;
         const cancel = function () {
@@ -5707,7 +5652,6 @@
         if (status === 'expired') return '票据已过期，这一次接入作废了，可以再试一次';
         if (status === 'cancelled') return '已取消等待：这次准备的票据已作废，可以重新接入';
         if (status === 'dismissed') return '已停止等待接入；票还有效，稍后打开 ' + label + ' 连接上仍会加入';
-        if (status === 'unavailable') return '演示模式没有中间层，无法准备接入';
         return '';
     }
 
@@ -5843,7 +5787,6 @@
             return backendItems(raw).map(function (p) {
                 const done = (p.lifecycle === 'completed' || p.lifecycle === 'archived');
                 const daemon = isPlainObject(p.daemon) ? p.daemon : null;
-                const demo = !!(daemon && daemon.demo);
                 const running = !!(daemon && daemon.running);
                 /* 谁负责这个项目：中间层给的只有 agent_id/status/role，
                    名字与图标照旧由用户档案解析（与 Agent 管理页同一套）。
@@ -5863,11 +5806,10 @@
                     id: p.project_id,
                     name: p.available === false ? (toText(p.name) + '（目录已不在）') : p.name,
                     status: done ? 'finished' : (running ? 'working' : 'preparing'),
-                    statusText: demo ? '演示中'
-                        : (done ? (p.lifecycle === 'archived' ? '已归档' : '已完成')
-                            : (running ? '进行中' : '未启动')),
-                    /* 卡片右下角那行小字：就说 daemon 起没起（演示数据就直说）。*/
-                    time: demo ? '演示数据' : (running ? 'daemon 运行中' : (daemon ? 'daemon 无响应' : 'daemon 未启动')),
+                    statusText: done ? (p.lifecycle === 'archived' ? '已归档' : '已完成')
+                        : (running ? '进行中' : '未启动'),
+                    /* 卡片右下角那行小字：就说 daemon 起没起。*/
+                    time: running ? 'daemon 运行中' : (daemon ? 'daemon 无响应' : 'daemon 未启动'),
                     group: p.lifecycle === 'archived' ? 'done' : undefined,
                     selected: false,
                     /* 卡片上不用，但别的面板要：项目目录、daemon 端点 */
@@ -6471,10 +6413,6 @@
     }
 
     Tsunagou.refresh = function (keys) {
-        if (config.mode === 'demo') {
-            render.all();
-            return Promise.resolve({ demo: true, rendered: true });
-        }
         const wanted = keys ? toArray(keys) : null;
         const hasProject = !!toText(state.get('currentProjectId'));
         const skipped = [];
@@ -6505,9 +6443,8 @@
     /* ========================================================================
      * §7 初始（空）状态
      * ------------------------------------------------------------------------
-     * 这里不再放演示数据 —— 页面上的内容一律由后端提供。
-     * 本仓库自带的模拟后端在 assets/js/mock-backend.js，它按 method.md §6
-     * 的接口表应答 GET/POST，可以直接对照阅读。
+     * 这里不再放演示数据 —— 页面上的内容一律由中间层提供。
+     * 每个键对应哪个出口、回包长什么样，见 method.md §6 的接口表。
      *
      * 这份空骨架只做两件事：
      *   1) 页面在拿到数据之前有确定的形状，渲染器不会因为字段缺失而报错；
@@ -6610,7 +6547,6 @@
         ui.blockTabs.init();
 
         /* 2.5) 拉一次全局数据：左侧协作列表、用户档案与后端参数值的中文对照表都不依赖"当前项目"。
-              演示模式下 refresh 直接重绘本地数据，不发请求。
               顺带把上次打开的项目接回去（只记 id，不存任何协作数据）。*/
         Tsunagou.refresh(['projects', 'settings', 'glossary', 'hosts']).then(function () {
             const remembered = lastProjectId();

@@ -420,7 +420,8 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         """The page's own switch, generated where the console knows the answer.
 
         Opening ``index.html`` straight from disk uses the checked-in default; a
-        page served by the console is told whether this machine is in demo mode.
+        page served by the console is told the API prefix this process answers
+        on, so the two can never disagree.
         """
 
         payload = {"baseUrl": "/api/v1", **settings.public()}
