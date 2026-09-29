@@ -38,6 +38,13 @@ Tsunagou/
 │   │   ├── output.py              # Rich / JSON / exit code
 │   │   ├── enrollment.py          # 接入组合流程，秘密只给bridge
 │   │   └── commands/              # project/root/agent/authority/decision等
+│   ├── console/
+│   │   ├── app.py                 # 本机控制台中间层：/console/* 与 /api/v1 通路，同源托管页面
+│   │   ├── config.py              # 一份可读配置（.tsunagou-console.json）与命令行覆盖
+│   │   ├── projects.py            # 创建/登记/删除项目，起停它们的 daemon
+│   │   ├── enrollment.py          # Agent 接入的准备/等待/作废（秘密只给 bridge）
+│   │   ├── agents.py              # 项目 id → 负责人名单（daemon 自己答不了的问题）
+│   │   └── glossary.py            # 后端取值 → 中文对照表
 │   ├── application/
 │   │   ├── project_integration.py # 项目本地无秘密入口生成器
 │   │   ├── command_dispatcher.py  # 唯一authorize-and-handle入口
@@ -111,6 +118,13 @@ Tsunagou/
 │   ├── fault_injection/ conformance/
 │   ├── benchmarks/ manual_live_agents/
 │   └── fixtures/                  # 测试项目，绝非真实用户项目
+├── web/                           # 本机控制台页面（零构建：一个 index.html + 一个 IIFE JS）
+│   ├── index.html                 # 静态骨架：标签页 + 侧栏 + 窗口
+│   ├── assets/js/behavior.js      # 整个前端（单文件 IIFE）
+│   ├── assets/css/                # 组件库样式；**归使用者，实现方不改**
+│   ├── tests/behavior.smoke.test.ts   # vitest + jsdom 的前端结构冒烟
+│   ├── console.config.js          # 前端侧默认配置（中间层托管时另生成一份）
+│   └── method.md                  # 前端侧契约文档（改前端必须同步）
 ├── docs/{overview,implementation,decisions,research,history}/
 ├── .agents/skills/                # 可跨宿主发现的项目级 Agent skill
 │   ├── tsunagou-install/          # 从 GitHub 安装 Tsunagou 和 skill

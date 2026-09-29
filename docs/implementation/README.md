@@ -31,6 +31,7 @@
 | 持久化、溯源、秘密清理和恢复如何修复 | [持久化溯源修复方案](persistence-traceability-plan.md)、[机器任务索引](persistence-traceability-tasks.json) |
 | 凭据响应丢失、bridge 保存/ACK 与旧库迁移 | [凭据交付与迁移契约](credential-delivery.md) |
 | 工作区 scope、patch 授权与验证回执 | [工作区差异与验证证据](workspace-evidence.md) |
+| 本机控制台怎么起、怎么验收、边界在哪 | [本机控制台（中间层 + 页面）](console.md) |
 | 向用户解释如何操作 | [CLI/HTTP简明手册](../overview/cli-http-manual.md)、[子Agent指南](../overview/subagent-guide.md) |
 
 上述指南的新增文件名/CLI外壳参数是工程细化，不新增领域动作或用户权限；目录树明确区分待建源码与当前已有文档。示例中的身份别名、版本占位值不能直接作为生产请求。
