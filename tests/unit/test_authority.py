@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tsunagou.modules.authority import AuthorityService
+from tsunagou.modules.authority import MAX_EVIDENCE_REF_LENGTH, MAX_EVIDENCE_REFS, AuthorityService
 from tsunagou.shared_kernel.baseline import BASELINE_CAPABILITIES
 
 
@@ -169,3 +169,62 @@ def test_rebind_cannot_retarget_another_conversation_agent() -> None:
         service.redeem_rebind_ticket(
             ticket, "same-ide", "conversation-b", target_agent_id=first.agent_id,
         )
+
+
+def test_a_session_keeps_which_capabilities_it_proved(tmp_path: Path) -> None:
+    """准入时的那份自报留在会话里，页面才算得出"缺哪几项"。
+
+    留的是**行**（状态 + 引用），而且有上限：引用最多 8 条、每条截到 200 字符，空引用丢掉，
+    11 项以外的名字一个不收。会话文件不是宿主回执的回收站，也不能长到没人敢读。
+    """
+    service = AuthorityService(tmp_path / "identity.json")
+    baseline = complete_baseline()
+    baseline["baseline"]["identity.session_isolation"] = {
+        "status": "supported",
+        "evidence_refs": ["x" * (MAX_EVIDENCE_REF_LENGTH + 50)]
+        + [f"ref:{index}" for index in range(10)],
+    }
+    # 一份"写了 status 但引用是空白"的行：准入规则不认它（所以它缺），
+    # 会话留的那份行照样只收有效引用 —— 留下的是"能拿出来看的证据"。
+    baseline["baseline"]["delivery.deduplicate"] = {
+        "status": "supported", "evidence_refs": ["", "   "],
+    }
+    baseline["baseline"]["made.up"] = {"status": "supported", "evidence_refs": ["nope"]}
+
+    receipt = service.redeem_ticket(
+        service.issue_ticket("install-a", "conversation-a"), "install-a", "conversation-a",
+        baseline=baseline,
+    )
+
+    stored = service.sessions[receipt.session_id].baseline
+    assert stored["status"] == "ready"
+    assert isinstance(stored["digest"], str) and stored["digest"]
+    rows = stored["capabilities"]
+    assert set(rows) == set(BASELINE_CAPABILITIES)
+    assert rows["identity.session_isolation"]["status"] == "supported"
+    refs = rows["identity.session_isolation"]["evidence_refs"]
+    assert len(refs) == MAX_EVIDENCE_REFS
+    assert refs[0] == "x" * MAX_EVIDENCE_REF_LENGTH
+    assert all(ref.strip() for ref in refs)
+    assert rows["delivery.deduplicate"]["evidence_refs"] == []
+
+
+def test_rebinding_replaces_the_stored_rows_instead_of_adding_to_them(tmp_path: Path) -> None:
+    """换一份自报就是换一份事实：升级要如实记，降级也要如实记。"""
+    service = AuthorityService(tmp_path / "identity.json")
+    ticket = service.issue_ticket("install-a", "conversation-a")
+    receipt = service.redeem_ticket(ticket, "install-a", "conversation-a", baseline={})
+    assert service.sessions[receipt.session_id].baseline["capabilities"] == {}
+
+    upgraded = service.rebind(
+        receipt.session_id, expected_nonce=receipt.reconnect_nonce, baseline=complete_baseline(),
+    )
+    assert set(service.sessions[receipt.session_id].baseline["capabilities"]) == set(BASELINE_CAPABILITIES)
+
+    one_row = {"baseline": {
+        "identity.session_isolation": {"status": "supported", "evidence_refs": ["fixture:only"]},
+    }}
+    service.rebind(receipt.session_id, expected_nonce=upgraded.reconnect_nonce, baseline=one_row)
+    stored = service.sessions[receipt.session_id].baseline
+    assert set(stored["capabilities"]) == {"identity.session_isolation"}
+    assert stored["status"] == "degraded"

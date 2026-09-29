@@ -29,6 +29,7 @@ def clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setenv("TSUNAGOU_PROJECT_ROOT", str(source))
     monkeypatch.setenv("TSUNAGOU_STATE_DIR", str(source / ".tsunagou/local"))
     monkeypatch.setenv("TSUNAGOU_PROJECT_ID", registry.project.project_id)
+    monkeypatch.setenv("TSUNAGOU_PROJECT_INDEX", str(tmp_path / "projects.json"))
     monkeypatch.setenv("TSUNAGOU_CONTROL_TOKEN", "control")
     monkeypatch.delenv("TSUNAGOU_HOST_WAKE", raising=False)
     server = build_application()

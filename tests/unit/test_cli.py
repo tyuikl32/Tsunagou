@@ -49,7 +49,9 @@ def test_codex_executable_prefers_host_path(monkeypatch, tmp_path: Path) -> None
     executable = tmp_path / "codex.exe"
     executable.write_text("", encoding="utf-8")
     monkeypatch.setenv("CODEX_CLI_PATH", str(executable))
-    monkeypatch.setattr("tsunagou.cli.app.shutil.which", lambda _: None)
+    # 探测逻辑现在住在 `tsunagou.platform.host_registration`（一个厂商一行），
+    # CLI 只是它的一个调用者，所以 path 也打在那里。
+    monkeypatch.setattr("tsunagou.platform.host_registration.shutil.which", lambda _: None)
     assert _resolve_codex_executable() == str(executable)
 
 
@@ -60,6 +62,6 @@ def test_codex_executable_discovers_desktop_install(monkeypatch, tmp_path: Path)
     executable.parent.mkdir(parents=True)
     executable.write_text("", encoding="utf-8")
     monkeypatch.delenv("CODEX_CLI_PATH", raising=False)
-    monkeypatch.setattr("tsunagou.cli.app.shutil.which", lambda _: None)
+    monkeypatch.setattr("tsunagou.platform.host_registration.shutil.which", lambda _: None)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     assert _resolve_codex_executable() == str(executable)

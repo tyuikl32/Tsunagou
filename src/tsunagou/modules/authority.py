@@ -13,11 +13,37 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tsunagou.shared_kernel.baseline import missing_admission_capabilities
+from tsunagou.shared_kernel.baseline import BASELINE_CAPABILITIES, missing_admission_capabilities
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 
 GRANT_KINDS = {"agent_base", "main_authority", "task_attempt", "task_review", "handoff_transition"}
+
+# The host's self-report is evidence, not documentation: keep the rows we can judge,
+# with the references bounded, so a session still says *which* of the 11 capabilities
+# it proved long after admission. The readiness rule itself stays in shared_kernel.
+MAX_EVIDENCE_REFS = 8
+MAX_EVIDENCE_REF_LENGTH = 200
+
+
+def baseline_rows(evidence: Any) -> dict[str, Any]:
+    """Normalize a host baseline report into the bounded rows a session keeps."""
+
+    rows = evidence.get("baseline") if isinstance(evidence, dict) else None
+    kept: dict[str, Any] = {}
+    if not isinstance(rows, dict):
+        return kept
+    for name in BASELINE_CAPABILITIES:
+        row = rows.get(name)
+        if not isinstance(row, dict):
+            continue
+        refs = [
+            str(ref)[:MAX_EVIDENCE_REF_LENGTH]
+            for ref in (row.get("evidence_refs") or [])
+            if str(ref).strip()
+        ][:MAX_EVIDENCE_REFS]
+        kept[name] = {"status": str(row.get("status") or ""), "evidence_refs": refs}
+    return kept
 
 
 def _save_json(path: Path, value: Any) -> None:
@@ -231,7 +257,7 @@ class AuthorityService:
                 session_id, agent.agent_id, ticket.conversation_digest, _token_hash(token),
                 _token_hash(reconnect_nonce),
                 status=status,
-                baseline={"status": status, "digest": snapshot_digest},
+                baseline={"status": status, "digest": snapshot_digest, "capabilities": baseline_rows(snapshot)},
             )
             agent.status = "active" if status == "ready" else "provisioning"
             self.agents[agent.agent_id] = agent
@@ -313,7 +339,10 @@ class AuthorityService:
             session.connection_epoch += 1
             if baseline is not None:
                 assert new_status is not None and new_digest is not None
-                session.baseline = {"status": new_status, "digest": new_digest}
+                session.baseline = {
+                    "status": new_status, "digest": new_digest,
+                    "capabilities": baseline_rows(baseline),
+                }
                 session.status = new_status
                 self.agents[session.agent_id].status = "active" if session.status == "ready" else "provisioning"
                 if session.status == "ready" and not any(

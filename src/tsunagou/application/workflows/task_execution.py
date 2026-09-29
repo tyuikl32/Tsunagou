@@ -61,12 +61,9 @@ class TaskExecutionWorkflow:
                 blockers.append("resource_lease_required")
             if evidence["workspace_status"] != "ready":
                 blockers.append("workspace_ready_required")
-            linked_contracts = [
-                proposal for proposal in self.cognition.proposals.values()
-                if isinstance(proposal.payload, dict)
-                and proposal.payload.get("task_id") == task_id
-            ]
-            if any(proposal.status != "accepted" for proposal in linked_contracts):
+            # The same predicate gates `task.submit`, so "settled enough to start" and
+            # "settled enough to publish" can never drift apart.
+            if self.cognition.unaligned_contracts_for_task(task_id):
                 blockers.append("contract_not_accepted")
         digest = canonical_digest(evidence)
         return self.tasks.preflight(

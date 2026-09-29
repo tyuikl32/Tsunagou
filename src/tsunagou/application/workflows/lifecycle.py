@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from tsunagou.modules.authority import AuthorityService
@@ -22,6 +22,10 @@ class UserDecision:
     status: str = "pending"
     decision: str | None = None
     reason: str | None = None
+    # What the proposer actually asked, including the choices offered. It used to
+    # only feed the digest, which left "what am I deciding" unanswerable for every
+    # reader that was not the proposer.
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +52,7 @@ class LifecycleService:
         decision = UserDecision(
             new_id(), kind, subject_ref, expected_revision,
             canonical_digest({"subject_ref": subject_ref, "payload": payload, "revision": expected_revision}),
+            payload=dict(payload),
         )
         self.decisions[decision.decision_id] = decision
         return decision
@@ -61,10 +66,41 @@ class LifecycleService:
         item = self.decisions[decision_id]
         if item.status != "pending" or item.input_digest != input_digest:
             raise ValueError("decision_revision_or_digest_conflict")
-        if decision not in {"approved", "rejected"}:
+        answer = decision.strip() if isinstance(decision, str) else ""
+        if not answer or answer not in self.answerable_values(item):
             raise ValueError("invalid_decision")
-        item.status, item.decision, item.reason = "resolved", decision, reason
+        item.status, item.decision, item.reason = "resolved", answer, reason
         return item
+
+    @staticmethod
+    def answerable_values(item: UserDecision) -> tuple[str, ...]:
+        """Which answers this one decision accepts.
+
+        The proposer owns the vocabulary: ``choices`` is what it offered, and the
+        runbook answers with one of those real values
+        (``docs/standalone/debugging-runbook.md``, B5: "阅读后按该决定 choices 中的真实值
+        填写；以下选择 approved 只用于该选项确实存在时"). So the offered words are read
+        here instead of assuming every answer is a yes/no.
+
+        ``approved``/``rejected`` are the fallback **only** for a decision proposed
+        without options (the completion proposal carries no ``choices``): they are
+        not a second vocabulary. Answering ``approved`` to a decision whose options
+        are, say, 「再补一轮回归 / 换方案」 is refused rather than recorded as an
+        answer the proposer never offered.
+        """
+
+        offered: list[str] = []
+        for choice in item.payload.get("choices") or ():
+            if isinstance(choice, str):
+                value = choice.strip()
+            elif isinstance(choice, dict):
+                # Choices may arrive as {value, label} rows; either field is the answer.
+                value = str(choice.get("value") or choice.get("label") or "").strip()
+            else:
+                value = ""
+            if value and value not in offered:
+                offered.append(value)
+        return tuple(offered) if offered else ("approved", "rejected")
 
     def complete_project(
         self, *, expected_revision: int, evidence_refs: list[dict[str, Any]],

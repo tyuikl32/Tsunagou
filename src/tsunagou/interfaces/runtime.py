@@ -69,7 +69,7 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     }),
     "task.submit": frozenset({
         "task_id", "attempt_id", "summary", "evidence_refs", "artifact_refs",
-        "workspace_result_ref",
+        "workspace_result_ref", "expected_revisions",
     }),
     "task.cancel_request": frozenset({"task_id", "reason"}),
     "task.cancel_ack": frozenset({"task_id", "attempt_id", "stop_evidence", "reason"}),

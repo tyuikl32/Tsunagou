@@ -136,6 +136,47 @@ class LocalCommandAuthenticator:
         )
         return PrincipalContext("D", session.agent_id, session_id, connection_epoch, proof, replay_only=True)
 
+    def authenticate_reconnect_refresh(
+        self, payload: dict[str, Any], *, authorization: str | None,
+        session_id: str | None, connection_epoch: int | None,
+    ) -> PrincipalContext:
+        """Let a session that is *not* ready hand in a fresh capability report.
+
+        A degraded session cannot do business work, and it also cannot reconnect —
+        which used to leave "get well" with exactly one route: somebody issues a
+        new ticket. That is a person remembering to do the right thing at the right
+        time, so the session is allowed this one door instead:
+
+        * it proves the same thing every other branch proves (it holds the current
+          credential for this exact session and epoch);
+        * it must actually bring a report (``probe_payload``), because the whole
+          point is to be re-judged — an empty reconnect stays refused;
+        * and it reaches only ``session.reconnect``, never a business command
+          (those still authenticate through the branches above).
+
+        The report is judged by the same shared rule as admission, so this cannot
+        promote anybody by itself.
+        """
+
+        if self.authority is None or session_id is None or connection_epoch is None:
+            raise PermissionError("authentication_failed")
+        report = payload.get("probe_payload")
+        if not isinstance(report, dict) or not report:
+            raise PermissionError("authentication_failed")
+        if authorization is None or not authorization.startswith("Bearer "):
+            raise PermissionError("authentication_failed")
+        token = authorization[len("Bearer "):]
+        if not token or token != token.strip():
+            raise PermissionError("authentication_failed")
+        session = self.authority.sessions.get(session_id)
+        if (
+            session is None or not session.active
+            or connection_epoch != session.connection_epoch
+            or not self.authority.verify_token(session_id, token)
+        ):
+            raise PermissionError("authentication_failed")
+        return PrincipalContext("D", session.agent_id, session_id, connection_epoch)
+
     def authenticate_delivery_ack(
         self, authorization: str | None, *, session_id: str | None, connection_epoch: int | None,
     ) -> PrincipalContext:

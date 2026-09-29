@@ -294,6 +294,13 @@ export class CredentialHandoff {
       const payload: Record<string, unknown> = kind === "session.reconnect" ? {
         reconnect_nonce: session!.reconnect_nonce,
         expected_connection_epoch: session!.connection_epoch,
+        // A degraded session cannot use the replay door (the daemon requires a ready
+        // session for that), so it sends a fresh report: this is the one call the
+        // daemon re-judges a degraded host by (api/auth.py: authenticate_reconnect_refresh
+        // + session_reconnect in handlers). A ready session stays quiet on purpose — a
+        // flaky startup probe must not downgrade a host that is already working, and
+        // the nonce + epoch replay is the normal way back in.
+        ...(session!.baseline_status === "ready" ? {} : { probe_payload: input.baseline ?? {} }),
       } : {
         installation_id: ticket!.installation_id,
         conversation_evidence: { conversation_id: ticket!.conversation_id },

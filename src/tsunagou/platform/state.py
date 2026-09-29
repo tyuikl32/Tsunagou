@@ -704,6 +704,15 @@ class ServiceStateRuntime:
                          "changes": changes, "session_id": session_id,
                          "evidence_level": evidence_level,
                          "request_digest": canonical_digest(payload)}
+        if "baseline_status" in result:
+            # Which capability report a session handed in is a fact about the session,
+            # and "why was it not ready" is unanswerable afterwards unless it is kept.
+            # Only the *verdict* and the names of the admission rows it did not prove
+            # are copied — the report itself (references, host details) stays out.
+            event_payload["session_status"] = str(result["baseline_status"])
+            event_payload["missing_admission"] = [
+                str(name) for name in result.get("missing_admission") or []
+            ]
         seq = uow.append_event(
             lineage_id=self.lineage_id, event_type=command_kind, aggregate_ref=subject, actor_ref=actor_ref,
             payload=event_payload, subject_ref=subject, reason_code=reason,

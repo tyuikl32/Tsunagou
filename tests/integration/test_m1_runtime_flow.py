@@ -209,6 +209,20 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     }, "control")
     assert resolved["status"] == "resolved"
 
+    # The proposer's own words are answerable answers (the console sends exactly the
+    # option text the user tapped). `subject_ref` points at the project — not a task —
+    # so this proposes nothing that would block work.
+    wording = agent_call("user_decision.propose", {
+        "kind": "design.change", "proposal_ref": "project", "summary": "pick a route",
+        "choices": ["再补一轮回归", "换方案"], "expected_revisions": {"decision": 1},
+    }, main)
+    chosen = call("user_decision.resolve", {
+        "decision_id": wording["decision_id"], "choice": "再补一轮回归",
+        "expected_revisions": {"decision": wording["revision"]},
+        "proposal_digest": wording["proposal_digest"], "reason": "chose the regression round",
+    }, "control")
+    assert (chosen["status"], chosen["decision"]) == ("resolved", "再补一轮回归")
+
     completion = agent_call("project.completion.propose.main", {
         "expected_project_revision": 1, "objective_ref": "project", "outstanding_summary": "none",
         "evidence_refs": ["task:" + task["task_id"]],
@@ -234,6 +248,20 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     checkpoint_text = "\n".join(path.read_text(encoding="utf-8") for path in checkpoint_dir.glob("*.ndjson"))
     assert "secret_token" not in checkpoint_text
     assert main["secret_token"] not in checkpoint_text
+    reviews = next(
+        route.endpoint for route in rebuilt.routes
+        if getattr(route, "path", "") == "/api/v1/projects/{project_id}/reviews"
+    )
+    review_view = reviews(ProjectRegistry(tmp_path).project.project_id)  # type: ignore[union-attr]
+    # A result says "something was submitted"; the review says whether it was good
+    # enough and who said so. The console's task-acceptance column asks the second
+    # question, so the verdict has to be readable rather than re-derived from status.
+    assert [(item["round_no"], item["decision"], item["reason"]) for item in review_view["items"]] == [
+        (1, "accepted", "tests pass"),
+    ]
+    assert review_view["items"][0]["task_id"] == task["task_id"]
+    assert review_view["items"][0]["result_id"] == submitted["result_id"]
+    assert review_view["items"][0]["reviewer_agent_id"] == main["agent_id"]
     workspaces = next(
         route.endpoint for route in rebuilt.routes
         if getattr(route, "path", "") == "/api/v1/projects/{project_id}/workspaces"
@@ -327,6 +355,19 @@ def test_main_can_register_bind_and_query_multiple_project_roots(
     repositories = next(route.endpoint for route in app.routes
                          if getattr(route, "path", "") == "/api/v1/projects/{project_id}/repositories")
     assert repositories(project_id)["items"][0]["repository_id"] == repository["repository_id"]
+
+    # One call answers "what is this project?" for a console header, without
+    # re-reading the registry files or flattening the two exits above.
+    overview = next(route.endpoint for route in app.routes
+                    if getattr(route, "path", "") == "/api/v1/projects/{project_id}/overview")
+    header = overview(project_id)
+    assert header["project_id"] == project_id
+    assert header["name"] == "Roots"
+    assert header["objective"] == "multi-root"
+    assert header["lifecycle"] == "active"
+    assert header["policy_revision"] >= 1
+    assert [item["root_id"] for item in header["roots"]][-1] == registered["root_id"]
+    assert header["repositories"][-1]["repository_id"] == repository["repository_id"]
 
 
 def test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped(

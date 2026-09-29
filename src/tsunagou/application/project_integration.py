@@ -15,7 +15,7 @@ from tsunagou.platform.db.sqlite import ProjectLock
 from tsunagou.shared_kernel.digests import canonical_digest
 
 SOURCE_REPOSITORY = "https://github.com/tyuikl32/Tsunagou.git"
-GENERATOR_VERSION = "project-bootstrap-v1"
+GENERATOR_VERSION = "project-bootstrap-v2"
 START_MARKER = "<!-- TSUNAGOU:START -->"
 END_MARKER = "<!-- TSUNAGOU:END -->"
 
@@ -117,6 +117,11 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 4. 认知报告、契约接受、消息 ACK、Task 完成和 Project 完成是不同事实；ACK 不表示同意，项目完成必须由用户确认。
 5. 上游决定阻塞时保存进展并结束本轮；不相交的任务可以继续。恢复前重新读取状态，不复用过期 Grant、Lease 或旧 session 假设。
 6. 需要扩大范围、改变项目设计或处理无法协调的冲突时向主 Agent 提出；越过用户上限时建立 UserDecision，不能自行绕过。
+
+## 被拒时怎么办
+
+工具调用失败会以错误返回，形如 `{{"error": "tsunagou_error:<错误码>", "code": "...", "next_steps": [...]}}`。
+**先看错误里给出的 `next_steps` 与清单，按它做，再重试** —— 不要换一种说法反复硬试，也不要自己构造或粘贴凭据。
 
 ## 接入入口
 

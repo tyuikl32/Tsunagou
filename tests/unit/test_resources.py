@@ -1,6 +1,7 @@
 import pytest
 
 from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceService
+from tsunagou.shared_kernel.errors import ResourceConflict
 
 
 def test_prefix_conflict_matrix_and_all_or_none() -> None:
@@ -15,7 +16,7 @@ def test_prefix_conflict_matrix_and_all_or_none() -> None:
     lease = service.reserve_set(first.intent_id, execution_epoch=1)
     assert service.check_conflicts([read]) == []
     assert service.check_conflicts([write]) == [stable.key.canonical]
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ResourceConflict):
         second = service.declare_intent(
             task_id="t2", attempt_id="a2", owner_agent_id="w2", scope_digest="s",
             resources=[write, ResourceRequest(ResourceKey.named("db", "migration"), "exclusive_use")], reason="write",
@@ -62,8 +63,16 @@ def test_waiting_selection_ages_without_auto_start() -> None:
         task_id="w", attempt_id="w", owner_agent_id="w", scope_digest="s",
         resources=[ResourceRequest(ResourceKey.named("db", "migration"), "exclusive_use")], reason="wait",
     )
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ResourceConflict) as refusal:
         service.reserve_set(waiter.intent_id, execution_epoch=1, now=1)
+    # The refusal names who is in the way, until when, and who was turned away.
+    # Without that the only possible response is to retry blindly.
+    (blocked,) = refusal.value.detail["conflicts"]
+    assert blocked["holder_attempt_id"] == "h"
+    assert blocked["held_key"] == ResourceKey.named("db", "migration").canonical
+    assert blocked["holder_expires_at"] == 120
+    assert refusal.value.detail["requester"]["attempt_id"] == "w"
+    assert str(refusal.value).startswith("resource_conflict:")
     assert service.next_waiting(now=301).intent_id == waiter.intent_id
     assert all(lease.status == "active" for lease in service.lease_sets.values())
 
@@ -80,5 +89,5 @@ def test_physical_root_aliases_conflict_even_with_distinct_root_ids() -> None:
         task_id="t2", attempt_id="a2", owner_agent_id="w2", scope_digest="s",
         resources=[ResourceRequest(ResourceKey.path("root-b", "src"), "exclusive_write")], reason="alias",
     )
-    with pytest.raises(RuntimeError, match="resource_conflict"):
+    with pytest.raises(ResourceConflict, match="resource_conflict"):
         service.reserve_set(second.intent_id, execution_epoch=1)

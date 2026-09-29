@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import ResourceConflict
 from tsunagou.shared_kernel.ids import new_id
 
 
@@ -109,16 +110,41 @@ class ResourceService:
         self, requests: list[ResourceRequest], *, attempt_id: str | None = None,
         now: float | None = None,
     ) -> list[str]:
+        return sorted({
+            entry["held_key"]
+            for entry in self.conflict_holders(requests, attempt_id=attempt_id, now=now)
+        })
+
+    def conflict_holders(
+        self, requests: list[ResourceRequest], *, attempt_id: str | None = None,
+        now: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Who is standing in the way, for each requested resource already held.
+
+        ``check_conflicts`` answers "is this blocked"; this answers "by whom, and until
+        when" -- the difference between a caller that can only retry blindly and one
+        that can wait, take another path, or open a conversation. Only active leases
+        belonging to a *different* attempt count; an expired lease is not a holder, and
+        owning the lease yourself is not a conflict with yourself.
+        """
         now = time.time() if now is None else now
-        conflicts: list[str] = []
+        holders: dict[tuple[str, str], dict[str, Any]] = {}
         for lease in self.lease_sets.values():
             if lease.status != "active" or lease.expires_at <= now or lease.attempt_id == attempt_id:
                 continue
             for incoming in requests:
                 for held in lease.resources:
-                    if self._conflict(incoming, held, self.root_aliases):
-                        conflicts.append(held.key.canonical)
-        return sorted(set(conflicts))
+                    if not self._conflict(incoming, held, self.root_aliases):
+                        continue
+                    holders[(incoming.key.canonical, lease.lease_set_id)] = {
+                        "resource": incoming.key.canonical,
+                        "held_key": held.key.canonical,
+                        "mode": incoming.mode,
+                        "holder_attempt_id": lease.attempt_id,
+                        "holder_lease_set_id": lease.lease_set_id,
+                        "holder_expires_at": lease.expires_at,
+                    }
+        return [holders[key] for key in sorted(holders)]
 
     def reserve_set(
         self, intent_id: str, *, execution_epoch: int, attempt_status: str = "running",
@@ -129,10 +155,17 @@ class ResourceService:
         now = time.time() if now is None else now
         with self._lock:
             intent = self.intents[intent_id]
-            conflicts = self.check_conflicts(list(intent.resources), attempt_id=intent.attempt_id, now=now)
+            conflicts = self.conflict_holders(list(intent.resources), attempt_id=intent.attempt_id, now=now)
             if conflicts:
                 self.waiting.append((now, intent_id))
-                raise RuntimeError("resource_conflict:" + ",".join(conflicts))
+                raise ResourceConflict(
+                    conflicts,
+                    requester={
+                        "attempt_id": intent.attempt_id, "task_id": intent.task_id,
+                        "owner_agent_id": intent.owner_agent_id, "intent_id": intent.intent_id,
+                        "resource_keys": sorted(request.key.canonical for request in intent.resources),
+                    },
+                )
             ordered = tuple(sorted(intent.resources, key=lambda item: item.key.canonical))
             lease = LeaseSet(
                 new_id(), intent.attempt_id, execution_epoch, intent.scope_digest,
