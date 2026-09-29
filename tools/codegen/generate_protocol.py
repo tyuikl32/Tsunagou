@@ -15,7 +15,8 @@ REGISTRY = ROOT / "protocol/registry/commands.json"
 
 
 def _cells(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+    return [cell.strip().replace(r"\|", "|")
+            for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
 
 
 def extract_commands() -> dict[str, dict[str, Any]]:

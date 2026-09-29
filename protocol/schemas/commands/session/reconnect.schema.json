@@ -13,6 +13,18 @@
       ]
     },
     "probe_payload": {},
+    "host_binding_refresh": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"const": "codex_desktop_app"},
+        "endpoint": {"type": "string", "minLength": 1},
+        "host_generation": {"type": "string", "minLength": 1},
+        "app_version": {"type": ["string", "null"]},
+        "plugin_version": {"type": ["string", "null"]}
+      },
+      "required": ["provider", "endpoint", "host_generation"]
+    },
     "reconnect_nonce": {}
   },
   "required": [

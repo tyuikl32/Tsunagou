@@ -1,142 +1,72 @@
 # Agent 快速接入 Tsunagou
 
-这是一份给用户和 Agent 一起使用的快速接入单。Agent 负责解释状态、调用自己的 bridge 工具和指导下一步；用户负责执行控制 CLI。用户不需要把 token、ticket 或宿主私密配置粘贴给 Agent。
+用户可以直接告诉当前 Agent：“在本项目安装 Tsunagou，并作为主 Agent 加入”，或在另一个对话中说“作为 worker 加入本项目”。已有授权下，Agent 处理普通安装与接入步骤；需要用户执行时，只提供一条已填写实际路径的命令。
 
-如果还没有安装 Tsunagou，直接告诉正在目标业务项目中工作的 Agent：“在这个项目里从 GitHub 安装 Tsunagou”。安装 skill 会先保存当前 Git 项目根，再把仓库克隆到独立目录，安装 Python/Node 依赖，构建 bridge，并把接入 skill 安装到可发现的宿主 skill 目录；显式项目根会让 installer 自动完成一次 `project init`（缺失时）和 `project bootstrap`。如果用户只说“安装 Tsunagou”而没有选定业务项目，则保持 source/skill-only 安装。
+以下 Codex 自动接入代码已通过真实 daemon/MCP 进程测试；原 Desktop 会话的完整协作验收仍由 FX3/FX6 收口。测试客户端返回成功不等于该原会话已经 ready。
 
-如果项目已经通过 `project init` 初始化，也可以在安装时显式传入 `--project-root` 和 `--host`，让 installer 跳过重复初始化并调用一次 `project bootstrap`；这仍不会启动 daemon 或接入 Agent。
+## 安装与项目入口
 
-## 先判断依赖关系
+发行版源码只安装一份。安装器优先使用显式 `--source-root`，否则复用已登记安装、当前源码 checkout，首次安装才使用默认目录。安装结果含实际 source、commit、Python/bridge 版本和用户 CLI launcher；当前终端 PATH 未更新时直接使用返回的 launcher 完整路径。
 
-Tsunagou 的接入由四层组成：
+指定业务项目和宿主后，安装器执行缺失的 project init 和 project bootstrap。Codex 项目得到：
 
-| 层 | 作用 | 是否必需 |
-|---|---|---|
-| Host adapter | 识别 Codex、OpenCode、DeepSeek Harness 等宿主，并提供宿主侧配置 | 是 |
-| stdio MCP bridge | 用一次性 ticket 建立 Agent/session，之后通过 loopback HTTP 调 daemon | 是 |
-| daemon | 执行认证、授权、scope、owner、revision、epoch、幂等和 SQLite 持久化 | 是 |
-| Agent skill | 让 Agent 按固定顺序指导用户、识别 ready/degraded、使用 typed tools | 推荐；它不替代 bridge |
-| Host hook | 自动注入上下文或提醒 | 可选；不能建立身份或权限 |
+- `AGENTS.md` 中的 Tsunagou 管理区块；
+- `.tsunagou/agent-context.md`、project-integration.json、root binding 和源码引用；
+- `.agents/skills/tsunagou-project/SKILL.md`；
+- `.codex/config.toml` 中共享 MCP 的配置，保留用户其他配置。
 
-因此，正常接入不是单靠 skill，也不是 skill 和 hook 必须同时存在。安全边界在 daemon 和 bridge；skill 是 Agent 的操作向导；hook 只是宿主便利功能。当前项目内置的向导 skill 是 `.agents/skills/tsunagou-agent-onboarding/SKILL.md`。
+不要复制 Tsunagou 源码到业务仓库。未选择的宿主不会被写入配置。已有项目不重新初始化；生成规则更新用 bootstrap --refresh。
 
-## 用户执行的最小流程
+配置文件只有在 Codex 信任项目时加载；全局 MCP 登记和项目配置使用同一个服务名 tsunagou。[Codex 配置说明](https://learn.chatgpt.com/docs/config-file/config-basic)、[MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。
 
-以下命令在 PowerShell 中执行。路径和会话标识必须替换为真实值。
+## 当前会话如何加入
 
-### 1. 建立协调项目
+1. Agent 从当前项目或其子目录调用已安装 CLI；在目录外时加全局 `--project-root`。
+2. **Agent 在自己的 Codex 会话中**执行 `tsunagou agent prepare --adapter codex --role worker`。用户指定主 Agent 时用 main。此步核对真实会话、保存私有接入请求，不创建 Agent。
+3. prepare 返回完整 PowerShell 命令。Agent 已获接入授权就执行；否则把返回命令原样交给用户。命令包含已填好的 request-file 路径，用户不用寻找任何 ID 或 pipe，也不用额外 appoint。
+4. connect 启动或验证 daemon，兑换票据、保存会话、绑定原 Desktop 对话并登记共享 MCP。输出 enrolled、project_id、agent_id、role、session、host_binding、source_root、version、connected_at。
+5. **原对话自己调用** MCP `context__project_read`。身份、项目、ready session 和 host binding 正确后才报告 ready_worker/ready_main。
 
-```powershell
-$coordinationRoot = 'D:\Work\TsunagouControl'
-New-Item -ItemType Directory -Force -Path $coordinationRoot | Out-Null
-git init --quiet $coordinationRoot
+profile 只作显示标签。同一 IDE 的不同对话/subagent 由真实会话身份区分；同一对话重复 connect 或 bridge 重启复用原 Agent。共享 MCP 每次按宿主的 thread metadata 选择自己的私有状态；不能用另一会话的 session 文件顶替。
 
-$env:TSUNAGOU_PROJECT_ROOT = (Resolve-Path $coordinationRoot).Path
-$env:TSUNAGOU_STATE_DIR = Join-Path $env:TSUNAGOU_PROJECT_ROOT '.tsunagou\local'
+第一次写入 MCP 配置后，若宿主尚未加载工具，使用实际可用的重载入口；没有入口时只说明一次完整退出并重开 Codex 的动作。不要把 Ctrl+R 当作必然重启 MCP 的方法。若重启一次仍失败，读取具体错误后修配置。已经加载的共享 bridge 会在每次请求读取新接入材料，无需每添加一个 worker 都重建全部 MCP。
 
-uv run python -m tsunagou project init `
-  --coordination-root $env:TSUNAGOU_PROJECT_ROOT `
-  --name '我的协作项目' `
-  --objective '让主 Agent 和子 Agent 在同一契约下协作'
-```
+低层 agent enroll/appoint 保留作诊断入口。正常 Codex 用户无需手动填 conversation_id、agent_id、pipe 或 token。接入 Skill 本身不提供机械权限，hook 仅为可选提醒；身份和执行边界由 daemon/bridge 处理。
 
-如果 `tsunagou` 已安装到 PATH，可以把 `uv run python -m tsunagou` 替换为 `tsunagou`。
+## 多项目和查询
 
-### 2. 生成项目本地 Agent 入口
-
-安装 checkout 不会自动修改业务项目。明确选择 Tsunagou checkout 后，在同一个协调根运行：
+CLI 自动从子目录发现项目，无需每开一个终端重设环境变量。若选择让新项目复用已有项目的 daemon，在新项目目录运行：
 
 ```powershell
-uv run python -m tsunagou project bootstrap `
-  --coordination-root $env:TSUNAGOU_PROJECT_ROOT `
-  --source-root 'D:\Tools\Tsunagou' `
-  --host codex
+tsunagou daemon start --reuse 'D:\Work\ExistingProject'
+tsunagou daemon status
+tsunagou agent list --json
 ```
 
-这一步会创建 `.tsunagou/project-integration.json`、`.tsunagou/agent-context.md`、`.agents/skills/tsunagou-project/SKILL.md` 和 `AGENTS.md` 的受管区块；不会创建 Agent、任命 main、发布任务，也不会写入 token。已有用户内容会保留，受管内容变化需要 `--refresh`。
-
-### 3. 启动 daemon
-
-```powershell
-uv run python -m tsunagou daemon start --coordination-root $env:TSUNAGOU_PROJECT_ROOT --port 0
-uv run python -m tsunagou daemon status --coordination-root $env:TSUNAGOU_PROJECT_ROOT
-uv run python -m tsunagou doctor
-```
-
-成功标志是 `daemon status` 返回 running，且 `.tsunagou/local/endpoint.json`、`control.token` 和 `state.sqlite3` 已生成。控制 token 只保存在本机，不能放进对话。
-
-### 4. 用一个命令接入当前宿主会话
-
-正常接入不再要求用户查找 `conversation_id`、读取 `agent_id` 或手动复制 bridge JSON。每个主 Agent 或子 Agent 使用不同的 `--profile`，命令会创建独立的私有身份目录：
-
-```powershell
-# 如果当前目录不是 Tsunagou checkout，把 `uv run python` 改成
-# `uv run --project <Tsunagou checkout> python`。
-uv run python -m tsunagou agent connect `
-  --adapter codex `
-  --profile main `
-  --role main
-```
-
-子 Agent 使用同一命令，把 profile 和角色改为自己的值：
-
-```powershell
-uv run python -m tsunagou agent connect `
-  --adapter codex `
-  --profile worker-01 `
-  --role worker
-```
-
-命令由用户控制凭据执行，自动生成（或复用）该 profile 的会话绑定，签发一次性 ticket，写入 `.tsunagou\bridges\<adapter>-<profile>`，并在可用时执行 `codex mcp add` 注册逐会话 bridge。一个宿主对话只能使用一个 profile；新对话或 subagent 必须换 profile。`--role main` 是用户明确选择，daemon 只会在 bridge 兑换并达到 ready 后任命；Agent 不能通过 bridge 请求主权限。输出 `ticket_issued` 仍表示待宿主加载，Codex 通常需要重启或重新加载 MCP 配置。
-
-命令不会把 ticket secret、session token 或 nonce 打印到 stdout。低层 `agent enroll` 仅用于恢复和诊断；普通流程不要求用户再执行 `agent appoint`。
-
-如果输出中的 `host_registration` 是 `registered:<name>`，说明用户控制端已经
-写入 Codex MCP 配置；已经运行的 Codex Desktop 进程可能仍持有旧的 MCP inventory。
-新 profile 必须让宿主重新加载 MCP 后再调用 `context__project_read`，否则会误调用
-旧 profile 的 bridge。若输出为 `codex_not_found`，不要继续用旧 ticket；确认
-`CODEX_CLI_PATH` 或 Windows 的 Codex Desktop 安装路径可见后重新执行同一个 profile
-的 `agent connect`。daemon 应在独立终端/进程中运行，避免重启宿主时连带结束 daemon。
-
-### 5. 验证 Agent 已加入
-
-让宿主启动 bridge，然后让当前 Agent 调用 `context__project_read`。必须看到自己的 `agent_id`、`session_id`、项目上下文和非 degraded 状态，才能继续工作。仅有宿主窗口、配置文件或 `ticket_issued` 都不算加入。
-
-如果上下文显示 `ready_main`，说明 `--role main` 的用户请求已经由 daemon 应用。worker 不应执行任命，也不能通过 Full Access、另一个 HTTP 路径或修改 payload 获得主 Agent 权限。若恢复旧版本生成的 ticket，才使用低层 `agent appoint`，并且 ID 必须来自已兑换 bridge 的上下文。
+示例目录应由 Agent 换成用户实际选定的路径。--reuse 核对实际进程、源码和项目登记，复用同一端口/PID，但每项目保留独立数据库、Agent 和控制凭据。停止共享 daemon 会停止全部成员项目的服务；stop 输出全部受影响 project_ids，任务和资源所有权不会因此自动转移。从任一成员项目 start 会恢复同一个项目集合。
 
 ## 接入成功后的第一轮工作
 
-主 Agent 首次接入后先读取项目上下文，向用户报告：项目 ID、自己的 Agent/session 身份、当前角色、已有任务和未决决定。之后：
+主 Agent 读取上下文、收件箱和未决事项，报告自己的项目/角色/身份，再处理已获授权的普通工作请求：检查已有任务，发布所需任务或明确回复无需新任务；读到请求不能止步于转述。
 
-1. 用户先让 Main 通过 `project__configure` 显式开启 `auto_wake_multi_agent`（只影响之后的新协调计划），再由 Main 使用 `coordination__plan` 一次性写入 worker、依赖、验收条件、workspace 和 ResourceIntent 声明；三个 worker 都 ready 时应优先覆盖三者。
-2. daemon/adapter 记录宿主回合接受；worker 被唤醒后先从 inbox 拉取 assignment，再调用 `worker__ready`。在这个双确认之前不能 claim/acquire Lease。
-3. worker 提交理解、假设、不确定性和契约接受；分歧由主 Agent 组织处理。
-4. preflight 通过后才 start，获得当前 Attempt 的执行 Grant 和资源 Lease；Lease 由 worker 自己维护，每次 `task__progress` 同时续租 active Lease，长步骤可显式调用 `resource__renew`。bridge/daemon 不会在 worker 沉默时替它续租；响应中的 `expires_at` 和续租提示用于安排下一次主动调用。
-5. 主 Agent 负责 Git 写操作、整合和审查；worker 只提交自己的结果和证据。整合请求明确不包含 push，云端上传仍由用户完成。
-6. 用户只在重大设计、权限范围、冲突无法协调或项目完成时执行控制 CLI；唤醒失败后的接管必须调用 `coordination__takeover` 并填写原因。
+1. main 创建目标、scope、依赖及必要契约；文件任务选择工作区策略，再 ready/publish。coordination__plan 可一次创建定向分工和通知，不要求凑足固定 Worker 数量。
+2. Worker 读取分派、任务与当前 revision，调用 task__begin。成功后获得 running Attempt、scope，以及必要工作区/资源占用。无需 worker.ready 或资源续租。
+3. Worker 在范围内工作；有实际分歧时用认知/契约工具协调。等待上游决定时 task__block 并结束本轮，无关工作可继续。
+4. task__submit 自动采集结果、释放占用、撤执行权并通知 main；main 审查并控制 Git 整合。
+5. 静默、断线和同库重启不转移 owner。原 owner 新 begin 恢复原 Attempt；main 可明确 recover/takeover，旧 Attempt 此后不能提交。
+6. 项目完成、重大设计与越过用户固定边界仍由用户决定。
 
 ### 消息与唤醒
 
-`message__send` 成功后，daemon 会把消息和 delivery 持久化。普通消息仍由目标 Agent 在下一次上下文读取或 `inbox__claim` 时 pull；只有已显式 opt-in 的新协调计划才创建 WakeAttempt。Codex adapter 在没有真实 App Server evidence 时保持 `wake=unsupported`，因此不能把 host turn accepted 当作 worker.ready，也不能在 ready 前创建执行 Lease。
+message__send 保存消息、投递和 outbox；已绑定可用宿主后由 hostwake 投递到对应会话。普通消息、任务分派与结果通知共用持久消息路径。发送成功、宿主接受请求、实际回合开始和收件确认分别记录，不要求模型再提交一份 worker.ready。
 
-Main 需要提醒 worker 续租时，复用 `message__send` 发送结构化提醒，并在 payload 中带上 `assignment_id`、`task_id`、`attempt_id` 和当前 Lease 引用。提醒只记录并投递消息，不改变 Lease 到期时间；续租仍必须由 worker 调用 `task__progress` 或 `resource__renew` 完成。
+FX3/FX4/FX6 负责原 Codex 会话自动唤醒的产品接入与现场验收；底层 IPC 或 MCP 通过不能替代该验收。资源占用始终与宿主消息投递超时分开。
 
-普通 task 完成不等于项目完成。用户确认项目完成时使用当前手册中的 `project complete` 命令；checkpoint 失败时查询 Operation，再使用 `checkpoint retry`。
+普通 Task 完成不等于 Project 完成；用户按手册执行 project complete，checkpoint 失败查询 Operation 并按需 retry。
 
-## 断线和恢复
 
-先执行：
+## 断线恢复
 
-```powershell
-uv run python -m tsunagou daemon status --coordination-root $env:TSUNAGOU_PROJECT_ROOT
-uv run python -m tsunagou doctor
-uv run python -m tsunagou recover
-```
+Agent 先自行查看 daemon status、doctor、agent list --json。daemon 不可用时 connect 自动启动所选实例；可用时 bridge 复用现有 session，真正失效或宿主代次变化才 reconnect。宿主端点变更时重新 prepare/connect 同一会话，不能通过创建新身份掩盖故障。使用 project history、task history 查询已持久化的时间线。
 
-如果 daemon 正常，重新启动同一个 bridge，让它使用自己的 `bridge-session.json` reconnect。不要将旧 session token 手工放入新配置。若 session 已撤销、epoch 过期或私有 session 文件丢失，用户重新执行 `agent enroll` 或受支持的 rebind 流程；不要创建第二个身份来冒充原 Agent。
-
-## 什么时候需要 hook
-
-hook 可以在 Codex 等宿主启动或提交 prompt 时注入项目上下文，例如提醒 Agent 读取本 skill 和当前任务。它不是跨宿主机制，不能保证 OpenCode 或 DeepSeek Harness 也执行相同逻辑。除非需要自动注入上下文，否则保持 hook 关闭也不影响 bridge 的认证和协作。
-
-更完整的 CLI、HTTP 路由、错误码和安全要求见 [CLI/HTTP 使用说明书](cli-http-manual.md)；主 Agent、子 Agent 和用户的责任划分见 [子 Agent 接入指南](subagent-guide.md)。
+CLI 结果不能证明 LLM 已开始工作。完整使用方法见 [CLI/HTTP 手册](cli-http-manual.md)，角色边界见 [子 Agent 指南](subagent-guide.md)。

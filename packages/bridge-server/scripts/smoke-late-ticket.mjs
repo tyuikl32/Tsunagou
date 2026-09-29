@@ -94,7 +94,7 @@ try {
     const restarted = await client.callTool({ name: "context__project_read", arguments: {} });
     if (restarted.isError) throw new Error(restarted.content?.[0]?.text ?? "implicit_session_restart_failed");
     const after = JSON.parse(await readFile(savedPath, "utf8"));
-    if (after.agent_id !== before.agent_id || after.connection_epoch !== 2) throw new Error("implicit_session_identity_changed");
+    if (after.agent_id !== before.agent_id || after.connection_epoch !== before.connection_epoch) throw new Error("implicit_session_identity_changed");
   }
   process.stdout.write(JSON.stringify({ status: "passed", late_ticket_recovery: true, implicit_session_restart: implicitSession, agent_id: value.agent_id }) + "\n");
 } finally {

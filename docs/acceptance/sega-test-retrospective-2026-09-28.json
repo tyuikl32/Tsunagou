@@ -1,0 +1,185 @@
+{
+  "recorded_at_utc": "2026-09-28T07:50:40.489731+00:00",
+  "method": "read-only SQLite and local wake diagnostics; reconstructed summary, not restored original acceptance reports",
+  "database_path": "D:\\ALL.NET\\SegaImageManageTool\\.tsunagou\\local\\state.sqlite3",
+  "event_count": 405,
+  "event_counts": {
+    "agent.enroll": 4,
+    "agent.ticket.create.user": 6,
+    "cognition.report": 2,
+    "contract.accept": 1,
+    "contract.accept_proxy": 3,
+    "contract.propose": 4,
+    "contract.withdraw": 1,
+    "coordination.plan": 2,
+    "inbox.ack": 5,
+    "inbox.claim": 28,
+    "inbox.presented": 5,
+    "job.finished": 1,
+    "job.queued": 1,
+    "job.started": 1,
+    "message.respond": 1,
+    "message.send": 48,
+    "operation.created": 1,
+    "project.configure": 1,
+    "resource.acquire": 12,
+    "resource.intent": 14,
+    "resource.lease.expired": 12,
+    "resource.release": 1,
+    "runtime.recovery": 1,
+    "session.reconnect": 169,
+    "task.cancel_request": 2,
+    "task.claim": 11,
+    "task.create": 1,
+    "task.preflight": 12,
+    "task.progress": 10,
+    "task.publish": 1,
+    "task.ready": 1,
+    "task.recover": 2,
+    "task.review.accept": 2,
+    "task.scope.request": 4,
+    "task.scope.resolve": 4,
+    "task.start": 7,
+    "task.submit": 2,
+    "workspace.prepare": 9,
+    "workspace.result": 2,
+    "workspace.select": 11
+  },
+  "first_event_utc": "2026-09-28T02:58:34.450000+00:00",
+  "task_records": [
+    {
+      "task_id": "0a28f9e6-52c8-4d80-b805-64807da75931",
+      "status": "completed",
+      "current_attempt_id": "574a5473-5291-458b-9e86-8dd757c13e7c",
+      "first_start_utc": "2026-09-28T04:06:19.857000+00:00",
+      "submit_utc": "2026-09-28T05:17:32.054000+00:00",
+      "review_utc": "2026-09-28T05:20:06.484000+00:00",
+      "start_to_submit_seconds": 4272.197,
+      "submit_to_review_seconds": 154.43
+    },
+    {
+      "task_id": "919027fc-3449-4844-8cb2-824a136f70a9",
+      "status": "open",
+      "current_attempt_id": null,
+      "first_start_utc": null,
+      "submit_utc": null,
+      "review_utc": null,
+      "start_to_submit_seconds": null,
+      "submit_to_review_seconds": null
+    },
+    {
+      "task_id": "93ffd4c0-c4ad-4401-bccb-0f3fcacb0b31",
+      "status": "cancel_requested",
+      "current_attempt_id": null,
+      "first_start_utc": null,
+      "submit_utc": null,
+      "review_utc": null,
+      "start_to_submit_seconds": null,
+      "submit_to_review_seconds": null
+    },
+    {
+      "task_id": "ab418fd1-b3a8-48a9-9ac2-f595cd833f14",
+      "status": "completed",
+      "current_attempt_id": "92aa8651-9286-4fca-93a9-dd76c95077e7",
+      "first_start_utc": "2026-09-28T04:23:15.268000+00:00",
+      "submit_utc": "2026-09-28T05:03:26.186000+00:00",
+      "review_utc": "2026-09-28T05:20:06.524000+00:00",
+      "start_to_submit_seconds": 2410.918,
+      "submit_to_review_seconds": 1000.338
+    },
+    {
+      "task_id": "f98e9640-a150-4a22-a37a-6e58fb4ae11e",
+      "status": "cancel_requested",
+      "current_attempt_id": null,
+      "first_start_utc": null,
+      "submit_utc": null,
+      "review_utc": null,
+      "start_to_submit_seconds": null,
+      "submit_to_review_seconds": null
+    }
+  ],
+  "attempt_count": 11,
+  "orphaned_attempt_count": 9,
+  "resource_ttl_seconds": 120,
+  "contract_records": [
+    {
+      "proposal_id": "1363c5fb-9db7-419c-8138-b3260af58485",
+      "status": "proposed",
+      "participant_count": 3,
+      "participants_missing_agent_id": 3
+    },
+    {
+      "proposal_id": "6333274b-ff33-4d2d-bbd1-986ae661a208",
+      "status": "accepted",
+      "participant_count": 3,
+      "participants_missing_agent_id": 3
+    },
+    {
+      "proposal_id": "8b4d7185-3e92-4c59-bf57-ddf86d2fba4f",
+      "status": "accepted",
+      "participant_count": 1,
+      "participants_missing_agent_id": 0
+    },
+    {
+      "proposal_id": "cac23516-11ab-4c8a-aab8-4827576b4566",
+      "status": "accepted",
+      "participant_count": 2,
+      "participants_missing_agent_id": 2
+    }
+  ],
+  "wake_attempts": {
+    "0af703f8-3cc8-45c0-81c6-4242be74b181:3f45ba48-0c79-47a5-b06a-1a43e1831aab": {
+      "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "error_code": "desktop_thread_unavailable",
+      "error_message": "the attached Desktop thread cannot be resumed",
+      "evidence": [
+        {
+          "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+          "details": {
+            "evidence_kind": "mcp"
+          },
+          "evidence_digest": "sha256:7fc8f3bd14e04db25e67f756fc6201c45c084c8c305ffc0419608ec8dc0d8a34",
+          "kind": "agent_presented",
+          "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+          "status": "observed",
+          "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6"
+        }
+      ],
+      "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+      "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+      "state": "failed",
+      "thread_id_digest": null,
+      "turn_id_digest": null,
+      "updated_at": "2026-09-28T06:14:00.992692+00:00",
+      "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6"
+    }
+  },
+  "wake_diagnostics": [
+    {
+      "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "details": {
+        "connection_epoch": null
+      },
+      "diagnostic_id": "diagnostic:daa17c93-afc9-4993-bbda-e6b50bbcec93",
+      "evidence_digest": null,
+      "kind": "wake_requested",
+      "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+      "observed_at": "2026-09-28T06:14:00.890Z",
+      "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+      "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6"
+    },
+    {
+      "agent_id": "0af703f8-3cc8-45c0-81c6-4242be74b181",
+      "details": {
+        "evidence_kind": "mcp"
+      },
+      "diagnostic_id": "diagnostic:bc539ab4-8424-4554-8472-2df932d666b9",
+      "evidence_digest": "sha256:7fc8f3bd14e04db25e67f756fc6201c45c084c8c305ffc0419608ec8dc0d8a34",
+      "kind": "agent_presented",
+      "message_id": "3f45ba48-0c79-47a5-b06a-1a43e1831aab",
+      "observed_at": "2026-09-28T06:17:18.258Z",
+      "project_id": "839bdb05-c7db-474c-9517-f0e837eb5096",
+      "wake_attempt_id": "wake:369a92b4-659b-423a-b2e3-b1a5e46f70a6"
+    }
+  ]
+}

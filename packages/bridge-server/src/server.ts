@@ -19,11 +19,13 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CredentialHandoff, loadSession, type PersistedSession, type SessionCredential, type TicketFile } from "./credential-handoff.js";
+import { writePrivateJson } from "./private-file.js";
+import { withPrivateFileLock } from "./private-file-lock.js";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -74,14 +76,20 @@ function readSchemaBundleDigest(): string {
 
 const SCHEMA_BUNDLE_DIGEST = readSchemaBundleDigest();
 
-function workspaceSchema(name: "prepare" | "result"): Tool["inputSchema"] {
+function commandSchema(name: string, includeCommandId = false): Tool["inputSchema"] {
   const here = dirname(fileURLToPath(import.meta.url));
-  const relative = `schemas/commands/workspace/${name}.schema.json`;
+  const relative = `schemas/commands/${name.replaceAll(".", "/")}.schema.json`;
   for (const root of [join(here, "..", "protocol"), join(here, "..", "..", "..", "protocol")]) {
     const path = join(root, relative);
-    if (existsSync(path)) return JSON.parse(readFileSync(path, "utf-8")) as Tool["inputSchema"];
+    if (existsSync(path)) {
+      const schema = JSON.parse(readFileSync(path, "utf-8")) as Tool["inputSchema"];
+      if (includeCommandId) schema.properties = { ...schema.properties, command_id: {
+        type: "string", description: "Optional envelope idempotency key. The bridge removes it from the business payload.",
+      } };
+      return schema;
+    }
   }
-  throw new Error("workspace_schema_unavailable");
+  throw new Error("command_schema_unavailable");
 }
 
 interface ToolSpec {
@@ -90,16 +98,6 @@ interface ToolSpec {
   description: string;
   inputSchema: Tool["inputSchema"];
 }
-
-/**
- * The generic stdio bridge has no host reverse-wake transport of its own. Keep
- * this explicit in diagnostics until a host adapter supplies verified evidence;
- * registering the status/ready tools below does not claim that a wake occurred.
- */
-const BRIDGE_WAKE_CAPABILITY = {
-  status: "unsupported" as const,
-  evidence: "stdio_bridge_host_wake_transport_unavailable",
-};
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -118,6 +116,7 @@ function config(): {
   projectRoot: string;
   stateDir: string;
   hostIdCandidates: string[];
+  desktopWake: boolean;
 } {
   const stateDir = env("TSUNAGOU_STATE_DIR", join(homedir(), ".tsunagou"));
   const projectRoot = env("TSUNAGOU_PROJECT_ROOT");
@@ -128,6 +127,7 @@ function config(): {
     sessionFile: process.env.TSUNAGOU_SESSION_FILE || undefined,
     projectRoot,
     stateDir,
+    desktopWake: env("TSUNAGOU_DESKTOP_WAKE") === "1",
     hostIdCandidates: env(
       "TSUNAGOU_HOST_ID_ENV",
       "CODEX_SESSION_ID,CODEX_THREAD_ID,CODEX_CONVERSATION_ID,CODEX_ROLLOUT_ID,CODEX_AGREEMENT_ID",
@@ -208,33 +208,24 @@ function buildBaseline(opts: {
 }
 
 const TOOLS: readonly ToolSpec[] = [
-  { name: "task__create", command_kind: "task.create", description: "Create, ready and publish a task in this coordination scope (main-authority only).", inputSchema: { type: "object", required: ["title", "objective"], properties: { title: { type: "string" }, objective: { type: "string" }, parent_task_id: { type: "string" }, blocks: { type: "array", items: { type: "string" } }, execution_scope: { type: "object" } }, additionalProperties: false } },
+  { name: "task__begin", command_kind: "task.begin", description: "Start a task in one operation, or recover the same running attempt after reconnect. Read the current task revision first.", inputSchema: commandSchema("task.begin") },
+  { name: "task__create", command_kind: "task.create", description: "Create a task plan; empty execution_scope is a non-file task. Only explicit required_contract_ids block execution.", inputSchema: commandSchema("task.create") },
   { name: "task__ready", command_kind: "task.ready", description: "Mark a draft task ready for publication (main-authority only).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__publish", command_kind: "task.publish", description: "Publish a ready task so workers can claim it (main-authority only).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "task__update_plan", command_kind: "task.update_plan", description: "Update a task plan before an attempt starts (main-authority only).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, title: { type: "string" }, objective: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
+  { name: "task__update_plan", command_kind: "task.update_plan", description: "Update an unstarted plan or its explicit contract dependencies.", inputSchema: commandSchema("task.update_plan") },
   { name: "task__edge_add", command_kind: "task.edge.add", description: "Add a blocking dependency between tasks (main-authority only).", inputSchema: { type: "object", required: ["source_task_id", "target_task_id"], properties: { source_task_id: { type: "string" }, target_task_id: { type: "string" }, kind: { type: "string" } }, additionalProperties: false } },
   { name: "task__edge_remove", command_kind: "task.edge.remove", description: "Remove a blocking dependency between tasks (main-authority only).", inputSchema: { type: "object", required: ["source_task_id", "target_task_id"], properties: { source_task_id: { type: "string" }, target_task_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "task__claim", command_kind: "task.claim", description: "Claim a task for this agent (preparation, not execution).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" } }, additionalProperties: false } },
-  { name: "task__resume", command_kind: "task.resume", description: "Resume a previously claimed task (preparation, not execution).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, expected_execution_epoch: { type: "integer" }, expected_revisions: { type: "object" } }, additionalProperties: false } },
-  { name: "task__preflight", command_kind: "task.preflight", description: "Run a preflight check on a claimed task attempt (preparation, not execution).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, expected_revisions: { type: "object" } }, additionalProperties: false } },
-  { name: "task__start", command_kind: "task.start", description: "Begin executing a claimed task after preflight; issues the execution grant for this attempt.", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, preflight_id: { type: "string" }, expected_execution_epoch: { type: "integer" } }, additionalProperties: false } },
   { name: "task__progress", command_kind: "task.progress", description: "Record progress on a running attempt (execution command).", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, summary: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
-  { name: "task__block", command_kind: "task.block", description: "Mark a task blocked with a reason.", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, reason_code: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
+  { name: "task__block", command_kind: "task.block", description: "Mark a task blocked with a reason.", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, reason_code: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__cancel_request", command_kind: "task.cancel_request", description: "Request cancellation of a task (main-authority only).", inputSchema: { type: "object", required: ["task_id", "reason"], properties: { task_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__cancel_ack", command_kind: "task.cancel_ack", description: "Acknowledge cancellation after stopping the owned attempt.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "reason"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, reason: { type: "string" }, stop_evidence: { type: "object" } }, additionalProperties: false } },
   { name: "task__fail", command_kind: "task.fail", description: "Mark the owned attempt failed with explicit evidence.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "reason"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, stop_evidence: { type: "object" } }, additionalProperties: false } },
   { name: "task__recover", command_kind: "task.recover", description: "Recover an orphaned or blocked attempt (main-authority only).", inputSchema: { type: "object", required: ["task_id", "expected_attempt_id", "disposition"], properties: { task_id: { type: "string" }, expected_attempt_id: { type: "string" }, disposition: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__scope_request", command_kind: "task.scope.request", description: "Request a task scope expansion as the current owner.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "requested_scope", "reason"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, requested_scope: { type: "object" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__scope_resolve", command_kind: "task.scope.resolve", description: "Approve or reject a pending task scope request (main-authority only).", inputSchema: { type: "object", required: ["scope_request_id", "choice"], properties: { scope_request_id: { type: "string" }, choice: { type: "string" }, approved_scope: { type: "object" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "task__submit", command_kind: "task.submit", description: "Submit the work for a started attempt (execution command).", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, summary: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, artifact_refs: { type: "array", items: { type: "string" } }, workspace_result_ref: { type: "string" } } } },
+  { name: "task__submit", command_kind: "task.submit", description: "Submit the owned running attempt; workspace results and resource release are automatic.", inputSchema: commandSchema("task.submit") },
   { name: "task__self_accept", command_kind: "task.self_accept", description: "Self-accept a result when task policy permits it.", inputSchema: { type: "object", required: ["task_id", "result_id", "result_digest"], properties: { task_id: { type: "string" }, result_id: { type: "string" }, result_digest: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
-  { name: "resource__intent", command_kind: "resource.intent", description: "Declare the resources required by a task attempt.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "resources"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, resources: { type: "array", items: { type: "object" } }, scope_digest: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "resource__acquire", command_kind: "resource.acquire", description: "Acquire the lease set for a declared resource intent.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "intent_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, intent_id: { type: "string" }, intent_revision: { type: "integer" }, scope_digest: { type: "string" } }, additionalProperties: false } },
-  { name: "resource__release", command_kind: "resource.release", description: "Release resources held by a task attempt.", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "resource__renew", command_kind: "resource.renew", description: "Renew the active resource lease for a running attempt.", inputSchema: { type: "object", required: ["lease_set_id", "task_id", "attempt_id"], properties: { lease_set_id: { type: "string" }, task_id: { type: "string" }, attempt_id: { type: "string" }, scope_digest: { type: "string" } }, additionalProperties: false } },
-  { name: "workspace__select", command_kind: "workspace.select", description: "Select an isolation driver for the task attempt.", inputSchema: { type: "object", required: ["task_id", "attempt_id", "driver_kind"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, driver_kind: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, hard_constraints: { type: "array", items: { type: "string" } }, input_digest: { type: "string" }, risk_submission_ref: { type: "string" } }, additionalProperties: false } },
-  { name: "workspace__prepare", command_kind: "workspace.prepare", description: "Prepare the selected workspace and record its baseline.", inputSchema: workspaceSchema("prepare") },
-  { name: "workspace__result", command_kind: "workspace.result", description: "Record the resulting workspace manifest after execution.", inputSchema: workspaceSchema("result") },
+  { name: "workspace__select", command_kind: "workspace.select", description: "Choose a task workspace policy once before execution; main prepares physical Git paths.", inputSchema: commandSchema("workspace.select") },
   { name: "workspace__integrate", command_kind: "workspace.integrate", description: "Create a Main-owned local integration request from a worker result; this never pushes.", inputSchema: { type: "object", required: ["source_result_ref", "target_repository_id", "target_baseline_digest", "plan_digest", "reason"], properties: { source_result_ref: { type: "string" }, target_repository_id: { type: "string" }, target_baseline_digest: { type: "string" }, plan_digest: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__review_accept", command_kind: "task.review.accept", description: "Accept a submitted task result as the designated reviewer.", inputSchema: { type: "object", required: ["task_id", "result_id", "result_digest", "slot_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, result_id: { type: "string" }, result_digest: { type: "string" }, slot_id: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
   { name: "task__review_request_changes", command_kind: "task.review.request_changes", description: "Request changes to a submitted task result as the designated reviewer.", inputSchema: { type: "object", required: ["task_id", "result_id", "result_digest", "slot_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, result_id: { type: "string" }, result_digest: { type: "string" }, slot_id: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
@@ -242,29 +233,28 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "discrepancy__create", command_kind: "discrepancy.create", description: "Create a visible cognition discrepancy from existing reports.", inputSchema: { type: "object", required: ["subject_ref", "report_refs", "severity", "summary"], properties: { subject_ref: { type: "string" }, report_refs: { type: "array", items: { type: "string" } }, severity: { type: "string" }, summary: { type: "string" }, participants: { type: "array" }, affected_actions: { type: "array" } }, additionalProperties: false } },
   { name: "discrepancy__advance", command_kind: "discrepancy.advance", description: "Advance a discrepancy into clarification or negotiation.", inputSchema: { type: "object", required: ["discrepancy_id", "status"], properties: { discrepancy_id: { type: "string" }, status: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
   { name: "discrepancy__resolve", command_kind: "discrepancy.resolve", description: "Resolve a discrepancy by consensus, dismissal or explicit override (main-authority only).", inputSchema: { type: "object", required: ["discrepancy_id", "kind"], properties: { discrepancy_id: { type: "string" }, kind: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
-  { name: "contract__propose", command_kind: "contract.propose", description: "Propose a coordination contract with required/optional participants.", inputSchema: { type: "object", properties: { payload: { type: "object" }, participants_required: { type: "array" }, participants_optional: { type: "array" } }, additionalProperties: false } },
+  { name: "contract__propose", command_kind: "contract.propose", description: "Propose a contract with explicit slot and agent_id participants.", inputSchema: commandSchema("contract.propose") },
   { name: "contract__accept", command_kind: "contract.accept", description: "Accept a specific contract proposal digest as a participant slot.", inputSchema: { type: "object", required: ["proposal_id", "participant_slot", "proposal_digest"], properties: { proposal_id: { type: "string" }, participant_slot: { type: "string" }, proposal_digest: { type: "string" } }, additionalProperties: false } },
   { name: "contract__accept_proxy", command_kind: "contract.accept_proxy", description: "Accept a contract slot through an explicit main-authority proxy.", inputSchema: { type: "object", required: ["proposal_id", "participant_slot_id", "proposal_digest"], properties: { proposal_id: { type: "string" }, participant_slot_id: { type: "string" }, proposal_digest: { type: "string" }, proxy_policy_ref: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "contract__reject", command_kind: "contract.reject", description: "Reject a proposed contract as its participating agent.", inputSchema: { type: "object", required: ["proposal_id", "proposal_digest", "reason"], properties: { proposal_id: { type: "string" }, proposal_digest: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array" } }, additionalProperties: false } },
   { name: "contract__withdraw", command_kind: "contract.withdraw", description: "Withdraw a still-proposed contract created by this agent.", inputSchema: { type: "object", required: ["proposal_id", "reason"], properties: { proposal_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "durability__reconcile", command_kind: "durability.reconcile", description: "Retry a failed checkpoint materialization after the project is completed (main-authority only).", inputSchema: { type: "object", required: ["reason"], properties: { scope_refs: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "inbox__claim", command_kind: "inbox.claim", description: "Claim this agent's inbox deliveries.", inputSchema: { type: "object", properties: { limit: { type: "integer" } }, additionalProperties: false } },
-  { name: "inbox__fetch", command_kind: "inbox.fetch", description: "Fetch one inbox message by id.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, delivery_lease_id: { type: "string" } }, additionalProperties: false } },
-  { name: "inbox__presented", command_kind: "inbox.presented", description: "Record that a delivery was presented with an evidence digest.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, evidence_digest: { type: "string" }, evidence_kind: { type: "string" } }, additionalProperties: false } },
-  { name: "inbox__ack", command_kind: "inbox.ack", description: "Acknowledge a presented inbox delivery.", inputSchema: { type: "object", required: ["message_id"], properties: { message_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
-  { name: "message__send", command_kind: "message.send", description: "Send a message to another agent.", inputSchema: { type: "object", required: ["recipient_agent_id"], properties: { command_id: { type: "string", description: "Optional idempotency key. Reusing this id with different message input is rejected as a conflict." }, recipient_agent_id: { type: "string" }, kind: { type: "string" }, subject_ref: { type: "string" }, summary: { type: "string" }, payload: { type: "object" }, priority: { type: "integer" }, response_contract: { type: "object", properties: { required: { type: "boolean" }, schema: { type: "object" } } }, in_reply_to: { type: "string" } } } },
-  { name: "message__respond", command_kind: "message.respond", description: "Fulfill a response obligation on a received message.", inputSchema: { type: "object", required: ["obligation_id", "response_message_id"], properties: { obligation_id: { type: "string" }, response_message_id: { type: "string" } }, additionalProperties: false } },
-  { name: "context__project_read", command_kind: "context.project_read", description: "Read this agent's project context: identity, role, scope capabilities and owned tasks.", inputSchema: { type: "object", additionalProperties: false } },
+  { name: "inbox__claim", command_kind: "inbox.claim", description: "Claim this agent's inbox summaries; fetch a message to read its full payload.", inputSchema: commandSchema("inbox.claim") },
+  { name: "inbox__fetch", command_kind: "inbox.fetch", description: "Read a received message's full payload, reply link and response obligations by message_id.", inputSchema: commandSchema("inbox.fetch") },
+  { name: "inbox__presented", command_kind: "inbox.presented", description: "Record a presentation statement with optional evidence metadata; this does not verify evidence strength.", inputSchema: commandSchema("inbox.presented") },
+  { name: "inbox__ack", command_kind: "inbox.ack", description: "Acknowledge a received delivery; this does not fulfill its response obligation.", inputSchema: commandSchema("inbox.ack") },
+  { name: "message__send", command_kind: "message.send", description: "Send a message to one agent. To reply, set in_reply_to to the received message_id.", inputSchema: commandSchema("message.send", true) },
+  { name: "message__respond", command_kind: "message.respond", description: "Fulfill a received response obligation using the message_id of an already-sent linked reply.", inputSchema: commandSchema("message.respond") },
+  { name: "context__project_read", command_kind: "context.project_read", description: "Read this agent's identity, role, scope capabilities, owned and open tasks with revisions, execution scopes and dependencies needed to begin.", inputSchema: { type: "object", additionalProperties: false } },
   { name: "project__configure", command_kind: "project.configure", description: "Enable or disable project-level automatic worker wake for future coordination plans (main-authority only).", inputSchema: { type: "object", required: ["policy_patch", "reason"], properties: { policy_patch: { type: "object", properties: { auto_wake_multi_agent: { type: "boolean" } }, additionalProperties: false }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "decision__propose", command_kind: "user_decision.propose", description: "Propose a decision that requires user input (main-authority only).", inputSchema: { type: "object", required: ["kind", "proposal_ref", "choices", "summary"], properties: { kind: { type: "string" }, proposal_ref: { type: "string" }, choices: { type: "array", items: { type: "object" } }, summary: { type: "string" }, proposal_digest: { type: "string" }, expected_revisions: { type: "object" } }, additionalProperties: false } },
   { name: "project__completion_propose", command_kind: "project.completion.propose.main", description: "Propose project completion for user confirmation (main-authority only).", inputSchema: { type: "object", required: ["objective_ref"], properties: { objective_ref: { type: "string" }, outstanding_summary: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, expected_project_revision: { type: "integer" } }, additionalProperties: false } },
-  { name: "coordination__plan", command_kind: "coordination.plan", description: "Create an atomic Main-owned assignment plan and durable wake attempts (main-authority only).", inputSchema: { type: "object", required: ["objective", "assignments"], properties: { objective: { type: "string" }, auto_wake: { type: "boolean" }, wake_deadline_seconds: { type: "number" }, assignments: { type: "array", items: { type: "object", required: ["assigned_worker_id", "title", "task_objective"], properties: { assigned_worker_id: { type: "string" }, title: { type: "string" }, task_objective: { type: "string" }, parent_task_id: { type: "string" }, blocks: { type: "array", items: { type: "string" } }, dependencies: { type: "array", items: { type: "string" } }, acceptance_conditions: { type: "object" }, workspace: { type: "object" }, resource_intent: { type: "object" }, execution_scope: { type: "object" } }, additionalProperties: false } } }, additionalProperties: false } },
-  { name: "worker__ready", command_kind: "worker.ready", description: "Confirm that this worker was woken, presented its assignment and is ready to claim it (worker-only). This does not acquire a Lease.", inputSchema: { type: "object", required: ["assignment_id", "wake_attempt_id"], properties: { assignment_id: { type: "string" }, wake_attempt_id: { type: "string" } }, additionalProperties: false } },
+  { name: "coordination__plan", command_kind: "coordination.plan", description: "Create Main-owned task assignments and durable inbox messages.", inputSchema: commandSchema("coordination.plan") },
   { name: "coordination__takeover", command_kind: "coordination.takeover", description: "Explicitly let Main take over a worker assignment after recording the reason (main-authority only).", inputSchema: { type: "object", required: ["assignment_id", "takeover_reason"], properties: { assignment_id: { type: "string" }, takeover_reason: { type: "string" } }, additionalProperties: false } },
 ];
 
 class HttpTransport {
-  public constructor(private readonly baseUrl: string) {}
+  public constructor(private readonly baseUrl: string, private readonly projectId?: string) {}
 
   public async dispatch(
     kind: string,
@@ -289,16 +279,20 @@ class HttpTransport {
         authorization: `Bearer ${session.secret_token}`,
         "tsunagou-session-id": session.session_id,
         "tsunagou-connection-epoch": String(session.connection_epoch),
+        ...(this.projectId ? { "tsunagou-project-id": this.projectId } : {}),
       },
       body: JSON.stringify(envelope),
     });
     const body = (await response.json().catch(() => ({}))) as {
       command_hash?: string;
       result?: unknown;
-      detail?: { code?: string };
+      detail?: { code?: string; blockers?: unknown[] };
     };
     if (!response.ok) {
       const code = body.detail?.code ?? `http_${response.status}`;
+      if (code === "resource_conflict" && body.detail?.blockers) {
+        throw new Error(`tsunagou_error:${code}:${JSON.stringify({ blockers: body.detail.blockers })}`);
+      }
       throw new Error(`tsunagou_error:${code}`);
     }
     return body.result ?? {};
@@ -312,154 +306,182 @@ function continuityRefs(previousDigest: string | undefined, currentDigest: strin
   return previousDigest === currentDigest ? ["resume:same_digest"] : ["resume:changed_digest"];
 }
 
-async function main(): Promise<void> {
-  const cfg = config();
-  const hostIdentity = readHostIdentity(cfg.hostIdCandidates);
-  let hostDigest = hostIdentity?.digest;
-  const projectDigest = cfg.projectRoot ? readProjectDigest(cfg.projectRoot) : undefined;
-  const transport = new HttpTransport(readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl);
+type RoutedConfig = ReturnType<typeof config> & {
+  conversationId?: string;
+  projectId?: string;
+  desktopEndpoint?: string;
+};
 
-  // The MCP process may outlive the CLI operation that writes its ticket or
-  // session file.  Do not snapshot admission files only once at process boot:
-  // Codex keeps a stdio bridge alive across `mcp add`/re-enrollment.
-  let bootstrapTicket: TicketFile | undefined;
-  // A bridge credential belongs to one host conversation. Never use a global
-  // ~/.tsunagou/bridge-session.json: when Codex/OpenCode launches several
-  // conversations from the same IDE, that file would silently make them one
-  // worker. Explicit TSUNAGOU_SESSION_FILE remains supported for a caller
-  // that deliberately provisions one private file per conversation.
-  let conversationBindingDigest = hostDigest;
-  let sessionFile = cfg.sessionFile ?? (
-    conversationBindingDigest
-      ? join(cfg.stateDir, "sessions", `bridge-session-${conversationBindingDigest.slice(0, 32)}.json`)
-      : undefined
-  );
-  let session: PersistedSession | undefined = sessionFile ? loadSession(sessionFile) : undefined;
-  let observedContinuity = continuityRefs(session?.host_conversation_id_digest, hostDigest);
+function configurationForRequest(request: CallToolRequest): RoutedConfig {
+  const routingDir = env("TSUNAGOU_ROUTING_DIR");
+  const rawIdentity = request.params._meta?.threadId;
+  const identity = typeof rawIdentity === "string" && rawIdentity ? rawIdentity : undefined;
+  if (!routingDir) {
+    const fixed = config();
+    const manifest = join(fixed.projectRoot, ".tsunagou", "project.json");
+    const projectId = fixed.projectRoot && existsSync(manifest)
+      ? JSON.parse(readFileSync(manifest, "utf8")).project_id as string : undefined;
+    return { ...fixed, projectId, conversationId: identity };
+  }
+  // Shared MCP processes may serve many chats. Their process environment must
+  // never pick an identity for a request whose host metadata is absent.
+  if (!identity) throw new Error("host_request_identity_required");
+  const path = join(routingDir, hash(identity) + ".json");
+  if (!existsSync(path)) throw new Error("not_enrolled:run_agent_connect");
+  let route: Record<string, unknown>;
+  try { route = JSON.parse(readFileSync(path, "utf8")); }
+  catch { throw new Error("private_route_invalid"); }
+  if (route.format_version !== 1 || route.conversation_id !== identity) throw new Error("host_route_identity_mismatch");
+  for (const key of ["project_id", "project_root", "daemon_state_dir", "ticket_file", "session_file", "state_dir"]) {
+    if (typeof route[key] !== "string" || !route[key]) throw new Error("private_route_invalid");
+  }
+  return {
+    httpUrl: "", daemonStateDir: route.daemon_state_dir as string,
+    ticketFile: route.ticket_file as string, sessionFile: route.session_file as string,
+    stateDir: route.state_dir as string, projectRoot: route.project_root as string,
+    projectId: route.project_id as string, conversationId: identity,
+    hostIdCandidates: [], desktopWake: true,
+    desktopEndpoint: process.env.CODEX_APP_TOOLS_PIPE_PATH || (route.endpoint as string | undefined),
+  };
+}
 
-  let recoveryError: string | undefined;
-  async function attemptSessionRecovery(forceReconnect = false): Promise<void> {
-    try {
-      bootstrapTicket = cfg.ticketFile && existsSync(cfg.ticketFile)
-        ? readTicketFile(cfg.ticketFile) : undefined;
-      const ticketBinding = bootstrapTicket ? hash(`conversation_id:${bootstrapTicket.conversation_id}`) : undefined;
-      if (!cfg.sessionFile && ticketBinding) {
-        // When the host exposes stable identity, use the same pathname before
-        // and after single-use ticket cleanup so restart can find the journal.
-        const fileIdentity = hostIdentity?.digest ?? ticketBinding;
-        sessionFile = join(cfg.stateDir, "sessions", `bridge-session-${fileIdentity.slice(0, 32)}.json`);
+async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<string, unknown>, commandId: string, restoreOnly = false): Promise<unknown> {
+  const ticket = cfg.ticketFile && existsSync(cfg.ticketFile) ? readTicketFile(cfg.ticketFile) : undefined;
+  const expectedBinding = cfg.conversationId ? hash("conversation_id:" + cfg.conversationId) : undefined;
+  const hostIdentity = cfg.conversationId ? { digest: expectedBinding!, envName: "_meta.threadId" } : readHostIdentity(cfg.hostIdCandidates);
+  if (cfg.conversationId && ticket && ticket.conversation_id !== cfg.conversationId) throw new Error("host_conversation_mismatch");
+  const ticketBinding = ticket ? hash("conversation_id:" + ticket.conversation_id) : undefined;
+  const fileIdentity = hostIdentity?.digest ?? ticketBinding;
+  const sessionFile = cfg.sessionFile ?? (fileIdentity
+    ? join(cfg.stateDir, "sessions", "bridge-session-" + fileIdentity.slice(0, 32) + ".json") : undefined);
+  if (!sessionFile) throw new Error("not_enrolled:no_ticket_or_session_file");
+  const prior = loadSession(sessionFile);
+  const conversationBindingDigest = expectedBinding ?? ticketBinding ?? prior?.conversation_binding_digest ?? fileIdentity;
+  if (!conversationBindingDigest) throw new Error("conversation_identity_required_for_session_file");
+  // No global session cache: each call routes first, then loads only its private
+  // credential. Handoff's mutex/journal fences concurrent rotation and replay.
+  const hostDigest = hostIdentity?.digest ?? prior?.host_conversation_id_digest ?? ticketBinding;
+  const endpoint = cfg.desktopWake ? cfg.desktopEndpoint ?? process.env.CODEX_APP_TOOLS_PIPE_PATH : undefined;
+  const refresh = endpoint ? {
+    provider: "codex_desktop_app" as const, endpoint, host_generation: hash(endpoint),
+  } : undefined;
+  const baseUrl = readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl;
+  if (!baseUrl) throw new Error("daemon_endpoint_not_configured");
+  const handoff = new CredentialHandoff({
+    baseUrl, projectId: cfg.projectId, protocolVersion: PROTOCOL_VERSION, schemaBundleDigest: SCHEMA_BUNDLE_DIGEST,
+    sessionFile, conversationBindingDigest, hostDigest,
+  });
+  const recover = async (forceReconnect = false): Promise<PersistedSession> => {
+    const current = await handoff.recover({
+      ticket, ticketFile: cfg.ticketFile || undefined,
+      forceReconnect,
+      baseline: buildBaseline({
+        hostDigest, projectDigest: readProjectDigest(cfg.projectRoot), tools: TOOLS,
+        continuityRefs: prior ? continuityRefs(prior.host_conversation_id_digest, hostDigest)
+          : ticket ? ["ticket:bound_conversation"] : undefined,
+      }),
+      hostBindingRefresh: refresh,
+    });
+    if (!current) throw new Error("not_enrolled:no_ticket_or_session_file");
+    return current;
+  };
+  let session = await recover();
+  if (refresh && session.host_binding_generation !== refresh.host_generation) session = await recover();
+  if (refresh && cfg.conversationId && env("TSUNAGOU_ROUTING_DIR")) {
+    const routeFile = join(env("TSUNAGOU_ROUTING_DIR"), hash(cfg.conversationId) + ".json");
+    await withPrivateFileLock(routeFile, () => {
+      const route = JSON.parse(readFileSync(routeFile, "utf8"));
+      const saved = loadSession(sessionFile);
+      if (route.conversation_id === cfg.conversationId && saved?.host_binding_generation === refresh.host_generation
+          && route.endpoint !== refresh.endpoint) writePrivateJson(routeFile, { ...route, endpoint: refresh.endpoint });
+    });
+  }
+  if (restoreOnly) return undefined;
+  const transport = new HttpTransport(baseUrl, cfg.projectId);
+  let result: unknown;
+  try {
+    result = await transport.dispatch(kind, payload, session, commandId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("authentication_failed") && !message.includes("stale_connection_epoch")
+        && !message.includes("session_not_found")) throw error;
+    session = await recover(true);
+    result = await transport.dispatch(kind, payload, session, commandId);
+  }
+  return result;
+}
+
+let restoringBindings = false;
+async function restoreDesktopBindings(): Promise<void> {
+  const directory = env("TSUNAGOU_ROUTING_DIR");
+  const endpoint = env("CODEX_APP_TOOLS_PIPE_PATH");
+  if (!directory || !endpoint || !existsSync(directory) || restoringBindings) return;
+  restoringBindings = true;
+  try {
+    // A shared bridge is a credential transport for already enrolled chats.
+    // Restore their endpoint before a wake needs it; no task/inbox is read and
+    // this is not evidence that their LLMs have started or processed anything.
+    for (const name of readdirSync(directory)) {
+      if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
+      try {
+        const route = JSON.parse(readFileSync(join(directory, name), "utf8"));
+        if (typeof route.conversation_id !== "string" || hash(route.conversation_id) + ".json" !== name
+            || typeof route.session_file !== "string") continue;
+        const prior = loadSession(route.session_file);
+        if (!prior || prior.host_binding_generation === hash(endpoint)) continue;
+        const cfg = configurationForRequest({ method: "tools/call", params: {
+          name: "context__project_read", _meta: { threadId: route.conversation_id },
+        } });
+        await executeTool(cfg, "context.project_read", {}, randomUUID(), true);
+      } catch {
+        // One stopped project must not block others; the next real call can
+        // retry its pending credential exchange after that daemon returns.
+        process.stderr.write("[tsunagou-bridge] binding_restore_pending\n");
       }
-      if (!sessionFile) {
-        session = undefined;
-        recoveryError = "not_enrolled:no_ticket_or_session_file";
-        return;
-      }
-      const persisted = loadSession(sessionFile);
-      conversationBindingDigest = ticketBinding ?? persisted?.conversation_binding_digest ?? hostDigest;
-      hostDigest ??= persisted?.host_conversation_id_digest ?? ticketBinding;
-      if (!conversationBindingDigest) throw new Error("conversation_identity_required_for_session_file");
-      observedContinuity = persisted
-        ? continuityRefs(persisted.host_conversation_id_digest, hostDigest)
-        : bootstrapTicket ? ["ticket:bound_conversation"] : undefined;
-      const handoff = new CredentialHandoff({
-        baseUrl: readDaemonUrl(cfg.daemonStateDir) ?? cfg.httpUrl,
-        protocolVersion: PROTOCOL_VERSION, schemaBundleDigest: SCHEMA_BUNDLE_DIGEST,
-        sessionFile, conversationBindingDigest, hostDigest,
-      });
-      session = await handoff.recover({
-        ticket: bootstrapTicket, ticketFile: cfg.ticketFile || undefined, forceReconnect,
-        baseline: buildBaseline({ hostDigest, projectDigest, continuityRefs: observedContinuity, tools: TOOLS }),
-      });
-      recoveryError = undefined;
-    } catch (error) {
-      session = undefined;
-      const message = error instanceof Error ? error.message : "credential_recovery_failed";
-      recoveryError = /^[a-z][a-z0-9_:]{0,160}$/.test(message) ? message : "credential_recovery_failed";
-      process.stderr.write(`[tsunagou-bridge] recovery failed: ${recoveryError}\n`);
     }
+  } finally {
+    restoringBindings = false;
   }
+}
 
-  await attemptSessionRecovery();
-  let recoveryPromise: Promise<void> | undefined;
-  async function ensureSession(forceReconnect = false): Promise<void> {
-    if (session !== undefined && !forceReconnect) return;
-    recoveryPromise ??= attemptSessionRecovery(forceReconnect).finally(() => { recoveryPromise = undefined; });
-    await recoveryPromise;
-  }
-
+async function main(): Promise<void> {
   const server = new Server(
     { name: "tsunagou", version: "0.1.0" },
     {
       capabilities: { tools: {} },
-      instructions: (
-        "Tsunagou is the coordination authority. When a host turn is started "
-        + "for coordination, call context__project_read first, then inbox__claim "
-        + "and inbox__fetch/presented for the relevant delivery. Do not use shell "
-        + "or infer project state when a typed Tsunagou tool is available."
-      ),
+      instructions: "Read context__project_read and inbox on each coordination turn. "
+        + "Use task__begin before work, task__submit for delivery, task__block before waiting. "
+        + "Main handles routine worker requests within existing authorization; only major decisions require the user.",
     },
   );
-
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
   }));
-
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     const tool = TOOLS.find((candidate) => candidate.name === request.params.name);
-    if (tool === undefined) {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "unknown_tool" }) }], isError: true };
-    }
+    if (!tool) return { content: [{ type: "text" as const, text: JSON.stringify({ error: "unknown_tool" }) }], isError: true };
     try {
-      await ensureSession();
-      if (session === undefined) throw new Error(recoveryError ?? "not_enrolled:no_ticket_or_session_file");
+      const cfg = configurationForRequest(request);
       const args = { ...((request.params.arguments ?? {}) as Record<string, unknown>) };
-      const commandId = typeof args.command_id === "string" ? args.command_id : undefined;
-      if ("command_id" in args) {
-        delete args.command_id;
-      }
-      let result: unknown;
-      try {
-        result = await transport.dispatch(tool.command_kind, args, session, commandId);
-      } catch (error) {
-        // A daemon restart or an external rebind can invalidate the in-memory
-        // epoch while this stdio process remains alive. Re-read the private
-        // session/ticket files and retry once before surfacing the error.
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("authentication_failed") && !message.includes("stale_connection_epoch")
-            && !message.includes("session_not_found")) throw error;
-        session = undefined;
-        await ensureSession(true);
-        if (session === undefined) throw error;
-        result = await transport.dispatch(tool.command_kind, args, session, commandId);
-      }
+      const commandId = typeof args.command_id === "string" && args.command_id.trim() ? args.command_id.trim() : randomUUID();
+      delete args.command_id;
+      const result = await executeTool(cfg, tool.command_kind, args, commandId);
+      void restoreDesktopBindings();
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }], isError: true };
+      // Only our typed errors reach the model, never raw filesystem/network data.
+      const safe = /^(?:tsunagou_error:|[a-z][a-z0-9_]*(?::[a-z0-9_]+)?$)/.test(message)
+        ? message : "bridge_request_failed";
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: safe }) }], isError: true };
     }
   });
-
-  const stdio = new StdioServerTransport();
-  // Desensitized boot diagnostic for the wiring phase: env NAMES only, a hashed
-  // host digest, and session status. Never a credential, ticket or token value.
-  try {
-    mkdirSync(cfg.stateDir, { recursive: true });
-    writeFileSync(join(cfg.stateDir, "bridge-boot.json"), JSON.stringify({
-      host_digest: hostDigest ?? null,
-      matched_host_env: hostIdentity?.envName ?? null,
-      baseline_status: session?.baseline_status ?? null,
-      wake_capability: BRIDGE_WAKE_CAPABILITY,
-      codex_env_names: Object.keys(process.env).filter((name) => /^CODEX/i.test(name)).sort(),
-      tsunagou_env_names: Object.keys(process.env).filter((name) => name.startsWith("TSUNAGOU_")).sort(),
-    }, null, 2) + "\n", "utf-8");
-  } catch {
-    // best-effort diagnostics must never break the bridge
-  }
-  await server.connect(stdio);
-  process.stderr.write(`[tsunagou-bridge] host_digest=${hostDigest ?? "none"} session=${session?.baseline_status ?? "not_enrolled"} continuity=${observedContinuity?.join("+") ?? "unknown"}\n`);
+  await server.connect(new StdioServerTransport());
+  void restoreDesktopBindings();
+  process.stderr.write("[tsunagou-bridge] ready; credentials are selected per request\n");
 }
 
-main().catch((error) => {
-  process.stderr.write(`[tsunagou-bridge] fatal: ${error instanceof Error ? error.message : String(error)}\n`);
+main().catch(() => {
+  process.stderr.write("[tsunagou-bridge] startup_failed\n");
   process.exit(1);
 });

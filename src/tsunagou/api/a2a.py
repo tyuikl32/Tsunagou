@@ -228,6 +228,19 @@ class A2AGateway:
         connection_epoch: int | None,
         recipient_agent_id: str | None = None,
     ) -> dict[str, Any]:
+        from tsunagou.platform.telemetry import active_telemetry
+
+        with active_telemetry().span("a2a.submit", {"project_id": self.project_id}) as span:
+            result = self._dispatch(request, authorization=authorization, session_id=session_id,
+                                    connection_epoch=connection_epoch, recipient_agent_id=recipient_agent_id)
+            active_telemetry().outcome(span, "rejected" if "error" in result else "accepted")
+            return result
+
+    def _dispatch(
+        self, request: dict[str, Any], *, authorization: str | None,
+        session_id: str | None, connection_epoch: int | None,
+        recipient_agent_id: str | None = None,
+    ) -> dict[str, Any]:
         request_id = request.get("id")
         if request.get("jsonrpc") != JSON_RPC_VERSION:
             return _rpc_error(request_id, A2AProtocolError(
@@ -393,6 +406,8 @@ class A2AGateway:
                     recipient_agent_id=recipient,
                     project_id=self.project_id,
                     callback_status=push_status["status"] if push_config is not None else None,
+                    command_id=command_id, actor_id=principal.principal_id,
+                    task_id=subject_ref.split("/", 1)[1] if subject_ref.startswith("task/") else None,
                 )
             except Exception:
                 # Host wake is an enhancement.  Durable delivery has already

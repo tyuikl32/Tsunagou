@@ -26,9 +26,9 @@ def fixture(tmp_path: Path):
     service = WorkspaceService()
     evidence = WorkspaceEvidence(service, registry, str(project))
     roots = evidence.resolve_scope(task, [])
-    decision = service.record_isolation_decision(task_id="task", attempt_id="attempt", driver_kind="shared",
+    decision = service.record_isolation_decision(task_id="task", scope_revision=1, driver_kind="shared",
         input_snapshot={}, hard_constraints=set(), evidence_refs=[], decided_by="main")
-    workspace = service.request_workspace(decision.decision_id, root_binding_refs=ids,
+    workspace = service.request_workspace(decision.decision_id, attempt_id="attempt", root_binding_refs=ids,
         scope_paths=evidence.virtual_paths(roots), scope_roots=roots)
     return registry, paths, ids, task, evidence, workspace
 

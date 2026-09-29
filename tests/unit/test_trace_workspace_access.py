@@ -46,14 +46,14 @@ def workspace_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     state.tasks.attempts["attempt"] = Attempt("attempt", "task", owner["agent_id"], status="completed")
     decision = state.workspaces.record_isolation_decision(
         task_id="task",
-        attempt_id="attempt",
+        scope_revision=1,
         driver_kind="shared",
         input_snapshot={},
         hard_constraints=set(),
         evidence_refs=[],
         decided_by=main["agent_id"],
     )
-    workspace = state.workspaces.request_workspace(decision.decision_id, root_binding_refs=[], scope_paths=["src"])
+    workspace = state.workspaces.request_workspace(decision.decision_id, attempt_id="attempt", root_binding_refs=[], scope_paths=["src"])
     baseline = state.workspaces.record_baseline(
         workspace.workspace_id,
         head_commit=None,

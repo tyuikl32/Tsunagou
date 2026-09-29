@@ -1,36 +1,41 @@
 {
-  "$id": "https://tsunagou.local/schema/commands/task.create",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/commands/task.create",
+  "type": "object",
   "additionalProperties": false,
   "properties": {
-    "acceptance_policy": {},
-    "execution_scope": {},
-    "followup_of": {},
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
     "objective": {
-      "maxLength": 4096,
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "parent_task_id": {
-      "minLength": 1,
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
-    "prerequisites": {},
-    "required_capabilities": {},
-    "title": {
-      "maxLength": 4096,
-      "type": "string"
+    "execution_scope": {
+      "type": "object"
+    },
+    "required_contract_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "required": [
-    "acceptance_policy",
-    "execution_scope",
-    "followup_of",
-    "objective",
-    "parent_task_id",
-    "prerequisites",
-    "required_capabilities",
-    "title"
-  ],
-  "title": "TaskCreatePayload",
-  "type": "object"
+    "title",
+    "objective"
+  ]
 }

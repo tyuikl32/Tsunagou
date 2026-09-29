@@ -1,0 +1,45 @@
+{
+  "id": "real-test-repair",
+  "name": "real-test-repair",
+  "title": "实测缺陷修复与协作流程简化",
+  "description": "依据 SegaImageManageTool 实测规划资源占用、执行入口、宿主唤醒、状态正确性及可追溯性的最小修复；先完成方案和任务，再实施。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-09-28",
+  "completedAt": null,
+  "branch": "codex/live-test-repair",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-28-fx1-state-integrity",
+    "09-28-fx2-execution-flow",
+    "09-28-fx3-desktop-wake",
+    "09-28-fx4-onboarding",
+    "09-28-fx5-traceability",
+    "09-28-fx6-live-acceptance",
+    "09-28-fx7-btid-integrity"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "docs/implementation/live-test-repair-plan.md",
+    "docs/implementation/live-test-repair-tasks.json",
+    ".trellis/tasks/09-28-real-test-repair/research/issue-disposition.json"
+  ],
+  "notes": "User authorized completing all FX tasks. FX3 implementation started; remaining acceptance gates remain mandatory.",
+  "meta": {
+    "plan_id": "live-test-repair",
+    "depends_on": [],
+    "awaiting_user_instruction": false,
+    "planning_completed_at": "2026-09-28T09:48:08.820Z",
+    "dependency_manifest": "docs/implementation/live-test-repair-tasks.json",
+    "implementation_authorized_at": "2026-09-28T10:02:33.192Z"
+  }
+}

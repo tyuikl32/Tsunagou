@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-09-28T10:18:34.188Z",
+  "caller_digest": "sha256:f01c8b7486205401e200e7424ffccc2112e1e21fd6c701a6c97d020f84d87a87",
+  "pid": 81832,
+  "status": "completed",
+  "sender": "detached_python_process",
+  "caller_idle_at": "2026-09-28T10:18:42.287Z",
+  "prior_turn_digest": "sha256:73b5140eeba4f1c1dc74c010ae16f52449d9d48cbd82996715c8f509b3eba1be",
+  "accepted_at": "2026-09-28T10:18:42.557Z",
+  "completed_at": "2026-09-28T10:18:48.658Z",
+  "new_turn_digest": "sha256:183e2ec305fb06a0b61e562f9ad106079c27a233206ac8563c3d1fca6c946ec9",
+  "reply": "FX3_IDLE_CALLER_WAKE_OK"
+}

@@ -219,13 +219,17 @@ class DriverSpec:
 class IsolationDecision:
     decision_id: str
     task_id: str
-    attempt_id: str
+    scope_revision: int
+    revision: int
     driver_kind: str
     input_digest: str
     hard_constraints: tuple[str, ...]
     evidence_refs: tuple[dict[str, Any], ...]
     decided_by: str
     decision_digest: str
+    root_binding_refs: tuple[str, ...] = ()
+    repository_id: str | None = None
+    external_locator: str | None = None
 
 
 @dataclass(slots=True)
@@ -350,28 +354,34 @@ class WorkspaceService:
         ]
 
     def record_isolation_decision(
-        self, *, task_id: str, attempt_id: str, driver_kind: str,
+        self, *, task_id: str, scope_revision: int, driver_kind: str,
         input_snapshot: dict[str, Any], hard_constraints: set[str],
         evidence_refs: list[dict[str, Any]], decided_by: str,
+        root_binding_refs: tuple[str, ...] = (), repository_id: str | None = None,
+        external_locator: str | None = None,
     ) -> IsolationDecision:
         candidates = {item.kind for item in self.list_driver_candidates(hard_constraints)}
         if driver_kind not in candidates:
             raise ValueError("driver_does_not_meet_hard_constraints")
         input_digest = canonical_digest(input_snapshot)
         body = {
-            "task_id": task_id, "attempt_id": attempt_id, "driver_kind": driver_kind,
+            "task_id": task_id, "scope_revision": scope_revision, "driver_kind": driver_kind,
+            "root_binding_refs": root_binding_refs, "repository_id": repository_id, "external_locator": external_locator,
             "input_digest": input_digest, "hard_constraints": sorted(hard_constraints),
             "evidence_refs": evidence_refs, "decided_by": decided_by,
         }
         decision = IsolationDecision(
-            new_id(), task_id, attempt_id, driver_kind, input_digest,
+            new_id(), task_id, scope_revision,
+            1 + max((item.revision for item in self.decisions.values() if item.task_id == task_id), default=0),
+            driver_kind, input_digest,
             tuple(sorted(hard_constraints)), tuple(evidence_refs), decided_by, canonical_digest(body),
+            root_binding_refs, repository_id, external_locator,
         )
         self.decisions[decision.decision_id] = decision
         return decision
 
     def request_workspace(
-        self, decision_id: str, *, root_binding_refs: list[str], repository_id: str | None = None,
+        self, decision_id: str, *, attempt_id: str, root_binding_refs: list[str], repository_id: str | None = None,
         external_locator: str | None = None, current_main_id: str | None = None,
         scope_paths: list[str] | tuple[str, ...] | None = None,
         expected_scope_digest: str | None = None,
@@ -385,24 +395,17 @@ class WorkspaceService:
         if expected_scope_digest is not None and expected_scope_digest != calculated_scope_digest:
             raise ValueError("workspace_scope_digest_mismatch")
         workspace = Workspace(
-            new_id(), decision.attempt_id, decision_id, decision.driver_kind,
+            new_id(), attempt_id, decision_id, decision.driver_kind,
             tuple(root_binding_refs), repository_id, external_locator,
             scope_paths=normalised_scope, scope_digest=calculated_scope_digest,
             scope_roots=tuple(scope_roots or ()),
         )
         self.workspaces[workspace.workspace_id] = workspace
-        if decision.driver_kind == "worktree":
-            request = GitActionRequest(
-                new_id(), workspace.workspace_id, repository_id or "", "worktree_create",
-                current_main_id, canonical_digest({"workspace_id": workspace.workspace_id, "decision": decision.decision_digest}),
-                {"workspace_id": workspace.workspace_id, "repository_id": repository_id},
-            )
-            self.git_requests[request.request_id] = request
-            workspace.status = "preparing" if current_main_id else "requested"
-        elif decision.driver_kind == "external" and not external_locator:
+        if decision.driver_kind == "external" and not external_locator:
             raise ValueError("external_locator_required")
-        else:
-            workspace.status = "preparing"
+        # Git worktrees and external roots are prepared by main before begin.
+        # Creating an Attempt must never create a second Git action workflow.
+        workspace.status = "preparing"
         return workspace
 
     def report_git_action(

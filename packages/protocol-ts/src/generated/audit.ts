@@ -1,5 +1,5 @@
 // Generated from protocol/schemas/queries/audit-page.schema.json; do not edit.
-// Source digest: sha256:a5cbad4ca4633c56de297b35ab9278354f581d1324d18924f5214cc093780833; generator: query-v1
+// Source digest: sha256:414ad447ce045e89d52ddcef2bb4b0f6adb1db8d3738b34697e03b3e0c2c6358; generator: query-v1
 
 export interface AuditChange {
   subject_ref: string;

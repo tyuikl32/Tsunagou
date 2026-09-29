@@ -1,48 +1,48 @@
-# 06 隔离、工作空间与主 Agent Git 控制
+# 06 工作区、隔离策略与主 Agent Git 控制
 
-## 产品支持矩阵
+FX2 将隔离选择归属 Task，基线与结果仍归属每个 Attempt。不存在全局默认隔离方式；main 按实际任务选择一次。
 
-| driver | 首发支持 | 机械职责 |
-|---|---|---|
-| shared | 多 roots 的原目录协作 | 记录 binding/基线/Lease 需求，不创建隔离幻觉 |
-| worktree | 单 Git 仓库的 Worktree | 生成主 Agent GitActionRequest；只读核验实际 worktree、commit、状态 |
-| external | 外部已准备的容器/目录/环境 attach | 验证用户/main 提供的能力与绑定证据，不创建容器平台 |
+## 策略和对象
 
-没有全局单一默认隔离方式。主 Agent按任务风险建议，系统验证 candidate 满足授权与 hard constraints。首发不实现跨多个仓库的原子 Git commit/merge，也不内建容器编排。
-
-## 数据
-
-| 表（`workspaces_`） | 字段 |
+| 对象 | 关键语义 |
 |---|---|
-| drivers | 静态 registry：kind,version,capabilities,required_evidence,supported_platforms；不接受运行时任意代码插件 |
-| decisions | task_id,attempt_id,risk_submission_ref?,driver_kind,input_digest,hard_constraints,evidence_refs,decided_by,decision_digest |
-| instances | attempt_id,decision_id,driver_kind,status,root_binding_refs,repository_id?,external_locator?,baseline_manifest_id?,result_manifest_id?,revision |
-| git_requests | workspace_id?,repository_id,action:worktree_create\|worktree_remove\|commit\|integrate\|publish\|repair,requested_main_id,exact_input_digest,parameters,operation_id,status:pending\|reported\|verified\|rejected\|unknown |
-| baselines | workspace_id,root/repo identities,head_commit?,branch?,index_digest,tracked_state_digest,untracked_summary,captured_at,digest |
-| results | workspace_id,attempt_id,baseline_digest,commit_refs[],patch_artifact_ref?,changed_paths,untracked_summary,validation_refs,digest |
-| integrations | source_result_ref,target_repository_id,target_baseline_digest,plan_digest,operation_id,status,evidence_refs |
-| cleanup_requests | workspace_id,input_digest,required_checkpoint_ref,dirty_state,actor,force_approval_ref?,operation_id,status |
+| IsolationDecision | task_id、scope_revision、revision、driver_kind、root_binding_refs、repository_id、external_locator、input_digest、hard_constraints、evidence_refs、decided_by、decision_digest |
+| Workspace | attempt_id、decision_id、driver、绑定根、scope_paths/scope_roots/scope_digest、baseline_manifest_id、result_manifest_id、status |
+| BaselineManifest | 当前 HEAD/branch、index 与文件摘要、untracked、根 identity、逐根观察与 digest |
+| ResultManifest | 精确 workspace/attempt/baseline、changed_paths、patch 引用、逐根观察、observed_at、Agent 报告的 validation_metadata |
+| GitActionRequest | main 发起的整合/清理等意图及报告，不能替代实际 Git 结果 |
 
-manifest 不把“有一个 commit”当作工作树干净证明；tracked/index/untracked 分别记录。结果未提交必须以 patch/附件与文件摘要提供证据；忽略文件默认不收集其内容。
+## 三种隔离方式
 
-## 创建与使用
+- shared：使用已绑定的单个或多个原目录，可接受 dirty 基线。
+- worktree：main 先准备单仓库的实际 worktree 并注册绑定；策略需 repository_id，开始时要求干净基线。daemon 不创建 worktree。
+- external：main 先准备外部目录/环境并绑定根；策略记录 external_locator。实际文件观察以受任务 scope 约束的 root bindings 为准，locator 不额外授予任意路径访问。
 
-选择 driver→记录 IsolationDecision→Workspace requested→建立 Operation/主 Agent请求→main 执行 Git或外部准备→报告结构化 evidence→后台只读核验→ready→task.start 绑定 in_use。scope、repo HEAD、root identity、能力快照变化使 preflight 陈旧，必须重验。
+仅有 named 资源或空 scope 的任务无需 workspace。文件 scope 必须能解析到本机已绑定且物理 identity 一致的 roots；Worker 无权在 begin 时扩大路径。
 
-worktree baseline 必须对应明确 commit，且新 worktree 的 index/工作树无修改、无未跟踪产物后才 ready。跨仓库任务可选 shared/external，不能让一个 worktree ID 代表多个仓库。
+## 正常执行
 
-**所有 Git mutation 归 current main**，包括 `git worktree add/remove`、checkout/reset、commit、merge、push。daemon 平台 Git port 使用只读 allowlist，禁用会触发外部网络、交互凭据或隐式写入的操作。没有 main 则请求 pending，不用 daemon 兜底执行。
+1. main 创建 Task 的范围，准备 Git/外部目录，并调用 workspace.select。选择绑定 task/scope_revision，不需要 attempt_id。
+2. Worker task.begin 校验策略，在写事务外采集实际文件基线；短 UoW 原子保存 Workspace/Baseline、Attempt、资源占用和 Grant。
+3. Worker 工作后 task.submit 自动扫描同一 scope，物化必要 patch，再原子保存结果、提交 Task 并释放占用。
+4. main 查看结果、测试报告及文件变化，决定接受或返工。Git 写和整合仍由 main 执行。
 
-## 整合、发布与清理
+纯任务状态变化、重新连线或同 owner 恢复不要求 main 重新选择策略。新 Attempt 创建新 Workspace 和新基线。scope 改变后必须选适用于新 scope_revision 的策略；active Attempt 期间禁止改变策略。
 
-main 决定整合顺序、冲突解决与结果是否合格；系统验证目标 repo/基线、权限、manifest 和关联 Operation。多个仓库逐个报告，部分成功保留明确结果，不能伪造事务回滚。publication report 由 main 提交 remote/ref/commit/证据；daemon 不联网验证远端，因此标注 `main_reported`，不能显示 independently_verified。
+## 证据的含义
 
-task terminal +必要 checkpoint 完成后才允许 cleanup。干净 workspace 可由 main 明确发起；dirty 强制清理需要 user-only 决定。清理同样由 main 执行 Git，再核验。存在最后本机副本删除风险时必须额外满足恢复证据或用户精确 data-loss acceptance；本机 anchor 不等于异地备份。
+文件观察是 daemon 观测事实；validation_metadata 中的测试命令、起止时间、退出码是 Agent 报告，不能自动提升为系统验证。用户手动写入可能与 Worker 写入一起出现在观察差异中；系统不猜写入者，不自动回滚。
 
-旧 owner 无 stop evidence 时生成残余风险，阻塞相交路径/工作空间的后续动作；不冻结整个无关项目。main 在可委派边界内接受风险并留 digest，用户上限不可被风险接受绕过。
+patch 默认排除私有 .tsunagou 数据与 scope 外内容；符号链接只记录链接事实，不读取目标秘密。patch 物化可以在失败提交后留下未引用内容，但失败事务不能留下有效结果/附件引用或释放占用。
 
-## 端口、事件、验收
+## Git、整合和清理
 
-`list_driver_candidates`、`get_workspace_preflight`、`record_isolation_decision`、`record_baseline/result`；对外都返回 manifest DTO，不暴露 Git subprocess。事件 isolation_decided、workspace_requested/ready、workspace_result_recorded、git_action_reported、integration_verified、workspace_cleaned。
+所有 Git 写操作由 main 控制，包括 worktree add/remove、checkout/reset、commit、merge、push。daemon 的 Git port 仅执行已允许的只读命令。任务流程不因没有 commit 而强迫提交代码。
 
-测试强制抓取所有 daemon Git 调用并验证只读；无 main请求保持 pending；dirty/untracked baseline 拒绝；target HEAD变化使 integration陈旧；重复报告不重复动作；多仓库部分完成可观察；强制清理必须 user_control。实施 T11/T12/T15。
+整合请求引用明确 source result、目标 repo/基线及方案 digest。部分成功按实际结果记录；跨仓库没有伪造的原子回滚。发布证据由 main 报告，不声称 daemon 已独立核验远端。
+
+清理遵守任务终态、checkpoint 与现有 dirty/user-only 边界。FX2 不新增清理平台或自动回收计时器。
+
+## 验证
+
+tests/unit/test_workspaces.py、test_workspace_evidence.py 验证读写边界和 scope；tests/integration/test_execution_begin.py 验证策略复用、新 Attempt 新基线、准备/物化不占 SQLite 写事务、失败回滚和自动提交；test_trace_workspace_access.py 验证附件访问身份与重启恢复。

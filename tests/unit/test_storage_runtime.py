@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
-from tsunagou.platform.db.sqlite import ProjectDatabase
+from tsunagou.platform.db.sqlite import ProjectDatabase, _contains_secret_shape, _redact_result
 from tsunagou.shared_kernel.errors import IdempotencyConflict, RevisionConflict
 from tsunagou.shared_kernel.time import format_timestamp, parse_timestamp
 
@@ -206,6 +208,45 @@ def test_sensitive_command_result_is_private_and_replayed(tmp_path: Path) -> Non
     assert len(delivery_files) == 1
     if __import__("os").name == "nt":
         assert b"secret-sentinel" not in delivery_files[0].read_bytes()
+
+
+@pytest.mark.parametrize("key,value", [
+    ("token_usage", "unavailable"), ("TOKEN_USAGE", {"input": 42, "output": 7}), ("tokenUsage", "unavailable"),
+])
+def test_message_usage_accounting_does_not_create_credential_delivery(tmp_path: Path, key, value) -> None:
+    db = ProjectDatabase(tmp_path / "state.sqlite3", project_id="p1")
+    message = {"message_id": "message-usage", "payload": {key: value}}
+    assert not _contains_secret_shape(message)
+    assert _redact_result(message) == message
+    first = db.dispatch(principal_id="recipient", command_kind="inbox.fetch", command_id="fetch-usage",
+                        payload={"message_id": "message-usage"}, handler=lambda _: message)
+    replay = db.dispatch(principal_id="recipient", command_kind="inbox.fetch", command_id="fetch-usage",
+                         payload={"message_id": "message-usage"}, handler=lambda _: pytest.fail("replayed handler"))
+    assert first.result == replay.result == message
+    with closing(db._connect()) as conn:
+        row = conn.execute("SELECT result_json,delivery_ref FROM commands WHERE command_id='fetch-usage'").fetchone()
+        assert row["delivery_ref"] is None and json.loads(row["result_json"]) == message
+    assert not list(db.delivery_store.root.glob("*.bin"))
+
+
+@pytest.mark.parametrize("payload", [
+    {"token_usage": {"access_token": "secret-sentinel"}},
+    {"tokenUsage": {"access_token": "secret-sentinel"}},
+    {"token_usage": [{"token": "secret-sentinel"}]},
+    {"token_usage": "unavailable", "secret_token": "secret-sentinel"},
+    {"token_usage_extra": "secret-sentinel"},
+])
+def test_usage_accounting_exception_still_protects_nested_and_real_credentials(tmp_path: Path, payload) -> None:
+    db = ProjectDatabase(tmp_path / "state.sqlite3", project_id="p1")
+    message = {"message_id": "message-sensitive", "payload": payload}
+    assert _contains_secret_shape(message)
+    assert "secret-sentinel" not in json.dumps(_redact_result(message))
+    returned = db.dispatch(principal_id="recipient", command_kind="inbox.fetch", command_id="fetch-sensitive",
+                           payload={"message_id": "message-sensitive"}, handler=lambda _: message)
+    assert returned.result["payload"] == payload and returned.result["delivery_ref"].startswith("delivery:")
+    with closing(db._connect()) as conn:
+        row = conn.execute("SELECT result_json,delivery_ref FROM commands WHERE command_id='fetch-sensitive'").fetchone()
+        assert row["delivery_ref"] and "secret-sentinel" not in row["result_json"]
 
 
 def test_legacy_sensitive_rows_require_revocation_not_live_secret_replay(tmp_path: Path) -> None:

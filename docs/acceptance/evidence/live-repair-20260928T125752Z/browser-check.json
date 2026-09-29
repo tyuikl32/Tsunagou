@@ -1,0 +1,36 @@
+{
+  "observed_at": "2026-09-28T15:35:25.700Z",
+  "observation_kind": "post_action_review",
+  "browser": "Codex In-app Browser",
+  "url": "http://127.0.0.1:57065/",
+  "origin_configuration": "fresh_origin_default_not_manually_applied",
+  "checks": [
+    {
+      "file": "valid.app",
+      "ui": "Inspection complete",
+      "request_id": "bbd85a30-41dd-42b4-9f8e-27552c31db86",
+      "metadata": {
+        "game_id": "FX7T",
+        "magic": "BTID",
+        "total_sector": 2,
+        "sector_size": 16384
+      },
+      "screenshot": "ui-valid-final.png"
+    },
+    {
+      "file": "crc-corrupt.app",
+      "ui": "invalid_image",
+      "request_id": "238f1b4c8f4c08684add05090ac5877b",
+      "screenshot": "ui-crc-final.png"
+    },
+    {
+      "file": "truncated-sector.app",
+      "ui": "invalid_image",
+      "request_id": "0e3155c8bc772a6160cad5eb622da353",
+      "screenshot": "ui-truncated-final.png"
+    }
+  ],
+  "limitations": [
+    "Browser observation does not measure backend HTTP duration; see separate HTTP report."
+  ]
+}

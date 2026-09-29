@@ -1,0 +1,21 @@
+{
+  "observed_at": "2026-09-28T18:47:25Z",
+  "daemon": {
+    "status": "running",
+    "pid": 103048,
+    "runtime_id": "432243a5-9041-4979-89f9-83c20ddc9cf0",
+    "started_at": "2026-09-28T18:11:09.514Z"
+  },
+  "mcp": {
+    "context_project_read": "tsunagou_error:schema_bundle_digest_mismatch",
+    "inbox_claim": "tsunagou_error:schema_bundle_digest_mismatch",
+    "new_bridge_process_since_build": false,
+    "latest_bridge_process_created_at": "2026-09-29T00:56:01.297289+08:00"
+  },
+  "recovery_probe": {
+    "action": "Start an isolated current-version MCP bridge for a read-only current-main context query using the host-routed thread identity",
+    "outcome": "blocked_by_local_policy_before_process_creation",
+    "side_effects": "none"
+  },
+  "next_action": "Fully exit and reopen Codex so the normal host supervisor starts the current bridge. Do not re-enroll or restart the daemon."
+}

@@ -28,7 +28,7 @@ flowchart TB
 | 02 agents | 接入四种宿主、保持身份、可靠收件 | 管会话与消息；不替主 Agent 决定任务归属 |
 | 03 tasks | 分解、领取、开始、挂起、提交、审查与返工 | 管任务状态；不评判代码质量 |
 | 04 cognition | 显示理解差异、组织契约与风险评估 | 保存显式认知；不推断隐藏分歧 |
-| 05 resources | 协调读写范围和共享资源 | 逻辑 Lease；不承诺阻止 Full Access 的系统调用 |
+| 05 resources | 协调读写范围和共享资源 | 显式资源占用；不承诺阻止 Full Access 的系统调用 |
 | 06 workspaces | 记录共享目录、Worktree、外部隔离的选择和结果 | 主 Agent 执行 Git，系统核验 manifest |
 | 07 durability | 从崩溃、断线、clone、回退中保留可解释事实 | SQLite + checkpoint；无跨机器分布式锁 |
 | 08 evaluation | 查看审计、性能与真实协作效果 | 只读观测；不能成为业务写入口 |

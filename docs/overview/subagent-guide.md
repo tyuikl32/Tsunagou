@@ -8,12 +8,12 @@ Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任�
 
 以下是首发流程。当前 M1 已有可运行的 CLI、daemon、HTTP 查询和 stdio bridge；用户 CLI 的实际命令范围与环境变量要求见[完整使用说明书](cli-http-manual.md)，尚未注册的领域命令仍由主 Agent typed tools 完成。
 
-1. **先建立调度中心。** 在已有Git仓库初始化项目，得到project_id。用户接入一个会话并使用 `agent connect --adapter codex --profile main --role main` 选择主 Agent，设好项目范围和授权上限。
+1. **先建立调度中心。** 在用户选择的 Git 仓库初始化项目，得到 project_id；指定一个会话作为 main，并设好项目范围和授权上限。
 2. **准备子Agent所在宿主。** 按对应adapter安装指南启用工具入口。打开一个新对话，选择它需要工作的文件夹。这个工作目录可以是项目的其他root/仓库，不必与协调仓库相同。
-3. **把该对话接入指定项目。** 用户只需执行一条命令，例如 `uv run python -m tsunagou agent connect --adapter codex --profile worker-01 --role worker`。CLI 会生成独立 profile、一次性 worker 票据和 bridge 配置，并在 Codex 可用时登记 MCP；用户不需要查找 `conversation_id`、`agent_id` 或把票据/token贴进模型对话。旧的 `agent enroll` 参数仍用于恢复和诊断。
-4. **查看接入结果。** 通过 bridge 的 `context__project_read` 或 HTTP 查询查看独立 `agent_id`、宿主、session 状态及能力。`ticket_issued` 只表示票据已签发，只有 bridge 兑换成功并能读取项目上下文才算 ready；degraded 表示保留诊断对象，尚不能领取任务。
-5. **让主Agent安排工作。** 主Agent创建并发布子任务，告诉对应子Agent任务引用和目标。子Agent读取黑板，自己claim，报告理解并完成preflight，start后才可执行。
-6. **继续使用原对话。** 普通断线或恢复应保持同一 Agent，adapter 自动校验连续性；新建/clear/fork 或宿主内新 subagent 都是另一 worker，需要新身份，不能继承旧任务 owner。任务挂起或执行 Lease 过期后，原 Agent 不在线也不妨碍后来加入的合格 Agent claim；原 Agent 的 resume 只是保留上下文的便利路径。
+3. **把该对话接入指定项目。** 告诉当前 Agent“作为 worker 加入本项目”。Agent 在自己会话中执行 `agent prepare --adapter codex --role worker`，再按已有授权运行返回的完整 connect 命令；确需用户时，只交付这一条已填好路径的命令。真实宿主对话决定身份，profile 只是标签；不让用户查 ID、pipe 或复制 token。connect 会把本项目早期固定-session MCP 配置迁移为共享路由配置，不影响其他项目或正在运行的 bridge。主 Agent 同理，但 main 角色必须是用户的明确选择。
+4. **查看接入结果。** connect 输出 enrolled 后，原对话自己调用 bridge 的 `context__project_read`，确认 project_id、独立 agent_id、ready session 和宿主绑定。另一客户端的 HTTP 查询或 headless bootstrap 成功不能代替原会话 ready。没有 Desktop 刷新按钮时，先直接查询；若该旧对话仍运行固定-session bridge，则新开对话再查询，只有它仍未加载共享 MCP 才完整重开 Codex 一次。无需重新接入。可用 `agent list --json` 查看成员、任务和最近活动。
+5. **让主Agent安排工作。** 主 Agent 创建任务、确定 scope 和文件任务的工作区策略并发布。子 Agent 读黑板及任务 revision，调用 `task.begin`，成功后按返回的 Attempt/scope 工作；完成后 `task.submit` 自动采集结果。
+6. **继续使用原对话。** 普通重连保留原 Agent；新对话、fork、subagent 都有独立身份。静默或同库重启不改变任务 owner。原 owner 再 begin 恢复；owner block 或 main recover 后，后来加入且符合定向分派约束的 Worker 可以 begin。
 
 若宿主已验证支持managed_launch，用户可选择launch方式；没有该能力就按上述步骤手动打开再attach。两种方式都必须独立认证与probe，不因系统帮助启动就减少权限检查。
 
@@ -24,8 +24,8 @@ Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任�
 | 阶段 | 子Agent拥有什么 | 尚不能做什么 |
 |---|---|---|
 | 接入ready | 自己的身份、基础协调权限、可见项目状态和自己的inbox | 不自动拥有任务，不接管main职责 |
-| 领取claimed | 一个TaskAttempt的唯一owner、明确任务范围 | 尚不能把“领到了”当作running执行许可 |
-| preflight通过并start | 当前scope、workspace、资源Lease与执行Grant | 不可越界，不可替他人提交，不可执行main专属Git写操作 |
+| begin 成功 | 唯一 running Attempt、当前 scope 与执行 Grant | 文件任务同时返回工作区与资源占用；不可越界或替他人提交 |
+| submit 成功 | 不可变 Result，状态 submitted，执行权已释放 | 等待 main 审查；不等于项目完成 |
 
 ## 子 Agent 在项目里负责什么
 
@@ -34,7 +34,7 @@ Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任�
 - 在允许范围内执行自己的任务，报告进展，提交证据与结果；审查别人的工作需要明确reviewer指派。
 - 需要更多文件范围时向main提出scope request；main能决定的自行处理，超出用户上限才交用户。
 - 等待相关上游决定时保存进度、释放执行资源并挂起；如果还有不相关任务，可以继续。
-- 恢复时先查黑板与未决事项，再显式resume/preflight/start；不能沿用旧上下文中的授权。
+- 恢复时先查黑板、未决事项和当前任务版本，再 `task.begin`；不能沿用旧执行 Grant。
 
 子Agent没有自己的隐式下属授权。需要再拆分任务时向main建议，由main创建子任务；不因它当前拥有一个Task，就自动获得task.create或agent.enroll。
 
@@ -52,12 +52,12 @@ Tsunagou 中的“子”主要描述任务委派关系：它独立领取子任�
 
 ## 常见情况
 
-**两个子Agent在同一目录。** 它们仍是两个身份；共享目录不等于共享授权。用ResourceIntent/Lease与任务范围协调，必要时main选择Worktree或外部隔离。
+**两个子Agent在同一目录。** 它们是两个身份；main 用 task scope、资源占用和合适的共享/Worktree/外部隔离策略协调。
 
-**新对话想继续旧任务。** 若不是可验证的原会话resume，不能冒充旧owner。main执行继任，关闭旧Attempt并新建责任，旧Lease/Grant不转移。
+**新对话想继续旧任务。** 不能拿相同 cwd 冒充旧 owner。main 显式 recover 后，新 Worker begin 创建新 Attempt；旧 Grant 不转移。
 
 **用户还没回答。** 相关Agent正常结束本轮并挂起，系统保留决定与快照；不需要持续向模型发无意义消息，也不自动判失败。
 
-**主Agent离线。** 子Agent可处理仍在权限内、不依赖 main 的工作；需要 main 的 Git、统筹或决定等待。恢复时用户对新的 profile 执行 `agent connect --role main`，子Agent不会自动选举自己；旧版本手工 ticket 才使用 `agent appoint AGENT_ID`。
+**主Agent离线。** 子Agent可处理仍在权限内、不依赖 main 的工作；需要 main 的 Git、统筹或决定等待。原会话恢复沿用身份；确需更换 main 时由用户指定新会话并选择 --role main，按当前 authority 状态处理原任命。子Agent不会自动选举自己。
 
 **宿主处于Full Access。** 子Agent仍须遵守调度中心的任务和scope。系统API会机械拒绝越权请求；无法控制的宿主文件操作可能只有提示/观察约束，不能说成OS沙箱已拦截。

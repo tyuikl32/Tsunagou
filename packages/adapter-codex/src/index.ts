@@ -71,7 +71,7 @@ export function createCodexWakePrompt(request: HostWakeRequest): string {
     `wake_id=${request.wake_id}`,
     `task_id=${request.task_id}`,
     `assignment_id=${request.assignment_id}`,
-    "Pull the assigned task from the Tsunagou inbox, then call worker.ready before requesting a Lease.",
+    "Read the inbox and assigned task, call task.begin with its current revision, then work within the returned scope. Call task.submit when ready for review.",
   ].join("\n");
 }
 

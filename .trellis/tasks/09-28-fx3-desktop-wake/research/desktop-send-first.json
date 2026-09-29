@@ -1,0 +1,11 @@
+{
+  "started_at": "2026-09-28T10:01:36.703+00:00",
+  "received_at": "2026-09-28T10:01:37.788+00:00",
+  "transport": "python NativeAppToolsClient / local application pipe",
+  "caller_context": "real inherited thread; plugin-compatible mcp fallback request IDs",
+  "target_thread_digest": "sha256:f01c8b7486205401e200e7424ffccc2112e1e21fd6c701a6c97d020f84d87a87",
+  "response": {
+    "threadId": "sha256:f01c8b7486205401e200e7424ffccc2112e1e21fd6c701a6c97d020f84d87a87"
+  },
+  "note": "Transport acceptance only; idle caller lifetime and product inbox path still need verification."
+}

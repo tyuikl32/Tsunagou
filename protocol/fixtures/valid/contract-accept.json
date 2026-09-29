@@ -1,0 +1,9 @@
+{
+  "proposal_id": "proposal-id",
+  "participant_slot": "implementation",
+  "status": "accepted",
+  "proposal_status": "proposed",
+  "via_proxy": true,
+  "real_actor_id": "main-agent",
+  "represented_participant": "worker-agent"
+}

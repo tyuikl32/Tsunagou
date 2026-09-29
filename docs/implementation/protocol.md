@@ -76,11 +76,13 @@ GET 单对象返回 `ETag: "rev-N"`。共享协调对象对就绪项目成员可
 
 ## 消息 DTO
 
-`Message={id,kind:notification|request|response,sender_agent_id,subject_ref,summary,payload,payload_digest,artifact_refs[],routing_snapshot_id,created_at}`。summary UTF-8 ≤4 KiB，整个消息 payload ≤256 KiB；更大内容转附件。发送者由身份生成。路由收件列表发送时固化，不因主 Agent 更换自动泄露给继任者。
+当前 `message.send` 输入为 `{recipient_agent_id,summary,kind?,subject_ref?,payload?,priority?,response_contract?,in_reply_to?}`，发送者由认证身份生成。kind 是开放字符串，默认 `message`；summary 非空且最多4096字符，序列化 payload 最多256KiB。一次只产生一个固定收件人的消息，不因主 Agent 更换自动泄露给继任者。输入不使用旧 recipient_ids 或 artifact_refs；较大内容使用已有附件领域能力。
 
-request 增 `response_contract={required_recipients[],optional_recipients[],response_schema_ref?,deadline_at?}`；response 增 `in_reply_to,obligation_id,response_payload`。发送 response 与满足对应 obligation 同事务。ACK、同意契约、业务响应分开命令。
+`inbox.claim` 返回 `{messages,count}`，每项包含 message_id、sender_agent_id、recipient_agent_id、kind、subject_ref、summary、in_reply_to、payload_digest，以及存在时的 response_obligations；不含正文。`inbox.fetch({message_id})` 对原收件人返回同一视图和完整 payload。main 不因此获得其他 Worker 的私信。
 
-`Delivery={message_id,recipient_agent_id,status,pull_lease_id?,fetch_at?,presented_at?,ack_at?,defer_until?,attempt_count}`。leased/fetched/presented/acknowledged 是不同证据；fetched 后不反复自动塞全文，可提醒待办数和引用。正式 wire status 详见 agents 模块，终态不得靠 push 失败次数判定。
+`response_contract={required?:boolean,schema?:object}`：required 默认 true；schema 为回复 payload 的 JSON Schema。回复先 `message.send` 回原发送者并指定 in_reply_to，再 `message.respond({obligation_id,response_message_id})` 关联已存在的回复、校验回复发送身份/原消息关联/可选 schema 并关闭义务。两者是独立命令，不是一个原子操作；不能将 response_payload 直接交给 respond。ACK、同意契约、业务响应仍是不同事实。
+
+当前内部 Delivery 记录 message_id、recipient_agent_id、status、attempts、lease_until、available_at、presented_at、acked_at 和 presentation_evidence，不把 delivery_lease_id 作为公开消息标识。claim、fetch、presented、ACK 是不同观察；presented 输入证据字段当前可省略且不做强度证明，ACK 当前也不要求已 presented。这是实现边界记录，不将其描述成已具有强展示证据的机制；唤醒失败不决定业务终态。
 
 ## 附件
 

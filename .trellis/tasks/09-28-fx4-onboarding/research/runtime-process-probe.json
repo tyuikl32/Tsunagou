@@ -1,0 +1,22 @@
+{
+  "started_at": "2026-09-28T11:58:10.229Z",
+  "project_root": "C:\\Users\\Tyuikl\\AppData\\Local\\Temp\\tsunagou-fx2-process-jnj5ee4z",
+  "steps": [
+    {
+      "cli": [
+        "daemon",
+        "start",
+        "--coordination-root",
+        "C:\\Users\\Tyuikl\\AppData\\Local\\Temp\\tsunagou-fx2-process-jnj5ee4z",
+        "--port",
+        "0"
+      ],
+      "started_at": "2026-09-28T11:58:10.241Z",
+      "finished_at": "2026-09-28T11:58:11.628Z",
+      "exit_code": 1
+    }
+  ],
+  "status": "failed",
+  "error": "cli_failed:daemon start:{\"error\": \"daemon_runtime_mismatch\", \"log\": \"C:\\\\Users\\\\Tyuikl\\\\AppData\\\\Local\\\\Temp\\\\tsunagou-fx2-process-jnj5ee4z\\\\.tsunagou\\\\local\\\\daemon.log\", \"status\": \"error\"}\n",
+  "finished_at": "2026-09-28T11:58:11.628Z"
+}

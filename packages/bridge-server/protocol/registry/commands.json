@@ -58,10 +58,16 @@
     },
     "agent.ticket.create": {
       "payload_fields": [
-        "kind"
+        "adapter_allowlist",
+        "ceiling_template",
+        "installation_binding",
+        "kind",
+        "target_agent_id"
       ],
       "principal": "M",
       "required_fields": [
+        "adapter_allowlist",
+        "ceiling_template",
         "kind"
       ],
       "schema": "commands/agent/ticket/create.schema.json",
@@ -69,14 +75,22 @@
     },
     "agent.ticket.create.user": {
       "payload_fields": [
-        "kind"
+        "conversation_evidence",
+        "host_binding",
+        "installation_id",
+        "kind",
+        "role",
+        "ttl_seconds"
       ],
       "principal": "U",
       "required_fields": [
-        "kind"
+        "conversation_evidence",
+        "installation_id",
+        "kind",
+        "role"
       ],
       "schema": "commands/agent/ticket/create/user.schema.json",
-      "uri": "/control/enrollment-tickets"
+      "uri": "/control/enrollment-tickets（实际统一入口 /api/v1/commands/agent.ticket.create.user）"
     },
     "artifact.promote": {
       "payload_fields": [
@@ -107,11 +121,17 @@
     "artifact.upload.create": {
       "payload_fields": [
         "domain_ref",
+        "expected_digest",
+        "media_type",
+        "size_bytes",
         "visibility"
       ],
       "principal": "B",
       "required_fields": [
         "domain_ref",
+        "expected_digest",
+        "media_type",
+        "size_bytes",
         "visibility"
       ],
       "schema": "commands/artifact/upload/create.schema.json",
@@ -280,11 +300,12 @@
     "contract.accept": {
       "payload_fields": [
         "evidence_refs",
+        "participant_slot",
         "proposal_digest"
       ],
       "principal": "B",
       "required_fields": [
-        "evidence_refs",
+        "participant_slot",
         "proposal_digest"
       ],
       "schema": "commands/contract/accept.schema.json",
@@ -300,11 +321,8 @@
       ],
       "principal": "M",
       "required_fields": [
-        "evidence_refs",
         "participant_slot_id",
-        "proposal_digest",
-        "proxy_policy_ref",
-        "reason"
+        "proposal_digest"
       ],
       "schema": "commands/contract/accept_proxy.schema.json",
       "uri": "/contract-proposals/{id}:accept-proxy"
@@ -322,12 +340,8 @@
       ],
       "principal": "B",
       "required_fields": [
-        "contract_kind",
-        "input_refs",
-        "participants_optional",
         "participants_required",
-        "payload",
-        "subject_ref"
+        "payload"
       ],
       "schema": "commands/contract/propose.schema.json",
       "uri": "/contracts:propose"
@@ -362,8 +376,7 @@
       "payload_fields": [
         "assignments",
         "auto_wake",
-        "objective",
-        "wake_deadline_seconds"
+        "objective"
       ],
       "principal": "M",
       "required_fields": [
@@ -386,26 +399,16 @@
       "schema": "commands/coordination/takeover.schema.json",
       "uri": "/coordination/assignments/{id}:takeover"
     },
-    "coordination.wake.accepted": {
-      "payload_fields": [
-        "assignment_id",
-        "host_turn_id",
-        "wake_attempt_id"
-      ],
-      "principal": "D",
-      "required_fields": [
-        "assignment_id",
-        "wake_attempt_id"
-      ],
-      "schema": "commands/coordination/wake/accepted.schema.json",
-      "uri": "/coordination/wakes/{id}:accepted"
-    },
     "discrepancy.advance": {
       "payload_fields": [
+        "evidence_refs",
+        "reason",
         "status"
       ],
       "principal": "B",
       "required_fields": [
+        "evidence_refs",
+        "reason",
         "status"
       ],
       "schema": "commands/discrepancy/advance.schema.json",
@@ -434,11 +437,19 @@
     },
     "discrepancy.resolve": {
       "payload_fields": [
-        "kind"
+        "accepted_by",
+        "evidence_refs",
+        "input_digest",
+        "kind",
+        "reason"
       ],
       "principal": "M",
       "required_fields": [
-        "kind"
+        "accepted_by",
+        "evidence_refs",
+        "input_digest",
+        "kind",
+        "reason"
       ],
       "schema": "commands/discrepancy/resolve.schema.json",
       "uri": "/discrepancies/{id}:resolve"
@@ -458,22 +469,24 @@
     },
     "inbox.ack": {
       "payload_fields": [
+        "message_id",
         "reason"
       ],
       "principal": "B",
-      "required_fields": [],
+      "required_fields": [
+        "message_id"
+      ],
       "schema": "commands/inbox/ack.schema.json",
-      "uri": "/deliveries/{id}:ack"
+      "uri": "/api/v1/commands/inbox.ack"
     },
     "inbox.claim": {
       "payload_fields": [
-        "limit",
-        "max_bytes"
+        "limit"
       ],
       "principal": "B",
       "required_fields": [],
       "schema": "commands/inbox/claim.schema.json",
-      "uri": "/inbox:claim"
+      "uri": "/api/v1/commands/inbox.claim"
     },
     "inbox.defer": {
       "payload_fields": [
@@ -490,27 +503,27 @@
     },
     "inbox.fetch": {
       "payload_fields": [
-        "delivery_lease_id"
+        "message_id"
       ],
       "principal": "B",
       "required_fields": [
-        "delivery_lease_id"
+        "message_id"
       ],
       "schema": "commands/inbox/fetch.schema.json",
-      "uri": "/deliveries/{id}:fetch"
+      "uri": "/api/v1/commands/inbox.fetch"
     },
     "inbox.presented": {
       "payload_fields": [
         "evidence_digest",
-        "evidence_kind"
+        "evidence_kind",
+        "message_id"
       ],
       "principal": "B",
       "required_fields": [
-        "evidence_digest",
-        "evidence_kind"
+        "message_id"
       ],
       "schema": "commands/inbox/presented.schema.json",
-      "uri": "/deliveries/{id}:presented"
+      "uri": "/api/v1/commands/inbox.presented"
     },
     "inbox.renew": {
       "payload_fields": [
@@ -525,31 +538,35 @@
     },
     "message.respond": {
       "payload_fields": [
-        "evidence_refs",
         "obligation_id",
-        "response_payload",
-        "summary"
+        "response_message_id"
       ],
       "principal": "B",
       "required_fields": [
-        "evidence_refs",
         "obligation_id",
-        "response_payload",
-        "summary"
+        "response_message_id"
       ],
       "schema": "commands/message/respond.schema.json",
-      "uri": "/messages/{id}:respond"
+      "uri": "/api/v1/commands/message.respond"
     },
     "message.send": {
       "payload_fields": [
-        "kind"
+        "in_reply_to",
+        "kind",
+        "payload",
+        "priority",
+        "recipient_agent_id",
+        "response_contract",
+        "subject_ref",
+        "summary"
       ],
       "principal": "B",
       "required_fields": [
-        "kind"
+        "recipient_agent_id",
+        "summary"
       ],
       "schema": "commands/message/send.schema.json",
-      "uri": "/messages"
+      "uri": "/api/v1/commands/message.send"
     },
     "message.waive_response": {
       "payload_fields": [
@@ -690,10 +707,13 @@
     },
     "project.lineage.reset": {
       "payload_fields": [
+        "checkpoint_digest",
+        "reason",
         "target"
       ],
       "principal": "U",
       "required_fields": [
+        "reason",
         "target"
       ],
       "schema": "commands/project/lineage/reset.schema.json",
@@ -756,11 +776,17 @@
     },
     "project.replica.activate": {
       "payload_fields": [
-        "mode"
+        "checkpoint_digest",
+        "mode",
+        "reason",
+        "recovery_evidence_refs"
       ],
       "principal": "U",
       "required_fields": [
-        "mode"
+        "checkpoint_digest",
+        "mode",
+        "reason",
+        "recovery_evidence_refs"
       ],
       "schema": "commands/project/replica/activate.schema.json",
       "uri": "/control/replicas/{id}:activate"
@@ -851,77 +877,6 @@
       ],
       "schema": "commands/repository/register.schema.json",
       "uri": "/repositories"
-    },
-    "resource.acquire": {
-      "payload_fields": [
-        "attempt_id",
-        "intent_id",
-        "intent_revision",
-        "scope_digest"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "attempt_id",
-        "intent_id",
-        "intent_revision",
-        "scope_digest"
-      ],
-      "schema": "commands/resource/acquire.schema.json",
-      "uri": "/lease-sets:acquire"
-    },
-    "resource.intent": {
-      "payload_fields": [
-        "attempt_id",
-        "reason",
-        "resources",
-        "scope_digest"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "attempt_id",
-        "reason",
-        "resources",
-        "scope_digest"
-      ],
-      "schema": "commands/resource/intent.schema.json",
-      "uri": "/resource-intents"
-    },
-    "resource.release": {
-      "payload_fields": [
-        "attempt_id",
-        "reason"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "attempt_id",
-        "reason"
-      ],
-      "schema": "commands/resource/release.schema.json",
-      "uri": "/lease-sets/{id}:release"
-    },
-    "resource.renew": {
-      "payload_fields": [
-        "scope_digest"
-      ],
-      "principal": "X",
-      "required_fields": [
-        "scope_digest"
-      ],
-      "schema": "commands/resource/renew.schema.json",
-      "uri": "/lease-sets/{id}:renew"
-    },
-    "resource.wait.cancel": {
-      "payload_fields": [
-        "attempt_id",
-        "reason"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "attempt_id",
-        "reason"
-      ],
-      "schema": "commands/resource/wait/cancel.schema.json",
-      "uri": "/resource-waits/{id}:cancel"
     },
     "risk.accept": {
       "payload_fields": [
@@ -1062,6 +1017,7 @@
       "payload_fields": [
         "continuity_evidence",
         "expected_connection_epoch",
+        "host_binding_refresh",
         "probe_payload",
         "reconnect_nonce"
       ],
@@ -1111,6 +1067,17 @@
       "schema": "commands/shared/reconcile.schema.json",
       "uri": "/shared-state:reconcile"
     },
+    "task.begin": {
+      "payload_fields": [
+        "expected_task_revision"
+      ],
+      "principal": "B",
+      "required_fields": [
+        "expected_task_revision"
+      ],
+      "schema": "commands/task/begin.schema.json",
+      "uri": "/tasks/{id}:begin"
+    },
     "task.block": {
       "payload_fields": [
         "attempt_id",
@@ -1156,34 +1123,18 @@
       "schema": "commands/task/cancel_request.schema.json",
       "uri": "/tasks/{id}:request-cancel"
     },
-    "task.claim": {
-      "payload_fields": [
-        "capability_snapshot_id"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "capability_snapshot_id"
-      ],
-      "schema": "commands/task/claim.schema.json",
-      "uri": "/tasks/{id}:claim"
-    },
     "task.create": {
       "payload_fields": [
-        "acceptance_policy",
+        "blocks",
         "execution_scope",
-        "followup_of",
         "objective",
         "parent_task_id",
-        "prerequisites",
-        "required_capabilities",
+        "required_contract_ids",
         "title"
       ],
       "principal": "M",
       "required_fields": [
-        "acceptance_policy",
-        "execution_scope",
         "objective",
-        "required_capabilities",
         "title"
       ],
       "schema": "commands/task/create.schema.json",
@@ -1242,21 +1193,6 @@
       "schema": "commands/task/fail.schema.json",
       "uri": "/tasks/{id}:fail"
     },
-    "task.preflight": {
-      "payload_fields": [
-        "attempt_id",
-        "evidence_refs",
-        "expected_revisions"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "attempt_id",
-        "evidence_refs",
-        "expected_revisions"
-      ],
-      "schema": "commands/task/preflight.schema.json",
-      "uri": "/tasks/{id}:preflight"
-    },
     "task.progress": {
       "payload_fields": [
         "evidence_refs",
@@ -1291,34 +1227,19 @@
     "task.recover": {
       "payload_fields": [
         "disposition",
-        "expected_attempt_id"
+        "expected_attempt_id",
+        "reason",
+        "residual_risk_refs"
       ],
       "principal": "M",
       "required_fields": [
         "disposition",
-        "expected_attempt_id"
+        "expected_attempt_id",
+        "reason",
+        "residual_risk_refs"
       ],
       "schema": "commands/task/recover.schema.json",
       "uri": "/tasks/{id}:recover"
-    },
-    "task.resume": {
-      "payload_fields": [
-        "attempt_id",
-        "evidence_refs",
-        "expected_execution_epoch",
-        "expected_revisions",
-        "input_digest"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "attempt_id",
-        "evidence_refs",
-        "expected_execution_epoch",
-        "expected_revisions",
-        "input_digest"
-      ],
-      "schema": "commands/task/resume.schema.json",
-      "uri": "/tasks/{id}:resume"
     },
     "task.review.accept": {
       "payload_fields": [
@@ -1373,11 +1294,15 @@
     },
     "task.scope.resolve": {
       "payload_fields": [
-        "choice"
+        "choice",
+        "proposal_digest",
+        "reason"
       ],
       "principal": "M",
       "required_fields": [
-        "choice"
+        "choice",
+        "proposal_digest",
+        "reason"
       ],
       "schema": "commands/task/scope/resolve.schema.json",
       "uri": "/scope-requests/{id}:resolve"
@@ -1397,34 +1322,17 @@
       "schema": "commands/task/self_accept.schema.json",
       "uri": "/reviews/{id}:self-accept"
     },
-    "task.start": {
+    "task.submit": {
       "payload_fields": [
+        "artifact_refs",
         "attempt_id",
-        "expected_execution_epoch",
-        "input_digest",
-        "preflight_id"
+        "evidence_refs",
+        "summary",
+        "validation_metadata"
       ],
       "principal": "B",
       "required_fields": [
         "attempt_id",
-        "expected_execution_epoch",
-        "input_digest",
-        "preflight_id"
-      ],
-      "schema": "commands/task/start.schema.json",
-      "uri": "/tasks/{id}:start"
-    },
-    "task.submit": {
-      "payload_fields": [
-        "artifact_refs",
-        "evidence_refs",
-        "summary",
-        "workspace_result_ref"
-      ],
-      "principal": "X",
-      "required_fields": [
-        "artifact_refs",
-        "evidence_refs",
         "summary"
       ],
       "schema": "commands/task/submit.schema.json",
@@ -1432,16 +1340,13 @@
     },
     "task.update_plan": {
       "payload_fields": [
-        "acceptance_policy",
-        "execution_scope",
         "objective",
         "reason",
+        "required_contract_ids",
         "title"
       ],
       "principal": "M",
-      "required_fields": [
-        "reason"
-      ],
+      "required_fields": [],
       "schema": "commands/task/update_plan.schema.json",
       "uri": "/tasks/{id}:update-plan"
     },
@@ -1468,9 +1373,7 @@
       "principal": "M",
       "required_fields": [
         "choices",
-        "expected_revisions",
         "kind",
-        "proposal_digest",
         "proposal_ref",
         "summary"
       ],
@@ -1480,6 +1383,7 @@
     "user_decision.resolve": {
       "payload_fields": [
         "choice",
+        "decision_id",
         "expected_revisions",
         "proposal_digest",
         "reason"
@@ -1487,24 +1391,12 @@
       "principal": "U",
       "required_fields": [
         "choice",
+        "decision_id",
         "expected_revisions",
         "proposal_digest"
       ],
       "schema": "commands/user_decision/resolve.schema.json",
       "uri": "/control/decisions/{id}:resolve"
-    },
-    "worker.ready": {
-      "payload_fields": [
-        "assignment_id",
-        "wake_attempt_id"
-      ],
-      "principal": "B",
-      "required_fields": [
-        "assignment_id",
-        "wake_attempt_id"
-      ],
-      "schema": "commands/worker/ready.schema.json",
-      "uri": "/coordination/assignments/{id}:ready"
     },
     "workspace.attach_external": {
       "payload_fields": [
@@ -1595,72 +1487,21 @@
       "schema": "commands/workspace/integrate.schema.json",
       "uri": "/integrations"
     },
-    "workspace.prepare": {
+    "workspace.select": {
       "payload_fields": [
-        "attempt_id",
-        "baseline",
-        "decision_id",
+        "driver_kind",
+        "evidence_refs",
         "external_locator",
-        "input_digest",
+        "hard_constraints",
+        "reason",
         "repository_id",
         "root_binding_refs",
         "task_id"
       ],
-      "principal": "B",
-      "required_fields": [
-        "attempt_id",
-        "baseline",
-        "decision_id",
-        "input_digest",
-        "root_binding_refs",
-        "task_id"
-      ],
-      "schema": "commands/workspace/prepare.schema.json",
-      "uri": "/workspaces"
-    },
-    "workspace.result": {
-      "payload_fields": [
-        "attempt_id",
-        "baseline_digest",
-        "changed_paths",
-        "commit_refs",
-        "patch_artifact_ref",
-        "task_id",
-        "untracked_summary",
-        "validation_metadata",
-        "validation_refs",
-        "workspace_id"
-      ],
-      "principal": "X",
-      "required_fields": [
-        "attempt_id",
-        "baseline_digest",
-        "changed_paths",
-        "commit_refs",
-        "task_id",
-        "untracked_summary",
-        "validation_refs",
-        "workspace_id"
-      ],
-      "schema": "commands/workspace/result.schema.json",
-      "uri": "/workspaces/{id}:record-result"
-    },
-    "workspace.select": {
-      "payload_fields": [
-        "attempt_id",
-        "driver_kind",
-        "evidence_refs",
-        "hard_constraints",
-        "input_digest",
-        "risk_submission_ref"
-      ],
       "principal": "M",
       "required_fields": [
-        "attempt_id",
         "driver_kind",
-        "evidence_refs",
-        "hard_constraints",
-        "input_digest"
+        "task_id"
       ],
       "schema": "commands/workspace/select.schema.json",
       "uri": "/workspace-decisions"
@@ -1686,6 +1527,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:99326365c16718548299351917cb384d740858ae2b42551c5b308d996bbcef92",
+  "schema_bundle_digest": "sha256:f574e1308cb05d16e9833a2570f1476ca718844cbf4daa5e3bd172260142d2b4",
   "supported_previous_version": "0.9"
 }

@@ -1,0 +1,387 @@
+{
+  "started_at": "2026-09-28T11:59:00.518Z",
+  "project_root": "C:\\Users\\Tyuikl\\AppData\\Local\\Temp\\tsunagou-fx2-process-m5jkmf_j",
+  "steps": [
+    {
+      "cli": [
+        "daemon",
+        "start",
+        "--coordination-root",
+        "C:\\Users\\Tyuikl\\AppData\\Local\\Temp\\tsunagou-fx2-process-m5jkmf_j",
+        "--port",
+        "0"
+      ],
+      "started_at": "2026-09-28T11:59:00.527Z",
+      "finished_at": "2026-09-28T11:59:01.852Z",
+      "exit_code": 0
+    },
+    {
+      "command": "agent.ticket.create.user",
+      "command_id": "04c193b0-6699-4583-a483-cd50a12388f1",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:01.857Z",
+      "finished_at": "2026-09-28T11:59:01.932Z",
+      "actor_id": null,
+      "error_code": null
+    },
+    {
+      "command": "agent.enroll",
+      "command_id": "35634a42-c821-4332-a176-1cb7b6540117",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:01.932Z",
+      "finished_at": "2026-09-28T11:59:02.003Z",
+      "actor_id": null,
+      "error_code": null
+    },
+    {
+      "command": "agent.ticket.create.user",
+      "command_id": "0299016e-fffa-4e76-9701-a3840fddb0ee",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.003Z",
+      "finished_at": "2026-09-28T11:59:02.056Z",
+      "actor_id": null,
+      "error_code": null
+    },
+    {
+      "command": "agent.enroll",
+      "command_id": "1c0d9a71-43b7-40e1-aee9-d4a447cd0d70",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.056Z",
+      "finished_at": "2026-09-28T11:59:02.100Z",
+      "actor_id": null,
+      "error_code": null
+    },
+    {
+      "command": "agent.ticket.create.user",
+      "command_id": "dfc22401-d57d-4368-a300-cd65b3554154",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.100Z",
+      "finished_at": "2026-09-28T11:59:02.146Z",
+      "actor_id": null,
+      "error_code": null
+    },
+    {
+      "command": "agent.enroll",
+      "command_id": "7a51eda4-3eef-42d8-82da-b2269e3c63b1",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.146Z",
+      "finished_at": "2026-09-28T11:59:02.204Z",
+      "actor_id": null,
+      "error_code": null
+    },
+    {
+      "command": "authority.appoint",
+      "command_id": "dae1b287-7c51-4c9a-b05b-dccd292af925",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.205Z",
+      "finished_at": "2026-09-28T11:59:02.220Z",
+      "actor_id": null,
+      "error_code": null
+    },
+    {
+      "command": "task.create",
+      "command_id": "0b87c5de-ebe5-47e7-8e0b-bc964e41f744",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.220Z",
+      "finished_at": "2026-09-28T11:59:02.251Z",
+      "actor_id": "7806f2d0-9e76-47a0-ae08-41a0fc567d47",
+      "error_code": null
+    },
+    {
+      "command": "workspace.select",
+      "command_id": "a624dceb-b7b6-4498-9502-243708827e2f",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.251Z",
+      "finished_at": "2026-09-28T11:59:02.282Z",
+      "actor_id": "7806f2d0-9e76-47a0-ae08-41a0fc567d47",
+      "error_code": null
+    },
+    {
+      "command": "task.ready",
+      "command_id": "4d641f7f-9ab3-4090-a24f-1c906026d527",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.282Z",
+      "finished_at": "2026-09-28T11:59:02.316Z",
+      "actor_id": "7806f2d0-9e76-47a0-ae08-41a0fc567d47",
+      "error_code": null
+    },
+    {
+      "command": "task.publish",
+      "command_id": "811fac16-97cc-4a63-bc62-84f743bcfc3a",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:02.316Z",
+      "finished_at": "2026-09-28T11:59:02.344Z",
+      "actor_id": "7806f2d0-9e76-47a0-ae08-41a0fc567d47",
+      "error_code": null
+    },
+    {
+      "cli": [
+        "daemon",
+        "stop",
+        "--coordination-root",
+        "C:\\Users\\Tyuikl\\AppData\\Local\\Temp\\tsunagou-fx2-process-m5jkmf_j"
+      ],
+      "started_at": "2026-09-28T11:59:02.542Z",
+      "finished_at": "2026-09-28T11:59:03.353Z",
+      "exit_code": 0
+    },
+    {
+      "cli": [
+        "daemon",
+        "start",
+        "--coordination-root",
+        "C:\\Users\\Tyuikl\\AppData\\Local\\Temp\\tsunagou-fx2-process-m5jkmf_j",
+        "--port",
+        "0"
+      ],
+      "started_at": "2026-09-28T11:59:03.353Z",
+      "finished_at": "2026-09-28T11:59:04.653Z",
+      "exit_code": 0
+    },
+    {
+      "command": "task.submit",
+      "command_id": "0555f306-93e3-411d-a2ae-5afaba65478e",
+      "http_status": 403,
+      "started_at": "2026-09-28T11:59:04.662Z",
+      "finished_at": "2026-09-28T11:59:04.689Z",
+      "actor_id": "8842f6ae-f937-423b-8385-267f4d898d42",
+      "error_code": "capability_denied"
+    },
+    {
+      "command": "task.begin",
+      "command_id": "c11e2920-29b1-4508-a757-c5f5ffa394c6",
+      "http_status": 403,
+      "started_at": "2026-09-28T11:59:04.689Z",
+      "finished_at": "2026-09-28T11:59:04.703Z",
+      "actor_id": "517fd7e9-5c15-4482-8e59-1d07c745af72",
+      "error_code": "attempt_owner_required"
+    },
+    {
+      "command": "task.begin",
+      "command_id": "e1d5c33d-0f25-43b6-8d25-d06316187874",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:04.703Z",
+      "finished_at": "2026-09-28T11:59:04.732Z",
+      "actor_id": "8842f6ae-f937-423b-8385-267f4d898d42",
+      "error_code": null
+    },
+    {
+      "command": "task.recover",
+      "command_id": "da04a5d0-5c0d-40e0-91a1-90148c25edb5",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:04.732Z",
+      "finished_at": "2026-09-28T11:59:04.749Z",
+      "actor_id": "7806f2d0-9e76-47a0-ae08-41a0fc567d47",
+      "error_code": null
+    },
+    {
+      "command": "task.begin",
+      "command_id": "68b66153-da66-49ad-b8c8-429efed75e87",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:04.749Z",
+      "finished_at": "2026-09-28T11:59:04.971Z",
+      "actor_id": "517fd7e9-5c15-4482-8e59-1d07c745af72",
+      "error_code": null
+    },
+    {
+      "command": "task.submit",
+      "command_id": "5d2cfb17-293b-4f76-9d03-48106d83a8be",
+      "http_status": 403,
+      "started_at": "2026-09-28T11:59:04.971Z",
+      "finished_at": "2026-09-28T11:59:04.976Z",
+      "actor_id": "8842f6ae-f937-423b-8385-267f4d898d42",
+      "error_code": "capability_denied"
+    },
+    {
+      "command": "task.submit",
+      "command_id": "9c2b354d-9b66-4a42-8cbe-383db8ca2079",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:04.977Z",
+      "finished_at": "2026-09-28T11:59:05.304Z",
+      "actor_id": "517fd7e9-5c15-4482-8e59-1d07c745af72",
+      "error_code": null
+    },
+    {
+      "command": "task.review.accept",
+      "command_id": "af7f4a1b-ab84-4cde-a214-428cafd5cf78",
+      "http_status": 200,
+      "started_at": "2026-09-28T11:59:05.304Z",
+      "finished_at": "2026-09-28T11:59:05.321Z",
+      "actor_id": "7806f2d0-9e76-47a0-ae08-41a0fc567d47",
+      "error_code": null
+    },
+    {
+      "cli": [
+        "agent",
+        "connect",
+        "--adapter",
+        "codex",
+        "--profile",
+        "fx2-main",
+        "--role",
+        "main",
+        "--no-register-host"
+      ],
+      "started_at": "2026-09-28T11:59:05.360Z",
+      "finished_at": "2026-09-28T11:59:05.695Z",
+      "exit_code": 0
+    },
+    {
+      "cli": [
+        "agent",
+        "connect",
+        "--adapter",
+        "codex",
+        "--profile",
+        "fx2-worker",
+        "--role",
+        "worker",
+        "--no-register-host"
+      ],
+      "started_at": "2026-09-28T11:59:05.695Z",
+      "finished_at": "2026-09-28T11:59:06.055Z",
+      "exit_code": 0
+    },
+    {
+      "cli": [
+        "daemon",
+        "stop",
+        "--coordination-root",
+        "C:\\Users\\Tyuikl\\AppData\\Local\\Temp\\tsunagou-fx2-process-m5jkmf_j"
+      ],
+      "started_at": "2026-09-28T11:59:08.668Z",
+      "finished_at": "2026-09-28T11:59:09.497Z",
+      "exit_code": 0
+    }
+  ],
+  "status": "passed",
+  "race": {
+    "winner_agent_id": "8842f6ae-f937-423b-8385-267f4d898d42",
+    "other_agent_id": "517fd7e9-5c15-4482-8e59-1d07c745af72",
+    "task_id": "b6c8e97f-7578-4eb6-9fe0-2d16107a710d",
+    "attempt_id": "493c8825-1598-4394-9239-fb14d1157142",
+    "owner_agent_id": "8842f6ae-f937-423b-8385-267f4d898d42",
+    "status": "running",
+    "revision": 5,
+    "scope_revision": 1,
+    "execution_scope": {
+      "roots": [
+        "coordination"
+      ]
+    },
+    "workspace_id": "d8eb2e6d-bdea-4afe-af8f-bb7117a75307",
+    "reservation_id": "eeb18e98-9334-4f59-9830-278bc6dc6f8c"
+  },
+  "restart": {
+    "old_pid": 90604,
+    "new_pid": 92440
+  },
+  "resources": {
+    "items": [
+      {
+        "reservation_id": "eeb18e98-9334-4f59-9830-278bc6dc6f8c",
+        "task_id": "b6c8e97f-7578-4eb6-9fe0-2d16107a710d",
+        "attempt_id": "493c8825-1598-4394-9239-fb14d1157142",
+        "owner_agent_id": "8842f6ae-f937-423b-8385-267f4d898d42",
+        "status": "released",
+        "created_at": "2026-09-28T11:59:02.526Z",
+        "released_at": "2026-09-28T11:59:04.736Z",
+        "release_reason": "task_recovered",
+        "resources": [
+          "path:coordination:"
+        ],
+        "updated_at": "2026-09-28T11:59:04.736Z"
+      },
+      {
+        "reservation_id": "136323ca-26b3-4bf5-8219-79f82affb2fe",
+        "task_id": "b6c8e97f-7578-4eb6-9fe0-2d16107a710d",
+        "attempt_id": "299b204d-8846-4f4c-bd91-2668e9891345",
+        "owner_agent_id": "517fd7e9-5c15-4482-8e59-1d07c745af72",
+        "status": "released",
+        "created_at": "2026-09-28T11:59:04.955Z",
+        "released_at": "2026-09-28T11:59:05.290Z",
+        "release_reason": "attempt_submitted",
+        "resources": [
+          "path:coordination:"
+        ],
+        "updated_at": "2026-09-28T11:59:05.290Z"
+      }
+    ]
+  },
+  "task": {
+    "task_id": "b6c8e97f-7578-4eb6-9fe0-2d16107a710d",
+    "title": "process ownership",
+    "objective": "restart and reclaim",
+    "status": "completed",
+    "revision": 10,
+    "scope_revision": 1,
+    "execution_scope": {
+      "roots": [
+        "coordination"
+      ]
+    },
+    "required_contract_ids": [],
+    "blocks": [],
+    "current_attempt_id": "299b204d-8846-4f4c-bd91-2668e9891345",
+    "owner_agent_id": "517fd7e9-5c15-4482-8e59-1d07c745af72",
+    "block_reason": null,
+    "created_at": "2026-09-28T11:59:02.239Z",
+    "updated_at": "2026-09-28T11:59:05.308Z"
+  },
+  "mcp": {
+    "status": "passed",
+    "task_id": "6634ee82-04fd-4b77-aff9-39a6eac1b3e6",
+    "attempt_id": "32180d5f-d21c-4f07-b475-3e7af2804fb5",
+    "main_agent_id": "d2592942-893d-4e8e-aafc-0dd3c54112bf",
+    "worker_agent_id": "0f7bf132-b3eb-4484-9c7f-0e467dac06ad",
+    "reservation_id": "afef38d3-981f-423a-89d2-9f628baefd3a",
+    "discrepancy_observed": true,
+    "baseline_conflict": true,
+    "test_executed": true,
+    "message_id": "6e1e180d-1f0d-4def-b46a-2a073d429a2b",
+    "response_message_id": "dadc60ba-9507-40a4-be02-bbef83ebf84c",
+    "response_obligation": "responded",
+    "contract_id": "638030e5-78da-46ed-98fa-da1db6a3f4e4",
+    "result_id": "59139741-7034-44ed-9724-5fc1ed8519ef",
+    "review_status": "completed",
+    "user_decision": {
+      "decision_id": "c17175cf-13f2-4f41-ba25-ae0c43be733a",
+      "revision": 1,
+      "proposal_digest": "sha256:83c5dddd091e1823ab51c535f63ebe2ff80bff123bd83926dc12a7ebc80107b2"
+    },
+    "completion": {
+      "proposal_id": "fde8c286-4849-437e-8560-505ef870f73f",
+      "revision": 1,
+      "proposal_digest": "sha256:29265ebd7807739017c7ba3bf4386496c8b8c11261aa1857b3a3f663ca34fdc5"
+    },
+    "foreign_execution_submit": "rejected"
+  },
+  "event_refs": [
+    {
+      "event_id": "6daea5f3-aaf7-4486-ae41-9bab7e0d1481",
+      "action": "task.begin",
+      "occurred_at": "2026-09-28T11:59:02.526Z"
+    },
+    {
+      "event_id": "f86dd89c-5ace-4c1a-94fa-ecf6205919c3",
+      "action": "task.begin",
+      "occurred_at": "2026-09-28T11:59:04.719Z"
+    },
+    {
+      "event_id": "d93eca78-816b-4770-83f4-4ddf889cf55c",
+      "action": "task.recover",
+      "occurred_at": "2026-09-28T11:59:04.736Z"
+    },
+    {
+      "event_id": "dbc5b4a1-3d9d-485f-b2b9-cd427bb37a15",
+      "action": "task.begin",
+      "occurred_at": "2026-09-28T11:59:04.955Z"
+    },
+    {
+      "event_id": "1e717857-2397-4c68-b983-6f9568f95c7a",
+      "action": "task.begin",
+      "occurred_at": "2026-09-28T11:59:07.604Z"
+    }
+  ],
+  "finished_at": "2026-09-28T11:59:09.497Z"
+}

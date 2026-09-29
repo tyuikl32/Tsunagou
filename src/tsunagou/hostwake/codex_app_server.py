@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from tsunagou.hostwake.binding import PrivateBindingStore
+from tsunagou.hostwake.codex_desktop import CodexDesktopProvider
 from tsunagou.hostwake.port import (
     HostBindingRef,
     HostCapabilityReport,
@@ -1188,16 +1189,24 @@ class DesktopAttachProvider(ManagedCodexProvider):
 class HostWakeProviderRegistry:
     """Route one shared host-wake port to managed or explicitly attached Codex."""
 
-    def __init__(self, managed: ManagedCodexProvider, desktop: DesktopAttachProvider) -> None:
+    def __init__(
+        self, managed: ManagedCodexProvider, desktop: DesktopAttachProvider,
+        native: CodexDesktopProvider | None = None,
+    ) -> None:
         self.managed = managed
         self.desktop = desktop
         self.store = managed.store
+        if native is None:
+            native = CodexDesktopProvider(self.store)
+        self.native = native
 
     def register_binding(self, *, provider: str = "managed_app_server", **kwargs: Any) -> HostBindingRef:
         if provider == "managed_app_server":
             return self.managed.register_binding(**kwargs)
         if provider == "desktop_attach":
             return self.desktop.register_binding(**kwargs)
+        if provider == "codex_desktop_app":
+            return self.native.register_binding(**kwargs)
         raise HostWakeError("host_provider_unsupported", "unknown host binding provider")
 
     def _provider(self, binding: HostBindingRef) -> HostWakePort:
@@ -1205,6 +1214,8 @@ class HostWakeProviderRegistry:
             return self.desktop
         if binding.provider == "managed_app_server":
             return self.managed
+        if binding.provider == "codex_desktop_app":
+            return self.native
         raise HostWakeError("host_provider_unsupported", "unknown host binding provider")
 
     def probe(self, binding: HostBindingRef) -> HostCapabilityReport:
@@ -1217,7 +1228,7 @@ class HostWakeProviderRegistry:
         return self._provider(request.binding).wake(request)
 
     def poll(self, wake_attempt_id: str) -> WakeAttempt | None:
-        for provider in (self.desktop, self.managed):
+        for provider in (self.native, self.desktop, self.managed):
             result = provider.poll(wake_attempt_id)
             if result is not None:
                 return result
@@ -1228,3 +1239,15 @@ class HostWakeProviderRegistry:
 
     def close(self, binding: HostBindingRef, reason: str) -> None:
         self._provider(binding).close(binding, reason)
+
+    def restore_attempt(self, request: HostWakeRequest, state: str) -> None:
+        provider = self._provider(request.binding)
+        restore = getattr(provider, "restore_attempt", None)
+        if callable(restore):
+            restore(request, state)
+
+    def refresh_binding(self, agent_id: str, refresh: dict[str, Any], *, connection_epoch: int) -> HostBindingRef:
+        return self.native.refresh_binding(agent_id, refresh, connection_epoch=connection_epoch)
+
+    def validate_refresh(self, agent_id: str, refresh: dict[str, Any]) -> None:
+        self.native.validate_refresh(agent_id, refresh)

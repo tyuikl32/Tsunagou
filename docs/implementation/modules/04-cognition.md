@@ -28,11 +28,13 @@ rule registry 固定 rule_id/version 与严重度默认值，触发记录 input 
 
 ## 契约协议
 
-propose 固化正文、参与者、输入引用与 digest；required 集至少一个、无重复。accept 必须本人是 required/optional slot，精确匹配 proposal digest；所有 required slots 被 direct 或获准 proxy evidence 覆盖才 accepted。optional 不阻塞。
+propose 固化正文、参与者与 digest。required/optional 元素统一为 `{slot,agent_id}`，两字段均非空白，slot 在两组间唯一，Agent 必须属于当前项目；required 至少一项，同一 Agent 可以承担多个不同 slot。字符串参与者不再接受，不从 slot 猜测身份。输入引用等业务元数据可选，代码不推断其含义。
 
-proxy 是独立 `contract.accept_proxy` 命令，仅 main、项目 policy 明确允许且目标 slot 可代理；记录真实 actor、被代表的 participant、理由和证据。不能伪造直接接受。参与者替换、内容修改、前提失效必须新 proposal，旧接受不能迁移。
+accept 和 accept_proxy 只接受 proposed 且 digest 一致的提案；accepted、withdrawn、rejected、superseded 均拒绝新接受。已接受的 slot 不允许新命令覆盖；只有同 command_id 的幂等重放返回原结果。所有 required slots 接受后才将 proposal 改为 accepted；optional 不阻塞。返回的 `status=accepted` 表示本 slot 已接受，`proposal_status=proposed|accepted` 表示整份提案状态，两者不能混用。
 
-reject 保存理由并把 proposal rejected；withdraw 由提议主体/main 在允许关系内执行；已 accepted 只通过新版本 supersede，不删历史。task preflight 引用 accepted exact proposal，并核对已明确声明的输入依赖 revision。
+proxy 是独立 `contract.accept_proxy` 命令，要求 main 的 `contract.accept_proxy` 权限；服务从 slot 解析被代表的实际 Agent，保存 `real_actor_id`、`represented_participant=agent_id` 与 `via_proxy=true`。理由、policy 引用和证据可附带，不增加用户逐项审批。不能把 slot 名写作被代理身份或伪造直接接受。参与者替换、内容修改、前提失效必须新 proposal，旧接受不能迁移。
+
+reject 只允许参与者终结 proposed；withdraw 只允许原提议者终结 proposed。原提议者可通过 `contract.propose` 的 `supersedes_id` 替代 proposed/accepted 提案；先验证并创建替代提案，再在同一 UoW 中把旧提案设为 superseded，失败时两者都不变。其他终态不可替代。任务只引用精确 proposal；具体门禁简化按 FX2 实施。
 
 ## 风险建议与内核判断
 

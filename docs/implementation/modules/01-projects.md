@@ -19,7 +19,7 @@
 | policies / ProjectPolicy | version, canonical_payload, digest, actor, reason | 不可变版本；current 指针带 revision；只允许注册字段 |
 | ceilings / UserCeiling | subject_template, path_rules, capability_ids, full_access_allowed, reserved_decisions, digest | 本机 user-only 写；Grant 必须子集 |
 | grants / Grant | kind, principal_id, session_id, runtime_epoch, authority_epoch?, task_id?, attempt_id?, execution_epoch?, scope_version, scope_json, scope_digest, capabilities, status, replaces_id? | 五 kind；外键列对应 JSON；`(session_id,status)`、`(attempt_id,status)` 索引 |
-| decisions / UserDecision | kind, proposal_ref, proposal_digest, expected_revisions, choices, status, decision, reason?, decided_at? | 提交决定必须 user_control；pending 无 deadline |
+| decisions / UserDecision | kind, proposal_ref, proposal_digest, expected_revisions, choices, summary, status, decision, reason?, decided_at? | 提交决定必须 user_control；pending 无 deadline |
 | completion_proposals | objective_ref, project_revision, evidence_refs, outstanding_summary, digest, status:proposed\|confirmed\|superseded\|rejected | 用户确认冻结 exact digest；不能随最新证据自动变更 |
 | conditions / blockers | 见数据模型完整 DTO | `(type,scope)` / `(code,source_ref,scope)` current 唯一；变化另记 event |
 

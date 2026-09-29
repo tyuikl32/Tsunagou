@@ -14,7 +14,8 @@ from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.generated.protocol.audit import AuditEventModel, AuditPageModel
 from tsunagou.generated.protocol.delivery import CredentialDeliveryModel
 from tsunagou.interfaces.runtime import CommandDispatcher
-from tsunagou.shared_kernel.errors import IdempotencyConflict, LockUnavailable, RevisionConflict
+from tsunagou.platform.telemetry import Telemetry
+from tsunagou.shared_kernel.errors import IdempotencyConflict, LockUnavailable, ResourceConflict, RevisionConflict
 from tsunagou.shared_kernel.ids import new_id
 from tsunagou.shared_kernel.query_models import (
     AuditExportModel,
@@ -30,6 +31,7 @@ class HealthResponse(BaseModel):
 
     status: str
     version: str
+    runtime: dict[str, Any] | None = None
 
 
 class CommandRequest(BaseModel):
@@ -45,7 +47,7 @@ class HostBindingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_id: str
-    provider: Literal["managed_app_server", "desktop_attach"] = "managed_app_server"
+    provider: Literal["managed_app_server", "desktop_attach", "codex_desktop_app"] = "managed_app_server"
     adapter_profile: str
     cwd: str
     scope_digest: str
@@ -59,6 +61,11 @@ class HostBindingRequest(BaseModel):
     endpoint: str | None = None
     thread_id: str | None = None
     attach_confirmed: bool = False
+    caller_thread_id: str | None = None
+    host_generation: str | None = None
+    host_id: str = "local"
+    app_version: str | None = None
+    plugin_version: str | None = None
 
 
 def _delivery_timestamps(result: dict[str, Any]) -> dict[str, Any]:
@@ -79,6 +86,7 @@ def create_app(
     push_notifier: Any | None = http_push_notifier,
     wake_dispatcher: Any | None = None,
     hostwake_provider: Any | None = None,
+    telemetry: Telemetry | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Tsunagou", version=__version__, docs_url=None, redoc_url=None)
     if dispatcher is None:
@@ -97,9 +105,24 @@ def create_app(
     app.state.a2a_gateway = a2a_gateway
     app.state.wake_dispatcher = wake_dispatcher
     app.state.hostwake_provider = hostwake_provider
+    telemetry = telemetry or Telemetry()
+    app.state.telemetry = telemetry
+
+    @app.middleware("http")
+    async def trace_context(request: Request, call_next: Any) -> Response:
+        with telemetry.activate(request.headers.get("traceparent")):
+            result: Response = await call_next(request)
+            return result
 
     @app.on_event("shutdown")
     def release_runtime_lock() -> None:
+        host_delivery = getattr(app.state, "host_delivery", None)
+        if host_delivery is not None:
+            host_delivery.stop()
+            if host_delivery._thread is not None and host_delivery._thread.is_alive():
+                return
+        elif wake_dispatcher is not None:
+            wake_dispatcher.stop()
         maintenance = getattr(app.state, "maintenance", None)
         if maintenance is not None:
             maintenance.stop()
@@ -109,10 +132,11 @@ def create_app(
         database = getattr(dispatcher, "database", None)
         if database is not None:
             database.release_process_lock()
+        telemetry.close()
 
-    @app.get("/api/v1/health", response_model=HealthResponse)
+    @app.get("/api/v1/health", response_model=HealthResponse, response_model_exclude_none=True)
     def health() -> HealthResponse:
-        return HealthResponse(status="ok", version=__version__)
+        return HealthResponse(status="ok", version=__version__, runtime=getattr(app.state, "runtime_info", None))
 
     @app.get("/.well-known/agent-card.json")
     def agent_card(request: Request) -> dict[str, Any]:
@@ -156,6 +180,7 @@ def create_app(
         session_id: str | None = Header(default=None, alias="Tsunagou-Session-Id"),
         connection_epoch: int | None = Header(default=None, alias="Tsunagou-Connection-Epoch"),
     ) -> dict[str, Any]:
+        principal = None
         try:
             policy = dispatcher.registry.get(command_kind)
             if policy is None:
@@ -172,9 +197,53 @@ def create_app(
                     dispatcher.database, command_kind=command_kind, command_id=request.command_id, payload=request.payload,
                     authorization=authorization, session_id=session_id, connection_epoch=connection_epoch,
                 )
+            enrollment_binding = (
+                authenticator.authority.ticket_host_binding(principal.principal_id)
+                if command_kind in {"agent.enroll", "session.rebind"} and authenticator.authority is not None else None
+            )
+            if enrollment_binding is not None and hostwake_provider is None:
+                raise RuntimeError("host_wake_not_configured")
+            refresh = request.payload.get("host_binding_refresh") if command_kind == "session.reconnect" else None
+            if refresh is not None:
+                if not isinstance(refresh, dict):
+                    raise ValueError("host_binding_refresh_invalid")
+                if hostwake_provider is None:
+                    raise RuntimeError("host_wake_not_configured")
+                hostwake_provider.validate_refresh(principal.principal_id, refresh)
             dispatched = dispatcher.dispatch(
                 command_kind, request.model_dump(), principal=principal,
             )
+            if command_kind == "context.project_read":
+                binding = hostwake_provider.store.get(principal.principal_id) if hostwake_provider is not None else None
+                dispatched.result["host_binding"] = ({
+                    "provider": binding[0].provider, "status": binding[0].status,
+                    "binding_revision": binding[0].binding_revision, "connection_epoch": binding[0].connection_epoch,
+                } if binding else None)
+            if enrollment_binding is not None:
+                # The U-issued ticket fixes the original host identity. Register
+                # after commit; replay retries this private-file write safely.
+                assert hostwake_provider is not None
+                current_session = (
+                    authenticator.authority.sessions.get(dispatched.result.get("session_id", ""))
+                    if authenticator.authority is not None else None
+                )
+                if (current_session is not None and current_session.active
+                        and current_session.connection_epoch == dispatched.result.get("connection_epoch")):
+                    hostwake_provider.register_binding(
+                        **enrollment_binding, agent_id=current_session.agent_id,
+                        binding_id="binding:" + current_session.agent_id,
+                        connection_epoch=current_session.connection_epoch,
+                    )
+            if refresh is not None:
+                # Outside the credential transaction; its private request
+                # journal replays this idempotently if the response is lost.
+                assert hostwake_provider is not None  # Validated before dispatch.
+                hostwake_provider.refresh_binding(
+                    principal.principal_id, refresh,
+                    connection_epoch=int(dispatched.result["connection_epoch"]),
+                )
+                if wake_dispatcher is not None:
+                    wake_dispatcher.resume_pending()
             if command_kind == "inbox.presented" and wake_dispatcher is not None:
                 payload = request.payload
                 try:
@@ -190,6 +259,11 @@ def create_app(
                     # the private host-wake journal is temporarily unavailable.
                     pass
         except PermissionError as exc:
+            if principal is None and wake_dispatcher is not None:
+                wake_dispatcher.record_command_failure(
+                    project_id=getattr(dispatcher.database, "project_id", None), actor_id=None,
+                    command_id=request.command_id, command_kind=command_kind, error_code=str(exc),
+                )
             code = str(exc)
             raise HTTPException(
                 status_code=401 if code == "authentication_failed" else 403,
@@ -201,6 +275,8 @@ def create_app(
             raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
         except RevisionConflict as exc:
             raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+        except ResourceConflict as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "blockers": exc.blockers}) from exc
         except LockUnavailable as exc:
             raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
         except RuntimeError as exc:
@@ -285,6 +361,13 @@ def create_app(
                 endpoint=request.endpoint,
                 thread_id=request.thread_id,
                 attach_confirmed=request.attach_confirmed,
+                **({
+                    "caller_thread_id": request.caller_thread_id,
+                    "host_generation": request.host_generation,
+                    "host_id": request.host_id,
+                    "app_version": request.app_version,
+                    "plugin_version": request.plugin_version,
+                } if request.provider == "codex_desktop_app" else {}),
             )
             return {"binding": ref.__dict__ if hasattr(ref, "__dict__") else {
                 "binding_id": ref.binding_id, "agent_id": ref.agent_id,
@@ -429,6 +512,10 @@ def create_app(
     @app.get("/api/v1/projects/{project_id}/diagnostics", response_model=DiagnosticPageModel)
     def project_diagnostics(
         project_id: str,
+        message_id: Annotated[str | None, Query(max_length=160)] = None,
+        task_id: Annotated[str | None, Query(max_length=160)] = None,
+        from_timestamp: Annotated[str | None, Query(alias="from")] = None,
+        to_timestamp: Annotated[str | None, Query(alias="to")] = None,
         authorization: Annotated[str | None, Header(alias="Authorization")] = None,
         session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
         connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
@@ -440,12 +527,16 @@ def create_app(
             )
             if query_provider is None:
                 return {"project_id": project_id, "items": []}
-            return query_provider("diagnostics", project_id, viewer=viewer)
+            return query_provider("diagnostics", project_id, viewer=viewer, message_id=message_id,
+                                  task_id=task_id, from_timestamp=from_timestamp, to_timestamp=to_timestamp)
         except PermissionError as exc:
             raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
                                  detail={"code": str(exc)}) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
 
     @app.get("/api/v1/projects/{project_id}/events")
     def project_events(project_id: str) -> dict[str, Any]:
@@ -703,10 +794,22 @@ def create_app(
             raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
 
     @app.get("/api/v1/decisions")
-    def decisions() -> dict[str, Any]:
-        if query_provider is None:
-            return {"items": []}
-        return query_provider("decisions", "")
+    def decisions(
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                return {"items": []}
+            return query_provider("decisions", "", viewer=viewer)
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
 
     @app.get("/api/v1/operations/{operation_id}")
     def operation(operation_id: str) -> dict[str, Any]:

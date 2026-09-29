@@ -1,0 +1,7 @@
+{
+  "kind": "design.change",
+  "proposal_ref": "task/example",
+  "expected_revisions": {"decision": 1},
+  "choices": ["approved", "rejected"],
+  "summary": "Use the selected design"
+}

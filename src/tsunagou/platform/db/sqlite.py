@@ -32,10 +32,17 @@ except ImportError:  # pragma: no cover - exercised on Windows
 _SECRET_KEY_PARTS = ("secret", "token", "nonce", "password", "authorization", "api_key", "credential")
 
 
+def _is_secret_key(key: object) -> bool:
+    name = str(key).casefold()
+    # Usage accounting is ordinary message data, not a bearer credential.
+    # Its value is still traversed below, so nested secrets remain protected.
+    return name.replace("_", "") != "tokenusage" and any(part in name for part in _SECRET_KEY_PARTS)
+
+
 def _contains_secret_shape(value: Any) -> bool:
     if isinstance(value, dict):
         return any(
-            any(part in str(key).casefold() for part in _SECRET_KEY_PARTS)
+            _is_secret_key(key)
             or _contains_secret_shape(item)
             for key, item in value.items()
         )
@@ -49,7 +56,7 @@ def _redact_result(value: dict[str, Any]) -> dict[str, Any]:
         if isinstance(item, dict):
             return {
                 str(key): "[REDACTED]"
-                if any(part in str(key).casefold() for part in _SECRET_KEY_PARTS)
+                if _is_secret_key(key)
                 else redact(child)
                 for key, child in item.items()
             }
@@ -791,6 +798,7 @@ class ProjectDatabase:
         auth_proof_hash: str | None = None,
         replay_only: bool = False,
         on_rollback: Callable[[], None] | None = None,
+        prepare: Callable[[], None] | None = None,
     ) -> DispatchResult:
         input_hash = canonical_digest({
             "project_id": self.project_id, "principal_id": principal_id,
@@ -799,7 +807,6 @@ class ProjectDatabase:
         })
         with self.lock:
             conn = self._connect()
-            conn.execute("BEGIN IMMEDIATE")
             committed = False
             try:
                 row = conn.execute(
@@ -825,6 +832,13 @@ class ProjectDatabase:
                     )
                 if replay_only:
                     raise PermissionError("authentication_failed")
+                # Preparation observes files/Git under the process writer lock,
+                # after replay lookup but before opening a SQLite write transaction.
+                # It must not mutate domain state. The handler revalidates identity
+                # and expected versions inside the transaction below.
+                if prepare is not None:
+                    prepare()
+                conn.execute("BEGIN IMMEDIATE")
                 uow = UnitOfWork(conn, self.project_id, command_id)
                 result = handler(uow)
                 binding = {"project_id": self.project_id, "principal_id": principal_id,

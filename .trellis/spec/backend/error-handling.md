@@ -6,4 +6,4 @@ Domain errors are typed values with stable machine codes. Transport renders RFC 
 
 A duplicate command_id with the same semantic hash replays the original result after current identity fencing; a different hash conflicts. Do not re-run external effects blindly. Job handlers declare pure/idempotent/reconcilable/unverifiable; ambiguous unverifiable effects become outcome_unknown.
 
-UserDecision has no timeout. Infrastructure Lease/Job deadlines must not turn user silence into rejection. Return scoped blockers and remediation without leaking other projects or private recipients. No secret inputs in validation errors.
+UserDecision and resource reservations have no timeout. Internal Job deadlines must not turn user silence into rejection or transfer task ownership. Return scoped blockers and remediation without leaking other projects or private recipients. Resource conflicts return 409 with the held owner/task/attempt/resource. No secret inputs in validation errors.

@@ -40,7 +40,11 @@ def clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         task = runtime.call("task.create", {"title": "resume later", "objective": "never revive a grant"}, main)
         runtime.call("task.ready", {"task_id": task["task_id"]}, main)
         runtime.call("task.publish", {"task_id": task["task_id"]}, main)
-        claim = runtime.call("task.claim", {"task_id": task["task_id"]}, worker)
+        claim = runtime.call(
+            "task.begin",
+            {"task_id": task["task_id"], "expected_task_revision": server.state.state_runtime.tasks.tasks[task["task_id"]].revision},
+            worker,
+        )
         state = server.state.state_runtime
         before_artifact = state.capture()
         artifact_bytes = b"promoted artifact survives clean-clone recovery\n"
@@ -48,30 +52,42 @@ def clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         state.artifacts.write_chunk(upload.intent_id, artifact_bytes)
         artifact = state.artifacts.finalize(upload.intent_id, media_type="text/plain")
         state.artifacts.promote(
-            artifact.artifact_ref, actor_kind="main", actor_id=main["agent_id"],
+            artifact.artifact_ref,
+            actor_kind="main",
+            actor_id=main["agent_id"],
             project_shared_allowed=lambda *_: True,
         )
         artifact.project_id = registry.project.project_id
         artifact.lineage_id = state.lineage_id
         with runtime.db.transaction(new_id()) as uow:
             state.persist(
-                uow, actor_ref=main["agent_id"], command_kind="artifact.promote",
-                before=before_artifact, command_payload={"domain_ref": artifact.domain_ref},
+                uow,
+                actor_ref=main["agent_id"],
+                command_kind="artifact.promote",
+                before=before_artifact,
+                command_payload={"domain_ref": artifact.domain_ref},
                 result={"artifact_ref": artifact.artifact_ref},
             )
         checkpoint = runtime.call("checkpoint.create.user", {"reason": "clone_fixture"})
         assert checkpoint["checkpoint_status"] == "sealed"
     finally:
         server.state.project_database.release_process_lock()
-    subprocess.run(["git", "-c", "core.autocrlf=false", "add", ".tsunagou/project.json", ".tsunagou/checkpoints"],
-                   cwd=source, check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "add", ".tsunagou/project.json", ".tsunagou/checkpoints"], cwd=source, check=True)
     subprocess.run(["git", "commit", "--quiet", "-m", "shared checkpoint"], cwd=source, check=True)
     target = tmp_path / "clone"
     subprocess.run(["git", "clone", "--quiet", "--no-local", str(source), str(target)], check=True)
-    return {"root": target, "project_id": registry.project.project_id, "task_id": task["task_id"],
-            "attempt_id": claim["attempt_id"], "checkpoint": checkpoint,
-            "worker": worker, "main": main, "artifact_ref": artifact.artifact_ref,
-            "artifact_bytes": artifact_bytes, "artifact_digest": artifact.digest}
+    return {
+        "root": target,
+        "project_id": registry.project.project_id,
+        "task_id": task["task_id"],
+        "attempt_id": claim["attempt_id"],
+        "checkpoint": checkpoint,
+        "worker": worker,
+        "main": main,
+        "artifact_ref": artifact.artifact_ref,
+        "artifact_bytes": artifact_bytes,
+        "artifact_digest": artifact.digest,
+    }
 
 
 def test_clean_clone_preview_confirm_and_restart(clone: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,7 +110,7 @@ def test_clean_clone_preview_confirm_and_restart(clone: dict[str, Any], monkeypa
         state = restored.state.state_runtime
         assert state.authority.main_agent_id is None
         assert not state.authority.sessions and not state.authority.grants and not state.authority.tickets
-        assert not state.resources.lease_sets and not state.project_registry.local_bindings
+        assert not state.resources.reservations and not state.project_registry.local_bindings
         task = state.tasks.tasks[clone["task_id"]]
         assert task.status == "blocked" and task.block_reason == "recovery_review" and task.current_attempt_id is None
         assert state.tasks.attempts[clone["attempt_id"]].status == "orphaned"
@@ -102,9 +118,14 @@ def test_clean_clone_preview_confirm_and_restart(clone: dict[str, Any], monkeypa
         artifact = state.artifacts.refs[clone["artifact_ref"]]
         assert artifact.storage_scope == "project_shared" and artifact.recipient_agent_id is None
         assert state.artifacts.blobs[clone["artifact_digest"]].storage_state == "promoted"
-        assert state.artifacts.read(
-            clone["artifact_ref"], actor="restored-reader", domain_authorized=lambda *_: True,
-        ) == clone["artifact_bytes"]
+        assert (
+            state.artifacts.read(
+                clone["artifact_ref"],
+                actor="restored-reader",
+                domain_authorized=lambda *_: True,
+            )
+            == clone["artifact_bytes"]
+        )
         events = restored.state.project_database.list_events(limit=200)
         assert any(row["event_type"] == "task.create" for row in events)
         activation = next(row for row in events if row["event_type"] == "project.replica.activated")
@@ -124,8 +145,7 @@ def test_restore_cli_and_unconfirmed_clone_cannot_start(clone: dict[str, Any], m
     with pytest.raises(RuntimeError, match="checkpoint_restore_required"):
         build_application()
     runner = CliRunner()
-    args = ["project", "restore", "--coordination-root", str(root),
-            "--checkpoint-digest", clone["checkpoint"]["checkpoint_digest"]]
+    args = ["project", "restore", "--coordination-root", str(root), "--checkpoint-digest", clone["checkpoint"]["checkpoint_digest"]]
     preview = runner.invoke(cli, args)
     assert preview.exit_code == 0, preview.output
     value = json.loads(preview.output)
@@ -147,12 +167,12 @@ def test_clone_rejects_local_credentials_and_unanchored_content(clone: dict[str,
     ticket.unlink()
     # A matching worktree alone is insufficient after all local anchor refs
     # are removed; remote tracking refs and reflogs cannot authorize recovery.
-    refs = subprocess.check_output(["git", "for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags"],
-                                   cwd=root, text=True).splitlines()
+    refs = subprocess.check_output(
+        ["git", "for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags"], cwd=root, text=True
+    ).splitlines()
     for ref in refs:
         subprocess.run(["git", "update-ref", "-d", ref], cwd=root, check=True)
     preview = recovery.preview(digest)
     assert not preview["can_confirm"]
     with pytest.raises(ValueError, match="verified_supported"):
         recovery.confirm(digest, preview["plan_digest"])
-

@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_registry_has_schema_and_policy_for_every_command() -> None:
     registry = json.loads((ROOT / "protocol/registry/commands.json").read_text(encoding="utf-8"))
-    assert len(registry["commands"]) >= 100
+    assert {"task.begin", "task.submit", "contract.accept"} <= registry["commands"].keys()
+    assert not {"task.claim", "task.preflight", "resource.renew", "worker.ready"} & registry["commands"].keys()
     for entry in registry["commands"].values():
         path = ROOT / "protocol/schemas" / entry["schema"]
         assert path.is_file()
