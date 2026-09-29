@@ -238,11 +238,14 @@ Invoke-RestMethod "$baseUrl/api/v1/health"
 | GET | `/api/v1/projects/{project_id}/jobs` | 已持久化 Job 状态；当前有过期 lease 的机械维护，不代表后台 handler 已全面运行 |
 | GET | `/api/v1/projects/{project_id}/roots` | 项目根和绑定摘要 |
 | GET | `/api/v1/projects/{project_id}/repositories` | 仓库登记摘要 |
+| GET | `/api/v1/projects/{project_id}/overview` | 项目概况：名称、目标、生命周期、policy_revision、根与仓库清单（仅摘要，完整形状看 roots/repositories） |
 | GET | `/api/v1/projects/{project_id}/agents` | Agent、session 和主 Agent 摘要 |
 | GET | `/api/v1/projects/{project_id}/messages` | 脱敏消息摘要 |
 | GET | `/api/v1/projects/{project_id}/contracts` | 契约摘要 |
 | GET | `/api/v1/projects/{project_id}/cognition` | 报告、分歧和契约 |
 | GET | `/api/v1/projects/{project_id}/resources` | 资源/Lease 摘要 |
+| GET | `/api/v1/projects/{project_id}/intents` | 资源意图：申请、owner、尝试与资源键 |
+| GET | `/api/v1/projects/{project_id}/conflicts` | 租约冲突账本：请求方、占用方、阶段与机械推断的应对情况 |
 | GET | `/api/v1/projects/{project_id}/workspaces` | workspace baseline/result 摘要 |
 | GET | `/api/v1/projects/{project_id}/coordination` | 计划、分工、WakeAttempt、重要事件和覆盖率 |
 | GET | `/api/v1/projects/{project_id}/assignments` | 分工状态和 worker 覆盖率 |
@@ -264,6 +267,8 @@ Invoke-RestMethod "$baseUrl/api/v1/health"
 | GET | `/.well-known/agent-card.json` | A2A Agent Card；不含秘密 |
 | POST | `/api/v1/a2a` | A2A JSON-RPC `message/send`、`tasks/get`、任务状态转换 |
 | POST | `/api/v1/a2a/agents/{recipient_agent_id}` | 路由到指定 Agent 的 A2A JSON-RPC |
+
+冲突账本的来源：一次租约拒绝会以 `command.<kind>.denied` 事件持久化——该事件写在命令自身事务之外，所以拒绝即使回滚也留痕。`/conflicts` 读这些事件，再按**当前**租约与 Attempt 状态机械推断应对情况（`retried_and_won` / `gave_up` / `holder_released` / `open`），不需要任何人上报。冲突只是账：它从不阻塞流程，门仍由租约当。
 
 所有写入统一走 command dispatcher：
 

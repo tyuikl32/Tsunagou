@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Tsunagou —— 多 Agent 协作调度系统</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" type="text/css" href="./assets/css/style.css">
+    <link rel="stylesheet" type="text/css" href="./assets/css/dag.css">
+    <link rel="stylesheet" type="text/css" href="./assets/css/fontawesome.css">
+</head>
+
+<body>
+    <!--侧边栏-->
+    <section class="secAside" id="secAside-Wide">
+        <!--logo和新建协作-->
+        <div class="header">
+            <div class="topper">
+                <img src="./assets/img/logo-l.png" />
+                <div class="sdBtn" onclick="Tsunagou.app.foldSidebar()">
+                    <i class="fa-solid fa-angle-left"></i>
+                </div>
+            </div>
+            <div class="newBtn" onclick="Tsunagou.app.createProject()"><i class="fa-solid fa-file-circle-plus"></i>创建协作</div>
+        </div>
+        <!--协作项目列表-->
+        <div class="subMgr" id="projList"></div>
+        <!--侧边栏底部按钮-->
+        <div class="btmTabs">
+            <div class="btmBtn" onclick="Tsunagou.app.openAgents()">
+                <i class="fa-solid fa-terminal"></i>
+                <p>Agent列表</p>
+            </div>
+            <div class="btmBtn" onclick="Tsunagou.app.openSettings()">
+                <i class="fa-solid fa-cog"></i>
+                <p>系统设置</p>
+            </div>
+        </div>
+    </section>
+
+    <!--折叠版本的侧边栏-->
+    <section class="secAsideFolded" id="secAside-Narrow">
+        <!--顶部按钮-->
+        <div class="topArea">
+            <img class="foldImg" src="./assets/img/logo-little-l.png" />
+            <div class="foldBtn" onclick="Tsunagou.app.createProject()"><i class="fa-solid fa-file-circle-plus"></i></div>
+            <div class="foldBtn" onclick="Tsunagou.app.unfoldSidebar()"><i class="fa-solid fa-angle-right"></i></div>
+        </div>
+        <!--底部按钮-->
+        <div class="bottomArea">
+            <div class="foldBtn" onclick="Tsunagou.app.openAgents()"><i class="fa-solid fa-terminal"></i></div>
+            <div class="foldBtn" onclick="Tsunagou.app.openSettings()"><i class="fa-solid fa-cog"></i></div>
+        </div>
+    </section>
+
+    <!--初始工作区-->
+    <section class="secHome">
+        <!--顶部区域-->
+        <div class="topArea">
+            <div class="mainArea">
+                <div class="headerArea">
+                    <img src="./assets/img/logo-little-l.png" />
+                    <p>世界因协作而无限</p>
+                </div>
+                <div class="btnArea">
+                    <div class="bigBtn" onclick="Tsunagou.app.createProject()">
+                        <i class="bigBtnIcon fa-solid fa-file-circle-plus"></i>
+                        <p class="bigBtnTxt">创建协作</p>
+                    </div>
+                    <div class="bigBtn" onclick="Tsunagou.app.openAgents()">
+                        <i class="bigBtnIcon fa-solid fa-terminal"></i>
+                        <p class="bigBtnTxt">Agent 列表</p>
+                    </div>
+                    <div class="bigBtn" onclick="Tsunagou.app.openSettings()">
+                        <i class="bigBtnIcon fa-solid fa-cog"></i>
+                        <p class="bigBtnTxt">系统设置</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!--底部区域-->
+        <div class="bottomArea">
+            <div class="left">
+                <p>2026.09.21</p>
+            </div>
+            <div class="right">
+                <p>Tsunagou v0.1.0 beta</p>
+            </div>
+        </div>
+    </section>
+
+    <!--项目工作区-->
+    <section class="secProjPanel">
+        <!--项目任务栏-->
+        <div class="navArea">
+            <div class="left"></div>
+            <div class="right"></div>
+        </div>
+        <!--总标签页-->
+        <div class="tabArea">
+            <div class="tabS tabSactive" id="tab-overview">主视图</div>
+            <div class="tabS" id="tab-agents">Agent 管理</div>
+            <div class="tabS" id="tab-tasks">任务区</div>
+            <div class="tabS" id="tab-conflict">冲突与协商</div>
+            <div class="tabS" id="tab-audit">意图与权限审计</div>
+            <div class="tabS" id="tab-workspace">工作区</div>
+            <div class="tabS" id="tab-acceptance">验收与存档点</div>
+            <div class="tabS" id="tab-path">总路径</div>
+        </div>
+        <!--主要内容区域-->
+        <div class="inner">
+            <!--主视图MAIN-->
+            <div class="tabMain tabMainNormal" id="pane-overview"></div>
+
+            <!--Agent 管理MAIN-->
+            <div class="tabMain" id="pane-agents"></div>
+
+            <!--任务区MAIN-->
+            <div class="tabMain" id="pane-tasks"></div>
+            <!--任务区ASIDE-->
+            <div class="asideMain" id="aside-tasks">
+                <div class="title">
+                    <div class="left">
+                        <i class="fa-solid fa-file-word"></i>
+                        <p>任务细节</p>
+                    </div>
+                    <div class="right">×</div>
+                </div>
+                <div class="content"></div>
+            </div>
+
+            <!--冲突与协商MAIN-->
+            <div class="tabMain" id="pane-conflict">
+                <div class="title">
+                    <p class="left">冲突与协商</p>
+                </div>
+                <p class="title2">Agent 间的冲突与协商</p>
+                <div class="tabblock" id="block-conflict">
+                    <div class="tabPlace">
+                        <div class="tabItem tabItemActive">分歧</div>
+                        <div class="tabItem">冲突</div>
+                        <div class="tabItem">Agent 间协商</div>
+                        <div class="tabItem">契约</div>
+                    </div>
+                    <div class="tabContent"></div>
+                    <div class="tabContent"></div>
+                    <div class="tabContent"></div>
+                    <div class="tabContent"></div>
+                </div>
+            </div>
+            <!--冲突与协商ASIDE-->
+            <div class="asideMain" id="aside-conflict">
+                <div class="title">
+                    <div class="left">
+                        <i class="fa-solid fa-file-word"></i>
+                        <p>详细信息</p>
+                    </div>
+                    <div class="right">×</div>
+                </div>
+                <div class="content"></div>
+                <div class="content contentNDP"></div>
+                <div class="content contentNDP"></div>
+                <div class="content contentNDP"></div>
+            </div>
+
+            <!--意图与权限审计MAIN-->
+            <div class="tabMain" id="pane-audit">
+                <div class="title">
+                    <p class="left">意图与权限审计</p>
+                </div>
+                <p class="title2">Agent 的意图和修改权限</p>
+                <div class="tabblock" id="block-audit">
+                    <div class="tabPlace">
+                        <div class="tabItem tabItemActive">Agent 意图</div>
+                        <div class="tabItem">Agent 权限</div>
+                    </div>
+                    <div class="tabContent"></div>
+                    <div class="tabContent"></div>
+                </div>
+            </div>
+            <!--意图与权限审计ASIDE-->
+            <div class="asideMain" id="aside-audit">
+                <div class="title">
+                    <div class="left">
+                        <i class="fa-solid fa-file-word"></i>
+                        <p>详细信息</p>
+                    </div>
+                    <div class="right">×</div>
+                </div>
+                <div class="content"></div>
+                <div class="content contentNDP"></div>
+            </div>
+
+            <!--工作区MAIN-->
+            <div class="tabMain" id="pane-workspace"></div>
+            <!--工作区ASIDE-->
+            <div class="asideMain" id="aside-workspace">
+                <div class="title">
+                    <div class="left">
+                        <i class="fa-solid fa-file-word"></i>
+                        <p>详细信息</p>
+                    </div>
+                    <div class="right">×</div>
+                </div>
+                <div class="content"></div>
+            </div>
+
+            <!--验收与存档点 MAIN：项目完成提案（含「确认完成」）+ 任务验收情况 + 存档点三段-->
+            <div class="tabMain" id="pane-acceptance"></div>
+
+            <!--总路径MAIN-->
+            <!-- 线性时间图由 render.timeline() 画在这个 pane 里；下面这个 .dagArea 是
+                 DAG（依赖图）的画布，结构固定写在这里（图里的节点/边是 JS 攒的，
+                 所以每次重画总路径时 JS 会先把它摘下、画完再挂回末尾）。
+                 样式在 assets/css/dag.css，行为在 behavior.js 的「总路径 · DAG」一节。 -->
+            <div class="tabMain" id="pane-path">
+                <div class="dagArea">
+                    <div class="canvas" id="canvas">
+                        <svg id="edges"></svg>
+                    </div>
+                </div>
+            </div>
+            <!--总路径ASIDE-->
+            <div class="asideMain" id="aside-path">
+                <div class="title">
+                    <div class="left">
+                        <i class="fa-solid fa-file-word"></i>
+                        <p>路径详情</p>
+                    </div>
+                    <div class="right">×</div>
+                </div>
+                <div class="content"></div>
+            </div>
+
+        </div>
+    </section>
+
+    <!--窗口：系统设置-->
+    <section class="secWindow" id="setPanel">
+        <div class="window1">
+            <div class="titleBar">
+                <div class="title"><i class="fa-solid fa-cog"></i> 设置</div>
+                <div class="button" onclick="Tsunagou.app.closeWindow('setPanel')">×</div>
+            </div>
+            <div class="main">
+                <div class="left">
+                    <div class="inner">
+                        <div class="item Active" id="uSet1b" onclick="Tsunagou.app.settingTab('personal')">
+                            <i class="fa-regular fa-user"></i>
+                            <p>个性化设置</p>
+                        </div>
+                        <div class="item NoActive" id="uSet4b" onclick="Tsunagou.app.settingTab('about')">
+                            <i class="fa-solid fa-tags"></i>
+                            <p>关于 Tsunagou</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="right">
+                    <div class="inner innerNormal" id="uSet1">
+                        <div class="uiBlock">
+                            <p class="title">颜色设置</p>
+                            <div class="items">
+                                <div class="item">
+                                    <div class="left">
+                                        <p class="fword">颜色主题</p>
+                                        <p class="sword">切换浅色/深色模式</p>
+                                    </div>
+                                    <div class="right">
+                                        <div class="choosebox">
+                                            <div class="left">深色</div>
+                                            <div class="right"></div>
+                                        </div>
+                                        <div class="chooseboxOpen" id="uSetCol1">
+                                            <p>深色</p>
+                                            <p>浅色</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="inner" id="uSet4">
+                        <div class="uiBlock">
+                            <p class="title">关于 Tsunagou</p>
+                            <div class="items">
+                                <div class="freebox">
+                                    <img src="./assets/img/logo-l.png" />
+                                    <p class="center">v0.1.0 Alpha</p>
+                                    <p class="description">Tsunagou 是一个多 Agent 协作调度系统，旨在通过文档交换、契约更新、权限管理等调度机制，解决多个 Agent
+                                        在同一项目上共同协作时产生的冲突，使他们能够“看见彼此”、像人类一样协作，从而提升效率。</p>
+                                    <p class="description">前端:陈林榕；后端:骆宣卓；测试:张子宸</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+    </section>
+
+    <!--窗口：Agent列表-->
+    <section class="secWindow" id="mgrAgent">
+        <div class="window1">
+            <div class="titleBar">
+                <div class="title"><i class="fa-solid fa-terminal"></i> Agent 列表</div>
+                <div class="button" onclick="Tsunagou.app.closeWindow('mgrAgent')">×</div>
+            </div>
+            <div class="main">
+                <div class="inner">
+                    <div class="table">
+                        <div class="item" onclick="Tsunagou.app.openAgentInfo('a-054')">
+                            <div class="title"><img src="./assets/img/agent/deepseek-l.png" />DeepSeek Harness（054）
+                            </div>
+                            <div class="content">
+                                <div class="txtBlock">
+                                    <div class="left">协作</div>
+                                    <div class="right">基于Java 8的Minecraft游戏模组开发</div>
+                                </div>
+                                <div class="txtBlock">
+                                    <div class="left">任务</div>
+                                    <div class="right">增加不同颜色的火焰及可被火焰点燃的方块列表</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!--窗口：Agent详细信息-->
+    <section class="secWindow" id="mgrAgentInfo">
+        <div class="window2">
+            <div class="titleBar">
+                <div class="title"><i class="fa-solid fa-terminal"></i>DeepSeek Harness（054）详细信息</div>
+                <div class="button" onclick="Tsunagou.app.closeWindow('mgrAgentInfo')">×</div>
+            </div>
+            <div class="content">
+                <div class="uiBlock">
+                    <div class="items">
+                        <div class="item">
+                            <div class="left">
+                                <p class="fword">昵称</p>
+                                <p class="sword">你给这个 Agent 起的名字，只存在本机的用户档案里</p>
+                            </div>
+                            <div class="right">
+                                <div class="textbox">
+                                    <input class="left" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="item">
+                            <div class="left">
+                                <p class="fword">项目名称</p>
+                                <p class="sword">此 Agent 当前正在参与的协作项目</p>
+                            </div>
+                            <div class="right">
+                                <div class="textbox">
+                                    <input class="left" readonly />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="item">
+                            <div class="left">
+                                <p class="fword">任务名称</p>
+                                <p class="sword">此 Agent 当前正在完成的项目</p>
+                            </div>
+                            <div class="right">
+                                <div class="textbox">
+                                    <input class="left" readonly />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="options">
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.saveAgentInfo()">确定</div>
+            </div>
+        </div>
+    </section>
+
+    <!--窗口：删除确认-->
+    <section class="secWindow" id="delPmt">
+        <div class="window3">
+            <div class="titleBar">
+                <div class="title">删除 Agent</div>
+                <div class="button" onclick="Tsunagou.app.closeWindow('delPmt')">×</div>
+            </div>
+            <div class="content">
+                <div class="left"><i class="fa-solid fa-circle-exclamation"></i></div>
+                <div class="right">
+                    <p class="bigTxt">确定要删除这几个 Agent 吗？</p>
+                    <p class="description">此操作不可挽回，请务必考虑清楚。</p>
+                </div>
+            </div>
+            <div class="options">
+                <div class="buttonbox2" onclick="Tsunagou.app.closeWindow('delPmt')">取消</div>
+                <div class="buttonbox2 buttonbox2active">确定</div>
+            </div>
+        </div>
+    </section>
+
+    <!--窗口：新建协作-->
+    <section class="secWindow" id="addProj">
+        <div class="window4">
+            <div class="titleBar">
+                <div class="title"><i class="fa-solid fa-file-circle-plus"></i> 新建协作</div>
+                <div class="button" onclick="Tsunagou.app.closeWindow('addProj')">×</div>
+            </div>
+            <div class="content">
+                <div class="left">
+                    <img src="./assets/img/logo-little-l.png" />
+                </div>
+                <div class="right" id="newXz1">
+                    <div class="uiBlock">
+                        <div class="title">创建一个新的协作</div>
+                        <div class="descbox">为你的协作取一个易于辨认的名字，以方便你在调度中心进行查看和管理。</div>
+                        <div class="textbox2">
+                            <input class="inner" placeholder="协作的名称" />
+                        </div>
+                        <div class="descbox">用一句话说明这次协作要做什么，它会显示在协作的主视图里。</div>
+                        <div class="textbox2">
+                            <input class="inner" placeholder="协作的描述（这次协作的目标）" />
+                        </div>
+                    </div>
+                </div>
+                <div class="right" id="newXz2">
+                    <div class="uiBlock">
+                        <div class="title">连接到主 Agent</div>
+                        <div class="descbox">输入一个 Agent 的名字和类型，以将该 Agent 作为主 Agent 连接到协作系统中。</div>
+                        <div class="textbox2">
+                            <input class="inner" placeholder="主 Agent 名称" />
+                        </div>
+                        <div class="choosebox">
+                            <div class="left"><img src="./assets/img/agent/codex-l.png">Codex</div>
+                            <div class="right"></div>
+                        </div>
+                        <div class="chooseboxOpen" id="newXz2Vendor">
+                            <p><img src="./assets/img/agent/claudecode-l.png">Claude Code</p>
+                            <p><img src="./assets/img/agent/deepseek-l.png">DeepSeek Harness</p>
+                            <p data-default="true"><img src="./assets/img/agent/codex-l.png">Codex</p>
+                            <p><img src="./assets/img/agent/opencode-l.png">OpenCode</p>
+                            <p><img src="./assets/img/agent/zcode-l.png">ZCode</p>
+                        </div>
+                        <div class="descbox">你所选的 Agent</div>
+                        <div class="agentbox">
+                            <img class="left" src="./assets/img/agent/deepseek-l.png" />
+                            <div class="right">DeepSeek Harness</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="right" id="newXz3">
+                    <div class="uiBlock">
+                        <div class="title">连接到子 Agent</div>
+                        <div class="descbox">为你的协作项目加入一个或多个子 Agent。</div>
+                        <div class="listfieldbox">
+                            <div class="item itemC">
+                                <img class="left" src="./assets/img/agent/deepseek-l.png" />
+                                <div class="right">DeepSeek Harness</div>
+                            </div>
+                            <div class="item itemC">
+                                <img class="left" src="./assets/img/agent/deepseek-l.png" />
+                                <div class="right">DeepSeek Harness</div>
+                            </div>
+                            <div class="item itemC">
+                                <img class="left" src="./assets/img/agent/deepseek-l.png" />
+                                <div class="right">DeepSeek Harness</div>
+                            </div>
+                            <div class="itemAdd" onclick="Tsunagou.app.addSubAgent()">
+                                <i class="fa fa-circle-plus"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="right" id="newXz4">
+                    <div class="uiBlock">
+                        <div class="title">请确定以下配置</div>
+                        <div class="descbox">请核对以下配置是否正确。</div>
+                    </div>
+                    <div class="freebox">
+                        <div class="descbox">项目名称</div>
+                        <div class="title">一种由CERN支持的基于HyperText Markup Language的WWW站点建设</div>
+                        <div class="descbox">主 Agent</div>
+                        <div class="listfieldbox">
+                            <div class="itemJ">
+                                <img class="left" src="./assets/img/agent/claudecode-l.png" />
+                                <div class="right">Claude Code</div>
+                            </div>
+                        </div>
+                        <div class="descbox">子 Agent</div>
+                        <div class="listfieldbox">
+                            <div class="itemJ">
+                                <img class="left" src="./assets/img/agent/claudecode-l.png" />
+                                <div class="right">Claude Code</div>
+                            </div>
+                            <div class="itemJ">
+                                <img class="left" src="./assets/img/agent/codex-l.png" />
+                                <div class="right">Codex</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="options" id="xz1">
+                <div class="buttonbox2" onclick="Tsunagou.app.closeWindow('addProj')">取消</div>
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.wizardNext()">创建</div>
+            </div>
+            <div class="options" id="xz2">
+                <div class="buttonbox2" onclick="Tsunagou.app.wizardPrev()">上一步</div>
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.wizardNext()">下一步</div>
+            </div>
+            <div class="options" id="xz3">
+                <div class="buttonbox2" onclick="Tsunagou.app.wizardPrev()">上一步</div>
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.wizardNext()">下一步</div>
+            </div>
+            <div class="options" id="xz4">
+                <div class="buttonbox2" onclick="Tsunagou.app.wizardPrev()">上一步</div>
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.wizardFinish()">完成</div>
+            </div>
+        </div>
+    </section>
+
+    <!--通知：改动已成功保存-->
+    <section class="secAnnounce" id="AnnounceMent">
+        <div class="top">
+            <div class="aIcon">
+                <i class="fa-solid fa-check"></i>
+            </div>
+            <div class="aText">
+                <p class="fword">改动已成功保存</p>
+                <p class="sword">Tsunagou 2026/09/18</p>
+            </div>
+        </div>
+        <div class="bottom" id="secApgr"></div>
+    </section>
+
+    <!--通知：操作提示-->
+    <section class="secAnnounce2" id="AnnounceMent2">
+        <div class="aIcon">
+            <i class="fa-solid fa-circle-info"></i>
+        </div>
+        <div class="aText">请至少选择一个Agent</div>
+    </section>
+
+    <!--通知：权限审计-->
+    <section class="secActWin" id="rightGetWin">
+        <div class="title">需要用户确认/决定的信息</div>
+        <div class="content">
+            项目“Hello World”的子 Agent（Claude Code 051）试图将main()函数的printf("%d",a)关键位置改为printf("%f",a)，主 Agent
+            认为这一改动可能会影响整个程序的输出结果，需要人工裁定。
+        </div>
+        <div class="option">
+            <div class="buttonbox2 buttonbox2important">查看详情</div>
+            <div class="buttonbox2">忽略</div>
+        </div>
+    </section>
+
+    <!--窗口：添加子Agent-->
+    <section class="secWindow" id="addSubAgent">
+        <div class="window2">
+            <div class="titleBar">
+                <div class="title"><i class="fa-solid fa-circle-plus"></i>添加子 Agent</div>
+                <div class="button" onclick="Tsunagou.app.closeWindow('addSubAgent')">×</div>
+            </div>
+            <div class="content">
+                <div class="uiBlock">
+                    <p class="descbox">输入子 Agent 的名称和厂商。</p>
+                    <div class="textbox2">
+                        <input class="inner" placeholder="子 Agent 名称" />
+                    </div>
+                        <div class="choosebox">
+                            <div class="left"><img src="./assets/img/agent/codex-l.png">Codex</div>
+                            <div class="right"></div>
+                        </div>
+                        <div class="chooseboxOpen" id="addSubAgentVendor">
+                            <p><img src="./assets/img/agent/claudecode-l.png">Claude Code</p>
+                            <p><img src="./assets/img/agent/deepseek-l.png">DeepSeek Harness</p>
+                            <p data-default="true"><img src="./assets/img/agent/codex-l.png">Codex</p>
+                            <p><img src="./assets/img/agent/opencode-l.png">OpenCode</p>
+                            <p><img src="./assets/img/agent/zcode-l.png">ZCode</p>
+                        </div>
+                </div>
+            </div>
+            <div class="options">
+                <div class="buttonbox2" onclick="Tsunagou.app.closeWindow('addSubAgent')">取消</div>
+                <div class="buttonbox2 buttonbox2active">确定</div>
+            </div>
+        </div>
+    </section>
+
+    <!--窗口：进度条-->
+    <section class="secWindow" id="loadW">
+        <div class="window5">
+            <div class="loaderbox"></div>
+            <div class="textW">正在连接 Agent</div>
+            <div class="buttonbox2" id="loadWCancel" onclick="Tsunagou.app.cancelWaiting()">取消等待</div>
+        </div>
+    </section>
+
+    <!-- 控制台配置：由中间层（tsunagou web start）在同源下生成；
+         直接双击打开本文件时用仓库里那份（默认演示模式）。
+         它只决定「演示 / 连真后端」和轮询间隔，不影响布局。 -->
+    <script src="./console.config.js"></script>
+    <script src="./assets/js/behavior.js"></script>
+    <!-- 演示后端：只在演示模式下接管 fetch（见文件头的三条纪律）。
+         连真后端时它什么都不做，页面请求直达中间层。 -->
+    <script src="./assets/js/mock-backend.js"></script>
+</body>
+
+</html>

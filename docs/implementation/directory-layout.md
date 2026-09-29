@@ -139,6 +139,8 @@ Tsunagou/
 
 `project-integration.json` 的 source checkout 路径只是本机诊断提示；GitHub URL、版本和项目相对规范链接才是可移植引用。一个 daemon 的多项目选择仍由 runtime/doctor 的实际配置证明，入口文件不创建全局项目单例。
 
+项目之外还有一份**可选**的机器级索引 `~/.tsunagou/projects.json`：`project init` 与 `daemon start` 成功后会登记一条 `{project_id, name, objective, path, state_dir, sources, created_at, updated_at}`，让项目之外的东西（控制台、人）不必爬盘就知道本机有哪些项目。它只是便利缓存，不是事实来源——每个项目自己的 `.tsunagou/project.json` 才是权威；条目按 `project_id` 合并，所以重复运行不会产生重复行，读者应核对路径后再信任一行。测试与演示可用 `TSUNAGOU_PROJECT_INDEX` 改写位置。
+
 以 tasks 为例，其余模块按实际需要采用相同边界：
 
 ```text

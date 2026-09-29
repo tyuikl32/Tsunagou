@@ -1,0 +1,248 @@
+@charset "UTF-8";
+/* ↑ 这行必须是文件第一行：声明本文件是 UTF-8。浏览器偶尔会把"没声明编码"的 CSS
+   按 cp1252 解，于是 ::after 里的中文（执行中 / 卡住了 …）会变成 æ‰§è¡Œä¸。
+   下面才是样式。 */
+.dagArea .st {
+  display: inline-block;
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.dagArea .st::after {
+  content: "";
+}
+
+.dagArea .st-1::after {
+  content: "草稿";
+  color: var(--brand-col-2);
+}
+
+.dagArea .st-2::after {
+  content: "已就绪";
+  color: var(--brand-col-2);
+}
+
+.dagArea .st-3::after {
+  content: "待认领";
+  color: var(--brand-col-2);
+}
+
+.dagArea .st-4::after {
+  content: "已认领";
+  color: var(--brand-col-2);
+}
+
+.dagArea .st-5::after {
+  content: "执行中";
+  color: var(--active-col);
+}
+
+.dagArea .st-6::after {
+  content: "卡住了";
+  color: var(--active-col);
+}
+
+.dagArea .st-7::after {
+  content: "待验收";
+  color: var(--active-col);
+}
+
+.dagArea .st-8::after {
+  content: "被打回";
+  color: var(--active-col);
+}
+
+.dagArea .st-9::after {
+  content: "取消中";
+  color: var(--active-col);
+}
+
+.dagArea .st-10::after {
+  content: "执行者丢失";
+  color: var(--active-col);
+}
+
+.dagArea .st-11::after {
+  content: "已完成";
+  color: var(--col-6);
+}
+
+.dagArea .st-12::after {
+  content: "失败";
+  color: var(--active-col);
+}
+
+.dagArea .st-13::after {
+  content: "已取消";
+  color: var(--col-6);
+}
+
+/* =====================================================================
+   2) 容器与画布
+      原独立页面这里是两列栅格（右列是详情侧栏），侧栏改成用主页面现有的，
+      所以收成一列：图占满整行。
+   ===================================================================== */
+.dagArea {
+  display: none;
+  /* 尺寸是这一屏自己的（JS 只认这几个）；**颜色不用写在这里** ——
+     全用 style.css 的 :root 变量（--col-* / --brand-col-2* / --active-col*）。*/
+  --node-w: 216px;
+  --node-h: 100px;
+  --gap-x: 44px;
+  --gap-y: 78px;
+  --pad: 26px;
+  margin: 0 50px;
+}
+
+/* ---- 画布：容器 position:relative，边是底层 SVG，节点是绝对定位的 div ---- */
+.dagArea .canvas {
+  position: relative;
+  overflow: auto;
+  /* 和侧栏 / 卡片同款：--col-2 底 + --col-3 边（.asideMain / .boxerbox > .item）*/
+  /* background: var(--col-2); */
+  /* border: 1px solid var(--col-3); */
+  border-radius: 10px;
+  min-height: 240px;
+}
+
+.dagArea .canvas svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.dagArea .canvas .empty {
+  /* 次要文字一律 --col-6（与 .textN / .citem2 一致）*/
+  color: var(--col-6);
+  padding: 40px 26px;
+}
+
+/* =====================================================================
+   3) 节点
+   ===================================================================== */
+.dagArea .node {
+  position: absolute;
+  width: var(--node-w);
+  height: var(--node-h);
+  /* 节点照表格行 .tablebox .tr 的做法：底比容器亮一档、边用 --col-4。
+     想让节点更跳一点，把这两行换成 --col-4-5 底 + --col-5 边（胶囊 .listfieldbox .item 那套）*/
+  background: var(--col-3);
+  border: 2px solid var(--col-4);
+  border-radius: 8px;
+  /* padding: 9px 11px; */
+  cursor: pointer;
+  transition: border-color .15s, opacity .15s, transform .15s, background-color 0.15s;
+  color: var(--col-8);
+  display: flex;
+  flex-direction: column;
+  /* gap: 10px; */
+  justify-content: space-between;
+  overflow: hidden;
+  user-select:none;
+}
+
+.dagArea .node:hover {
+  /* 表格行 hover 也是把底色提一档 */
+  background-color: var(--col-4);
+}
+
+.dagArea .node .t {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 8px 6px 8px 6px;
+  background-color: var(--col-4);
+  transition: background-color 0.15s,color 0.15s;
+}
+
+/* 标题左边那个圆点 = 折叠开关。长在**每个**节点的标题行上（不只选中的），
+   所以没选中的节点也能直接折；点它只折叠，不选中也不换右侧详情（behavior.js）。
+   想换折叠后的样子就给 .node.fold .t::before 另写 content（JS 不管这个）。*/
+.dagArea .node .t::before {
+  margin-right: 8px;
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  content: "\f111";
+}
+
+.dagArea .node .m {
+  font-size: 12px;
+  color: var(--col-6);
+  /* margin-top: 3px; */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 9px 9px 0 9px;
+}
+
+.dagArea .node .s {
+  /* margin-top: 6px; */
+  font-size: 12px;
+  padding: 9px;
+}
+
+/* 选中 / 相关 / 变暗：只动边框与透明度，不重排布局 */
+.dagArea .node.sel {
+  /* 主页面里"当前这一项"的边框就是品牌亮色（激活标签的下边线、卡片的选中态）*/
+  border-color: var(--brand-col-2);
+  /* box-shadow: 0 0 0 1px var(--brand-col-2) inset; */
+  
+  .t {
+    background-color:var(--brand-col-2);
+    color:white;
+    display:flex;
+    align-items: center;
+  }
+}
+
+.dagArea .node.rel {
+  /* 品牌色的暗档（--brand-col-0 就是干这个用的）*/
+  border: 2px solid var(--brand-col-0);
+}
+
+.dagArea .node.dim {
+  opacity: .35;
+}
+
+.dagArea .canvas.focus .node:not(.rel):not(.sel) {
+  opacity: .22;
+}
+
+/* =====================================================================
+   4) 边：三道样式分别代表"前置已满足 / 还没满足 / 永远不会满足"
+   ===================================================================== */
+.dagArea .edge {
+  fill: none;
+  /* 前置还没满足：中性灰（--col-5，与 .itemS / .tagZ 的边同档）*/
+  stroke: var(--col-5);
+  stroke-width: 1.6;
+}
+
+.dagArea .edge.ok {
+  /* 前置已满足：亮灰。表格里"已具备"也是"亮起来"那套写法（.tagZOK 用 --col-8）*/
+  stroke: var(--col-7);
+}
+
+.dagArea .edge.pending {
+  stroke: var(--col-5);
+  stroke-dasharray: 5 4;
+}
+
+.dagArea .edge.dead {
+  /* 前置失败/取消：主页面里"要人注意"用的橙（状态文字 .st-5…10 就是这个色）*/
+  stroke: var(--active-col);
+  stroke-dasharray: 2 4;
+}
+
+.dagArea .edge.hot {
+  stroke: var(--brand-col-2);
+  stroke-width: 2.6;
+  stroke-dasharray: none;
+}
+
+.dagArea .edge.dim {
+  opacity: .22;
+}
