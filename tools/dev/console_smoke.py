@@ -10,16 +10,25 @@ touched):
    ``tsunagou web start``, and waits for the console manifest;
 4. asks the console the questions the page asks — project list, its own config,
    the generated ``/console.config.js``, the page itself, ``/console/profile``,
-   every aggregation view, the audit history, checkpoints, and one refusal for a
-   project that has no daemon;
+   every aggregation view, the exits the page reads on its own (history,
+   checkpoints, checkpoint failures, reviews, intents, conflicts), and one
+   refusal for a project that has no daemon. Each view answer is judged against
+   the view table the console itself serves (``CONSOLE_VIEWS``): every declared
+   source must come back either gathered or explicitly missing, and the ones the
+   page has a column for must not be missing — "a panel that is always empty" is
+   otherwise a failure with no error message anywhere;
 5. prints ``PASS``/``FAIL`` per probe, then stops what it started (unless
    ``--keep`` was passed, in which case it prints the URL and waits).
 
 Usage::
 
-    uv run python tools/dev/console_demo.py            # smoke, then clean up
-    uv run python tools/dev/console_demo.py --keep     # leave it running to click around
-    uv run python tools/dev/console_demo.py --url http://127.0.0.1:50190   # probe a console already running
+    uv run python tools/dev/console_smoke.py            # smoke, then clean up
+    uv run python tools/dev/console_smoke.py --keep     # leave it running to click around
+    uv run python tools/dev/console_smoke.py --url http://127.0.0.1:50190   # probe a console already running
+
+The page's *structure* (the row selector, the multi-line cell rule) is guarded by
+``web/tests/behavior.smoke.test.ts`` instead — that one runs under vitest + jsdom,
+needs no daemon, and is part of the repository's checks.
 """
 
 from __future__ import annotations
@@ -35,10 +44,21 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from tsunagou.console.app import CONSOLE_VIEWS
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SANDBOX = Path.home() / ".tsunagou" / "console-demo"
+DEFAULT_SANDBOX = Path.home() / ".tsunagou" / "console-smoke"
 HEALTH_TIMEOUT = 20.0
-VIEWS = ("overview", "tasks", "audit", "collaboration", "acceptance")
+VIEWS = tuple(CONSOLE_VIEWS)
+# 页面在这些源上各有一块栗目：它们必须真的答上来（不能是 403/404），
+# 少一个的表现就是“那一块永远是空的”，而且不会报任何错。
+CRITICAL_SOURCES = {
+    "overview": ("overview", "tasks", "agents", "checkpoints", "decisions"),
+    "collaboration": ("agents", "conflicts"),
+    "audit": ("intents", "agents"),
+    "tasks": ("tasks", "attempts", "agents", "results"),
+    "acceptance": ("overview", "decisions", "tasks", "results", "reviews", "agents"),
+}
 
 
 def _request(url: str, project_id: str | None = None, timeout: float = 5.0) -> tuple[int, bytes]:
@@ -93,13 +113,13 @@ def _sandbox_environment(index_path: Path) -> dict[str, str]:
 def _prepare_sandbox(sandbox: Path, index_path: Path) -> tuple[Path, str]:
     """A project that exists, is registered, and has a daemon config of its own."""
 
-    project_root = sandbox / "projects" / "演示项目"
+    project_root = sandbox / "projects" / "冒烟项目"
     if not (project_root / ".tsunagou" / "project.json").is_file():
         project_root.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "init", "--quiet", str(project_root)], check=True)
         created = _run(
             "project", "init", "--coordination-root", str(project_root),
-            "--name", "演示项目", "--objective", "用控制台把后端读起来",
+            "--name", "冒烟项目", "--objective", "用控制台把后端读起来",
             cwd=REPOSITORY_ROOT, env=_sandbox_environment(index_path),
         )
         project_id = str(created["project_id"])
@@ -174,7 +194,7 @@ def _start_console(sandbox: Path, project_root: Path, environment: dict[str, str
         "scan_roots": [str(sandbox)],
         "index_path": str(sandbox / "projects.json"),
         "profile_path": str(sandbox / "console-profile.json"),
-        "poll_ms": 5000, "daemon_autostart": False, "demo": False,
+        "poll_ms": 5000, "daemon_autostart": False,
     }, indent=2) + "\n", encoding="utf-8")
     process = subprocess.Popen(
         [sys.executable, "-m", "tsunagou", "--json", "web", "start", "--config", str(config_path)],
@@ -223,6 +243,60 @@ def _probe(base: str, path: str, *, project_id: str | None = None, expect: int =
     return ok
 
 
+def _config_script_is_demo_free(base: str) -> bool:
+    """The generated switch must not hand the page a demo mode again."""
+
+    status, body = _request(base + "/console.config.js")
+    text = body.decode("utf-8", "replace")
+    mentioned = sorted(word for word in ("demo", "mode") if word in text)
+    ok = status == 200 and not mentioned
+    note = "" if ok else "  (still mentions " + ",".join(mentioned) + ")"
+    print(f"  {'PASS' if ok else 'FAIL'}  {status:>3} /console.config.js carries no demo mode{note}")
+    return ok
+
+
+def _page_loads_no_demo_backend(base: str) -> bool:
+    """The shipped page must not pull a file that answers requests by itself."""
+
+    status, body = _request(base + "/")
+    text = body.decode("utf-8", "replace")
+    ok = status == 200 and "mock-backend" not in text
+    note = "" if ok else "  (the page still loads mock-backend.js)"
+    print(f"  {'PASS' if ok else 'FAIL'}  {status:>3} / loads only the real behaviour{note}")
+    return ok
+
+
+def _view_health(base: str, view: str, project_id: str) -> bool:
+    """Judge one view answer against the view table the console itself serves.
+
+    ``sources`` + ``missing`` must account for exactly the sources that view
+    declares: a source dropped from the table would otherwise only show up as
+    "that panel is always empty", with nothing failing anywhere.
+    """
+
+    status, body = _request(f"{base}/api/v1/console/views/{view}?project_id={project_id}", project_id)
+    if status != 200:
+        print(f"  FAIL  {status:>3} view {view}")
+        return False
+    payload = json.loads(body)
+    gathered = set(payload.get("sources") or {})
+    missing = set(payload.get("missing") or {})
+    declared = set(CONSOLE_VIEWS[view])
+    problems: list[str] = []
+    if gathered | missing != declared:
+        problems.append("declared=" + ",".join(sorted(declared)))
+    absent = sorted(name for name in CRITICAL_SOURCES[view] if name not in gathered)
+    if absent:
+        problems.append("empty-critical=" + ",".join(absent))
+    detail = " sources=" + ",".join(sorted(gathered))
+    if missing:
+        detail += " missing=" + ",".join(sorted(missing))
+    if problems:
+        detail += "  " + " ".join(problems)
+    print(f"  {'PASS' if not problems else 'FAIL'}  {status:>3} view {view}{detail}")
+    return not problems
+
+
 def smoke(base: str, project_id: str) -> bool:
     print(f"probing {base}")
     results = [
@@ -232,13 +306,17 @@ def smoke(base: str, project_id: str) -> bool:
         # Who works where: the one answer no daemon can give on its own.
         _probe(base, "/api/v1/console/agents"),
         _probe(base, "/api/v1/projects"),
-        _probe(base, "/console.config.js"),
-        _probe(base, "/"),
+        _config_script_is_demo_free(base),
+        _page_loads_no_demo_backend(base),
+        # The exits the page reads on its own, one probe per screen section.
         _probe(base, "/api/v1/projects/" + project_id + "/history", project_id=project_id),
         _probe(base, "/api/v1/projects/" + project_id + "/checkpoints", project_id=project_id),
+        _probe(base, "/api/v1/projects/" + project_id + "/checkpoint-failures", project_id=project_id),
+        _probe(base, "/api/v1/projects/" + project_id + "/reviews", project_id=project_id),
+        _probe(base, "/api/v1/projects/" + project_id + "/intents", project_id=project_id),
+        _probe(base, "/api/v1/projects/" + project_id + "/conflicts", project_id=project_id),
     ]
-    for view in VIEWS:
-        results.append(_probe(base, f"/api/v1/console/views/{view}?project_id={project_id}", project_id=project_id))
+    results.extend(_view_health(base, view, project_id) for view in VIEWS)
     # A project the console knows nothing about must be refused, not relayed.
     results.append(_probe(
         base, "/api/v1/projects/00000000-0000-0000-0000-000000000000/tasks",
