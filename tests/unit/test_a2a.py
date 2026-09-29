@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from tsunagou.api.a2a import A2AProtocolError, _rpc_error
 from tsunagou.api.app import create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.interfaces.runtime import CommandDispatcher
@@ -252,3 +253,25 @@ def test_a2a_rejects_missing_authentication_and_unsupported_stream(tmp_path: Pat
         connection_epoch=None,
     )
     assert missing_auth["error"]["data"]["code"] == "authentication_failed"
+
+
+def test_rpc_error_keeps_structured_detail_from_the_command_boundary() -> None:
+    """A rejection carrying structured detail must survive the A2A hop.
+
+    The local MCP path forwards the daemon's detail (violations / allowed /
+    next_steps); a remote caller must not be the one entry point that silently
+    loses the reason and the repair steps.
+    """
+    payload = _rpc_error(
+        1,
+        A2AProtocolError(
+            "unreported_changes", "A2A request was rejected", rpc_code=-32000,
+            detail={"violations": ["leased/hidden.py"], "next_steps": ["declare leased/hidden.py"]},
+        ),
+    )
+
+    assert payload["error"]["data"] == {
+        "violations": ["leased/hidden.py"],
+        "next_steps": ["declare leased/hidden.py"],
+        "code": "unreported_changes",
+    }

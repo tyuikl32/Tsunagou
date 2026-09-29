@@ -111,16 +111,25 @@ class ResourceService:
                             or existing.resources != ordered):
                         raise PermissionError("reservation_context_mismatch")
                     return existing
-            conflicts = self.check_conflicts(requests, attempt_id=attempt_id)
-            if conflicts:
-                raise ResourceConflict([
+            if self.check_conflicts(requests, attempt_id=attempt_id):
+                # The refusal answers "who is in the way", not just "no": the retrying
+                # agent and a later review both need to know by whom, and the console's
+                # conflict ledger reads exactly this payload back off the denial event.
+                blockers = [
                     {"resource_key": held.key.canonical, "reservation_id": existing.reservation_id,
                      "task_id": existing.task_id, "attempt_id": existing.attempt_id,
-                     "owner_agent_id": existing.owner_agent_id}
+                     "owner_agent_id": existing.owner_agent_id,
+                     "held_key": held.key.canonical, "resource": incoming.key.canonical,
+                     "mode": incoming.mode}
                     for existing in self.reservations.values() if existing.status == "active"
                     for held in existing.resources
-                    if any(self._conflict(incoming, held, self.root_aliases) for incoming in requests)
-                ])
+                    for incoming in requests
+                    if self._conflict(incoming, held, self.root_aliases)
+                ]
+                raise ResourceConflict(blockers, requester={
+                    "attempt_id": attempt_id, "task_id": task_id,
+                    "owner_agent_id": owner_agent_id, "resource_keys": sorted(keys),
+                })
             reservation = ResourceReservation(
                 new_id(), task_id, attempt_id, owner_agent_id, execution_epoch,
                 scope_digest, ordered, now_ms(),

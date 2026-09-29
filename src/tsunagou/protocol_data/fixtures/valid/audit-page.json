@@ -23,6 +23,8 @@
       "revision_before": 2,
       "revision_after": 3,
       "evidence_level": "system_verified",
+      "session_status": "ready",
+      "missing_admission": [],
       "changes": [
         {
           "subject_ref": "task/task-1",
@@ -59,6 +61,8 @@
       "revision_before": null,
       "revision_after": null,
       "evidence_level": null,
+      "session_status": null,
+      "missing_admission": ["identity_continuity"],
       "changes": []
     }
   ],

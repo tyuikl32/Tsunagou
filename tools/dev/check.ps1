@@ -20,6 +20,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'TS checks failed' }
         npx --yes pnpm@12.4.2 --filter @tsunagou/bridge-server run test:credentials
         if ($LASTEXITCODE -ne 0) { throw 'Credential handoff tests failed' }
+        npx --yes pnpm@12.4.2 exec vitest run
+        if ($LASTEXITCODE -ne 0) { throw 'TypeScript/frontend tests failed' }
     }
     python tools/docs/validate_docs.py
     if ($LASTEXITCODE -ne 0) { throw 'Documentation check failed' }

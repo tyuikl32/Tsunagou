@@ -35,6 +35,7 @@ from tsunagou.modules.tasks import TaskService
 from tsunagou.modules.workspaces import WorkspaceService
 from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore
+from tsunagou.shared_kernel.baseline import missing_admission_capabilities
 from tsunagou.shared_kernel.digests import canonical_digest
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
@@ -60,6 +61,19 @@ def _required_str(payload: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{key}_required")
     return value
+
+
+def _admission_report(baseline: Any) -> dict[str, Any]:
+    """Which of the four admission rows this report did *not* prove.
+
+    The same shared rule the admission gate uses, so the receipt, the agents exit
+    and the audit line can never disagree about why a session is degraded. The
+    report's own contents are never echoed back — only the names of the rows it
+    failed to prove.
+    """
+
+    report = baseline if isinstance(baseline, dict) else {}
+    return {"missing_admission": sorted(missing_admission_capabilities(report))}
 
 
 def _required_contracts(payload: dict[str, Any]) -> tuple[str, ...]:
@@ -96,6 +110,22 @@ def _message_view(message: Message, messages: MessageStore | None = None, *, inc
         if obligations:
             view["response_obligations"] = obligations
     return view
+
+
+def _contract_view(proposal: Any) -> dict[str, Any]:
+    """A contract as a reader needs it: identity, version, chain link, and its body.
+
+    The body matters: agreeing to a digest without being able to read what it commits
+    to is signing blind.
+    """
+    return {
+        "proposal_id": proposal.proposal_id,
+        "digest": proposal.digest,
+        "status": proposal.status,
+        "supersedes_id": proposal.supersedes_id,
+        "resolution_reason": proposal.resolution_reason,
+        "payload": proposal.payload,
+    }
 
 
 def _slot(item: Any, required: bool) -> dict[str, Any]:
@@ -170,12 +200,6 @@ def build_handlers(
             capability=capability, task_id=task_id, attempt_id=attempt_id,
         )
 
-
-    def _assignment_id_for_task(task_id: str) -> str | None:
-        assignment = coordination.assignment_for_task(task_id)
-        return assignment.assignment_id if assignment is not None else None
-
-
     def enroll(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         installation_id = payload.get("installation_id")
         if not isinstance(installation_id, str) or not installation_id:
@@ -196,6 +220,7 @@ def build_handlers(
             "baseline_status": receipt.baseline_status,
             "secret_token": receipt.secret_token,
             "reconnect_nonce": receipt.reconnect_nonce,
+            **_admission_report(baseline),
         }
 
     def session_rebind(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -224,6 +249,7 @@ def build_handlers(
             "baseline_status": receipt.baseline_status,
             "secret_token": receipt.secret_token,
             "reconnect_nonce": receipt.reconnect_nonce,
+            **_admission_report(baseline),
         }
 
     def session_reconnect(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -250,6 +276,7 @@ def build_handlers(
             "baseline_status": receipt.baseline_status,
             "secret_token": receipt.secret_token,
             "reconnect_nonce": receipt.reconnect_nonce,
+            **_admission_report(baseline),
         }
 
     def issue_user_ticket(payload: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
@@ -410,6 +437,16 @@ def build_handlers(
             value = expected.get(key)
             if value is not None and int(value) != actual:
                 raise ValueError(f"{key}_revision_conflict")
+        declared = expected.get("contract")
+        if declared is None:
+            return
+        # Starting work is the one moment where "which contract version governs" has to
+        # be settled, so the caller declares the versions it read. A declaration that is
+        # not the version in force means it has not caught up with a revision yet.
+        if not isinstance(declared, (list, tuple)) or sorted(
+            str(item) for item in declared
+        ) != list(cognition.current_contract_versions(task.task_id)):
+            raise ValueError("contract_revision_conflict")
 
     def task_ready(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
@@ -477,7 +514,6 @@ def build_handlers(
             raise ValueError("attempt_not_running")
         execution.release(attempt_id, "task_blocked")
         return {"task_id": task_id, "attempt_id": attempt_id, "status": task.status, "revision": task.revision}
-
 
     def task_cancel_request(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
@@ -571,13 +607,6 @@ def build_handlers(
         resources.release_for_attempt(result.attempt_id, reason="self_accepted")
         return {"task_id": task_id, "result_id": result.result_id, "status": tasks.tasks[task_id].status,
                 "decision": review.decision}
-
-
-
-
-
-
-
 
     def workspace_integrate(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         """Create a Main-only, no-push integration request from a worker result."""
@@ -775,11 +804,18 @@ def build_handlers(
                     and authority.main_agent_id != context["principal_id"]):
                 raise PermissionError("attempt_owner_required")
         claims = [_claim(item) for item in (payload.get("claims") or [])]
+        # What the reporter says it was working from. A declared premise is the only way
+        # "these two reports were written under different agreements" can be pointed at
+        # later, so the field is read here instead of being silently dropped.
+        declared_revisions = payload.get("input_revisions")
+        if declared_revisions is not None and not isinstance(declared_revisions, dict):
+            raise ValueError("input_revisions_object_required")
         report = cognition.submit_report(
             task_id=task_id, attempt_id=attempt_id, actor_agent_id=context["principal_id"],
             claims=claims,
             uncertainties=payload.get("uncertainties"),
             assumptions=payload.get("assumptions"),
+            input_revisions=declared_revisions,
         )
         return {"report_id": report.report_id, "task_id": task_id, "attempt_id": attempt_id, "digest": report.digest}
 
@@ -810,8 +846,102 @@ def build_handlers(
         )
         return {"discrepancy_id": discrepancy.discrepancy_id, "status": discrepancy.status}
 
+    def _announce_contract_revision(proposal: Any, context: dict[str, Any]) -> None:
+        """Tell the mechanically derivable dependants that a revision landed.
+
+        Recipients are the contract's participants plus whoever currently holds the
+        task it is linked to — both are derivable, so nobody has to guess a mailing
+        list. The notice carries no response obligation and no contract content: it
+        informs, while the start/submit boundaries are what actually hold anyone to
+        the new version. Skipped for proposals that replace nothing.
+        """
+        if proposal.supersedes_id is None:
+            return
+        recipients = {
+            str(item["agent_id"]) for item in proposal.participants if item.get("agent_id")
+        }
+        task_id = proposal.payload.get("task_id") if isinstance(proposal.payload, dict) else None
+        if isinstance(task_id, str):
+            task = tasks.tasks.get(task_id)
+            attempt = tasks.attempts.get(task.current_attempt_id or "") if task is not None else None
+            if attempt is not None:
+                recipients.add(attempt.owner_agent_id)
+        recipients.discard(str(proposal.proposed_by or ""))
+        for recipient in sorted(recipients):
+            messages.send(
+                command_id=f"{context['command_id']}:contract-revised:{recipient}",
+                sender_agent_id=str(proposal.proposed_by or context["principal_id"]),
+                recipient_agent_id=recipient,
+                kind="contract.revised",
+                subject_ref=proposal.proposal_id,
+                # The new digest travels in the summary: message views do not expose the
+                # payload, and a notice that cannot say which version is now in force is
+                # useless to the agent that has to switch to it.
+                summary=f"contract revised: {proposal.supersedes_id} -> {proposal.proposal_id} @ {proposal.digest}",
+                payload={
+                    "proposal_id": proposal.proposal_id,
+                    "supersedes_id": proposal.supersedes_id,
+                    "digest": proposal.digest,
+                },
+            )
+
+    def _announce_contract_proposal(proposal: Any, context: dict[str, Any]) -> None:
+        """Ask every required slot to answer the proposal.
+
+        A proposal is an invitation to agree, and nothing else in the system says so:
+        acceptances only ever happen if a participant learns that a slot is waiting for
+        it. The recipients are mechanically derivable — the slots that must accept — so
+        no mailing list has to be guessed. Slots declared without an agent_id have no
+        one to notify (they can only be answered by proxy).
+
+        The notice carries a response obligation whose answer must quote the digest it
+        is answering, which turns "I read it" into a checkable fact. Answering is still
+        not agreeing: the decision recorded here is a stated intent, and the contract
+        itself only moves through `contract.accept` / `contract.reject`.
+        """
+        required = set(proposal.required_slots)
+        recipients = {
+            str(item["agent_id"])
+            for item in proposal.participants
+            if item.get("agent_id") and str(item["slot"]) in required
+        }
+        recipients.discard(str(proposal.proposed_by or ""))
+        for recipient in sorted(recipients):
+            messages.send(
+                command_id=f"{context['command_id']}:contract-proposed:{recipient}",
+                sender_agent_id=str(proposal.proposed_by or context["principal_id"]),
+                recipient_agent_id=recipient,
+                kind="contract.proposed",
+                subject_ref=proposal.proposal_id,
+                summary=(
+                    f"contract proposal {proposal.proposal_id}: answer with the digest you "
+                    "read, then accept or reject it"
+                ),
+                payload={
+                    "proposal_id": proposal.proposal_id,
+                    "supersedes_id": proposal.supersedes_id,
+                    "digest": proposal.digest,
+                },
+                response_contract={
+                    "required": True,
+                    "schema": {
+                        "type": "object",
+                        "required": ["proposal_id", "proposal_digest", "decision"],
+                        "properties": {
+                            "proposal_id": {"const": proposal.proposal_id},
+                            "proposal_digest": {"const": proposal.digest},
+                            "decision": {"enum": ["accept", "reject"]},
+                        },
+                    },
+                },
+            )
+
     def contract_propose(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "contract.propose")
+        # On the wire, an empty string is the convention for "replaces nothing".
+        revised = payload.get("supersedes_id") or None
+        if revised is not None and not isinstance(revised, str):
+            raise ValueError("invalid_supersedes_id")
         required = payload.get("participants_required")
         optional = payload.get("participants_optional", [])
         if not isinstance(required, list) or not isinstance(optional, list):
@@ -827,25 +957,34 @@ def build_handlers(
         body = payload.get("payload")
         if not isinstance(body, dict):
             raise ValueError("contract_payload_object_required")
-        supersedes_id = payload.get("supersedes_id")
-        if supersedes_id is not None:
+        if revised is not None:
             old = cognition.proposals[_required_str(payload, "supersedes_id")]
             if old.proposed_by != context["principal_id"]:
                 raise PermissionError("proposal_owner_required")
             proposal = cognition.supersede_contract(old.proposal_id, body, participants)
         else:
             proposal = cognition.propose_contract(body, participants, proposed_by=context["principal_id"])
-        return {"proposal_id": proposal.proposal_id, "digest": proposal.digest, "status": proposal.status}
+        _announce_contract_proposal(proposal, context)
+        return {
+            "proposal_id": proposal.proposal_id, "digest": proposal.digest,
+            "status": proposal.status, "supersedes_id": proposal.supersedes_id,
+        }
 
     def contract_accept(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "contract.accept")
         proposal_id = _required_str(payload, "proposal_id")
         participant_slot = _required_str(payload, "participant_slot")
         proposal_digest = _required_str(payload, "proposal_digest")
+        proposal = cognition.proposals.get(proposal_id)
+        was_accepted = proposal is not None and proposal.status == "accepted"
         cognition.accept_contract(
             proposal_id, participant_slot=participant_slot,
             proposal_digest=proposal_digest, actor_id=context["principal_id"],
         )
+        if proposal is not None and not was_accepted and proposal.status == "accepted":
+            # This acceptance completed the proposal: its predecessor has just been
+            # retired, and the dependants need to hear about it.
+            _announce_contract_revision(proposal, context)
         return {"proposal_id": proposal_id, "participant_slot": participant_slot, "status": "accepted",
                 "proposal_status": cognition.proposals[proposal_id].status}
 
@@ -853,6 +992,7 @@ def build_handlers(
         _authorize(context, "contract.accept_proxy")
         slot = _required_str(payload, "participant_slot_id")
         proposal = cognition.proposals[_required_str(payload, "proposal_id")]
+        was_accepted = proposal.status == "accepted"
         participant = next((item for item in proposal.participants if item["slot"] == slot), None)
         if participant is None:
             raise PermissionError("participant_slot_denied")
@@ -862,6 +1002,8 @@ def build_handlers(
             real_actor_id=context["principal_id"], represented_participant=participant["agent_id"],
             main_allowed=True,
         )
+        if proposal is not None and not was_accepted and proposal.status == "accepted":
+            _announce_contract_revision(proposal, context)
         return {"proposal_id": acceptance.proposal_id, "participant_slot": acceptance.participant_slot,
                 "status": "accepted", "proposal_status": proposal.status, "via_proxy": True,
                 "real_actor_id": acceptance.real_actor_id, "represented_participant": acceptance.represented_participant}
@@ -1055,6 +1197,31 @@ def build_handlers(
             for event in coordination.events
             if agent_id == authority.main_agent_id or event.assignment_id in visible_assignment_ids
         ]
+        contracts_by_task = [
+            {
+                "task_id": item["task_id"],
+                # The exact strings the start boundary compares against. Read them here,
+                # hand them back through expected_revisions, and "I read the current
+                # version" stops being a claim.
+                "in_force": list(cognition.current_contract_versions(item["task_id"])),
+                "proposals": [
+                    _contract_view(proposal)
+                    for proposal in sorted(
+                        cognition.linked_contracts(item["task_id"]).values(),
+                        key=lambda proposal: proposal.proposal_id,
+                    )
+                ],
+            }
+            for item in owned_tasks
+        ]
+        participating_contracts = [
+            _contract_view(proposal)
+            for proposal in sorted(cognition.proposals.values(), key=lambda item: item.proposal_id)
+            if any(
+                str(participant.get("agent_id") or "") == agent_id
+                for participant in proposal.participants
+            )
+        ]
         return {
             **({"project_id": project_id} if project_id else {}),
             "agent_id": agent_id,
@@ -1066,6 +1233,7 @@ def build_handlers(
             "scope": {"capabilities": capabilities},
             "tasks": owned_tasks,
             "open_tasks": open_tasks,
+            "contracts": {"tasks": contracts_by_task, "participating": participating_contracts},
             "coordination": {
                 "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}),
                 "assignments": visible_assignments,

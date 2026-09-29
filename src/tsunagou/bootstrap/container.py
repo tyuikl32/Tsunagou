@@ -45,6 +45,11 @@ from tsunagou.platform.maintenance import RuntimeMaintenance
 from tsunagou.platform.runtime_context import running_source_root
 from tsunagou.platform.state import ServiceStateRuntime
 from tsunagou.platform.telemetry import Telemetry
+from tsunagou.shared_kernel.baseline import (
+    OPERATIONAL_CAPABILITIES,
+    missing_admission_capabilities,
+    missing_baseline_capabilities,
+)
 from tsunagou.shared_kernel.time import format_timestamp, now_ms, parse_timestamp
 
 _REGISTRY_RESOURCE = files("tsunagou.protocol_data").joinpath("registry", "commands.json")
@@ -228,6 +233,52 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         def stop_runtime_maintenance() -> None:
             maintenance.stop()
     return application
+
+
+def message_status(obligations: list[dict[str, Any]]) -> str:
+    """What became of one message, worked out from the obligations it created.
+
+    A message has no status stored on it (see ``modules/messaging.py``): it owns a
+    delivery row, and — only when the sender attached a response contract — one or more
+    response obligations. So:
+
+    * no obligation at all  → ``none`` (nobody owed an answer);
+    * any obligation ``open`` → ``pending``;
+    * everything else (``responded`` / ``waived`` / ``superseded``) → ``answered``.
+
+    Kept as a function of the rows rather than of the store so the verdict can be
+    asserted directly, without a message ever being sent.
+    """
+
+    if not obligations:
+        return "none"
+    return "pending" if any(row.get("status") == "open" for row in obligations) else "answered"
+
+
+def _agent_features(authority: AuthorityService, agent_id: str) -> dict[str, Any]:
+    """Which of the 11 baseline capabilities this Agent's session proved.
+
+    The session keeps the host's own report (normalized, bounded); whether a row counts
+    as proven is decided by the shared rule in ``shared_kernel.baseline``, so the console
+    reads the same answer the admission gate did instead of a second opinion.
+    """
+
+    session = next(
+        (item for item in authority.sessions.values() if item.agent_id == agent_id and item.active),
+        None,
+    )
+    if session is None:
+        return {"session_status": None, "connection_epoch": None,
+                "missing_admission": None, "missing_operational": None}
+    rows = session.baseline.get("capabilities") if isinstance(session.baseline, dict) else None
+    evidence = {"baseline": rows if isinstance(rows, dict) else {}}
+    missing_all = set(missing_baseline_capabilities(evidence))
+    return {
+        "session_status": session.status,
+        "connection_epoch": session.connection_epoch,
+        "missing_admission": sorted(missing_admission_capabilities(evidence)),
+        "missing_operational": sorted(name for name in OPERATIONAL_CAPABILITIES if name in missing_all),
+    }
 
 
 def _query_provider(
@@ -433,6 +484,27 @@ def _query_provider(
             and requested_project_id != project_id
         ):
             raise KeyError("project_not_found")
+        if kind == "overview":
+            if project_registry is None or project_registry.project is None:
+                raise KeyError("project_not_found")
+            project = project_registry.project
+            # A summary, never a copy: `/roots` and `/repositories` own the full
+            # shapes, and a console header only needs to know what is there.
+            return {
+                "project_id": project.project_id,
+                "name": project.name,
+                "objective": project.objective,
+                "lifecycle": project.lifecycle,
+                "policy_revision": project.policy_revision,
+                "roots": [
+                    {key: descriptor.get(key) for key in ("root_id", "name", "root_kind", "required")}
+                    for descriptor in project.roots.values()
+                ],
+                "repositories": [
+                    {key: descriptor.get(key) for key in ("repository_id", "name", "root_id")}
+                    for descriptor in project.repositories.values()
+                ],
+            }
         if kind == "roots":
             if project_registry is None or project_registry.project is None:
                 raise KeyError("project_not_found")
@@ -521,6 +593,7 @@ def _query_provider(
                         "attempt_id": attempt.attempt_id, "task_id": attempt.task_id,
                         "owner_agent_id": attempt.owner_agent_id, "status": attempt.status,
                         "execution_epoch": attempt.execution_epoch, "revision": attempt.revision,
+                        "started_at": attempt.started_at, "ended_at": attempt.ended_at,
                     }
                     for attempt in tasks.attempts.values()
                 ],
@@ -540,6 +613,20 @@ def _query_provider(
                     for result in tasks.results.values()
                 ],
             }
+        if kind == "reviews":
+            # A result says work was submitted; a review says whether it was good enough
+            # and who said so. The console's task-acceptance column asks the second
+            # question, so the rounds have to be readable — not merely stored in state.
+            rounds: list[dict[str, Any]] = []
+            for _, review in sorted(tasks.reviews.items()):
+                submitted = tasks.results.get(review.result_id)
+                rounds.append({
+                    "task_id": submitted.task_id if submitted is not None else None,
+                    "result_id": review.result_id, "round_no": review.round_no,
+                    "reviewer_agent_id": review.reviewer_agent_id,
+                    "decision": review.decision, "reason": review.reason,
+                })
+            return {"project_id": requested_project_id, "items": rounds}
         if kind == "jobs" and database is not None:
             with database._connect() as conn:
                 rows = conn.execute(
@@ -556,7 +643,28 @@ def _query_provider(
         if kind == "contracts":
             return {
                 "items": [
-                    {"proposal_id": item.proposal_id, "digest": item.digest, "status": item.status}
+                    {
+                        "proposal_id": item.proposal_id, "digest": item.digest, "status": item.status,
+                        # The body is what was agreed; a reader that only sees an id and a
+                        # digest is being asked to trust an agreement it cannot read.
+                        "payload": item.payload,
+                        "supersedes_id": item.supersedes_id,
+                        "resolution_reason": item.resolution_reason,
+                        "required_slots": list(item.required_slots),
+                        "participants": [dict(participant) for participant in item.participants],
+                        # Who signed which slot: without it "has everyone agreed" is unanswerable.
+                        "acceptances": [
+                            {
+                                "participant_slot": acceptance.participant_slot,
+                                "proposal_digest": acceptance.proposal_digest,
+                                "real_actor_id": acceptance.real_actor_id,
+                                "represented_participant": acceptance.represented_participant,
+                                "via_proxy": acceptance.via_proxy,
+                            }
+                            for key, acceptance in sorted(cognition.acceptances.items())
+                            if key[0] == item.proposal_id
+                        ],
+                    }
                     for item in cognition.proposals.values()
                 ],
             }
@@ -565,7 +673,8 @@ def _query_provider(
                 "reports": [
                     {"report_id": report.report_id, "task_id": report.task_id,
                      "attempt_id": report.attempt_id, "actor_agent_id": report.actor_agent_id,
-                     "digest": report.digest, "claims": [
+                     "digest": report.digest, "input_revisions": report.input_revisions,
+                     "claims": [
                          {"subject_key": claim.subject_key, "claim_type": claim.claim_type,
                           "equality_key": claim.equality_key, "value": claim.value}
                          for claim in report.claims
@@ -573,7 +682,8 @@ def _query_provider(
                     for report in cognition.reports.values()
                 ],
                 "discrepancies": [
-                    {"discrepancy_id": item.discrepancy_id, "subject_key": item.subject_key,
+                    {"discrepancy_id": item.discrepancy_id, "rule_id": item.rule_id,
+                     "subject_key": item.subject_key,
                      "severity": item.severity, "status": item.status,
                      "claim_ids": list(item.claim_ids), "input_digest": item.input_digest}
                     for item in cognition.discrepancies.values()
@@ -598,7 +708,13 @@ def _query_provider(
                     }
             return {
                 "items": [
-                    {"agent_id": item.agent_id, "status": item.status, "role": item.role,
+                    # ``_agent_features`` first: it also answers ``session_status`` (None when
+                    # the Agent has no live session), and the explicit value below is the more
+                    # accurate one — an Agent with no session is ``inactive``, not ``unknown``.
+                    # Everything else it adds (``connection_epoch``, ``missing_admission``,
+                    # ``missing_operational``) survives as the console's capability columns.
+                    {**_agent_features(authority, item.agent_id),
+                     "agent_id": item.agent_id, "status": item.status, "role": item.role,
                      "conversation_digest": item.conversation_digest,
                      "session_status": next((s.status for s in authority.sessions.values()
                                              if s.agent_id == item.agent_id and s.active), "inactive"),
@@ -610,14 +726,30 @@ def _query_provider(
                     for item in authority.agents.values()
                 ],
                 "main_agent_id": authority.main_agent_id,
+                # ``authority.appoint``/``revoke`` demand the epoch the caller saw, so it
+                # has to be readable *before* the command rather than only in its reply.
+                "authority_epoch": authority.authority_epoch,
             }
         if kind == "messages":
+            # A message carries no verdict of its own: the durable facts are its delivery
+            # row and the response obligations the sender asked for. The page's column is
+            # "已答复 / 等待中 / 无需答复", so the verdict is worked out *here* instead of
+            # being left for the reader to infer — an empty obligation list means nobody
+            # owed an answer, which is not the same as "still waiting for one".
+            obligations: dict[str, list[dict[str, Any]]] = {}
+            for obligation in messages.obligations.values():
+                obligations.setdefault(obligation.message_id, []).append({
+                    "obligation_id": obligation.obligation_id,
+                    "status": obligation.status,
+                })
             return {
                 "items": [
                     {
                         "message_id": item.message_id, "sender_agent_id": item.sender_agent_id,
                         "recipient_agent_id": item.recipient_agent_id, "kind": item.kind,
                         "subject_ref": item.subject_ref, "summary": item.summary,
+                        "status": message_status(obligations.get(item.message_id, [])),
+                        "obligations": obligations.get(item.message_id, []),
                     }
                     for item in messages.messages.values()
                 ],
@@ -632,6 +764,101 @@ def _query_provider(
                     for item in resources.reservations.values()
                 ],
             }
+        if kind == "intents":
+            # The base model's resource *intents* (declare → wait → acquire, with a lease
+            # that expired on its own) were replaced by explicit reservations in the FX
+            # line — see docs/decisions/2026-09-28-explicit-resource-release.md: occupancy
+            # is taken and released explicitly, and elapsed time never releases anything.
+            # There is no intent object left to read, and reconstructing one here would be
+            # a second resource model. The exit therefore answers honestly with nothing:
+            # the console's audit screen keeps its 意图 column empty instead of showing
+            # invented rows or a 500. How that screen should read the new model is a
+            # front-end design decision, not a merge decision.
+            return {"project_id": requested_project_id, "items": []}
+        if kind == "conflicts":
+            # A refusal is a shared fact, not an error string: the HTTP layer already
+            # records every structured rejection as ``command.<kind>.denied``. This exit
+            # reads those rows and asks the *current* state what became of them, so
+            # "how often do agents collide, over what, and did they recover" is a
+            # question about the run rather than about one caller's memory.
+            # Capped at the first 200 refusals (oldest first in the ledger).
+            if database is None:
+                return {"project_id": requested_project_id, "items": []}
+            refusals: list[dict[str, Any]] = []
+            for refusal_event in database.list_events(limit=200, event_type_like="%.denied"):
+                refusal = refusal_event.get("payload")
+                if not isinstance(refusal, dict):
+                    continue
+                if not str(refusal.get("code", "")).startswith("resource_conflict:"):
+                    continue
+                requester_raw = refusal.get("requester")
+                requester: dict[str, Any] = requester_raw if isinstance(requester_raw, dict) else {}
+                entries = [
+                    entry for entry in refusal.get("conflicts", []) if isinstance(entry, dict)
+                ]
+                holders: list[dict[str, Any]] = []
+                for entry in entries:
+                    # Two generations of refusal payloads live in the ledger: the older
+                    # ``holder_*`` rows written when occupancy was a timed lease, and the
+                    # reservation-era ``attempt_id``/``reservation_id``/``resource_key``
+                    # rows. A ledger is a history, so both shapes are read rather than
+                    # pretending old rows do not exist.
+                    holder_attempt_id = entry.get("holder_attempt_id") or entry.get("attempt_id")
+                    attempt = tasks.attempts.get(str(holder_attempt_id or ""))
+                    holders.append({
+                        "attempt_id": holder_attempt_id,
+                        "agent_id": attempt.owner_agent_id if attempt is not None else entry.get("owner_agent_id"),
+                        "task_id": attempt.task_id if attempt is not None else entry.get("task_id"),
+                        "lease_set_id": entry.get("holder_lease_set_id") or entry.get("reservation_id"),
+                        "held_key": entry.get("held_key") or entry.get("resource_key"),
+                        "resource": entry.get("resource"),
+                        "mode": entry.get("mode"),
+                        "expires_at": entry.get("holder_expires_at"),
+                    })
+                requester_attempt_id = str(requester.get("attempt_id") or "")
+                wanted = {str(item) for item in (requester.get("resource_keys") or [])}
+                # Asking the current state is what keeps this honest: nobody reports an
+                # outcome, so "what happened next" has to be read off the reservations and
+                # attempts that exist now. Occupancy no longer expires by itself, so
+                # "still active" is the only thing that makes a holder a holder.
+                acquired_afterwards = any(
+                    reservation.status == "active" and reservation.attempt_id == requester_attempt_id
+                    and any(request.key.canonical in wanted for request in reservation.resources)
+                    for reservation in resources.reservations.values()
+                )
+                requester_attempt = tasks.attempts.get(requester_attempt_id)
+                holders_gone = bool(holders) and all(
+                    (reservation := resources.reservations.get(
+                        str(entry.get("holder_lease_set_id") or entry.get("reservation_id") or "")))
+                    is None or reservation.status != "active"
+                    for entry in entries
+                )
+                if acquired_afterwards:
+                    resolution = "retried_and_won"
+                elif requester_attempt is not None and requester_attempt.status in {
+                    "orphaned", "failed", "cancelled",
+                }:
+                    resolution = "gave_up"
+                elif holders_gone:
+                    resolution = "holder_released"
+                else:
+                    resolution = "open"
+                refusals.append({
+                    "conflict_id": refusal_event["event_id"],
+                    "at": refusal_event.get("occurred_at"),
+                    "phase": refusal.get("command_kind"),
+                    "requester": {
+                        "attempt_id": requester.get("attempt_id"),
+                        "agent_id": requester.get("owner_agent_id"),
+                        "task_id": requester.get("task_id"),
+                        "intent_id": requester.get("intent_id"),
+                        "resource_keys": sorted(wanted),
+                    },
+                    "holders": holders,
+                    "resolution": resolution,
+                })
+            refusals.reverse()
+            return {"project_id": requested_project_id, "items": refusals}
         if kind == "workspaces":
             return {
                 "items": [
@@ -690,6 +917,8 @@ def _query_provider(
                 "revision_before": view.revision_before, "revision_after": view.revision_after,
                 "evidence_level": view.evidence_level, "projection_version": view.projection_version,
                 "actor_session_id": audit_payload.get("session_id"),
+                "session_status": audit_payload.get("session_status"),
+                "missing_admission": list(audit_payload.get("missing_admission") or []),
                 "changes": [
                     {**change, "created_at": format_timestamp(change.get("created_at")),
                      "updated_at": format_timestamp(change.get("updated_at"))}
@@ -837,7 +1066,11 @@ def _query_provider(
                     "actor_ref": event["actor_ref"], "action": event["event_type"].removeprefix("command."),
                     "subject_ref": event.get("subject_ref") or event["aggregate_ref"],
                     "outcome": event.get("outcome") or audit_payload.get("outcome", "committed"),
-                    "reason_code": event.get("reason_code") or audit_payload.get("reason_code"),
+                    "reason_code": event.get("reason_code") or audit_payload.get("reason_code")
+                    # A refusal recorded by the HTTP layer keeps its reason in ``code``
+                    # (``resource_conflict:file:…``); without this fallback the timeline
+                    # could only say "this was denied" and never why.
+                    or audit_payload.get("code"),
                     "evidence_refs": event.get("evidence_refs") or audit_payload.get("evidence_refs", []),
                     "occurred_at": event.get("occurred_at"),
                     "recorded_at": event.get("recorded_at"),
@@ -865,6 +1098,11 @@ def _query_provider(
                     "evidence_level": view.evidence_level,
                     "projection_version": view.projection_version,
                     "actor_session_id": audit_payload.get("session_id"),
+                    # Why a session was not ready at that moment: the verdict and the
+                    # admission rows the report did not prove. Absent for every other
+                    # kind of event (and for events recorded before this existed).
+                    "session_status": audit_payload.get("session_status"),
+                    "missing_admission": list(audit_payload.get("missing_admission") or []),
                     "changes": [
                         {**change, "created_at": format_timestamp(change.get("created_at")),
                          "updated_at": format_timestamp(change.get("updated_at"))}
@@ -887,10 +1125,23 @@ def _query_provider(
                 "project_id": project_id,
                 "items": [
                     {"decision_id": decision.decision_id, "kind": decision.kind,
-                     "subject_ref": decision.subject_ref, "revision": decision.expected_revision,
-                     "proposal_digest": decision.input_digest, "status": decision.status,
-                     "choices": decision.choices, "summary": decision.summary,
-                     "decision": decision.decision, "reason": decision.reason}
+                     "subject_ref": decision.subject_ref,
+                     # Two spellings for the same two values, on purpose: the console reads
+                     # ``expected_revision``/``input_digest`` (the model's own attribute
+                     # names), while the daemon's resolve command and the Codex-side tests
+                     # read ``revision``/``proposal_digest``. Dropping either name would
+                     # silently break a live consumer, so both are served until one
+                     # canonical name is agreed.
+                     "expected_revision": decision.expected_revision,
+                     "revision": decision.expected_revision,
+                     "input_digest": decision.input_digest,
+                     "proposal_digest": decision.input_digest,
+                     "status": decision.status, "choices": decision.choices,
+                     "summary": decision.summary,
+                     "decision": decision.decision, "reason": decision.reason,
+                     # What is being decided, including the choices offered: a pending
+                     # decision nobody can read is one nobody can answer.
+                     "payload": decision.payload}
                     for decision in lifecycle.decisions.values()
                 ] if lifecycle is not None else [],
             }
@@ -901,6 +1152,38 @@ def _query_provider(
                     "WHERE project_id=? ORDER BY created_at", (database.project_id,),
                 ).fetchall()
             return {"items": [dict(row) for row in rows]}
+        if kind == "checkpoint_failures" and database is not None:
+            # A checkpoint that never materialized is the one case where the answer to
+            # "is my work durable" is no — and that answer has to be readable *before*
+            # anyone can retry it. The console lists these rows and hands their ids to
+            # `checkpoint.create.user`, so this exit reads the same ledger that retry
+            # path writes: the operations table (a failed column on the checkpoint page
+            # would have to be invented; an operation that failed never produced one).
+            with database._connect() as conn:
+                rows = conn.execute(
+                    """SELECT o.id,o.status,o.error_code,o.requested_by,o.revision,
+                              o.created_at,o.updated_at,
+                              j.payload_json,j.attempt_count,j.max_attempts
+                       FROM operations o LEFT JOIN jobs j ON j.operation_id=o.id
+                       WHERE o.project_id=? AND o.kind='checkpoint.create'
+                         AND o.status IN ('failed','retry_wait')
+                       ORDER BY o.created_at DESC,o.id DESC""",
+                    (database.project_id,),
+                ).fetchall()
+            failures: list[dict[str, Any]] = []
+            for row in rows:
+                item = dict(row)
+                # Why the checkpoint was being taken is carried by the job's payload
+                # (`request_checkpoint` writes the reason there), not by the operation row.
+                raw_payload = item.pop("payload_json", None)
+                try:
+                    payload = json.loads(raw_payload) if raw_payload else {}
+                except (TypeError, ValueError):
+                    payload = {}
+                item["operation_id"] = item.pop("id")
+                item["reason"] = payload.get("reason") if isinstance(payload, dict) else None
+                failures.append(item)
+            return {"project_id": requested_project_id, "items": failures}
         if kind in {"checkpoints", "checkpoint_verify"} and checkpoint_store is not None:
             if viewer is None:
                 raise PermissionError("authentication_failed")

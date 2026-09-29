@@ -5,11 +5,9 @@ import json
 import os
 import re
 import secrets
-import shutil
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -18,47 +16,21 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, cast
 
+from tsunagou.platform import host_registration
+from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
 from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
 
 _selected_project_root: ContextVar[Path | None] = ContextVar("cli_project_root", default=None)
 
 
+# The one-time ticket writer lives in ``tsunagou.platform.bridge_files`` so that the
+# middle layer and the CLI share one implementation and one process-owned lock; the CLI
+# tests import it under this older name.
+_write_ticket_private = write_ticket_file
+
+
 def _runtime_context() -> RuntimeContext:
     return resolve_runtime(_selected_project_root.get())
-
-
-def _write_ticket_private(
-    installation_id: str, conversation_id: str, secret: str, ticket_file: Path | None,
-    requested_role: str = "worker",
-    host_binding_generation: str | None = None,
-) -> Path:
-    """Deliver a one-time enrollment ticket through a private file, never stdout.
-
-    The ticket secret is a bearer credential for ``agent.enroll``; echoing it to a
-    terminal leaks it into scrollback, logs and shell history. The bridge reads it
-    from this file through its own private channel instead. The file is restricted
-    to its creator (POSIX ``0600``, or a stripped Windows ACL) so other local
-    accounts cannot read the secret.
-    """
-    if ticket_file is None:
-        fd, temp_name = tempfile.mkstemp(prefix="tsunagou-ticket-", suffix=".json")
-        os.close(fd)
-        path = Path(temp_name)
-    else:
-        path = ticket_file
-    path.parent.mkdir(parents=True, exist_ok=True)
-    from tsunagou.platform.private_file_lock import private_file_lock
-    from tsunagou.platform.private_files import write_private_bytes
-
-    with private_file_lock(path):
-        write_private_bytes(path, (json.dumps({
-            "installation_id": installation_id,
-            "conversation_id": conversation_id,
-            "secret": secret,
-            "requested_role": requested_role,
-            **({"host_binding_generation": host_binding_generation} if host_binding_generation else {}),
-        }, sort_keys=True) + "\n").encode("utf-8"))
-    return path
 
 
 try:
@@ -78,6 +50,7 @@ if typer is not None:
     audit_app = typer.Typer(help="Audit event queries.")
     daemon_app = typer.Typer(help="Local daemon lifecycle commands.")
     host_app = typer.Typer(help="Host wake binding and capability commands.")
+    web_app = typer.Typer(help="Local console commands.")
     app.add_typer(project_app, name="project")
     app.add_typer(agent_app, name="agent")
     app.add_typer(decision_app, name="decision")
@@ -87,6 +60,7 @@ if typer is not None:
     app.add_typer(audit_app, name="audit")
     app.add_typer(daemon_app, name="daemon")
     app.add_typer(host_app, name="host")
+    app.add_typer(web_app, name="web")
 
     @app.callback()
     def callback(
@@ -158,6 +132,7 @@ if typer is not None:
 
         registry = ProjectRegistry.initialize(coordination_root, name=name, objective=objective)
         assert registry.project is not None
+        _remember_project(registry.project, coordination_root.expanduser().resolve())
         print(json.dumps({"project_id": registry.project.project_id, "status": "active"}, sort_keys=True))
 
     @daemon_app.command("migrate-credentials")
@@ -491,6 +466,23 @@ if typer is not None:
     def _coordination_state_dir(coordination_root: Path) -> Path:
         return coordination_root.expanduser().resolve() / ".tsunagou" / "local"
 
+    def _remember_project(project: Any, coordination_root: Path) -> None:
+        """Register the project in the machine-level index.
+
+        The index exists for readers outside a project (the console, a person), so
+        it must never be able to fail the command that created or started the
+        project: an unwritable home directory costs a listing entry, nothing more.
+        """
+        from tsunagou.platform.project_index import record_project
+
+        try:
+            record_project(
+                project_id=project.project_id, path=coordination_root,
+                name=project.name, objective=project.objective, source="cli",
+            )
+        except OSError:
+            pass
+
     def _project_root() -> Path:
         return _runtime_context().project_root
 
@@ -618,6 +610,7 @@ if typer is not None:
             print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
             raise typer.Exit(1) from exc
         assert registry.project is not None
+        _remember_project(registry.project, root)
         state_dir = manifest_path.parent
         if not (state_dir / "state.sqlite3").exists() and (root / ".tsunagou/checkpoints/current.json").is_file():
             print(json.dumps({"status": "error", "error": "checkpoint_restore_required",
@@ -887,68 +880,20 @@ if typer is not None:
         *, adapter: str, mode: str, installation_id: str, output_dir: Path,
         ticket_path: Path,
     ) -> Path:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        session_path = output_dir / "bridge-session.json"
-        file_component = re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{adapter}-{installation_id}").strip(".")
-        bridge_config_path = output_dir / f"{file_component or 'bridge'}.json"
-        source = running_source_root()
-        if source is None:
-            raise RuntimeError("installation_source_unavailable")
-        bridge_entry = source / "packages" / "bridge-server" / "dist" / "server.js"
-        if not bridge_entry.is_file():
-            raise RuntimeError("installation_bridge_not_built")
-        bridge_config_path.write_text(json.dumps({
-            "adapter": adapter,
-            "mode": mode,
-            "command": "node",
-            "args": [str(bridge_entry)],
-            "env": {
-                "TSUNAGOU_HTTP_URL": _daemon_url(),
-                "TSUNAGOU_DAEMON_STATE_DIR": str(_state_dir_from_environment() or ""),
-                "TSUNAGOU_TICKET_FILE": str(ticket_path),
-                "TSUNAGOU_SESSION_FILE": str(session_path),
-                "TSUNAGOU_PROJECT_ROOT": str(_project_root()),
-                "TSUNAGOU_STATE_DIR": str(output_dir),
-            },
-            "secret_fields": [],
-        }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
-        return bridge_config_path
+        """Write this conversation's launch description next to its ticket."""
+
+        return write_bridge_config(
+            adapter=adapter, mode=mode, installation_id=installation_id, output_dir=output_dir,
+            ticket_path=ticket_path, daemon_url=_daemon_url(),
+            daemon_state_dir=str(_state_dir_from_environment() or _coordination_state_dir(_project_root())),
+            project_root=_project_root(),
+        )
 
     def _resolve_codex_executable() -> str | None:
-        r"""Find the Codex CLI even when the host GUI did not export its PATH.
+        """Find the Codex CLI even when the host GUI did not export its PATH."""
 
-        Codex Desktop launches its helpers with a versioned executable under
-        ``%LOCALAPPDATA%\OpenAI\Codex\bin``.  A PowerShell process started by
-        the user (or by an Agent) does not necessarily inherit that directory,
-        so relying on ``shutil.which`` makes ``agent connect`` issue a ticket
-        without registering the bridge.  The host-provided ``CODEX_CLI_PATH``
-        wins when present; the Windows installation fallback is deliberately
-        narrow and only accepts an actual ``codex.exe`` file.
-        """
-        configured = os.environ.get("CODEX_CLI_PATH", "").strip().strip('"')
-        if configured:
-            configured_path = Path(configured).expanduser()
-            if configured_path.is_file():
-                return str(configured_path)
-
-        discovered = shutil.which("codex")
-        if discovered:
-            return discovered
-
-        if os.name == "nt":
-            local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
-            if local_app_data:
-                candidates = sorted(
-                    (
-                        path for path in
-                        (Path(local_app_data) / "OpenAI" / "Codex" / "bin").glob("*/codex.exe")
-                        if path.is_file()
-                    ),
-                    reverse=True,
-                )
-                if candidates:
-                    return str(candidates[0])
-        return None
+        host = host_registration.host_for("codex")
+        return host_registration.find_executable(host) if host is not None else None
 
     def _register_codex_mcp(
         *, profile: str, bridge_config_path: Path, legacy_project_root: Path | None = None,
@@ -1433,25 +1378,10 @@ if typer is not None:
         bridge_config_path = None
         if output_dir is not None:
             output_dir = output_dir.expanduser().resolve()
-            output_dir.mkdir(parents=True, exist_ok=True)
-            session_path = output_dir / "bridge-session.json"
-            bridge_config_path = output_dir / f"{adapter}-{installation_id}.json"
-            bridge_entry = Path(__file__).resolve().parents[3] / "packages" / "bridge-server" / "dist" / "server.js"
-            bridge_config_path.write_text(json.dumps({
-                "adapter": adapter,
-                "mode": mode,
-                "command": "node",
-                "args": [str(bridge_entry) if bridge_entry.is_file() else "<tsunagou-bridge-server>/dist/server.js"],
-                "env": {
-                    "TSUNAGOU_HTTP_URL": _daemon_url(),
-                    "TSUNAGOU_DAEMON_STATE_DIR": str(_state_dir_from_environment() or ""),
-                    "TSUNAGOU_TICKET_FILE": str(path),
-                    "TSUNAGOU_SESSION_FILE": str(session_path),
-                    "TSUNAGOU_PROJECT_ROOT": os.environ.get("TSUNAGOU_PROJECT_ROOT", ""),
-                    "TSUNAGOU_STATE_DIR": str(output_dir),
-                },
-                "secret_fields": [],
-            }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+            bridge_config_path = _write_bridge_config(
+                adapter=adapter, mode=mode, installation_id=installation_id,
+                output_dir=output_dir, ticket_path=path,
+            )
         print(json.dumps({
             "adapter": adapter, "mode": mode, "status": "ticket_issued",
             "installation_id": installation_id, "conversation_id": conversation_id,
@@ -1622,6 +1552,69 @@ if typer is not None:
             print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
             raise typer.Exit(5) from exc
         print(json.dumps(result, sort_keys=True))
+
+    def _console_settings(
+        ctx: typer.Context, config: Path | None, host: str | None, port: int | None,
+    ) -> Any:
+        """Load the console config, apply command-line overrides, or exit with a reason."""
+
+        from tsunagou.console.config import ConsoleConfig
+
+        try:
+            settings = ConsoleConfig.load(config)
+        except (FileNotFoundError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        if host:
+            settings.host = host
+        if port is not None:
+            settings.port = port
+        ctx.ensure_object(dict)
+        return settings
+
+    @web_app.command("start")
+    def web_start(
+        ctx: typer.Context,
+        config: Path | None = typer.Option(None, "--config"),  # noqa: B008
+        host: str | None = typer.Option(None, "--host"),
+        port: int | None = typer.Option(None, "--port"),
+    ) -> None:
+        """Serve the console page and forward it to the projects' daemons."""
+        from tsunagou.console.service import serve
+
+        settings = _console_settings(ctx, config, host, port)
+
+        def announce(record: dict[str, Any]) -> None:
+            if ctx.obj.get("json"):
+                print(json.dumps({"status": "serving", **record}, sort_keys=True))
+            else:
+                print(f"Tsunagou console: {record['url']}  (Ctrl+C to stop)")
+
+        try:
+            serve(settings, on_ready=announce)
+        except (FileNotFoundError, RuntimeError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            raise typer.Exit(1) from exc
+        print(json.dumps({"status": "stopped"}, sort_keys=True) if ctx.obj.get("json") else "Tsunagou console: stopped")
+
+    @web_app.command("status")
+    def web_status(
+        ctx: typer.Context,
+        config: Path | None = typer.Option(None, "--config"),  # noqa: B008
+    ) -> None:
+        """Report whether the console is running, and where."""
+        from tsunagou.console.service import status as console_status
+
+        settings = _console_settings(ctx, config, None, None)
+        result = console_status(settings)
+        if ctx.obj.get("json"):
+            print(json.dumps(result, sort_keys=True))
+        elif result["status"] == "running":
+            print(f"Tsunagou console: running at {result['url']} (pid {result['pid']})")
+        else:
+            print(f"Tsunagou console: {result['status']}")
+        if result["status"] != "running":
+            raise typer.Exit(5)
 
     main = app
 else:

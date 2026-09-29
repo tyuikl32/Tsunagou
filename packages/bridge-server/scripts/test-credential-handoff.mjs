@@ -158,6 +158,59 @@ test("lost rebind response cannot change its ticket proof or target Agent", asyn
   assert.equal(f.calls[0].text, f.calls[1].text);
 });
 
+test("a degraded session re-sends its baseline on reconnect", async (t) => {
+  // The daemon only accepts a fresh report from a session that is *not* ready
+  // (api/auth.py: authenticate_reconnect_refresh). Sending one when the last known
+  // status is ready would let a flaky startup probe downgrade a working host, so the
+  // bridge hands the report over only when the saved status says it is needed.
+  const payloads = [];
+  const f = await fixture(t, (call, response) => {
+    if (isAck(call)) return ack(response);
+    assert.equal(call.path, "/api/v1/commands/session.reconnect");
+    payloads.push(call.body.payload);
+    respond(response, credential);
+  });
+  writePrivateJson(f.sessionFile, {
+    ...credential, baseline_status: "degraded",
+    conversation_binding_digest: f.options.conversationBindingDigest,
+  });
+
+  // No ticket: the one-shot ticket was consumed and deleted when the session was
+  // created, so a restart with a saved session is a reconnect.
+  const healed = await new CredentialHandoff(f.options).recover({ baseline: f.input.baseline });
+
+  assert.equal(healed.baseline_status, "ready");
+  assert.deepEqual(payloads[0], {
+    reconnect_nonce: credential.reconnect_nonce,
+    expected_connection_epoch: credential.connection_epoch,
+    probe_payload: f.input.baseline,
+  });
+});
+
+test("a reconnect from a session that is not known to be degraded stays quiet", async (t) => {
+  const payloads = [];
+  const f = await fixture(t, (call, response) => {
+    if (isAck(call)) return ack(response);
+    payloads.push(call.body.payload);
+    respond(response, credential);
+  });
+  // A saved handoff whose binding digest no longer matches is a new attempt (the
+  // normal case: the epoch moved on and the daemon asked for a reconnect).
+  writePrivateJson(f.sessionFile, {
+    ...credential, conversation_binding_digest: f.options.conversationBindingDigest,
+    credential_auth_binding_digest: "previous-handoff",
+  });
+
+  await new CredentialHandoff(f.options).recover({
+    forceReconnect: true, baseline: { observation: "after-restart" },
+  });
+
+  assert.deepEqual(payloads[0], {
+    reconnect_nonce: credential.reconnect_nonce,
+    expected_connection_epoch: credential.connection_epoch,
+  });
+});
+
 test("session save failure leaves pending request and never ACKs", async (t) => {
   const f = await fixture(t, (_call, response) => respond(response, credential));
   const writePrivate = (path, value) => {
@@ -520,9 +573,13 @@ test("Python CLI ticket replacement and Node cleanup share one process-owned loc
 import sys, time
 from pathlib import Path
 from tsunagou.cli.app import _write_ticket_private
-from tsunagou.platform import private_files
+from tsunagou.platform import bridge_files
 target, gate = Path(sys.argv[1]), Path(sys.argv[2])
-original = private_files.write_private_bytes
+# The ticket writer lives in platform/bridge_files.py and binds write_private_bytes
+# at import time, so the pause has to be installed on that module (patching
+# private_files itself would be a no-op and this test would wait for a gate
+# that can never open).
+original = bridge_files.write_private_bytes
 def paused(path, data):
     print('writer-held', flush=True)
     deadline = time.monotonic() + 15
@@ -531,7 +588,7 @@ def paused(path, data):
             raise RuntimeError('test_gate_timeout')
         time.sleep(0.01)
     original(path, data)
-private_files.write_private_bytes = paused
+bridge_files.write_private_bytes = paused
 _write_ticket_private('codex:one', 'conversation-one', 'new-python-ticket-sentinel', target)
 `;
   const child = spawn("uv", ["run", "--no-sync", "--project", repoRoot, "python", "-u", "-c", python, f.ticketFile, gate], {

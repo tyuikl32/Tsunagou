@@ -92,6 +92,135 @@ function commandSchema(name: string, includeCommandId = false): Tool["inputSchem
   throw new Error("command_schema_unavailable");
 }
 
+/**
+ * Where the agent should go next, for the codes that arrive as a bare code.
+ *
+ * Only codes whose next step is *not* obvious belong here. A refusal that already
+ * carries structured detail from the daemon (an out-of-scope rejection brings its
+ * own violations and next_steps) must not be duplicated or overwritten here.
+ */
+const ENROLLMENT_GUIDANCE = [
+  "enrollment is driven by the user in the hosting window: ask them to re-run `tsunagou agent connect`",
+  "never construct, copy or paste a ticket or session token yourself",
+] as const;
+
+const ERROR_GUIDANCE: Readonly<Record<string, readonly string[]>> = {
+  not_enrolled: ENROLLMENT_GUIDANCE,
+  invalid_ticket_file: ENROLLMENT_GUIDANCE,
+  invalid_ticket_role: ENROLLMENT_GUIDANCE,
+  invalid_or_consumed_enrollment_ticket: ENROLLMENT_GUIDANCE,
+  enrollment_identity_mismatch: ENROLLMENT_GUIDANCE,
+  conversation_already_attached: ENROLLMENT_GUIDANCE,
+  host_conversation_identity_mismatch: ENROLLMENT_GUIDANCE,
+  conversation_identity_required_for_session_file: ENROLLMENT_GUIDANCE,
+  stale_connection_epoch: ENROLLMENT_GUIDANCE,
+  session_not_found: ENROLLMENT_GUIDANCE,
+  stale_or_blocked_preflight: [
+    "re-run preflight so evidence and blockers are recollected",
+    "if the blocker is an unaccepted contract: compare the current contract digest, then accept or withdraw it",
+  ],
+  attempt_not_running: [
+    "this attempt is no longer open: record the workspace result *before* submitting; for further work, claim a fresh attempt",
+  ],
+  contract_not_accepted: [
+    "a contract this task depends on is not settled: read the current revision and accept it, or reject it and escalate the disagreement to the main agent",
+  ],
+  supersede_target_not_current: [
+    "the contract you tried to replace is no longer in play: re-read the current contract before proposing a revision",
+  ],
+  supersede_already_pending: [
+    "another revision of that contract is already in play: settle or withdraw that one before proposing a different successor",
+  ],
+  response_schema_violation: [
+    "the answer does not satisfy the response contract: send every required field and quote the exact proposal digest you are answering",
+  ],
+  task_scope_denied: [
+    "the action is outside the task's declared execution scope",
+    "request a wider scope, or stay inside the current one",
+  ],
+  workspace_scope_denied: [
+    "a reported path is outside this workspace's prepared scope: request a wider scope, or report only paths inside it",
+  ],
+  workspace_task_scope_denied: [
+    "the requested root is not one this task declared: pick a root from the task's execution scope",
+  ],
+  workspace_changed_paths_mismatch: [
+    "you reported a path the daemon's own scan did not observe: report only paths the observation confirms",
+  ],
+  workspace_patch_artifact_mismatch: [
+    "the patch artifact does not match the observed change: re-record the patch, or drop patch_artifact_ref and let the daemon record it",
+  ],
+  uncommitted_result_requires_patch_artifact: [
+    "an uncommitted change needs a patch artifact: pass patch_artifact_ref, or commit the change",
+  ],
+  resource_lease_expired: [
+    "the execution lease expired and this attempt was fenced: re-claim the task and take a fresh lease",
+  ],
+  resource_conflict: [
+    "the path is held by another attempt's lease: wait for release, or use another path",
+    "never write outside your own lease",
+  ],
+  capability_denied: ["your role lacks this capability: hand it to the main agent or the user"],
+  principal_kind_denied: ["this command belongs to another principal kind: check who is meant to call it"],
+  idempotency_conflict: ["the same command_id was reused with different arguments: use a new command_id"],
+  unknown_payload_field: ["the request carries a field the command does not accept: re-send per the tool schema"],
+  unknown_tool: ["no such tool: list the tools once and use a name from that list"],
+  handler_not_registered: ["declared but not implemented on this daemon: do not retry, report it"],
+  project_lock_unavailable: ["another process holds the project lock: retry after a short wait"],
+  contract_revision_conflict: [
+    "the contract versions you declared are not the ones in force: call context__project_read to read them, then run preflight again if you have not started, or bring this attempt's work up to date and submit again if you have — this refusal closed nothing, the attempt, its lease and its files are untouched",
+  ],
+};
+
+/**
+ * Contract versions this session actually read, per task.
+ *
+ * The start boundary compares a declaration against the versions in force, so the
+ * declaration has to come from a read the agent really did. Remembering the read here
+ * keeps the model out of the loop: preflight carries what was last read, and a stale
+ * read is refused until the agent reads again.
+ */
+const contractsInForce = new Map<string, string[]>();
+
+function declareContracts(args: Record<string, unknown>, field = "expected_revisions"): void {
+  const taskId = args.task_id;
+  if (typeof taskId !== "string") return;
+  const revisions = contractsInForce.get(taskId);
+  if (revisions === undefined) return;
+  const existing = args[field];
+  if (existing !== undefined && existing !== null && (typeof existing !== "object" || Array.isArray(existing))) {
+    // A legacy single-token caller keeps its shape; the check is driven by the
+    // declaration, so leaving it alone simply means no contract gate here.
+    return;
+  }
+  args[field] = { ...(existing as Record<string, unknown> | undefined), contract: revisions };
+}
+
+function rememberContracts(result: unknown): void {
+  const tasks = (result as { contracts?: { tasks?: unknown } } | null | undefined)?.contracts?.tasks;
+  if (!Array.isArray(tasks)) return;
+  for (const item of tasks) {
+    const entry = item as { task_id?: unknown; in_force?: unknown };
+    if (typeof entry.task_id !== "string") continue;
+    contractsInForce.set(
+      entry.task_id,
+      Array.isArray(entry.in_force) ? entry.in_force.filter((value): value is string => typeof value === "string") : [],
+    );
+  }
+}
+
+function buildToolError(message: string, detail?: unknown): Record<string, unknown> {
+  const code = message.replace(/^tsunagou_[a-z_]*error:/, "");
+  const payload: Record<string, unknown> = { error: message, code };
+  if (detail !== undefined && typeof detail === "object" && detail !== null) {
+    Object.assign(payload, detail as Record<string, unknown>);
+  }
+  const guidance = ERROR_GUIDANCE[code];
+  // The daemon's own next_steps are more specific than anything kept here.
+  if (guidance !== undefined && payload.next_steps === undefined) payload.next_steps = guidance;
+  return payload;
+}
+
 interface ToolSpec {
   name: string;
   command_kind: string;
@@ -229,7 +358,7 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "workspace__integrate", command_kind: "workspace.integrate", description: "Create a Main-owned local integration request from a worker result; this never pushes.", inputSchema: { type: "object", required: ["source_result_ref", "target_repository_id", "target_baseline_digest", "plan_digest", "reason"], properties: { source_result_ref: { type: "string" }, target_repository_id: { type: "string" }, target_baseline_digest: { type: "string" }, plan_digest: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__review_accept", command_kind: "task.review.accept", description: "Accept a submitted task result as the designated reviewer.", inputSchema: { type: "object", required: ["task_id", "result_id", "result_digest", "slot_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, result_id: { type: "string" }, result_digest: { type: "string" }, slot_id: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
   { name: "task__review_request_changes", command_kind: "task.review.request_changes", description: "Request changes to a submitted task result as the designated reviewer.", inputSchema: { type: "object", required: ["task_id", "result_id", "result_digest", "slot_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, result_id: { type: "string" }, result_digest: { type: "string" }, slot_id: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
-  { name: "cognition__report", command_kind: "cognition.report", description: "Submit an explicit cognition report (claims, assumptions, uncertainties).", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, claims: { type: "array", items: { type: "object", required: ["subject_key"], properties: { subject_key: { type: "string" }, subject: { type: "string" }, claim_type: { type: "string" }, equality_key: { type: "string" }, value: {}, evidence_refs: { type: "array", items: { type: "string" } } } } }, assumptions: { type: "array", items: { type: "string" } }, uncertainties: { type: "array", items: { type: "string" } } } } },
+  { name: "cognition__report", command_kind: "cognition.report", description: "Submit an explicit cognition report (claims, assumptions, uncertainties). The contract versions you were working from are filled in from your last project read, so what the report was based on can be pointed at later.", inputSchema: { type: "object", required: ["task_id", "attempt_id"], properties: { task_id: { type: "string" }, attempt_id: { type: "string" }, claims: { type: "array", items: { type: "object", required: ["subject_key"], properties: { subject_key: { type: "string" }, subject: { type: "string" }, claim_type: { type: "string" }, equality_key: { type: "string" }, value: {}, evidence_refs: { type: "array", items: { type: "string" } } } } }, assumptions: { type: "array", items: { type: "string" } }, uncertainties: { type: "array", items: { type: "string" } }, input_revisions: { type: "object" } } } },
   { name: "discrepancy__create", command_kind: "discrepancy.create", description: "Create a visible cognition discrepancy from existing reports.", inputSchema: { type: "object", required: ["subject_ref", "report_refs", "severity", "summary"], properties: { subject_ref: { type: "string" }, report_refs: { type: "array", items: { type: "string" } }, severity: { type: "string" }, summary: { type: "string" }, participants: { type: "array" }, affected_actions: { type: "array" } }, additionalProperties: false } },
   { name: "discrepancy__advance", command_kind: "discrepancy.advance", description: "Advance a discrepancy into clarification or negotiation.", inputSchema: { type: "object", required: ["discrepancy_id", "status"], properties: { discrepancy_id: { type: "string" }, status: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
   { name: "discrepancy__resolve", command_kind: "discrepancy.resolve", description: "Resolve a discrepancy by consensus, dismissal or explicit override (main-authority only).", inputSchema: { type: "object", required: ["discrepancy_id", "kind"], properties: { discrepancy_id: { type: "string" }, kind: { type: "string" }, reason: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } } }, additionalProperties: false } },
@@ -245,7 +374,7 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "inbox__ack", command_kind: "inbox.ack", description: "Acknowledge a received delivery; this does not fulfill its response obligation.", inputSchema: commandSchema("inbox.ack") },
   { name: "message__send", command_kind: "message.send", description: "Send a message to one agent. To reply, set in_reply_to to the received message_id.", inputSchema: commandSchema("message.send", true) },
   { name: "message__respond", command_kind: "message.respond", description: "Fulfill a received response obligation using the message_id of an already-sent linked reply.", inputSchema: commandSchema("message.respond") },
-  { name: "context__project_read", command_kind: "context.project_read", description: "Read this agent's identity, role, scope capabilities, owned and open tasks with revisions, execution scopes and dependencies needed to begin.", inputSchema: { type: "object", additionalProperties: false } },
+  { name: "context__project_read", command_kind: "context.project_read", description: "Read this agent's identity, role, scope capabilities, owned and open tasks with revisions, execution scopes and dependencies needed to begin. The contracts each owned task depends on and the versions in force are read back with it.", inputSchema: { type: "object", additionalProperties: false } },
   { name: "project__configure", command_kind: "project.configure", description: "Enable or disable project-level automatic worker wake for future coordination plans (main-authority only).", inputSchema: { type: "object", required: ["policy_patch", "reason"], properties: { policy_patch: { type: "object", properties: { auto_wake_multi_agent: { type: "boolean" } }, additionalProperties: false }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "decision__propose", command_kind: "user_decision.propose", description: "Propose a decision that requires user input (main-authority only).", inputSchema: { type: "object", required: ["kind", "proposal_ref", "choices", "summary"], properties: { kind: { type: "string" }, proposal_ref: { type: "string" }, choices: { type: "array", items: { type: "object" } }, summary: { type: "string" }, proposal_digest: { type: "string" }, expected_revisions: { type: "object" } }, additionalProperties: false } },
   { name: "project__completion_propose", command_kind: "project.completion.propose.main", description: "Propose project completion for user confirmation (main-authority only).", inputSchema: { type: "object", required: ["objective_ref"], properties: { objective_ref: { type: "string" }, outstanding_summary: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, expected_project_revision: { type: "integer" } }, additionalProperties: false } },
@@ -290,10 +419,12 @@ class HttpTransport {
     };
     if (!response.ok) {
       const code = body.detail?.code ?? `http_${response.status}`;
-      if (code === "resource_conflict" && body.detail?.blockers) {
-        throw new Error(`tsunagou_error:${code}:${JSON.stringify({ blockers: body.detail.blockers })}`);
-      }
-      throw new Error(`tsunagou_error:${code}`);
+      const failure = new Error(`tsunagou_error:${code}`);
+      // Keep the daemon's structured detail (violations / allowed / next_steps / holders)
+      // so the agent learns *what* to fix, not just that it failed. This bridge surfaces
+      // the detail itself, so the code stays clean for the guidance lookup below.
+      (failure as Error & { detail?: unknown }).detail = body.detail;
+      throw failure;
     }
     return body.result ?? {};
   }
@@ -459,21 +590,29 @@ async function main(): Promise<void> {
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     const tool = TOOLS.find((candidate) => candidate.name === request.params.name);
-    if (!tool) return { content: [{ type: "text" as const, text: JSON.stringify({ error: "unknown_tool" }) }], isError: true };
+    if (tool === undefined) {
+      return { content: [{ type: "text" as const, text: JSON.stringify(buildToolError("unknown_tool")) }], isError: true };
+    }
     try {
       const cfg = configurationForRequest(request);
       const args = { ...((request.params.arguments ?? {}) as Record<string, unknown>) };
       const commandId = typeof args.command_id === "string" && args.command_id.trim() ? args.command_id.trim() : randomUUID();
       delete args.command_id;
+      // A report has to say which contract versions it was based on. The versions this
+      // session actually read are remembered from context.project_read below, so the
+      // model never has to repeat them (see declareContracts).
+      if (tool.command_kind === "cognition.report") declareContracts(args, "input_revisions");
       const result = await executeTool(cfg, tool.command_kind, args, commandId);
       void restoreDesktopBindings();
+      if (tool.command_kind === "context.project_read") rememberContracts(result);
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const detail = (error as { detail?: unknown } | null | undefined)?.detail;
       // Only our typed errors reach the model, never raw filesystem/network data.
       const safe = /^(?:tsunagou_error:|[a-z][a-z0-9_]*(?::[a-z0-9_]+)?$)/.test(message)
         ? message : "bridge_request_failed";
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: safe }) }], isError: true };
+      return { content: [{ type: "text" as const, text: JSON.stringify(buildToolError(safe, detail)) }], isError: true };
     }
   });
   await server.connect(new StdioServerTransport());

@@ -173,6 +173,29 @@ def create_app(
             recipient_agent_id=recipient_agent_id,
         )
 
+    def _record_denial(command_kind: str, detail: dict[str, Any]) -> None:
+        """Record a rejected write as a durable fact.
+
+        The command's own transaction has already rolled back, so the denial is
+        appended in a separate transaction: "this attempt was rejected, and why"
+        must stay queryable and replayable, not just returned as an error string.
+        """
+        store = getattr(dispatcher, "database", None)
+        if store is None:
+            return
+        try:
+            with store.transaction() as uow:
+                uow.append_event(
+                    lineage_id="local-lineage",
+                    event_type=f"command.{command_kind}.denied",
+                    aggregate_ref=f"project/{store.project_id}",
+                    actor_ref="runtime",
+                    payload={"command_kind": command_kind, **detail},
+                )
+        except Exception:
+            # Losing the audit line must never turn a clean rejection into a 5xx.
+            return
+
     @app.post("/api/v1/commands/{command_kind}")
     def command(
         command_kind: str, request: CommandRequest, response: Response,
@@ -193,10 +216,20 @@ def create_app(
             except PermissionError as auth_error:
                 if command_kind != "session.reconnect" or str(auth_error) != "authentication_failed":
                     raise
-                principal = authenticator.authenticate_reconnect_replay(
-                    dispatcher.database, command_kind=command_kind, command_id=request.command_id, payload=request.payload,
-                    authorization=authorization, session_id=session_id, connection_epoch=connection_epoch,
-                )
+                try:
+                    principal = authenticator.authenticate_reconnect_replay(
+                        dispatcher.database, command_kind=command_kind, command_id=request.command_id, payload=request.payload,
+                        authorization=authorization, session_id=session_id, connection_epoch=connection_epoch,
+                    )
+                except PermissionError:
+                    # Not a replay of something already committed. A session that is
+                    # only degraded (not ready) may still come back *with a fresh
+                    # capability report*: being re-judged is the one thing it can ask
+                    # for, and it is the only way back to ready without a new ticket.
+                    principal = authenticator.authenticate_reconnect_refresh(
+                        request.payload, authorization=authorization,
+                        session_id=session_id, connection_epoch=connection_epoch,
+                    )
             enrollment_binding = (
                 authenticator.authority.ticket_host_binding(principal.principal_id)
                 if command_kind in {"agent.enroll", "session.rebind"} and authenticator.authority is not None else None
@@ -276,6 +309,10 @@ def create_app(
         except RevisionConflict as exc:
             raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
         except ResourceConflict as exc:
+            # A refused reservation is a refusal, not an outage: record it the same way
+            # any other structured rejection is, so the conflict ledger the console
+            # reads (``command.<kind>.denied``) sees it too.
+            _record_denial(command_kind, {"code": exc.code, **exc.detail})
             raise HTTPException(status_code=409, detail={"code": exc.code, "blockers": exc.blockers}) from exc
         except LockUnavailable as exc:
             raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
@@ -284,7 +321,14 @@ def create_app(
             # unavailable service capability, not an opaque HTTP 500.
             raise HTTPException(status_code=503, detail={"code": str(exc)}) from exc
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+            detail: dict[str, Any] = {"code": str(exc)}
+            extra = getattr(exc, "detail", None)
+            if isinstance(extra, dict):
+                # Structured rejection: hand the caller the full reason, and make the
+                # rejection itself a shared, replayable fact.
+                detail.update(extra)
+                _record_denial(command_kind, detail)
+            raise HTTPException(status_code=400, detail=detail) from exc
         response.headers["ETag"] = dispatched.command_hash
         if isinstance(dispatched.result.get("delivery_ref"), str):
             response.headers["Cache-Control"] = "no-store"
@@ -473,6 +517,15 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
+    @app.get("/api/v1/projects/{project_id}/overview")
+    def project_overview(project_id: str) -> dict[str, Any]:
+        if query_provider is None:
+            return {"project_id": project_id}
+        try:
+            return query_provider("overview", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
     @app.get("/api/v1/projects/{project_id}/tasks")
     def project_tasks(project_id: str) -> dict[str, Any]:
         if query_provider is None:
@@ -565,6 +618,23 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
+    @app.get("/api/v1/projects/{project_id}/reviews")
+    def project_reviews(project_id: str) -> dict[str, Any]:
+        """What the reviewers decided, round by round.
+
+        A submitted result and a verdict on it are two different facts: without the
+        second one a console can only say "something arrived", which reads like
+        approval and is not. The rounds are read from the same state the review
+        commands write, so a verdict is never re-derived from a task's status.
+        """
+
+        if query_provider is None:
+            return {"project_id": project_id, "items": []}
+        try:
+            return query_provider("reviews", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
     @app.get("/api/v1/projects/{project_id}/jobs")
     def project_jobs(project_id: str) -> dict[str, Any]:
         if query_provider is None:
@@ -634,6 +704,24 @@ def create_app(
             return {"items": []}
         try:
             return query_provider("resources", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/projects/{project_id}/intents")
+    def project_intents(project_id: str) -> dict[str, Any]:
+        if query_provider is None:
+            return {"project_id": project_id, "items": []}
+        try:
+            return query_provider("intents", project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/projects/{project_id}/conflicts")
+    def project_conflicts(project_id: str) -> dict[str, Any]:
+        if query_provider is None:
+            return {"project_id": project_id, "items": []}
+        try:
+            return query_provider("conflicts", project_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
@@ -837,6 +925,38 @@ def create_app(
             if query_provider is None:
                 raise KeyError("project_not_found")
             return query_provider("checkpoints", project_id, viewer=viewer, verify=verify)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                 detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+
+    @app.get("/api/v1/projects/{project_id}/checkpoint-failures")
+    def project_checkpoint_failures(
+        project_id: str,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        """The checkpoints that were asked for and never arrived.
+
+        A sealed checkpoint page is one answer to "is my work durable"; this exit
+        answers the opposite question, because a reader who cannot see the failures
+        cannot tell "nothing was ever lost" from "nothing was ever written down".
+        Retrying one is a separate command (``checkpoint.create.user``), which needs
+        the operation id this exists to hand out.
+        """
+
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                raise KeyError("project_not_found")
+            return query_provider("checkpoint_failures", project_id, viewer=viewer)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
         except PermissionError as exc:

@@ -30,11 +30,15 @@ _MAIN_METHODS = frozenset({"tasks/cancel", "tasks/retry"})
 class A2AProtocolError(ValueError):
     """A request that cannot be represented by the local A2A profile."""
 
-    def __init__(self, code: str, message: str, *, rpc_code: int = -32602) -> None:
+    def __init__(
+        self, code: str, message: str, *, rpc_code: int = -32602,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.rpc_code = rpc_code
+        self.detail = detail or {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +115,7 @@ def _rpc_error(request_id: Any, error: A2AProtocolError) -> dict[str, Any]:
         "error": {
             "code": error.rpc_code,
             "message": error.message,
-            "data": {"code": error.code},
+            "data": {**error.detail, "code": error.code},
         },
     }
 
@@ -289,8 +293,12 @@ class A2AGateway:
             ))
         except ValueError as exc:
             code = "idempotency_conflict" if str(exc) == "command_id_conflict" else str(exc)
+            # A rejection that carries structured detail must survive this hop: the
+            # local MCP path already forwards it, so a remote caller must not be the
+            # one entry point that silently loses the reason and the repair steps.
             return _rpc_error(request_id, A2AProtocolError(
                 code, "A2A request was rejected", rpc_code=-32000,
+                detail=getattr(exc, "detail", None),
             ))
 
     def _message_send(

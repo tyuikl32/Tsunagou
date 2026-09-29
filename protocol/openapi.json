@@ -185,6 +185,13 @@
             "title": "Lineage Id",
             "type": "string"
           },
+          "missing_admission": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Admission",
+            "type": "array"
+          },
           "occurred_at": {
             "anyOf": [
               {
@@ -264,6 +271,17 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "session_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Status"
+          },
           "source_event_id": {
             "minLength": 1,
             "title": "Source Event Id",
@@ -302,7 +320,9 @@
           "revision_before",
           "revision_after",
           "evidence_level",
-          "changes"
+          "changes",
+          "session_status",
+          "missing_admission"
         ],
         "title": "AuditEventModel",
         "type": "object"
@@ -3226,6 +3246,96 @@
         "summary": "Project Audit"
       }
     },
+    "/api/v1/projects/{project_id}/checkpoint-failures": {
+      "get": {
+        "description": "The checkpoints that were asked for and never arrived.\n\nA sealed checkpoint page is one answer to \"is my work durable\"; this exit\nanswers the opposite question, because a reader who cannot see the failures\ncannot tell \"nothing was ever lost\" from \"nothing was ever written down\".\nRetrying one is a separate command (``checkpoint.create.user``), which needs\nthe operation id this exists to hand out.",
+        "operationId": "project_checkpoint_failures_api_v1_projects__project_id__checkpoint_failures_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Checkpoint Failures Api V1 Projects  Project Id  Checkpoint Failures Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Checkpoint Failures"
+      }
+    },
     "/api/v1/projects/{project_id}/checkpoints": {
       "get": {
         "operationId": "project_checkpoints_api_v1_projects__project_id__checkpoints_get",
@@ -3380,6 +3490,47 @@
           }
         },
         "summary": "Project Cognition"
+      }
+    },
+    "/api/v1/projects/{project_id}/conflicts": {
+      "get": {
+        "operationId": "project_conflicts_api_v1_projects__project_id__conflicts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Conflicts Api V1 Projects  Project Id  Conflicts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Conflicts"
       }
     },
     "/api/v1/projects/{project_id}/contracts": {
@@ -4072,6 +4223,47 @@
         "summary": "Project History Export"
       }
     },
+    "/api/v1/projects/{project_id}/intents": {
+      "get": {
+        "operationId": "project_intents_api_v1_projects__project_id__intents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Intents Api V1 Projects  Project Id  Intents Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Intents"
+      }
+    },
     "/api/v1/projects/{project_id}/jobs": {
       "get": {
         "operationId": "project_jobs_api_v1_projects__project_id__jobs_get",
@@ -4170,6 +4362,47 @@
           }
         },
         "summary": "Project Messages"
+      }
+    },
+    "/api/v1/projects/{project_id}/overview": {
+      "get": {
+        "operationId": "project_overview_api_v1_projects__project_id__overview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Overview Api V1 Projects  Project Id  Overview Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Overview"
       }
     },
     "/api/v1/projects/{project_id}/repositories": {
@@ -4320,6 +4553,48 @@
           }
         },
         "summary": "Project Results"
+      }
+    },
+    "/api/v1/projects/{project_id}/reviews": {
+      "get": {
+        "description": "What the reviewers decided, round by round.\n\nA submitted result and a verdict on it are two different facts: without the\nsecond one a console can only say \"something arrived\", which reads like\napproval and is not. The rounds are read from the same state the review\ncommands write, so a verdict is never re-derived from a task's status.",
+        "operationId": "project_reviews_api_v1_projects__project_id__reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Reviews Api V1 Projects  Project Id  Reviews Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Reviews"
       }
     },
     "/api/v1/projects/{project_id}/roots": {

@@ -691,6 +691,7 @@ class ProjectDatabase:
         to_ms: int | None = None,
         actor_ref: str | None = None,
         subject_ref: str | None = None,
+        event_type_like: str | None = None,
         through_event_seq: int | None = None,
     ) -> list[dict[str, Any]]:
         """Return a stable, scope-bound audit page in ascending event order.
@@ -724,6 +725,11 @@ class ProjectDatabase:
         if subject_ref:
             predicates.append("subject_ref = ?")
             values.append(subject_ref)
+        if event_type_like:
+            # Refusals are recorded as ``command.<kind>.denied`` rows whose aggregate is
+            # the project, so subject/actor filters cannot find them by kind.
+            predicates.append("event_type LIKE ?")
+            values.append(event_type_like)
         values.append(bounded)
         with contextlib.closing(self._connect()) as conn:
             rows = conn.execute(
