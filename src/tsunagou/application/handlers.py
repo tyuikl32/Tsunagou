@@ -426,27 +426,16 @@ def build_handlers(
         return {"task_id": task.task_id, "title": title, "objective": objective, "status": task.status, "revision": task.revision}
 
     def _check_task_revisions(task: Any, payload: dict[str, Any]) -> None:
+        """Retained for callers that carry per-domain expectations; the contract half of
+        this rule now lives on the execution boundaries themselves, so "settled enough to
+        start" and "settled enough to publish" cannot drift apart."""
         expected = payload.get("expected_revisions")
-        if expected is None:
-            return
-        if not isinstance(expected, dict):
-            # Legacy in-process callers used a single opaque revision token;
-            # only the typed object form carries per-domain expectations.
+        if expected is None or not isinstance(expected, dict):
             return
         for key, actual in (("task", task.revision), ("scope", task.scope_revision)):
             value = expected.get(key)
             if value is not None and int(value) != actual:
                 raise ValueError(f"{key}_revision_conflict")
-        declared = expected.get("contract")
-        if declared is None:
-            return
-        # Starting work is the one moment where "which contract version governs" has to
-        # be settled, so the caller declares the versions it read. A declaration that is
-        # not the version in force means it has not caught up with a revision yet.
-        if not isinstance(declared, (list, tuple)) or sorted(
-            str(item) for item in declared
-        ) != list(cognition.current_contract_versions(task.task_id)):
-            raise ValueError("contract_revision_conflict")
 
     def task_ready(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
@@ -951,6 +940,12 @@ def build_handlers(
         ] + [
             _slot(item, False) for item in optional
         ]
+        if not participants and revised:
+            # A revision defaults to the participants of the contract it replaces, so
+            # it cannot quietly narrow who has to agree.
+            previous = cognition.proposals.get(revised)
+            if previous is not None:
+                participants = [dict(item) for item in previous.participants]
         for participant in participants:
             if participant["agent_id"] not in authority.agents:
                 raise ValueError("contract_participant_not_member")

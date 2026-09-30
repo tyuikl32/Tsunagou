@@ -602,6 +602,11 @@ async function main(): Promise<void> {
       // session actually read are remembered from context.project_read below, so the
       // model never has to repeat them (see declareContracts).
       if (tool.command_kind === "cognition.report") declareContracts(args, "input_revisions");
+      // Both execution boundaries ask "is the version you read the one in force": start
+      // work and publish a result. Same remembered read, same automatic declaration.
+      if (tool.command_kind === "task.begin" || tool.command_kind === "task.submit") {
+        declareContracts(args, "expected_revisions");
+      }
       const result = await executeTool(cfg, tool.command_kind, args, commandId);
       void restoreDesktopBindings();
       if (tool.command_kind === "context.project_read") rememberContracts(result);
