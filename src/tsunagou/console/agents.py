@@ -30,6 +30,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tsunagou.console.profile import load_profile, update_profile
+from tsunagou.platform import host_registration
+from tsunagou.platform.bridge_files import bridge_identities
+from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 LOCAL_STATE = Path(".tsunagou") / "local"
@@ -125,6 +129,10 @@ def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
             "agent_id": str(item.get("agent_id") or ""),
             "status": str(item.get("status") or ""),
             "role": str(item.get("role") or ""),
+            # The daemon publishes this digest, and ``canonical_digest({"conversation_id": …})``
+            # recomputes it — that is how a bridge folder can be matched to an Agent
+            # that never went through the console.
+            "conversation_digest": str(item.get("conversation_digest") or ""),
         }
         for item in items
         if isinstance(item, dict) and item.get("agent_id")
@@ -178,8 +186,14 @@ def current_tasks(root: Path, endpoint: dict[str, Any] | None) -> dict[str, str]
 class AgentDirectory:
     """The console's memory of each project's roster, keyed by storage fingerprint."""
 
-    def __init__(self, reader: Callable[[Path, dict[str, Any]], AgentRoster | None] = _read_roster) -> None:
+    def __init__(
+        self, reader: Callable[[Path, dict[str, Any]], AgentRoster | None] = _read_roster,
+        profile_path: Path | None = None,
+    ) -> None:
         self._reader = reader
+        # Where the person's own file lives. Given one, every roster read also fills
+        # in the vendors we can prove (see ``reconcile_vendors``).
+        self._profile_path = profile_path
         # A cached roster travels with the fingerprint it was read at; ``None`` means
         # the storage could not be read then, so the entry is never reused.
         self._cache: dict[str, tuple[Fingerprint | None, AgentRoster]] = {}
@@ -207,15 +221,85 @@ class AgentDirectory:
         # Only an *unreadable* fingerprint forces a fetch every time: reusing a cached
         # roster requires positive evidence that the daemon has not written since.
         if not force and current is not None and cached is not None and cached[0] == current:
-            return cached[1]
+            return self._reconciled(root, cached[1])
         fresh = self._reader(root, endpoint)
         if fresh is None:
             # The daemon answered nothing. Keep what we have (its files are unchanged
             # or unreadable) rather than blanking names that were true a moment ago.
-            return cached[1] if cached is not None else None
+            return self._reconciled(root, cached[1]) if cached is not None else None
         with self._lock:
             self._cache[project_id] = (current, fresh)
-        return fresh
+        return self._reconciled(root, fresh)
+
+    def _reconciled(self, root: Path, lineup: AgentRoster) -> AgentRoster:
+        """Fill in provable vendors before anybody reads this roster.
+
+        Runs on the read path, cached or not: the evidence (a bridge folder written by
+        ``agent connect``) can appear *after* the roster was cached, and an Agent that
+        was enrolled from the command line is exactly the case this is for.
+        """
+
+        if self._profile_path is not None and lineup.agents:
+            reconcile_vendors(root, lineup.agents, profile_path=self._profile_path)
+        return lineup
+
+
+def _host_label(adapter: str) -> str:
+    """The vendor as the page spells it: the host table's label, else the adapter."""
+
+    host = host_registration.host_for(adapter)
+    return str(getattr(host, "label", "") or adapter)
+
+
+def reconcile_vendors(
+    project_root: Path, agents: Any, *, profile_path: Path,
+) -> int:
+    """Record the vendor for Agents that were enrolled without the console.
+
+    ``agent connect`` writes its bridge folder itself and never touches the user
+    profile, so an Agent that joined that way has no vendor — and no vendor means no
+    logo. The proof is already on disk: ``connection.json`` names the Agent, and a
+    folder that only has ``host-identity.json`` still matches through the conversation
+    digest the daemon publishes.
+
+    Only a *missing* vendor is filled, and only when the adapter was read out of a
+    file rather than guessed: a value the person set stays, and a conversation we
+    cannot identify is left alone (the page falls back to the Tsunagou mark).
+    Returns how many Agents were filled in.
+    """
+
+    known = load_profile(profile_path)["agents"]
+    wanted = [
+        agent for agent in agents
+        if not str((known.get(str(agent.get("agent_id") or "")) or {}).get("vendor") or "").strip()
+    ]
+    if not wanted:
+        return 0
+    by_agent: dict[str, str] = {}
+    by_conversation: dict[str, str] = {}
+    for bridge in bridge_identities(project_root):
+        label = _host_label(str(bridge["adapter"]))
+        if bridge.get("agent_id"):
+            by_agent[str(bridge["agent_id"])] = label
+        if bridge.get("conversation_id"):
+            by_conversation[canonical_digest({"conversation_id": bridge["conversation_id"]})] = label
+    patches: dict[str, dict[str, str]] = {}
+    for agent in wanted:
+        agent_id = str(agent.get("agent_id") or "")
+        if not agent_id:
+            continue
+        vendor = by_agent.get(agent_id) or by_conversation.get(str(agent.get("conversation_digest") or ""))
+        if vendor:
+            patches[agent_id] = {"vendor": vendor}
+    if not patches:
+        return 0
+    try:
+        update_profile(profile_path, {"agents": patches})
+    except (OSError, ValueError):
+        # A profile we cannot write is not worth failing a read over: the page falls
+        # back to the Tsunagou mark, which is what it would show anyway.
+        return 0
+    return len(patches)
 
 
 def attach(entry: Any, directory: AgentDirectory) -> None:

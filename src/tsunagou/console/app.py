@@ -151,7 +151,9 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
     settings = config or ConsoleConfig.load()
     web_directory = settings.web_directory()
     # One memory of "who works where", shared by the rail and the refresh route.
-    directory = AgentDirectory()
+    # It is also the place where a vendor is filled in for Agents the console never
+    # enrolled (see ``agents.reconcile_vendors``).
+    directory = AgentDirectory(profile_path=settings.profile_path)
     app = FastAPI(title="Tsunagou Console", version=CONSOLE_VERSION)
 
     @app.exception_handler(ConsoleError)
