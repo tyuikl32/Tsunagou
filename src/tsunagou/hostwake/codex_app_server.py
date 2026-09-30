@@ -821,12 +821,14 @@ class ManagedCodexProvider:
             }))
             record = self._record(binding)
             client = self._client(binding.agent_id, record)
+            # Counts and ages only: the body stays behind the authenticated pull.
+            hint = f"{request.waiting_hint} " if request.waiting_hint else ""
             params: dict[str, Any] = {
                 "threadId": thread.thread_id,
                 "input": [{
                     "type": "text",
                     "text": (
-                        "Use the Tsunagou MCP tools context__project_read and inbox__claim/fetch/presented "
+                        hint + "Use the Tsunagou MCP tools context__project_read and inbox__claim/fetch/presented "
                         "to read the coordination context and pending inbox delivery, then continue the "
                         "coordination work. Do not use shell or infer the message contents from this prompt."
                     ),

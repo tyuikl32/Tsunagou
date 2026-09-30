@@ -49,7 +49,7 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "root.bind": frozenset({"root_id", "absolute_path", "expected_physical_identity", "reason"}),
     "repository.register": frozenset({"name", "root_id", "required"}),
     "task.create": frozenset({"title", "objective", "parent_task_id", "blocks", "execution_scope", "required_contract_ids"}),
-    "task.begin": frozenset({"task_id", "expected_task_revision"}),
+    "task.begin": frozenset({"task_id", "expected_task_revision", "expected_revisions"}),
     "task.ready": frozenset({"task_id", "reason"}),
     "task.publish": frozenset({"task_id", "reason"}),
     "task.update_plan": frozenset({"task_id", "title", "objective", "required_contract_ids", "reason"}),
@@ -62,7 +62,7 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     }),
     "task.submit": frozenset({
         "task_id", "attempt_id", "summary", "evidence_refs", "artifact_refs",
-        "validation_metadata",
+        "validation_metadata", "expected_revisions",
     }),
     "task.cancel_request": frozenset({"task_id", "reason"}),
     "task.cancel_ack": frozenset({"task_id", "attempt_id", "stop_evidence", "reason"}),

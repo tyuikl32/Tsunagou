@@ -233,6 +233,7 @@ $baseUrl = $endpoint.url
 | GET | `/api/v1/projects/{project_id}/coordination` | 计划、分工、WakeAttempt、重要事件和覆盖率 |
 | GET | `/api/v1/projects/{project_id}/assignments` | 分工状态和 worker 覆盖率 |
 | GET | `/api/v1/projects/{project_id}/wake-attempts` | 唤醒双确认、重试、deadline 和失败原因 |
+| GET | `/api/v1/projects/{project_id}/inbox` | 只读 peek：当前在等的消息、种类、摘要与等待时长；不领租约、不计次。Agent 只能看自己，U 可用 `agent_id` 查看指定 Agent |
 | GET | `/api/v1/projects/{project_id}/diagnostics` | callback、wake、Agent presentation/pull、turn 的独立诊断证据 |
 | GET | `/api/v1/projects/{project_id}/events` | 协调事件与 Main 可见汇总 |
 | GET | `/api/v1/projects/{project_id}/audit` | 兼容入口：脱敏事件审计 |

@@ -113,6 +113,64 @@ def profile_identity(
     return installation_id, conversation_id
 
 
+# The files in a bridge folder that name an identity, in the order their fields win.
+_IDENTITY_FILES = ("connection.json", "host-identity.json")
+
+
+def bridge_identities(root: Path) -> list[dict[str, Any]]:
+    """What each prepared bridge conversation says about itself.
+
+    One row per folder under ``.tsunagou/bridges``. The folder is named
+    ``<adapter>-<profile>``, but the adapter is read out of the JSON we wrote there
+    instead of being split out of the name — a profile may itself contain a dash.
+
+    ``connection.json`` (written by ``agent connect``) also names the Agent, and
+    ``host-identity.json`` names the conversation. Those two are what let a caller
+    recognise a folder it did not prepare itself, which is the only way an Agent
+    enrolled from the command line can be told which host product it runs on.
+    """
+
+    bridges = root / BRIDGE_DIRECTORY
+    if not bridges.is_dir():
+        return []
+    found: list[dict[str, Any]] = []
+    for child in sorted(bridges.iterdir()):
+        if not child.is_dir():
+            continue
+        merged: dict[str, str] = {}
+        for candidate in _identity_files(child):
+            try:
+                raw = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(raw, dict):
+                continue
+            for key in ("adapter", "profile", "installation_id", "conversation_id", "agent_id"):
+                value = raw.get(key)
+                if key not in merged and isinstance(value, str) and value:
+                    merged[key] = value
+        adapter = merged.get("adapter", "")
+        if not adapter or not child.name.startswith(adapter + "-"):
+            # Without the adapter in a file there is no way to tell where the adapter
+            # name ends, so this folder is reported as unreadable rather than guessed.
+            continue
+        found.append({
+            "adapter": adapter,
+            "profile": child.name[len(adapter) + 1:],
+            "installation_id": merged.get("installation_id"),
+            "conversation_id": merged.get("conversation_id"),
+            "agent_id": merged.get("agent_id"),
+        })
+    return found
+
+
+def _identity_files(child: Path) -> list[Path]:
+    """The folder's JSON files, with the two that name an identity read first."""
+
+    named = [child / name for name in _IDENTITY_FILES if (child / name).is_file()]
+    return named + sorted(path for path in child.glob("*.json") if path.name not in _IDENTITY_FILES)
+
+
 def bridge_file_name(adapter: str, installation_id: str) -> str:
     """The bridge config's file name: adapter and installation, made path-safe."""
 

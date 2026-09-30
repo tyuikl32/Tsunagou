@@ -55,6 +55,17 @@ listener 保持运行期间，另一个终端执行 `host attach --endpoint "uni
 
 `A2AGateway` 接受可选 `WakeDispatcher`。durable `message/send` 完成后调用 `on_delivery`，响应的 `result.message.metadata.tsunagou.host_wake` 会包含脱敏的 attempt 状态；配置了 A2A callback 时，attempt evidence 还会记录 `callback_received`，随后记录 `thread_started`/`thread_resumed`、`turn_started`，后台 watcher 观察到终止事件后补 `turn_completed`。Agent 调用 `inbox.presented` 后再补 `agent_presented`。没有配置 provider 时为 `not_configured`。host wake 是增强路径，不能覆盖 durable delivery、presentation 或用户确认边界。
 
+## 什么时候才打扰宿主
+
+唤醒一次要花一个完整宿主 turn，所以门铃本身也被约束：
+
+- **触发面**：daemon 只为“有人被卡住”的消息（`modules/messaging.py::WAKE_WORTHY_KINDS`：`task.assigned`、`task.submitted`、`task.reviewed`、`contract.proposed`、`contract.revised`、`user_decision.resolved`）在同一个事务里写 `outbox(kind='host_wake')`。普通 `message`/`notice` 对等消息只进收件箱等下一次拉取；`user_decision.pending` 的收件人在构造上就是一个 running attempt，宿主本来就醒着。
+- **行的含义**：该行是“想唤醒”的持久意图，即使本次进程没有启用唤醒也会写入，以便以后启用时由投递工人补投；对应 delivery 已经被 ACK 时不会启动 turn（`messages_already_acked`）。
+- **有界重试**：`host_binding_not_found`、`host_binding_not_ready`、`host_wake_dispatch_failed` 以 5 秒起倍增（封顶 300 秒）重试，最多 12 次；到顶后行转为 `failed` 终态，不再每 5 秒空转。没有 binding 的 Agent 不因此丢失消息：durable pull 始终可用。
+- **提示词无正文**：唤醒 prompt 只带“有几条在等、最久等了多久”，正文只在通过认证的 MCP 拉取里；`HostWakeRequest.waiting_hint` 只输出计数与时长。
+- **声明诚实**：daemon endpoint 未设 `TSUNAGOU_HOST_WAKE` 时如实报 `disabled`；A2A Agent Card 的 `host_wake` 在没有 dispatcher 时为 `unsupported`，有 dispatcher 时为 `binding-dependent`（能否真正唤醒仍取决于该 Agent 是否登记了 binding）。
+- **只读 peek**：`GET /api/v1/projects/{project_id}/inbox` 与 `MessageStore.waiting()` 只描述收件箱，不领租约、不计次；等待超过 10 分钟的 delivery 会写一条按消息去重的 `message_waiting` 诊断。
+
 ## 当前验收状态
 
 - 已通过：binding 私有字段隔离、managed provider 模拟 probe/wake、turn evidence、重复 delivery 幂等、A2A 回归测试。

@@ -334,6 +334,100 @@ def test_begin_refuses_a_contract_that_is_not_settled(tmp_path: Path) -> None:
     assert len(view["contracts"]["participating"]) == 2
 
 
+def test_the_boundaries_refuse_a_contract_version_that_is_not_in_force(tmp_path: Path) -> None:
+    """"Settled" is not enough: both execution boundaries also ask whether the version the
+    caller read is the one that governs.
+
+    A worker can be right in the middle of a long turn when a revision it is not party to
+    lands. It finishes under the old agreement, and delivery is where that is caught:
+    reading the current version, bringing the work up to date and submitting again is the
+    repair, and the refusal closes nothing (the attempt keeps running).
+    """
+    _, authority, tasks, _, _, endpoint = _harness(tmp_path)
+    agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    task_id = _open_task(tasks)
+
+    def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
+        return _call(endpoint, "contract.propose", {
+            "contract_id": "api", "contract_kind": "interface",
+            "payload": {"task_id": task_id, "label": label},
+            "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
+            "participants_optional": [], "subject_ref": task_id, "input_refs": [],
+            "supersedes_id": supersedes_id,
+        }, agent)
+
+    def accept(proposal: dict[str, Any]) -> None:
+        _call(endpoint, "contract.accept", {
+            "proposal_id": proposal["proposal_id"], "participant_slot": "self",
+            "proposal_digest": proposal["digest"], "evidence_refs": [],
+        }, agent)
+
+    agreed = propose("接口契约 v1")
+    accept(agreed)
+    in_force_v1 = [f"{agreed['proposal_id']}:{agreed['digest']}"]
+
+    # A declaration that matches nothing in force holds the start boundary, and nothing
+    # is claimed on the way out.
+    with pytest.raises(HTTPException) as failure:
+        _call(endpoint, "task.begin", {
+            "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
+            "expected_revisions": {"contract": []},
+        }, agent)
+    assert failure.value.detail["code"] == "contract_revision_conflict"
+    assert tasks.tasks[task_id].status == "open" and not tasks.attempts
+
+    started = _call(endpoint, "task.begin", {
+        "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
+        "expected_revisions": {"contract": in_force_v1},
+    }, agent)
+    assert started["status"] == "running"
+
+    revision = propose("接口契约 v2", agreed["proposal_id"])
+    accept(revision)
+
+    # The attempt is still running under v1: delivery is refused, and the refusal closes
+    # nothing — the attempt is still the running one afterwards.
+    with pytest.raises(HTTPException) as failure:
+        _call(endpoint, "task.submit", {
+            "task_id": task_id, "attempt_id": started["attempt_id"], "summary": "done",
+            "expected_revisions": {"contract": in_force_v1},
+        }, agent)
+    assert failure.value.detail["code"] == "contract_revision_conflict"
+    assert tasks.tasks[task_id].status == "running"
+
+    submitted = _call(endpoint, "task.submit", {
+        "task_id": task_id, "attempt_id": started["attempt_id"], "summary": "done",
+        "expected_revisions": {"contract": [f"{revision['proposal_id']}:{revision['digest']}"]},
+    }, agent)
+    assert submitted["result_id"] and tasks.tasks[task_id].status == "submitted"
+
+
+def test_a_revision_inherits_the_participants_it_does_not_restate(tmp_path: Path) -> None:
+    """A revision may not quietly narrow who has to agree: with no explicit participant
+    list it carries the predecessor's over."""
+    _, authority, tasks, cognition, _, endpoint = _harness(tmp_path)
+    agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    task_id = _open_task(tasks)
+
+    first = _call(endpoint, "contract.propose", {
+        "contract_id": "api", "contract_kind": "interface",
+        "payload": {"task_id": task_id, "label": "v1"},
+        "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
+        "participants_optional": [], "subject_ref": task_id, "input_refs": [],
+        "supersedes_id": "",
+    }, agent)
+    revision = _call(endpoint, "contract.propose", {
+        "contract_id": "api", "contract_kind": "interface",
+        "payload": {"task_id": task_id, "label": "v2"},
+        "participants_required": [], "participants_optional": [],
+        "subject_ref": task_id, "input_refs": [], "supersedes_id": first["proposal_id"],
+    }, agent)
+
+    inherited = cognition.proposals[revision["proposal_id"]]
+    assert inherited.participants == cognition.proposals[first["proposal_id"]].participants
+    assert inherited.required_slots == ("self",)
+
+
 def test_a_refused_proposal_is_readable_with_its_reason(tmp_path: Path) -> None:
     """A refusal is a decision someone will have to explain later, so it has to survive
     the round trip: the reason is stored on the proposal (the audit trail keeps no free

@@ -99,7 +99,7 @@ class ProjectDaemon:
             "url": self.config["TSUNAGOU_DAEMON_URL"], "pid": os.getpid(), "project_id": project_id,
             "state_dir": self.projects[project_id]["state_dir"], "runtime_id": self.runtime_id,
             "source_root": str(running_source_root()), "started_at": self.started_at,
-            "host_wake": self.config.get("TSUNAGOU_HOST_WAKE", "auto"),
+            "host_wake": self.config.get("TSUNAGOU_HOST_WAKE") or "disabled",
             "daemon_registry": str(self.registry_path), "daemon_owner_root": self.owner["project_root"],
             "daemon_owner_state_dir": self.owner["state_dir"],
         }

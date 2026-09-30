@@ -622,7 +622,8 @@ async function main(): Promise<void> {
     { name: "tsunagou", version: "0.1.0" },
     {
       capabilities: { tools: {} },
-      instructions: "Read context__project_read and inbox on each coordination turn. "
+      instructions: "Read context__project_read and inbox on each coordination turn, and again at every natural break "
+        + "- after finishing a sub-step, a build or a test run. "
         + "Use task__begin before work, task__submit for delivery, task__block before waiting. "
         + "Main handles routine worker requests within existing authorization; only major decisions require the user.",
     },
@@ -644,6 +645,11 @@ async function main(): Promise<void> {
       // session actually read are remembered from context.project_read below, so the
       // model never has to repeat them (see declareContracts).
       if (tool.command_kind === "cognition.report") declareContracts(args, "input_revisions");
+      // Both execution boundaries ask "is the version you read the one in force": start
+      // work and publish a result. Same remembered read, same automatic declaration.
+      if (tool.command_kind === "task.begin" || tool.command_kind === "task.submit") {
+        declareContracts(args, "expected_revisions");
+      }
       const result = await executeTool(cfg, tool.command_kind, args, commandId);
       void restoreDesktopBindings();
       if (tool.command_kind === "context.project_read") rememberContracts(result);

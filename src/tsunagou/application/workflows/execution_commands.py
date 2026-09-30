@@ -61,6 +61,33 @@ class ExecutionCommands:
         if self.cognition.unaligned_contracts_for_task(task_id):
             raise ValueError("contract_not_accepted")
 
+    def _require_declared_contract_versions(self, task_id: str, payload: dict[str, Any]) -> None:
+        """Refuse a boundary whose caller declared contract versions that are not in force.
+
+        ``_require_contract_alignment`` above answers "is an agreement in force at all";
+        this one answers "is the version you actually read the one that governs". A worker
+        that started before a revision landed can finish its work and still not publish it:
+        reading the current version, bringing the work up to date and submitting again is
+        the repair, and this refusal closes nothing (attempt, reservation and files stay).
+
+        A caller that declares nothing is not refused. The declaration is what makes the
+        comparison possible, so an in-process caller (and the A2A face, which carries no
+        task context) keeps working; the bridge fills the field in from the versions the
+        agent read through ``context.project_read``, which is what turns "I read it" into
+        a checkable fact.
+        """
+        declared = payload.get("expected_revisions")
+        if not isinstance(declared, dict):
+            return
+        versions = declared.get("contract")
+        if versions is None:
+            return
+        if not isinstance(versions, (list, tuple)):
+            raise ValueError("contract_revision_conflict")
+        in_force = sorted(str(item) for item in self.cognition.current_contract_versions(task_id))
+        if sorted(str(item) for item in versions) != in_force:
+            raise ValueError("contract_revision_conflict")
+
     def check_begin(self, payload: dict[str, Any], context: dict[str, Any]) -> Task:
         self.authorize(context, "task.claim")
         expected_revision = payload.get("expected_task_revision")
@@ -69,6 +96,7 @@ class ExecutionCommands:
         task = self.workflow.validate_begin(payload["task_id"], context["principal_id"], expected_revision)
         self.coordination.require_assigned_worker(task.task_id, context["principal_id"])
         self._require_contract_alignment(task.task_id)
+        self._require_declared_contract_versions(task.task_id, payload)
         if self.lifecycle is not None:
             pending = next((item for item in self.lifecycle.decisions.values()
                             if item.subject_ref == task.task_id and item.status == "pending"), None)
@@ -210,6 +238,7 @@ class ExecutionCommands:
         # so the caller can read the current version, bring the work up to date and
         # submit again instead of starting over.
         self._require_contract_alignment(task_id)
+        self._require_declared_contract_versions(task_id, payload)
         prepared = context["_prepared"]
         workspace, observed = prepared["workspace"], prepared["observed"]
         result_ref = None

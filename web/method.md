@@ -1433,3 +1433,8 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 用户档案里的另两项 | **2026-09-29 你定：都不算缺口**。**用户昵称**：用户不必有昵称（档案里那个 `nickname` 就让它空着）；**Agent 图标**：创建协作时选厂商就定了，页面按厂商现算（`agentIconFor(agentVendor(a))`），不拿档案里那个 `icon`。能改的仍是主题（设置窗口）与 Agent 昵称（Agent 管理「修改」） |
 | 降级会话的另外两条路 | `session.reprobe`（原地重出证据）与 `session.end`（自行退场）**只在 registry 里声明、`handlers.py` 没装配**；现在能走的仍只有"带报告重连"（`session.reconnect` + `probe_payload`）与"拿新票重接"（`session.rebind`）。另外降级**不动正在跑的活**（只撤已有 grant），在跑的 Attempt 只由租约到期那条独立机制回收 |
 | 一键演示 / 冒烟 | `uv run python tools/dev/console_smoke.py --reset`（建沙箱项目 + 起 daemon + 起控制台 + 逐个接口与视图源断言） |
+| Agent 卡片的「说明」 | **2026-09-30 改**：以前写「厂商：xxx」，现在写**后端代号**（`agent_id` 的短号）—— 厂商交给胶囊上的 logo 说（§7「Chat agent 图标」那条也是这个口径）。胶囊本身写**昵称**；昵称还没起时退回代号，免得是一个没字的胶囊 |
+| Agent 图标 | **2026-09-30 修**：厂商未知时不再冒充 DeepSeek，改摆 Tsunagou 自己的小标（`TSUNAGOU_CARD_ICON`）。三处保证档案里有厂商：①中间层到达登记时**即使没有昵称也记下厂商**（`console/enrollment.py`）；②前端接入成功那一刻再写一次（`rememberAgentProfile`，人没等就关掉遮罩也能盖上）；③**中间层读名单时按桥文件回填**（见下一行）|
+| CLI 接入漏下的厂商 | **2026-09-30 补**：`agent connect` 自己写 `.tsunagou/bridges/<adapter>-<profile>/` 下的文件，**从不碰用户档案**，所以那样进来的 Agent 没有厂商。档案里缺厂商时，中间层在**读名单那一步**从本机已有的桥文件里把厂商认回来：`connection.json`（`agent connect` 写的，直接给出 `agent_id`）优先；只有 `host-identity.json` 时，用它的 `conversation_id` 算 `canonical_digest({"conversation_id": …})`，与 daemon 已公开的 `conversation_digest` 对齐。**只补缺失的厂商、只认文件不猜**：人设过的值不动，认不出来就保持保底（Tsunagou 小标）；昵称**不落档** —— 没昵称就显示后端代号 |
+| Agent 昵称与厂商 | **2026-09-30 定**：界面接入必须两者齐备 —— 向导第 2 步的名称、`#addSubAgent` 的名称+厂商、详情窗口的「确定」都拒绝空昵称（`saveAgentInfo` 里那句 `昵称不能为空`）。CLI 接入不走这些表单，它漏下的厂商由中间层的桥文件回填补上，**不需要任何人手工登记** |
+| DAG 画布的「都是独立任务」 | **2026-09-30 修**：`.empty` 是画布里流转内的块、节点是绝对定位的，两者同时存在就叠在一起（那句话曾经正好压在第一个节点上）。现在 `.empty` 只在真的没有节点时出现，"有任务但彼此没有依赖"改用通知说（`notify.info`，同一句话不重复） |

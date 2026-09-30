@@ -115,7 +115,8 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 
 ## Agent 工作边界
 
-1. 第一次行动前先读取本文件、当前 Agent/session 身份、黑板和收件箱；不能凭旧对话猜测任务或权限。
+1. 第一次行动前先读取本文件、当前 Agent/session 身份、黑板和收件箱；之后每轮开始和每个自然断点
+   （子步骤完成、构建或测试跑完）再读一次，不能凭旧对话猜测任务或权限。
 2. 主 Agent 负责任务统筹、Git 写操作、整合和需要用户确认的重大决定。
    子 Agent 只能使用自己领取的 Attempt，不能任命自己为 main、接管主任务或代用户确认。
    main 收到子 Agent 请求后，检查现有任务及重复请求，再自主发布合适任务、明确回复无需新任务，或说明实际阻塞。
@@ -160,7 +161,8 @@ bridge, or onboarding skill and it grants no permission.
 
 1. Read `.tsunagou/agent-context.md` and the managed Tsunagou block in `AGENTS.md`.
 2. Ask the bridge for the current project/Agent/session context; `ticket_issued` is not ready.
-3. Read the incremental inbox and blackboard. A worker calls task.begin on eligible published work and uses the returned Attempt.
+3. Read the incremental inbox and blackboard on each turn and at every natural break (a finished sub-step,
+   a build or a test run). A worker calls task.begin on eligible published work and uses the returned Attempt.
    Main handles routine worker requests under existing authorization: check duplicates, publish work or reply with a concrete reason.
    Reading or ACK alone is not a response.
 4. Follow the main/worker/user boundaries, Full Access limitation, Git ownership, and recovery rules in the context file.

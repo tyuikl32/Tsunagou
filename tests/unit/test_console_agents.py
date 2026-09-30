@@ -15,8 +15,10 @@ from typing import Any
 
 import pytest
 
-from tsunagou.console.agents import AgentDirectory, AgentRoster, attach, fingerprint
+from tsunagou.console.agents import AgentDirectory, AgentRoster, attach, fingerprint, reconcile_vendors
+from tsunagou.console.profile import load_profile, update_profile
 from tsunagou.console.projects import ProjectEntry
+from tsunagou.shared_kernel.digests import canonical_digest
 
 PROJECT_ID = "0192c7f1-8a4e-7c31-9d2b-6f0a5e7c1b44"
 
@@ -189,6 +191,85 @@ def test_reading_a_daemon_parses_its_answer_without_a_token(monkeypatch: pytest.
     assert seen["authorization"] is None, "the agents exit needs no control token"
     assert roster.main_agent_id == "agent-main"
     assert roster.agents == (
-        {"agent_id": "agent-main", "status": "active", "role": "main"},
-        {"agent_id": "agent-worker", "status": "provisioning", "role": "worker"},
+        {"agent_id": "agent-main", "status": "active", "role": "main", "conversation_digest": "sha256:x"},
+        {"agent_id": "agent-worker", "status": "provisioning", "role": "worker", "conversation_digest": ""},
     )
+
+
+def _bridge(root: Path, name: str, files: dict[str, dict[str, Any]]) -> Path:
+    """A bridge folder as the command line would have left it behind."""
+
+    directory = root / ".tsunagou" / "bridges" / name
+    directory.mkdir(parents=True, exist_ok=True)
+    for file_name, payload in files.items():
+        (directory / file_name).write_text(json.dumps(payload), encoding="utf-8")
+    return directory
+
+
+def test_vendor_of_a_cli_enrolled_agent_is_filled_from_its_bridge_folder(tmp_path: Path) -> None:
+    """``agent connect`` never writes the profile; the proof is the folder it left."""
+
+    root, _ = _project(tmp_path)
+    _bridge(root, "codex-1a2b3c", {"connection.json": {
+        "adapter": "codex", "profile": "1a2b3c", "agent_id": "agent-main",
+    }})
+    profile_path = tmp_path / "console-profile.json"
+
+    filled = reconcile_vendors(
+        root, ({"agent_id": "agent-main"}, {"agent_id": "agent-worker"}), profile_path=profile_path,
+    )
+
+    assert filled == 1
+    assert load_profile(profile_path)["agents"] == {"agent-main": {"vendor": "Codex"}}, \
+        "only the vendor is recorded — a nickname keeps falling back to the Agent code"
+
+
+def test_a_bridge_without_a_connection_is_matched_by_its_conversation_digest(tmp_path: Path) -> None:
+    root, _ = _project(tmp_path)
+    conversation = "tsunagou:deepseek:main:0f0f0f"
+    _bridge(root, "deepseek-0f0f0f", {"host-identity.json": {
+        "adapter": "deepseek", "profile": "main", "conversation_id": conversation,
+    }})
+    profile_path = tmp_path / "console-profile.json"
+    agents = ({"agent_id": "agent-worker", "conversation_digest": canonical_digest(
+        {"conversation_id": conversation},
+    )},)
+
+    assert reconcile_vendors(root, agents, profile_path=profile_path) == 1
+    assert load_profile(profile_path)["agents"] == {"agent-worker": {"vendor": "DeepSeek Harness"}}
+
+
+def test_a_vendor_somebody_already_set_is_never_rewritten(tmp_path: Path) -> None:
+    root, _ = _project(tmp_path)
+    _bridge(root, "codex-1a2b3c", {"connection.json": {"adapter": "codex", "agent_id": "agent-main"}})
+    profile_path = tmp_path / "console-profile.json"
+    update_profile(profile_path, {"agents": {"agent-main": {"nickname": "熊猫", "vendor": "OpenCode"}}})
+
+    assert reconcile_vendors(root, ({"agent_id": "agent-main"},), profile_path=profile_path) == 0
+    assert load_profile(profile_path)["agents"]["agent-main"] == {"nickname": "熊猫", "vendor": "OpenCode"}
+
+
+def test_a_conversation_we_cannot_identify_is_left_alone(tmp_path: Path) -> None:
+    root, _ = _project(tmp_path)
+    _bridge(root, "mystery-1a2b3c", {"bridge-config.json": {"command": "node"}})
+    profile_path = tmp_path / "console-profile.json"
+
+    assert reconcile_vendors(root, ({"agent_id": "agent-main"},), profile_path=profile_path) == 0
+    assert not profile_path.exists(), "nothing provable means no write at all"
+
+
+def test_reading_a_roster_fills_vendors_when_a_profile_path_is_given(tmp_path: Path) -> None:
+    """The fill-in hangs off the read path, because the bridge folder appears later."""
+
+    root, endpoint = _project(tmp_path)
+    _bridge(root, "codex-1a2b3c", {"connection.json": {"adapter": "codex", "agent_id": "agent-main"}})
+    profile_path = tmp_path / "console-profile.json"
+    directory = AgentDirectory(reader=Reader(_roster()), profile_path=profile_path)
+
+    assert directory.roster(PROJECT_ID, root, endpoint) is not None
+
+    assert load_profile(profile_path)["agents"] == {"agent-main": {"vendor": "Codex"}}
+    # 第二次读（此时名册已在缓存里）不再改档案：值已经有了。
+    before = profile_path.read_text(encoding="utf-8")
+    assert directory.roster(PROJECT_ID, root, endpoint) is not None
+    assert profile_path.read_text(encoding="utf-8") == before

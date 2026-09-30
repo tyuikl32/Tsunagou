@@ -358,8 +358,10 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
     if not arrived:
         return {"status": "waiting", **record.public()}
     record.arrived_agent_id = arrived[0]
-    if record.nickname:
+    if record.nickname or record.label:
         # 昵称跟着 Agent 走：名字只有等这个人真的存在了才能落到它头上。
+        # 没有昵称也要登记一行：厂商（label）是这台机器知道的事实，界面上"按厂商
+        # 显示 logo"就靠它 —— 丢了它，所有 Agent 都只能显示默认图标。
         patch: dict[str, Any] = {"agents": {record.arrived_agent_id: {"nickname": record.nickname, "vendor": record.label}}}
         try:
             update_profile(settings.profile_path, patch)

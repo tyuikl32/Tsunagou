@@ -541,3 +541,33 @@ def test_timeline_queries_fail_closed_without_user_authentication(runtime: Runti
     with pytest.raises(HTTPException) as diagnostics_error:
         diagnostics_route(runtime.project_id)
     assert diagnostics_error.value.status_code == 401
+
+
+def test_inbox_peek_is_read_only_identity_scoped_and_never_claims(runtime: Runtime) -> None:
+    route = runtime.endpoint("/api/v1/projects/{project_id}/inbox")
+    sender, _ = runtime.enroll("peek-sender")
+    receiver, _ = runtime.enroll("peek-receiver")
+    message = runtime.call("message.send", {"recipient_agent_id": receiver["agent_id"], "summary": "peek me"}, sender)
+
+    own = route(runtime.project_id, **runtime.credentials(receiver))
+    assert own["agent_id"] == receiver["agent_id"]
+    assert [item["message_id"] for item in own["items"]] == [message["message_id"]]
+    assert own["items"][0]["summary"] == "peek me"
+    assert own["items"][0]["waiting_seconds"] >= 0
+    # A plain message is not wake-worthy: the peek says so instead of guessing.
+    assert own["items"][0]["wake_worthy"] is False
+
+    # Another Agent may not read this inbox; the user may look at any of them.
+    with pytest.raises(HTTPException) as denied:
+        route(runtime.project_id, agent_id=receiver["agent_id"], **runtime.credentials(sender))
+    assert denied.value.status_code == 403
+    assert route(runtime.project_id, agent_id=receiver["agent_id"], authorization="Bearer control")["items"]
+
+    # Nothing was leased by looking: only claiming takes the delivery, and it empties the peek.
+    claimed = runtime.call("inbox.claim", {"limit": 20}, receiver)
+    assert [item["message_id"] for item in claimed["messages"]] == [message["message_id"]]
+    assert route(runtime.project_id, **runtime.credentials(receiver))["items"] == []
+
+    with pytest.raises(HTTPException) as unauthenticated:
+        route(runtime.project_id)
+    assert unauthenticated.value.status_code == 401

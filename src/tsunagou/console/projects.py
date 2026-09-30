@@ -26,7 +26,7 @@ from tsunagou.console.agents import AgentDirectory, attach
 from tsunagou.console.config import ConsoleConfig
 from tsunagou.console.errors import ConsoleError
 from tsunagou.platform import host_registration
-from tsunagou.platform.bridge_files import BRIDGE_DIRECTORY
+from tsunagou.platform.bridge_files import bridge_identities
 from tsunagou.platform.project_index import forget_project as forget_index_entry
 from tsunagou.platform.project_index import load_index, record_project
 
@@ -332,28 +332,7 @@ def bridge_profiles(root: Path) -> list[tuple[str, str]]:
     profile intact even when a nickname contains a dash.
     """
 
-    found: list[tuple[str, str]] = []
-    bridges = root / BRIDGE_DIRECTORY
-    if not bridges.is_dir():
-        return found
-    for child in sorted(bridges.iterdir()):
-        if not child.is_dir():
-            continue
-        config: dict[str, Any] = {}
-        for candidate in child.glob("*.json"):
-            try:
-                raw = json.loads(candidate.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if isinstance(raw, dict) and raw.get("adapter"):
-                config = raw
-                break
-        adapter = str(config.get("adapter") or "")
-        # The folder is ``<adapter>-<profile>``; without the config there is no way
-        # to tell where the adapter name ends, so such a folder is reported as-is.
-        if adapter and child.name.startswith(adapter + "-"):
-            found.append((adapter, child.name[len(adapter) + 1:]))
-    return found
+    return [(item["adapter"], item["profile"]) for item in bridge_identities(root)]
 
 
 def forget(

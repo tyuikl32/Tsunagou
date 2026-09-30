@@ -3732,13 +3732,12 @@
         canvas.className = 'canvas' + (dagOptions.focus && dagOptions.sel ? ' focus' : '');
 
         /* 画不出来的东西如实说，不静默：成环（后端不许发生）、跨名单的边。
+           另一句“有任务但彼此没有依赖”要等 shownCount / anyEdge 算完才能决定，
+           所以统一在节点画完之后发一次（见下面 dagNotice）。
            同一句话不重复刷屏 —— 内容变了才提醒。*/
         const notes = [];
         if (dagGraph.cycle.length) notes.push('依赖成环（后端不许 blocks 成环，这是兜底显示）：' + dagGraph.cycle.join('、'));
         if (dagGraph.orphanEdges) notes.push('有 ' + dagGraph.orphanEdges + ' 条依赖指向不在本页任务名单里的 id，未画');
-        const signature = notes.join(' | ');
-        if (signature && signature !== dagWarned) { dagWarned = signature; notify.warn('DAG 图：' + notes.join('；')); }
-        if (!signature) dagWarned = '';
 
         /* --- 节点 --- */
         qsa('.node, .empty', canvas).forEach(function (el) { el.remove(); });
@@ -3764,20 +3763,32 @@
                     '</div>');
             canvas.appendChild(el);
         });
-        /* 空状态要说清楚是哪一种：没任务 / 这个视角没他的任务 / 有任务但没依赖 */
+        /* 空状态要说清楚是哪一种：没任务 / 这个视角没他的任务。
+           **不能**在“有节点但没依赖”时再摆这块 —— .empty 是画布里一个流转内的块，
+           而节点是绝对定位的，两者同时存在就会叠在一起（曾经“都是独立任务”那句话
+           正好压在第一个节点上）。那句话改由下面的 dagNotice 说。*/
         const shownCount = Object.keys(dagBox.shown).length;
         const anyEdge = dagGraph.nodes.some(function (from) {
             if (!dagBox.shown[from.id]) return false;
             return from.down.some(function (to) { return dagBox.shown[to.id]; });
         });
-        if (!hasNode || !shownCount || !anyEdge) {
+        if (!hasNode || !shownCount) {
             const empty = document.createElement('div');
             empty.className = 'empty';
             empty.textContent = !hasNode ? '这个项目还没有任务。'
-                : (!shownCount ? '这个视角没有任务：' + pathViewLabel() + ' 没有负责的任务。'
-                    : '这个项目的任务之间还没有依赖（都是独立任务）。');
+                : ('这个视角没有任务：' + pathViewLabel() + ' 没有负责的任务。');
             canvas.appendChild(empty);
         }
+        /* 图已经画出来了，其余的就用通知说，不往画布上再摆字。
+           成环/跨名单是故障（warn），“任务之间本来就没有依赖”只是陈述（info）。*/
+        if (hasNode && shownCount && !anyEdge) notes.push('这个项目的任务之间还没有依赖（都是独立任务）。');
+        const signature = notes.join(' | ');
+        if (signature && signature !== dagWarned) {
+            dagWarned = signature;
+            if (dagGraph.cycle.length || dagGraph.orphanEdges) notify.warn('DAG 图：' + notes.join('；'));
+            else notify.info('DAG 图：' + notes.join('；'));
+        }
+        if (!signature) dagWarned = '';
 
         /* --- 边 --- */
         while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -5582,6 +5593,23 @@
          cancelled  —— 人在确认框里选了取消接入
          dismissed  —— 遮罩被别的操作收掉了，停止等待（票还有效）
          failed     —— 请求本身失败（提示已由 api 弹过）*/
+    /* 把"这张票是给哪个厂商的、这个 Agent 叫什么"记进用户档案。
+       卡片上的 logo 与昵称都是按 agent_id 从档案里现算的 —— 不记下来，
+       那个 Agent 就只能一直显示默认图标和代号。失败就算了：这只是显示层。*/
+    function rememberAgentProfile(agentId, nickname, vendor) {
+        const id = toText(agentId);
+        const label = toText(vendor);
+        if (!id || !label) return Promise.resolve(false);
+        const agents = {};
+        agents[id] = { nickname: toText(nickname), vendor: label };
+        return api.post('settingSave', { patch: { agents: agents } }, { silent: true })
+            .then(function (stored) {
+                state.set('profile', stored);
+                state.set('settings', stored);
+                return true;
+            }, function () { return false; });
+    }
+
     function connectAgent(options) {
         const opts = options || {};
         const host = opts.host || {};
@@ -5637,6 +5665,13 @@
                     agent: outcome.agent
                 };
                 merged.status = cancelled ? 'cancelled' : toText(outcome.status);
+                /* 这一刻是唯一"厂商 + 昵称 + agent_id"同时在手的时候。
+                   中间层也在到达时写一次，但人要是没等就关掉遮罩，那边就轮不到。*/
+                if (merged.status === 'arrived') {
+                    rememberAgentProfile(
+                        toText((outcome.agent || {}).agent_id), nickname,
+                        toText(host.label) || toText(host.adapter || opts.vendor));
+                }
                 return merged;
             });
         }, function () {
@@ -6056,6 +6091,11 @@
             const main = agents.filter(function (a) { return a.role === 'main'; })[0];
             return agents.map(function (a) {
                 const vendor = agentVendor(a);
+                /* 胶囊上那个字是**昵称**（人给的名字，存在用户档案里）；
+                   后端代号（agent_id 的短号）是机器的事实，写在「说明」那一栏。
+                   昵称还没起时胶囊才退回代号 —— 否则会是一个没字的胶囊。*/
+                const nickname = toText(agentProfileEntry(a).nickname);
+                const codename = shortId(a.agent_id);
                 const mine = tasks.filter(function (task) {
                     return toText((task.agent || {}).id) === toText(a.agent_id);
                 });
@@ -6068,13 +6108,15 @@
                     id: a.agent_id,
                     isMain: a.role === 'main',
                     role: glossText('agent_role', a.role),
-                    name: agentDisplayName(a),
-                    icon: agentIconFor(vendor) || DEFAULT_AGENT_ICON,
+                    name: nickname || codename,
+                    /* 厂商已知就换厂商的 logo；不知道是谁就摆 Tsunagou 自己的小标 ——
+                       拿 DeepSeek 冒充“未知”会让人以为项目里真有个 DeepSeek 的 Agent。*/
+                    icon: toText(vendor) ? agentIconFor(vendor) : TSUNAGOU_CARD_ICON,
                     statusText: sessionBroken
                         ? glossText('session_status', a.session_status)
                         : glossText('agent_status', a.status),
                     statusOk: !sessionBroken && a.status === 'active',
-                    desc: toText(vendor) ? ('厂商：' + vendor) : '',
+                    desc: '后端代号：' + codename,
                     /* 权威代次：设为主 Agent 时要原样带回（authority.appoint 的期望代次）*/
                     authority_epoch: a.authority_epoch,
                     currentTask: mine.length ? mine[0].title : '',

@@ -23,6 +23,11 @@ from tsunagou.bootstrap.container import build_application
 from tsunagou.modules.projects import ProjectRegistry
 from tsunagou.shared_kernel.ids import new_id
 
+# These tests are about delivery mechanics, not about payloads, so they carry a kind that
+# is wake-worthy by contract: only "someone is blocked until you act" stages a wake at all.
+# Plain notice traffic — which must never ring — has its own test below.
+WAKE_WORTHY = "task.assigned"
+
 
 @pytest.fixture
 def runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -125,14 +130,17 @@ def test_messages_commit_outbox_once_and_resume_delivery(runtime, transport: str
     if transport == "command":
         def send():
             return call("message.send", {
-                "recipient_agent_id": receiver["agent_id"], "kind": "notice", "subject_ref": "project",
+                "recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY, "subject_ref": "project",
                 "summary": "private body sentinel", "payload": {},
             }, sender, command_id=identity)
     else:
         def send():
             result = app.state.a2a_gateway.dispatch({
                 "jsonrpc": "2.0", "id": 1, "method": "message/send",
-                "params": {"message": {"messageId": identity, "role": "user", "parts": [{"text": "private body sentinel"}]}},
+                "params": {"message": {
+                    "messageId": identity, "role": "user", "parts": [{"text": "private body sentinel"}],
+                    "metadata": {"tsunagou": {"kind": WAKE_WORTHY}},
+                }},
             }, authorization=f"Bearer {sender['secret_token']}", session_id=sender["session_id"],
                connection_epoch=sender["connection_epoch"], recipient_agent_id=receiver["agent_id"])
             assert "result" in result, result
@@ -152,6 +160,22 @@ def test_messages_commit_outbox_once_and_resume_delivery(runtime, transport: str
     with contextlib.closing(db._connect()) as conn:
         assert conn.execute("SELECT status FROM outbox WHERE kind='host_wake'").fetchone()[0] == "done"
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == event_count
+
+
+def test_pull_only_notice_never_costs_a_host_turn(runtime) -> None:
+    """Nothing is blocked, so nothing rings — but the message is still delivered."""
+    app, call, sender, receiver, host = runtime
+    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": "notice",
+                                    "subject_ref": "project", "summary": "no action required", "payload": {}}, sender)
+    with contextlib.closing(app.state.project_database._connect()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM outbox WHERE kind='host_wake'").fetchone()[0] == 0
+    drain(app)
+    assert not host.turns and not host.calls
+    runtime_state = app.state.state_runtime
+    assert [item.message_id for item in runtime_state.messages.waiting(receiver["agent_id"])] == [message["message_id"]]
+    # Peeking is not claiming: the delivery is still there for the real reader.
+    call("inbox.claim", {"limit": 20}, receiver)
+    assert runtime_state.messages.waiting(receiver["agent_id"]) == []
 
 
 def test_reconnect_refresh_is_own_binding_only_and_private(runtime) -> None:
@@ -181,7 +205,7 @@ def test_busy_notification_does_not_wake_after_current_turn_acked_message(runtim
     app, call, sender, receiver, host = runtime
     host.active = True
     message = call("message.send", {
-        "recipient_agent_id": receiver["agent_id"], "kind": "notice", "subject_ref": "project",
+        "recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY, "subject_ref": "project",
         "summary": "Consumed during an existing turn", "payload": {},
     }, sender)
     drain(app)
@@ -221,7 +245,7 @@ def test_coalesced_notification_checks_every_recipient_delivery(runtime, acked: 
     host.active = True
     identities = []
     for number in range(2):
-        message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": "notice",
+        message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY,
                                        "subject_ref": "project", "summary": f"batch {number}", "payload": {}}, sender)
         identities.append(message["message_id"])
         drain(app)
@@ -255,7 +279,7 @@ def test_coalesced_notification_checks_every_recipient_delivery(runtime, acked: 
 
 def test_already_acked_outbox_never_dispatches_and_reader_checks_recipient(runtime) -> None:
     app, call, sender, receiver, host = runtime
-    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": "notice", "subject_ref": "project",
+    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY, "subject_ref": "project",
                                    "summary": "processed before outbox", "payload": {}}, sender)
     identity = message["message_id"]
     call("inbox.claim", {"limit": 20}, receiver)
@@ -275,7 +299,7 @@ def test_already_acked_outbox_never_dispatches_and_reader_checks_recipient(runti
 def test_ack_does_not_finish_an_accepted_or_unknown_host_turn(runtime, lost_reply: bool) -> None:
     app, call, sender, receiver, host = runtime
     host.send_error = "desktop_request_timeout" if lost_reply else None
-    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": "notice", "subject_ref": "project",
+    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY, "subject_ref": "project",
                                    "summary": "host turn already requested", "payload": {}}, sender)
     drain(app)
     if lost_reply:
@@ -298,7 +322,7 @@ def test_restarted_queued_batch_reads_persisted_ack_without_host_call(runtime) -
 
     app, call, sender, receiver, host = runtime
     host.active = True
-    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": "notice", "subject_ref": "project",
+    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY, "subject_ref": "project",
                                    "summary": "read before restart", "payload": {}}, sender)
     drain(app)
     original = app.state.wake_dispatcher
@@ -329,7 +353,7 @@ def test_ack_suppression_preserves_previous_host_failure(runtime) -> None:
     app, call, sender, receiver, host = runtime
     provider = app.state.hostwake_provider
     provider.store.update_status(receiver["agent_id"], "stale")
-    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": "notice", "subject_ref": "project",
+    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY, "subject_ref": "project",
                                    "summary": "received by manual follow-up", "payload": {}}, sender)
     drain(app)
     dispatcher = app.state.wake_dispatcher
