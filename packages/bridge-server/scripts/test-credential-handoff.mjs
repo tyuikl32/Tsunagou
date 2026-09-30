@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CredentialHandoff, loadSession, parseCredential } from "../dist/credential-handoff.js";
 import { writePrivateJson } from "../dist/private-file.js";
 import { withPrivateFileLock } from "../dist/private-file-lock.js";
@@ -616,4 +619,234 @@ _write_ticket_private('codex:one', 'conversation-one', 'new-python-ticket-sentin
   assert.equal(result.code, 0, result.stderr);
   await new CredentialHandoff(f.options).recover(f.input);
   assert.equal(JSON.parse(readFileSync(f.ticketFile, "utf8")).secret, "new-python-ticket-sentinel");
+});
+
+async function metadataBridgeFixture(t) {
+  const secondTicket = { ...ticket, conversation_id: "conversation-two", secret: "second-ticket-sentinel" };
+  const secondCredential = {
+    ...credential, agent_id: "agent-two", session_id: "session-two", secret_token: "second-credential-sentinel",
+    reconnect_nonce: "second-nonce-sentinel", receipt_id: "receipt-two", delivery_ref: "delivery:two",
+  };
+  const tickets = new Map([ticket, secondTicket].map((item) => [item.conversation_id, item]));
+  const sessions = new Map([credential, secondCredential].map((item) => [item.session_id, item]));
+  const rejectContextOnce = new Set();
+  const hooks = {};
+  const f = await fixture(t, async (call, response) => {
+    if (call.path.endsWith("agent.enroll")) {
+      const conversation = call.body.payload.conversation_evidence.conversation_id;
+      assert.equal(call.headers.authorization, `Bearer ${tickets.get(conversation)?.secret}`);
+      if (await hooks.beforeEnroll?.(conversation, response)) return;
+      return respond(response, conversation === ticket.conversation_id ? credential : secondCredential);
+    }
+    const current = sessions.get(call.headers["tsunagou-session-id"]);
+    if (!current || call.headers.authorization !== `Bearer ${current.secret_token}`
+        || call.headers["tsunagou-connection-epoch"] !== String(current.connection_epoch)) {
+      response.statusCode = 401;
+      response.end(JSON.stringify({ detail: { code: "authentication_failed" } }));
+      return;
+    }
+    if (isAck(call)) return ack(response);
+    if (call.path.endsWith("session.reconnect")) {
+      await hooks.beforeReconnect?.(current);
+      const rotated = {
+        ...current, connection_epoch: current.connection_epoch + 1,
+        secret_token: `${current.secret_token}-rotated`, reconnect_nonce: `${current.reconnect_nonce}-rotated`,
+      };
+      sessions.set(rotated.session_id, rotated);
+      return respond(response, rotated);
+    }
+    assert.ok(call.path.endsWith("context.project_read"));
+    if (rejectContextOnce.delete(current.agent_id)) {
+      response.statusCode = 401;
+      response.end(JSON.stringify({ detail: { code: "authentication_failed" } }));
+      return;
+    }
+    respond(response, { agent_id: current.agent_id, session_id: current.session_id, connection_epoch: current.connection_epoch });
+  });
+  const stateDir = join(f.root, "state");
+  const digest = (conversation) => createHash("sha256").update(`conversation_id:${conversation}`).digest("hex");
+  const sessionPath = (conversation) => join(stateDir, "sessions", `bridge-session-${digest(conversation).slice(0, 32)}.json`);
+  const clients = [];
+  let diagnostics = "";
+  async function connect(extraEnv = {}) {
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [fileURLToPath(new URL("../dist/server.js", import.meta.url))],
+      env: {
+        ...process.env,
+        TSUNAGOU_HTTP_URL: f.options.baseUrl,
+        TSUNAGOU_DAEMON_STATE_DIR: join(f.root, "missing-daemon-state"),
+        TSUNAGOU_TICKET_FILE: f.ticketFile,
+        TSUNAGOU_SESSION_FILE: f.sessionFile,
+        TSUNAGOU_PROJECT_ROOT: f.root,
+        TSUNAGOU_STATE_DIR: stateDir,
+        TSUNAGOU_HOST_ID_ENV: "TSUNAGOU_METADATA_TEST_HOST_ID",
+        TSUNAGOU_METADATA_TEST_HOST_ID: "",
+        TSUNAGOU_HOST_META_KEY: "",
+        TSUNAGOU_ROUTING_DIR: "",
+        TSUNAGOU_DESKTOP_WAKE: "",
+        ...extraEnv,
+      },
+      stderr: "pipe",
+    });
+    transport.stderr?.on("data", (data) => { diagnostics += data; });
+    const client = new Client({ name: "metadata-handoff-test", version: "0.1.0" }, { capabilities: {} });
+    clients.push(client);
+    await client.connect(transport);
+    return client;
+  }
+  t.after(async () => {
+    await Promise.all(clients.map((client) => client.close().catch(() => {})));
+    assert.ok(!diagnostics.includes(ticket.secret));
+    assert.ok(!diagnostics.includes(credential.secret_token));
+    assert.ok(!diagnostics.includes(secondCredential.secret_token));
+  });
+  const call = (client, conversation) => client.callTool({
+    name: "context__project_read", arguments: {},
+    ...(conversation ? { _meta: { "ai.opencode/sessionID": conversation } } : {}),
+  });
+  const result = (response) => {
+    assert.ok(!response.isError, response.content?.[0]?.text);
+    const text = response.content.find((item) => item.type === "text").text;
+    assert.ok(!text.includes("sentinel"));
+    return JSON.parse(text);
+  };
+  return { ...f, connect, call, result, sessionPath, digest, secondTicket, secondCredential, rejectContextOnce, hooks };
+}
+
+test("MCP metadata preserves explicit bootstrap credentials across A/B/A and restart", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  let client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  assert.equal(loadSession(f.sessionFile).agent_id, credential.agent_id);
+
+  // An unenrolled conversation must neither borrow the startup credential nor
+  // consume a currently shared ticket that belongs to another conversation.
+  const foreignTicket = { ...ticket, conversation_id: "foreign-conversation" };
+  writePrivateJson(f.ticketFile, foreignTicket);
+  assert.equal((await f.call(client, f.secondTicket.conversation_id)).isError, true);
+  assert.deepEqual(JSON.parse(readFileSync(f.ticketFile, "utf8")), foreignTicket);
+  assert.equal(f.calls.filter((call) => call.path.endsWith("agent.enroll")).length, 1);
+
+  writePrivateJson(f.ticketFile, f.secondTicket);
+  assert.equal(f.result(await f.call(client, f.secondTicket.conversation_id)).agent_id, f.secondCredential.agent_id);
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  assert.equal(loadSession(f.sessionPath(f.secondTicket.conversation_id)).agent_id, f.secondCredential.agent_id);
+  assert.equal(loadSession(f.sessionFile).agent_id, credential.agent_id);
+  assert.equal((await f.call(client, "unknown-conversation")).isError, true);
+  assert.equal((await f.call(client)).isError, true);
+  assert.equal(f.calls.filter((call) => call.path.endsWith("agent.enroll")).length, 2);
+
+  await client.close();
+  client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  for (const [conversation, expected] of [[f.secondTicket.conversation_id, f.secondCredential], [ticket.conversation_id, credential]]) {
+    const recovered = f.result(await f.call(client, conversation));
+    assert.equal(recovered.agent_id, expected.agent_id);
+    assert.equal(recovered.connection_epoch, 1);
+  }
+  assert.equal(f.calls.filter((call) => call.path.endsWith("agent.enroll")).length, 2);
+  assert.equal(f.calls.filter((call) => call.path.endsWith("session.reconnect")).length, 0);
+});
+
+test("concurrent MCP conversations retain their identity through recovery and auth retry", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  const client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  writePrivateJson(f.ticketFile, f.secondTicket);
+  for (const [delayedConversation, delayedAgent, otherConversation, otherAgent, authRetry] of [
+    [f.secondTicket.conversation_id, f.secondCredential.agent_id, ticket.conversation_id, credential.agent_id, false],
+    [ticket.conversation_id, credential.agent_id, f.secondTicket.conversation_id, f.secondCredential.agent_id, true],
+  ]) {
+    let entered;
+    let release;
+    const reconnectEntered = new Promise((resolve) => { entered = resolve; });
+    const reconnectReleased = new Promise((resolve) => { release = resolve; });
+    f.hooks.beforeEnroll = async (conversation) => {
+      if (conversation === delayedConversation) { entered(); await reconnectReleased; }
+    };
+    f.hooks.beforeReconnect = async (session) => {
+      if (session.agent_id === delayedAgent) { entered(); await reconnectReleased; }
+    };
+    if (authRetry) f.rejectContextOnce.add(delayedAgent);
+    const delayed = f.call(client, delayedConversation);
+    try {
+      await reconnectEntered;
+      // The other conversation must complete while this one's handoff waits.
+      assert.equal(f.result(await f.call(client, otherConversation)).agent_id, otherAgent);
+    } finally {
+      release();
+    }
+    const recovered = f.result(await delayed);
+    assert.equal(recovered.agent_id, delayedAgent);
+    assert.equal(recovered.connection_epoch, authRetry ? 2 : 1);
+  }
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  assert.equal(f.result(await f.call(client, f.secondTicket.conversation_id)).agent_id, f.secondCredential.agent_id);
+});
+
+test("host-metadata bridge rejects a first call without valid metadata", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  const client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  const callRaw = (meta) => client.callTool({
+    name: "context__project_read", arguments: {},
+    ...(meta !== undefined ? { _meta: meta } : {}),
+  });
+  const errorOf = (response) => {
+    assert.equal(response.isError, true, JSON.stringify(response.content));
+    const text = response.content.find((item) => item.type === "text").text;
+    assert.ok(!text.includes("agent-one") && !text.includes("sentinel"));
+    return text;
+  };
+
+  // A first call that cannot prove its conversation must not redeem the
+  // configured ticket or fall back to the explicit default session file.
+  assert.match(errorOf(await callRaw(undefined)), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({})), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": "" })), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": 42 })), /conversation_metadata_required/);
+  assert.match(errorOf(await callRaw({ "ai.opencode/sessionID": { id: "conversation-one" } })), /conversation_metadata_required/);
+
+  // Credential selection now happens per request, so invalid metadata causes
+  // no startup enrollment or other authentication request at all.
+  assert.equal(f.calls.length, 0);
+  assert.equal(loadSession(f.sessionFile), undefined);
+  assert.equal(existsSync(f.ticketFile), true);
+
+  // A valid metadata call still resolves the exact conversation credential.
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+});
+
+test("metadata bootstrap resumes its explicit pending journal after a lost response", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  let loseResponse = true;
+  f.hooks.beforeEnroll = (_conversation, response) => {
+    if (loseResponse) { loseResponse = false; response.destroy(); return true; }
+  };
+  let client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  assert.equal((await f.call(client, ticket.conversation_id)).isError, true);
+  assert.equal(loadSession(f.sessionFile), undefined);
+  const pending = JSON.parse(readFileSync(`${f.sessionFile}.pending.json`, "utf8"));
+  await client.close();
+  client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+  assert.equal((await f.call(client, f.secondTicket.conversation_id)).isError, true);
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  const enrollments = f.calls.filter((call) => call.path.endsWith("agent.enroll"));
+  assert.equal(enrollments.length, 2);
+  assert.equal(enrollments[0].body.command_id, pending.envelope.command_id);
+  assert.equal(enrollments[1].text, enrollments[0].text);
+  assert.equal(existsSync(`${f.sessionFile}.pending.json`), false);
+});
+
+test("unconfigured metadata bridge never falls back to its bootstrap credential after observing metadata", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  const client = await f.connect();
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
+  const callsBefore = f.calls.length;
+  for (const meta of [undefined, {}, { "ai.opencode/sessionID": "" }, { "ai.opencode/sessionID": 42 }, { threadId: ticket.conversation_id }]) {
+    const response = await client.callTool({ name: "context__project_read", arguments: {}, ...(meta ? { _meta: meta } : {}) });
+    assert.equal(response.isError, true);
+    assert.match(response.content.find((item) => item.type === "text").text, /conversation_metadata_required/);
+  }
+  assert.equal(f.calls.length, callsBefore);
+  assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
 });

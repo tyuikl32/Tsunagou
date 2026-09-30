@@ -435,3 +435,25 @@ Aligned CLI examples with implemented flags and reran the full local quality sui
 **原生唤醒补测（2026-09-28 06:17 UTC）**：纠正初始测试未启用 provider/宿主绑定的配置遗漏，daemon 现为 PID 70156、managed wake；公开 Unix listener PID 87044、当前用户专用 socket 目录。现有两个 Worker thread/read 均成功；真实 A2A → HTTP Worker 的 thread/resume 被 Codex 0.158.0-alpha.2.1 的 active writer 保护拒绝，未启动原生 turn。没有删锁、强占 Desktop 或替换身份；同一消息通过 HTTP Worker 的 Codex follow-up fetch/present/ACK，wake 仍 failed。diagnostics 有 wake_requested 和 fallback agent_presented，但缺 provider terminal failure。证据保存为 native-wake-*.json/.md，偏差累计 41 项；HTTP 新增 35.430 秒回合，总 3302.530 秒/21 回合。业务代码未改变，用户完成确认仍待答复。
 
 **收尾（2026-09-28 06:26 UTC 后）**：发现早期 managed-wake 的两个重复任务仍 open；main 已通过正式 cancel_request 变为不可领取的 cancel_requested（事件 395/396），原因引用已 completed 替代任务。无 owner 却未按文档直接 cancelled 的缺陷累计为第 42 项，未直接改库或伪造 ACK。新增 delivery-file-manifest（16 文件 hash、health/UI 200）、closeout-state 和 completion-audit。无非终态 Attempt、有效执行 Lease 或 attempt Grant；三会话 idle。项目总任务仍 open，用户最终确认自发出后经过本次及两次前序目标工作仍未收到；架构复盘遵循用户指示后置，不能自行关闭总任务或生成完成 checkpoint。
+
+
+## Session 19: OpenCode 11 baseline live + merged-tree retest
+<!-- trellis-session: v=2 fp=117f0b4d33bce964 -->
+
+**Date**: 2026-09-28
+**Task**: OpenCode 11 baseline live + merged-tree retest
+**Branch**: `elysia`
+
+### Summary
+
+Real OpenCode v2.0.18 host: fixed bridge _meta session identity and per-conversation private session files; all 11 baseline capabilities verified through two real sessions with real daemon and stdio bridge; after merging the PT line, rebuilt the environment and re-verified all 11 rows with fresh agents; sanitized evidence and acceptance records committed (adda6f5/ffe0bbe/e29a2ae).
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e29a2ae` | docs: record merged-tree retest of the opencode eleven baseline |
+
+### Status
+
+[OK] **Completed**

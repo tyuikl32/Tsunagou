@@ -24,7 +24,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CredentialHandoff, loadSession, type PersistedSession, type SessionCredential, type TicketFile } from "./credential-handoff.js";
-import { writePrivateJson } from "./private-file.js";
+import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -246,6 +246,7 @@ function config(): {
   stateDir: string;
   hostIdCandidates: string[];
   desktopWake: boolean;
+  hostMetaKey: string;
 } {
   const stateDir = env("TSUNAGOU_STATE_DIR", join(homedir(), ".tsunagou"));
   const projectRoot = env("TSUNAGOU_PROJECT_ROOT");
@@ -261,6 +262,12 @@ function config(): {
       "TSUNAGOU_HOST_ID_ENV",
       "CODEX_SESSION_ID,CODEX_THREAD_ID,CODEX_CONVERSATION_ID,CODEX_ROLLOUT_ID,CODEX_AGREEMENT_ID",
     ).split(",").map((name) => name.trim()).filter(Boolean),
+    // Set by `agent connect` for hosts (OpenCode) that deliver the
+    // conversation id per tool call in MCP `_meta` instead of exporting it as
+    // an environment variable. When declared, every tool call must carry a
+    // fresh non-empty string id; the bridge never falls back to another
+    // conversation's private credential.
+    hostMetaKey: env("TSUNAGOU_HOST_META_KEY"),
   };
 }
 
@@ -443,17 +450,47 @@ type RoutedConfig = ReturnType<typeof config> & {
   desktopEndpoint?: string;
 };
 
+// Remember only the metadata transport mode, never a conversation credential.
+// Once a legacy fixed config proves it is a metadata host, later calls cannot
+// fall back to its shared bootstrap file by omitting the conversation id.
+let observedHostMetaKey: string | undefined;
+
 function configurationForRequest(request: CallToolRequest): RoutedConfig {
   const routingDir = env("TSUNAGOU_ROUTING_DIR");
-  const rawIdentity = request.params._meta?.threadId;
-  const identity = typeof rawIdentity === "string" && rawIdentity ? rawIdentity : undefined;
   if (!routingDir) {
     const fixed = config();
+    const metaKey = fixed.hostMetaKey || observedHostMetaKey || (request.params._meta?.["ai.opencode/sessionID"] !== undefined
+      ? "ai.opencode/sessionID" : "threadId");
+    const rawIdentity = request.params._meta?.[metaKey];
+    const identity = typeof rawIdentity === "string" && rawIdentity ? rawIdentity : undefined;
+    if ((fixed.hostMetaKey || observedHostMetaKey || metaKey !== "threadId") && !identity) {
+      throw new Error("conversation_metadata_required");
+    }
+    if (metaKey !== "threadId" && identity) observedHostMetaKey = metaKey;
     const manifest = join(fixed.projectRoot, ".tsunagou", "project.json");
     const projectId = fixed.projectRoot && existsSync(manifest)
       ? JSON.parse(readFileSync(manifest, "utf8")).project_id as string : undefined;
+    if (identity && metaKey !== "threadId") {
+      const binding = hash("conversation_id:" + identity);
+      let sessionFile = join(fixed.stateDir, "sessions", "bridge-session-" + binding.slice(0, 32) + ".json");
+      if (fixed.sessionFile) {
+        // A shared OpenCode configuration can point at the first conversation's
+        // bootstrap file. Reuse it only for its proven owner, including a saved
+        // pending request whose credential response was lost before restart.
+        const prior = loadSession(fixed.sessionFile);
+        const pending = readPrivateJson(`${fixed.sessionFile}.pending.json`) as
+          { conversation_binding_digest?: unknown } | undefined;
+        const ticket = fixed.ticketFile && existsSync(fixed.ticketFile) ? readTicketFile(fixed.ticketFile) : undefined;
+        const owner = prior?.conversation_binding_digest ?? prior?.host_conversation_id_digest
+          ?? pending?.conversation_binding_digest ?? (ticket ? hash("conversation_id:" + ticket.conversation_id) : undefined);
+        if (owner === binding) sessionFile = fixed.sessionFile;
+      }
+      return { ...fixed, hostMetaKey: metaKey, sessionFile, projectId, conversationId: identity };
+    }
     return { ...fixed, projectId, conversationId: identity };
   }
+  const rawIdentity = request.params._meta?.threadId;
+  const identity = typeof rawIdentity === "string" && rawIdentity ? rawIdentity : undefined;
   // Shared MCP processes may serve many chats. Their process environment must
   // never pick an identity for a request whose host metadata is absent.
   if (!identity) throw new Error("host_request_identity_required");
@@ -471,16 +508,21 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
     ticketFile: route.ticket_file as string, sessionFile: route.session_file as string,
     stateDir: route.state_dir as string, projectRoot: route.project_root as string,
     projectId: route.project_id as string, conversationId: identity,
-    hostIdCandidates: [], desktopWake: true,
+    hostIdCandidates: [], hostMetaKey: "", desktopWake: true,
     desktopEndpoint: process.env.CODEX_APP_TOOLS_PIPE_PATH || (route.endpoint as string | undefined),
   };
 }
 
 async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<string, unknown>, commandId: string, restoreOnly = false): Promise<unknown> {
-  const ticket = cfg.ticketFile && existsSync(cfg.ticketFile) ? readTicketFile(cfg.ticketFile) : undefined;
+  let ticket = cfg.ticketFile && existsSync(cfg.ticketFile) ? readTicketFile(cfg.ticketFile) : undefined;
   const expectedBinding = cfg.conversationId ? hash("conversation_id:" + cfg.conversationId) : undefined;
   const hostIdentity = cfg.conversationId ? { digest: expectedBinding!, envName: "_meta.threadId" } : readHostIdentity(cfg.hostIdCandidates);
-  if (cfg.conversationId && ticket && ticket.conversation_id !== cfg.conversationId) throw new Error("host_conversation_mismatch");
+  if (cfg.conversationId && ticket && ticket.conversation_id !== cfg.conversationId) {
+    if (!cfg.hostMetaKey) throw new Error("host_conversation_mismatch");
+    // A project-shared metadata bridge must leave another conversation's
+    // ticket for that conversation, while still using its own saved session.
+    ticket = undefined;
+  }
   const ticketBinding = ticket ? hash("conversation_id:" + ticket.conversation_id) : undefined;
   const fileIdentity = hostIdentity?.digest ?? ticketBinding;
   const sessionFile = cfg.sessionFile ?? (fileIdentity

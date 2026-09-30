@@ -7,7 +7,33 @@ from pathlib import Path
 
 import pytest
 
-from tsunagou.cli.app import _profile_identity, _resolve_codex_executable, _write_ticket_private
+from tsunagou.cli.app import (
+    _profile_identity,
+    _resolve_codex_executable,
+    _write_ticket_private,
+)
+from tsunagou.platform.bridge_files import write_bridge_config
+
+
+@pytest.mark.parametrize("adapter", ["opencode", "codex"])
+def test_bridge_config_declares_per_call_host_metadata(tmp_path: Path, adapter: str) -> None:
+    # OpenCode delivers its conversation id per tool call; the declaration is
+    # what makes the bridge reject calls without valid metadata. CLI connect,
+    # CLI enroll and Console enrollment all use this shared config writer.
+    path = write_bridge_config(
+        adapter=adapter, mode="attach", installation_id=f"{adapter}:worker", output_dir=tmp_path,
+        ticket_path=tmp_path / "ticket.json", daemon_url="http://127.0.0.1:9",
+        daemon_state_dir="", project_root=tmp_path,
+    )
+    config = json.loads(path.read_text(encoding="utf-8"))
+    environment = config["env"]
+    assert environment["TSUNAGOU_TICKET_FILE"] == str(tmp_path / "ticket.json")
+    assert environment["TSUNAGOU_SESSION_FILE"] == str(tmp_path / "bridge-session.json")
+    assert config["secret_fields"] == []
+    if adapter == "opencode":
+        assert environment["TSUNAGOU_HOST_META_KEY"] == "ai.opencode/sessionID"
+    else:
+        assert "TSUNAGOU_HOST_META_KEY" not in environment
 
 
 def test_ticket_is_written_to_private_file_not_returned_in_output(tmp_path: Path) -> None:

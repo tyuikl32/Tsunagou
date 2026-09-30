@@ -13,7 +13,7 @@ const client = new Client({ name: "tsunagou-connect", version: "0.1.0" }, { capa
 try {
   await client.connect(transport);
   const result = await client.callTool({ name: "context__project_read", arguments: {},
-    ...(request ? { _meta: { threadId: request.conversation_id } } : {}),
+    ...(request ? { _meta: { [config.env?.TSUNAGOU_HOST_META_KEY || "threadId"]: request.conversation_id } } : {}),
   });
   const value = JSON.parse(result.content.find((item) => item.type === "text").text);
   if (result.isError) {

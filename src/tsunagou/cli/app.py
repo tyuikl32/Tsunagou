@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from tsunagou.platform import host_registration
-from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
+from tsunagou.platform.bridge_files import HOST_META_KEYS, write_bridge_config, write_ticket_file
 from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
 
 _selected_project_root: ContextVar[Path | None] = ContextVar("cli_project_root", default=None)
@@ -1271,6 +1271,9 @@ if typer is not None:
                 raise RuntimeError("onboarding_source_mismatch")
             destination.mkdir(parents=True, exist_ok=True)
             ticket_file, session_file = destination / "ticket.json", destination / "bridge-session.json"
+            bootstrap_request = request_file or (
+                destination / "host-identity.json" if adapter in HOST_META_KEYS else None
+            )
             # Connect serializes only its own conversation. CredentialHandoff
             # continues to own session rotation and ticket cleanup separately.
             with ProjectLock(destination / "connect.lock"):
@@ -1298,12 +1301,12 @@ if typer is not None:
                     _write_ticket_private(installation_id, conversation_id, result["secret"], ticket_file, role,
                                           request["host_generation"] if request else None)
                     _ack_private_delivery(result, token)
-                context = _bridge_bootstrap(bridge_config_path, request_file)
+                context = _bridge_bootstrap(bridge_config_path, bootstrap_request)
                 if context["project_id"] != runtime.project_id:
                     raise RuntimeError("onboarding_project_mismatch")
                 if role == "main" and context["role"] != "main":
                     _invoke_command("authority.appoint", {"agent_id": context["agent_id"]}, authorization=f"Bearer {token}")
-                    context = _bridge_bootstrap(bridge_config_path, request_file)
+                    context = _bridge_bootstrap(bridge_config_path, bootstrap_request)
                 if role == "worker" and context["role"] != "worker":
                     raise RuntimeError("current_agent_is_main:explicit_revoke_required")
                 # This verifies enrollment through a helper bridge. Original-host

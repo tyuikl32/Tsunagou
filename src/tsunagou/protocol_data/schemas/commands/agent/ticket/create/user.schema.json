@@ -61,9 +61,8 @@
     }
   },
   "required": [
-    "kind",
-    "installation_id",
-    "conversation_evidence"
+    "conversation_evidence",
+    "installation_id"
   ],
   "title": "AgentTicketCreateUserPayload",
   "type": "object"

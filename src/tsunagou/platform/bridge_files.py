@@ -31,6 +31,9 @@ from tsunagou.platform.private_files import write_private_bytes
 PLACEHOLDER_ENTRY = "<tsunagou-bridge-server>/dist/server.js"
 _ENTRY_RELATIVE = Path("packages") / "bridge-server" / "dist" / "server.js"
 BRIDGE_DIRECTORY = Path(".tsunagou") / "bridges"
+# Shared by CLI and Console enrollment: these hosts must prove their
+# conversation identity through MCP metadata on every bridge tool call.
+HOST_META_KEYS = {"opencode": "ai.opencode/sessionID"}
 
 
 def bridge_entry_path() -> Path:
@@ -201,6 +204,7 @@ def write_bridge_config(
             "TSUNAGOU_SESSION_FILE": str(session_path),
             "TSUNAGOU_PROJECT_ROOT": str(project_root),
             "TSUNAGOU_STATE_DIR": str(output_dir),
+            **({"TSUNAGOU_HOST_META_KEY": HOST_META_KEYS[adapter]} if adapter in HOST_META_KEYS else {}),
         },
         "secret_fields": [],
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")

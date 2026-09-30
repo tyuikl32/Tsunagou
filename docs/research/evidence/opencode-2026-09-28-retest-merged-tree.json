@@ -1,0 +1,114 @@
+{
+  "host": "opencode",
+  "version": "2.0.18",
+  "scope": "merged-tree retest on a rebuilt environment (fresh daemon, fresh tickets, per-session re-enrollment)",
+  "date": "2026-09-28",
+  "git": {
+    "branch": "elysia",
+    "retest_head": "ffe0bbec82ee0bc5b1049373224cd49aac5be467",
+    "merged_code": "cca5618d4e2a2596d8b0e11736bbf09cfa5fa5cc (PT1-PT7 + bridge credential handoff line)",
+    "bridge_build": "packages/bridge-server rebuilt from the merged tree; credential-handoff suite 18/18, both late-ticket smoke modes exit 0"
+  },
+  "environment": {
+    "note": "old daemon, tickets and bridge state were removed; a fresh daemon started on the merged Python tree; both profiles issued new tickets bound to the same two real OpenCode sessions",
+    "sessions": {
+      "main_conversation_digest_prefix": "01192a97a74ea8dd23fc778b0fa9501f",
+      "worker_conversation_digest_prefix": "073e6fbc3d6d2d5a905265d582eac098",
+      "main_agent_digest_prefix": "7bd7b965f15a5769",
+      "worker_agent_digest_prefix": "b5e54ca5c456635d"
+    },
+    "private_files": "each profile keeps one private credential file plus a process-owned lock; extra conversations of a shared bridge use per-conversation files under sessions/"
+  },
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "two real sessions re-enrolled as distinct agents (7bd7b965..., b5e54ca5...) with disjoint capability scopes",
+        "worker workspace__select -> capability_denied; worker discrepancy__resolve -> capability_denied",
+        "separate ticket, private credential file and lock per profile"
+      ]
+    },
+    "identity.continuity_evidence": {
+      "status": "supported",
+      "evidence_refs": [
+        "repeated tool calls across many turns kept the same agent in each session",
+        "bridge processes killed and host reloaded: both agents re-attached with unchanged ids and rotated epochs (main epoch 6, worker epoch 5 after repeated reconnects)",
+        "a new OpenCode session produced a new agent; a forked session produced a distinct session id"
+      ]
+    },
+    "context.project_read": {
+      "status": "supported",
+      "evidence_refs": [
+        "both sessions read the same project id on the fresh daemon with their own agent identity"
+      ]
+    },
+    "command.typed_tools": {
+      "status": "supported",
+      "evidence_refs": [
+        "MCP tools/list advertised 53 typed tools; caller identity is server-bound from the credential",
+        "main-only operations rejected worker callers with capability_denied"
+      ]
+    },
+    "task.lifecycle": {
+      "status": "supported",
+      "evidence_refs": [
+        "create -> ready -> publish -> claim (attempt e0b32306-...) -> workspace.select (main, decision dfc5aa1e-...) -> workspace.prepare (worker, scope_roots auto-resolved, workspace 1140a0e8-...) -> resource.intent (313ab52b-...) -> resource.acquire (lease 4f696d29-...) -> preflight -> start (first start returned running; daemon log shows both start calls 200)",
+        "after block/resume the second cycle re-acquired lease cb850083-..., preflight c34326ea-... and produced execution grant 13198f06-...",
+        "progress renewed the lease; block -> blocked; resume -> claimed; re-acquire (lease cb850083-...) -> preflight (c34326ea-...) -> start",
+        "task.submit accepted; stale revision resume -> task_revision_conflict"
+      ]
+    },
+    "cognition.report": {
+      "status": "supported",
+      "evidence_refs": [
+        "worker report eb63d19f-... and main report 9d4bbb35-...; discrepancy b6c41839-... created from both report ids",
+        "worker discrepancy.resolve -> capability_denied; main resolve -> resolved"
+      ]
+    },
+    "contract.participation": {
+      "status": "supported",
+      "evidence_refs": [
+        "proposal f3ee28e8-... digest sha256:aff1e785...",
+        "stale digest accept -> proposal_digest_mismatch; exact digest accept -> accepted"
+      ]
+    },
+    "inbox.pull_fetch_ack": {
+      "status": "supported",
+      "evidence_refs": [
+        "message ab2ffd4b-... delivered to worker; claim listed it, fetch returned the body, presented -> true, ack -> true",
+        "main fetch of the worker message -> inbox_access_denied",
+        "replayed dedup message listed exactly once (count 1)"
+      ]
+    },
+    "response.structured": {
+      "status": "supported",
+      "evidence_refs": [
+        "response obligation 22928381-... created from response_contract.required",
+        "after inbox ack the obligation remained open",
+        "linked reply 553050ee-... via message.respond -> responded"
+      ]
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "supported",
+      "evidence_refs": [
+        "bridge processes killed to simulate a host restart; opencode reload re-established both MCP connections",
+        "main agent 4cff3b4e... (digest 7bd7b965) unchanged, connection epoch advanced to 6; worker agent 6ce88823... (digest b5e54ca5) unchanged, epoch 5",
+        "stale epoch header 1 -> HTTP 401 authentication_failed; current epoch 6 -> HTTP 200 with the same agent id"
+      ]
+    },
+    "delivery.deduplicate": {
+      "status": "supported",
+      "evidence_refs": [
+        "message.send with command_id dedup-retest-001 -> message 8e5c6fc2-...",
+        "identical replay returned the same message id; changed payload -> idempotency_conflict",
+        "recipient inbox listed exactly one copy"
+      ]
+    }
+  },
+  "ready": true,
+  "notes": [
+    "This retest ran on the merged tree (PT line + this task's bridge fixes) with a freshly rebuilt daemon state; the earlier run remains recorded in opencode-2026-09-28-live.json.",
+    "The workspace.prepare contract now requires input_digest and root_binding_refs; workers pass an explicit input digest and an explicit (possibly empty) root binding list, and the daemon resolves scope roots automatically.",
+    "Auto wake (wake.push) remains a separate enhancement, reported unsupported by the stdio bridge and excluded from the eleven rows."
+  ]
+}

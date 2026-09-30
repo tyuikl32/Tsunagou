@@ -1,0 +1,137 @@
+{
+  "host": "opencode",
+  "version": "2.0.18",
+  "scope": "real_host_sessions_with_model_turns_and_stdio_bridge",
+  "date": "2026-09-28",
+  "git": {
+    "branch": "elysia",
+    "baseline_head": "a3954ae20961583be9171be1f9f441af6177a126",
+    "run_commit": "adda6f5d83e0b483c07397daba78c0a7109d4779",
+    "integration_merge": "cca5618d4e2a2596d8b0e11736bbf09cfa5fa5cc",
+    "note": "the eleven rows were measured on the baseline plus this run's bridge fixes; the merged tree rebuilt the bridge and passed credential-handoff tests 18/18 plus both late-ticket smoke modes"
+  },
+  "environment": {
+    "daemon": "local uvicorn on 127.0.0.1:8765 over a temporary git coordination project",
+    "bridge": "packages/bridge-server stdio MCP server, per-profile private state dirs",
+    "profiles": ["tsunagou-main", "tsunagou-worker"],
+    "sessions": {
+      "main_conversation_digest_prefix": "01192a97a74ea8dd23fc778b0fa9501f",
+      "worker_conversation_digest_prefix": "073e6fbc3d6d2d5a905265d582eac098",
+      "main_agent_digest_prefix": "5a80e67e672e0522",
+      "worker_agent_digest_prefix": "7d4b0386547d1716",
+      "worker_session_digest_prefix": "753ea4e1a9710e52"
+    },
+    "privacy": "agent/session/conversation identifiers are stored as SHA-256 prefixes; tokens, tickets and private session bodies are not reproduced"
+  },
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "two real OpenCode sessions (conversation digests 01192a97..., 073e6fbc...) enrolled distinct agents (5a80e67e..., 7d4b0386...) through separate MCP _meta session ids",
+        "main role scope exposes 26 capabilities incl. task.manage/root.manage; worker role exposes 15 task-scoped capabilities",
+        "worker workspace__select -> capability_denied; worker discrepancy__resolve -> capability_denied",
+        "daemon rejected a second attach on an already-attached conversation: agent.enroll -> conversation_already_attached",
+        "per-conversation private session files live under distinct paths and distinct ticket files were consumed separately"
+      ]
+    },
+    "identity.continuity_evidence": {
+      "status": "supported",
+      "evidence_refs": [
+        "resume: repeated tool calls in the same OpenCode session kept the same agent identity across many turns",
+        "reconnect: after killing the bridge process and reloading the host, the same agent id re-attached with connection_epoch 1 -> 2",
+        "new: a separately created OpenCode session produced a new conversation digest and a new agent",
+        "fork: opencode run --session ... --fork produced a distinct new session id (session:C) vs the source session (session:B)",
+        "note: OpenCode has no manual compact/clear entrypoint in this version, so those transitions were not directly triggered; resume/reconnect/new/fork were observed live"
+      ]
+    },
+    "context.project_read": {
+      "status": "supported",
+      "evidence_refs": [
+        "both sessions read the same project_id 8a22157f-... with their own agent_id, role and capability scope",
+        "context.project_read takes no caller-supplied project selector, so project binding is decided server-side from the credential"
+      ]
+    },
+    "command.typed_tools": {
+      "status": "supported",
+      "evidence_refs": [
+        "MCP tools/list advertised 53 typed tools with JSON input schemas on both servers",
+        "caller identity is resolved server-side from the bridge credential; tools carry no self-asserted actor field",
+        "main-only operations rejected worker callers with capability_denied (workspace.select, discrepancy.resolve)"
+      ]
+    },
+    "task.lifecycle": {
+      "status": "supported",
+      "evidence_refs": [
+        "task.create -> task.ready -> task.publish as main (draft -> ready -> open)",
+        "worker claim -> attempt 76004ad5-... claimed",
+        "preflight without workspace/lease surfaced explicit blockers; start without preflight_id -> preflight_required",
+        "workspace.select (main) -> workspace.prepare (worker, workspace ready) -> resource.intent -> resource.acquire (active lease)",
+        "preflight blockers [] -> task.start -> running with execution_grant 7cdfd12e-...",
+        "task.progress renewed the lease; task.block -> blocked; task.resume -> claimed",
+        "resume without a fresh lease -> preflight blocker resource_lease_required; re-acquire -> preflight -> start -> running with a new grant c30e3af7-...",
+        "task.submit -> result 336e56a7-... digest sha256:65df8306...",
+        "stale revision rejection: task.resume with expected_revisions {task:1} -> task_revision_conflict"
+      ]
+    },
+    "cognition.report": {
+      "status": "supported",
+      "evidence_refs": [
+        "worker cognition.report -> report 59cebec9-... digest sha256:067f770e...",
+        "main cognition.report -> report 1ae66206-... digest sha256:5a5cad5a...",
+        "main discrepancy.create referencing both report ids -> discrepancy f3959ef9-...",
+        "worker discrepancy.resolve -> capability_denied; main discrepancy.resolve -> resolved",
+        "report authorship is server-bound from the session credential; the discrepancy links the exact report ids"
+      ]
+    },
+    "contract.participation": {
+      "status": "supported",
+      "evidence_refs": [
+        "main contract.propose with slot worker-slot-2 bound to the worker agent id -> proposal 8181ebb5-... digest sha256:f85b9c90...",
+        "worker contract.accept with a stale digest -> proposal_digest_mismatch",
+        "worker contract.accept with the exact digest -> accepted",
+        "participant_slot_denied when the slot/actor binding does not match"
+      ]
+    },
+    "inbox.pull_fetch_ack": {
+      "status": "supported",
+      "evidence_refs": [
+        "main message.send -> message 32152858-... with response_contract.required",
+        "worker inbox.claim listed the delivery; inbox.fetch returned the body; inbox.presented -> presented:true; inbox.ack -> acked:true (four distinct steps)",
+        "main inbox.fetch on the worker's message -> inbox_access_denied; main inbox.claim listed only messages addressed to main",
+        "worker inbox.claim stayed at count 1 after an idempotent replay (no duplicate delivery)"
+      ]
+    },
+    "response.structured": {
+      "status": "supported",
+      "evidence_refs": [
+        "message.send with response_contract {required:true} created obligation 378a412d-... (status open)",
+        "after inbox.ack the obligation status remained open (ACK does not impersonate a response)",
+        "worker reply carrying in_reply_to the original message id + message.respond -> status responded; an unlinked reply was rejected with response_not_linked_to_obligation"
+      ]
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "supported",
+      "evidence_refs": [
+        "bridge processes killed to simulate a host restart; opencode reload re-established both MCP connections",
+        "main agent id unchanged after reconnect; connection_epoch 1 -> 2 persisted in its private session file",
+        "worker agent id unchanged after reconnect; connection_epoch 1 -> 2 persisted in its private session file",
+        "typed command with the stale epoch header -> HTTP 401 authentication_failed; current epoch -> HTTP 200 with the same agent id (fail-closed on old epoch)"
+      ]
+    },
+    "delivery.deduplicate": {
+      "status": "supported",
+      "evidence_refs": [
+        "message.send with command_id dedup-baseline-001 -> message 66963157-...",
+        "identical replay (same command_id and payload) returned the same message id and did not create a second command",
+        "same command_id with a different payload -> idempotency_conflict",
+        "recipient inbox listed exactly one copy of the replayed message"
+      ]
+    }
+  },
+  "ready": true,
+  "notes": [
+    "All eleven rows were exercised through real OpenCode v2.0.18 sessions driven by model turns, a real local daemon and the stdio MCP bridge.",
+    "Auto wake (wake.push) remains a separate enhancement and is not part of these eleven baseline rows.",
+    "Raw run logs, credentials, tickets and private session bodies are intentionally excluded; identifier digests and sanitized evidence references are the committed record."
+  ]
+}

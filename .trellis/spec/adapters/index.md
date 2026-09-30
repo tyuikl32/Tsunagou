@@ -1,6 +1,8 @@
 # Adapter and TypeScript guidance
 
-Status: diagnostic adapters and shared bridge implemented; formal live baseline remains gated. Sources: [adapter plan](../../../docs/implementation/adapters.md), [wire protocol](../../../docs/implementation/protocol.md), [runtime prompts](../../../docs/implementation/runtime-prompts.md).
+Status: diagnostic adapters and shared bridge implemented; Codex and OpenCode have real-host 11/11 baseline evidence (OpenCode on 2026-09-28); DeepSeek Harness and the full release gate remain gated. Sources: [adapter plan](../../../docs/implementation/adapters.md), [OpenCode live acceptance](../../../docs/acceptance/opencode-11-baseline-live-2026-09-28.md), [wire protocol](../../../docs/implementation/protocol.md), [runtime prompts](../../../docs/implementation/runtime-prompts.md).
+
+Host fact proven on OpenCode v2.0.18: local MCP servers receive no session env vars; the host conversation id arrives per tool call via `_meta["ai.opencode/sessionID"]`. Bridge identity for such hosts must be derived from that field, and a project-shared bridge must keep one private session file per conversation.
 
 ## Pre-Development Checklist
 

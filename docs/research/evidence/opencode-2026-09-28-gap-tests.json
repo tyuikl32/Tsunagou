@@ -1,0 +1,170 @@
+{
+  "host": "opencode",
+  "version": "2.0.18",
+  "scope": "identity hardening and gap tests: ownership isolation, project isolation, MCP/REST parity, receiver-side delivery semantics, fork isolation; round four adds connect/enroll config parity, the message.send public contract fix and lease-expiry redelivery; round five adds the inbox.fetch payload delivery and the nine-command schema sync",
+  "date": "2026-09-28",
+  "git": {
+    "branch": "elysia",
+    "head_at_run": "6b65938",
+    "worktree": "inbox.fetch payload for the authorized recipient (claim unchanged), nine affected command schemas regenerated from corrected catalog rows, bridge metadata contract and message.send contract from the earlier rounds (all uncommitted at run time)"
+  },
+  "sessions": {
+    "aliases": {
+      "session:A": "main conversation (project one)",
+      "session:B": "worker conversation (project one)",
+      "session:C": "fork of session:B enrolled as worker2 (project one)",
+      "session:D": "fork of session:B enrolled as main (project two)",
+      "session:E": "standalone OpenCode session of the isolated contract-check project (daemon 8767)"
+    },
+    "privacy": "full host session ids were replaced by stable aliases; digests use SHA-256 prefixes only"
+  },
+  "identity_fix": {
+    "change": [
+      "agent connect and agent enroll now build the bridge config from one shared generator (_bridge_environment) and both declare TSUNAGOU_HOST_META_KEY=ai.opencode/sessionID for the opencode adapter",
+      "bridge conversationState rejects every call of a metadata-identified host whose _meta session id is missing, empty or not a string, before any conversation state (including the startup-recovered default) is selected"
+    ],
+    "tests": {
+      "credential_handoff_suite": "node --test scripts/test-credential-handoff.mjs: 19/19 pass, including the new regression 'host-metadata bridge rejects a first call without valid metadata' (first call, empty string, number and object all rejected; no enroll and no state mutation; valid metadata still resolves the exact credential)",
+      "late_ticket_smoke": "both modes exit 0",
+      "real_link_regression": "all four bridged servers (tsunagou-main, tsunagou-worker, tsunagou-worker2, tsunagou-p2) successfully served real model-driven tool calls after the fix; session:A main, session:B worker, session:C worker2 and session:D project-two main each answered context__project_read"
+    }
+  },
+  "gap_tests": {
+    "identity.config_parity": {
+      "status": "supported",
+      "evidence_refs": [
+        "unit test test_bridge_environment_declares_per_call_host_metadata: the shared generator declares ai.opencode/sessionID for the opencode adapter and declares nothing for environment-variable hosts (codex); agent connect and agent enroll both call this generator (pytest exit 0)",
+        "real agent enroll --adapter opencode run: generated config opencode-opencode-enroll-check.json carries the declaration; the bridge file name is sanitized identically to the connect path",
+        "driver check against the generated enroll config: first call without _meta -> conversation_metadata_required; wrong-typed session id -> conversation_metadata_required; ticket-bound valid session id -> enrollment succeeded (agent 05e3e509-...)",
+        "agent connect re-check after the refactor: generated config opencode-opencode-connect-check.json still carries the declaration",
+        "refresh/reload procedure documented in docs/implementation/adapter-opencode.md: regenerate the config, sync its env (at least TSUNAGOU_HOST_META_KEY) into the OpenCode project mcp.<name>.environment, then reload/restart the host process; an unrefreshed bridge keeps the compatibility behavior"
+      ]
+    },
+    "contract.message_send": {
+      "status": "supported",
+      "evidence_refs": [
+        "root cause: the catalog cell kind:notification\\|request used the Markdown escape but tools/codegen/generate_protocol.py split cells on every pipe, so the registry/schema kept only kind; the cell parser now protects the escape",
+        "message.send catalog row now lists the real contract (recipient_agent_id,summary,kind?,subject_ref?,payload?,priority?,response_contract?,in_reply_to?) and drops the never-implemented recipient_ids/artifact_refs",
+        "protocol/schemas/commands/message/send.schema.json rebuilt: 8 properties, required [recipient_agent_id, summary], additionalProperties false; the MCP tool message__send required list was synced to [recipient_agent_id, summary]",
+        "the same parser defect had truncated 9 other rows (agent.ticket.create, agent.ticket.create.user, artifact.upload.create, discrepancy.advance, discrepancy.resolve, project.lineage.reset, project.replica.activate, task.recover, task.scope.resolve); their registry payload_fields are now complete",
+        "registry copies in protocol/, src/tsunagou/protocol_data/ and packages/bridge-server/protocol/ are byte-identical; schema bundle digest changed from sha256:99326365... to sha256:51c31820...",
+        "jsonschema Draft202012 check: 8/8 cases (full valid payload and minimal required-only pass; missing recipient_agent_id, missing summary, wrong type priority, wrong type payload, unknown field and empty recipient_agent_id are rejected)",
+        "real host turn (session:E, standalone OpenCode v2.0.18, isolated daemon 8767 on the new digest): valid message__send succeeded with message d0ca252e-...; missing summary was refused by MCP client argument validation ('summary: Missing key'); missing recipient_agent_id likewise ('recipient_agent_id: Missing key')",
+        "runtime PAYLOAD_FIELDS['message.send'] in src/tsunagou/interfaces/runtime.py already allowed exactly these 8 fields, so handler/MCP/schema/runtime now agree"
+      ],
+      "observations": [
+        "Round four verified the contract change on an isolated instance because the running daemons still held the previous digest. Round five restarted daemon 8765 onto the then-current code/digest and re-ran the receiver scenario in the real host; the nine-command schema sync then advanced the bundle digest to sha256:cc3d9b54... (see contract.nine_command_schemas). Daemon 8766 and the background service's long-lived bridges still hold an earlier digest until they are restarted."
+      ]
+    },
+    "delivery.lease_redelivery": {
+      "status": "supported",
+      "evidence_refs": [
+        "round-5 rerun on the updated code and digest (daemon 8765 restarted, registry cc3d9b54...): main (session:A, real bridge recovery agent 4cff3b4e) sent M 06bc19df-... (kind request, response_contract required, obligation 8e951114-..., payload marker TG-BODY-9c4e21a7 exists only in the payload) and N 50f5acb6-... (notification)",
+        "claim#1 (session:B, real standalone OpenCode v2.0.18 host turn) returned the delivery order [M, N]; the claim view contained no payload (body marker not present)",
+        "the first inbox__fetch of M returned the complete payload {marker: TG-BODY-9c4e21a7, step: fetch-payload} to the authorized recipient; this was the only body retrieval",
+        "business action: the worker sent response a2159e98-... and message__respond closed the obligation 8e951114-... once; inbox__presented recorded M",
+        "out-of-order ack: N was acknowledged before M while M stayed unacked",
+        "after the 30 s lease expired, claim#2 returned exactly [M] (redelivery) with the obligation still status responded, not reopened; the redelivered claim view again carried no payload",
+        "on the redelivered copy no second fetch happened and the repeated message__respond was rejected with tsunagou_error:obligation_already_closed; inbox__ack then succeeded",
+        "final claim#3 returned count 0 (empty inbox)",
+        "mechanical counts from the session export (local, not committed; bridge-reached calls only): fetch results for M with body = 1; tool results containing the body marker = 1 (no increase after redelivery); tool results containing the payload step marker = 1; claim results containing the M view = 2; claim results containing the body marker = 0; message__respond accepted = 1 and rejected as duplicate = 1",
+        "the pass criterion is the recorded fetch/action/body-marker counts, not the unchanged obligation count; the earlier 'payload marker appears 0 times' formulation is retired"
+      ],
+      "observations": [
+        "Each standalone host run attempted its first tool call before the MCP tool catalog was ready ('Unknown tool' host-side error) and succeeded on retry; six such attempts were excluded from the counts because nothing reached the bridge or daemon."
+      ]
+    },
+    "ownership.isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "worker (session:B) task__preflight on worker2 (session:C) attempt adbca19d -> tsunagou_error:attempt_owner_required",
+        "worker2 (session:C) task__preflight on worker (session:B) attempt e0b32306 -> tsunagou_error:attempt_owner_required",
+        "worker (session:B) task__progress on worker2 attempt -> tsunagou_error:capability_denied (execution grant layer)"
+      ],
+      "note": "attempt ownership is enforced for equally-scoped worker agents, independent of role permissions"
+    },
+    "project.isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "project one id 8a22157f-... with two published tasks; project two id 61f74f79-... with zero tasks",
+        "session:D enrolled in project two (agent digest prefix 2d097bb5) and read its own project id",
+        "session:D calling project-one tsunagou-worker -> not_enrolled:no_ticket_or_session_file; no cross-project identity is borrowed"
+      ]
+    },
+    "mcp_rest.parity": {
+      "status": "supported",
+      "evidence_refs": [
+        "REST POST /api/v1/commands/inbox.fetch with main credential on the worker message -> HTTP 403 code inbox_access_denied, identical to the MCP error code observed through the bridge",
+        "REST POST /api/v1/commands/message.send with the same payload shape as the MCP tool -> HTTP 200 message 8d876f86-...; the worker MCP inbox__claim then listed that exact message (cross-surface result parity)",
+        "GET /api/v1/projects/{id}/agents (REST view) lists the same agent identities that MCP context__project_read reports (agent_id 4cff3b4e main, 6ce88823 worker)",
+        "workspace.prepare/result MCP schemas are generated from the shared protocol files, so both surfaces consume one schema source"
+      ],
+      "observations": [
+        "The command catalog pipe-escaping defect recorded in round three was fixed in round four: the generator now honors '\\|' inside table cells, message.send and nine other truncated rows carry their full field lists, and the schema bundle digest was updated accordingly (see contract.message_send).",
+        "Resource-style REST paths in the registry (for example /deliveries/{id}:fetch) carry the entity id in the URL while the MCP/flat command surface carries it in the payload; this is a surface convention difference, and the flat command payloads are field-identical to the MCP tool arguments"
+      ]
+    },
+    "contract.fetch_payload": {
+      "status": "supported",
+      "evidence_refs": [
+        "inbox.fetch now returns the message payload to the recipient that passes the authorization check; inbox.claim keeps using the metadata-only _message_view, so the batch listing never carries the body",
+        "unit regression tests/unit/test_business_handlers.py::test_inbox_fetch_returns_payload_only_to_the_recipient: claim result has no payload key; fetch returns payload {marker: TG-BODY-UNIT}; a non-recipient fetch raises HTTP 403 inbox_access_denied",
+        "real host rerun (session:B, standalone OpenCode v2.0.18, daemon 8765 restarted to the round code, digest cc3d9b54...): fetch returned payload {marker: TG-BODY-9c4e21a7, step: fetch-payload}; claim views for the same message contained no marker",
+        "the MCP tool description for inbox__fetch now states that the payload is included",
+        "previous round's criterion 'body marker appears 0 times' is retired: the marker must appear once and stay once"
+      ]
+    },
+    "contract.nine_command_schemas": {
+      "status": "supported",
+      "evidence_refs": [
+        "generation source fixes per actual handlers and the runtime PAYLOAD_FIELDS allowlist: agent.ticket.create.user -> installation_id,conversation_evidence required (kind/role/ttl_seconds optional); task.recover -> task_id,expected_attempt_id,disposition required (+reason optional); task.scope.resolve -> scope_request_id,choice required (+approved_scope/reason optional); discrepancy.advance -> discrepancy_id,status required (+reason/evidence_refs optional); discrepancy.resolve -> discrepancy_id,kind required (+reason/evidence_refs/accepted_by/input_digest optional)",
+        "the other four commands keep the confirmed catalog contract because they have no Python handler or runtime allowlist entry: agent.ticket.create, artifact.upload.create, project.lineage.reset, project.replica.activate",
+        "the nine stale schemas were deleted and re-scaffolded by tools/codegen/generate_protocol.py (no hand edits); registry, src/tsunagou/protocol_data and the bridge package copies are byte-identical at digest sha256:cc3d9b54...",
+        "contract check script: 24/24 cases across the nine commands (normal payloads from the real call sites pass; each required field removed is rejected; registry payload_fields/required_fields equal schema properties/required)",
+        "tools/codegen/validate_protocol.py exit 0 (111 command policies, 126 schemas); pytest tests/protocol tests/unit and tests/integration/test_m1_runtime_flow.py + tests/integration/test_clone_recovery.py pass apart from the two pre-existing unrelated failures (audit generation staleness, git default-branch assumption)"
+      ]
+    },
+    "delivery.receiver_dedup": {
+      "status": "supported",
+      "evidence_refs": [
+        "message 3f84a4b4-... claimed; an immediate second inbox__claim returned count 0 (delivery lease suppresses duplicate delivery)",
+        "fetching the same message twice returned identical bodies and exactly one open response obligation each time (no repeated obligation injection)",
+        "inbox__presented then inbox__ack succeeded; a repeated inbox__ack stayed acked:true (idempotent)",
+        "after ack the message no longer appears in claim results (consumed delivery is not redelivered)",
+        "message.send command_id replay identity (already recorded in the merged-tree retest) is NOT used as a substitute for receiver-side dedup; these assertions exercise the receiver path only"
+      ],
+      "observations": [
+        "ACK and presentation are independent facts in the implementation: unit test 'test_ack_does_not_claim_presentation_and_obligation_requires_response' pins that ack does not require or claim presentation. The adapter spec sentence 'ACK requires a successful presentation record' describes a stricter ordering than the implementation; recorded as a spec/implementation wording difference, not changed in this round."
+      ]
+    },
+    "fork.isolation": {
+      "status": "supported",
+      "evidence_refs": [
+        "fork session (session:C) calling tsunagou-worker before any enrollment -> not_enrolled:no_ticket_or_session_file (the fork does not inherit the source conversation's Tsunagou identity)",
+        "after an explicit ticket for session:C, enrollment produced a new independent agent (digest prefix 73ca378f) while session:B kept its own agent (6ce88823)"
+      ]
+    }
+  },
+  "continuity.compact": {
+    "status": "supported",
+    "evidence_refs": [
+      "the worker conversation (session:B) was compacted through the real TUI /compact command; a summary assistant message was created at 2026-09-28T13:04:49Z while the OpenCode session id stayed ses_f185609c...",
+      "after compaction the same worker bridge served context__project_read with the unchanged agent identity (6ce88823-...) and project (8a22157f-...)",
+      "headless triggers remain unavailable (CLI has no compact command; opencode run '/compact' is plain text; REST summarize paths returned 405/404; npm SDK 1.18.33 predates the v2 server); the TUI command is the verified entrypoint",
+      "source fact: session/compaction.ts compacts inside one session id, which matches the observed identity preservation"
+    ]
+  },
+  "continuity.clear": {
+    "status": "covered_by_alias",
+    "evidence_refs": [
+      "OpenCode documents /clear as an alias of /new (start a new session); new-session identity behavior is covered by the new/fork observations (a new session id yields a new conversation digest and requires its own ticket and enrollment)"
+    ]
+  },
+  "notes": [
+    "Round four: the config-parity regression ran against the existing merged-tree environment (project one, daemon 8765); the message.send contract was verified on a fresh isolated instance (project ee245168-..., daemon 8767, standalone host session:E).",
+    "Round five: daemon 8765 was restarted onto the then-current code/digest (persisted credentials recovered: main 4cff3b4e-..., worker 6ce88823-...); the fetch-payload and lease-redelivery rerun ran through standalone host turns of session:B against that daemon, then the nine-command schema sync advanced the bundle digest to sha256:cc3d9b54.... Daemon 8766 and the background service's long-lived bridges still run an earlier digest until they are restarted.",
+    "Observation (not fixed this round): a stale credential-pending journal (a session.reconnect envelope written under an earlier bundle digest by a digest-mismatched reconnect attempt) makes bridge recovery fail with credential_command_failed:schema_bundle_digest_mismatch until the .pending.json journal is removed; the round-5 environment repair removed four such journals (main, worker, worker2, p2).",
+    "All commands in these rounds ran against the merged-tree environment; tokens, tickets and private session bodies are excluded.",
+    "Auto wake remains a separate enhancement and is not part of the eleven baseline rows."
+  ]
+}

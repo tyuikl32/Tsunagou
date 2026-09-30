@@ -15,8 +15,12 @@ REGISTRY = ROOT / "protocol/registry/commands.json"
 
 
 def _cells(line: str) -> list[str]:
-    return [cell.strip().replace(r"\|", "|")
-            for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+    # A literal pipe inside a Markdown table cell must be written as `\|`.
+    # Protect that escape before splitting, or a field annotation such as
+    # `kind:notification\|request` is cut in half and the rest of the payload
+    # list silently becomes a different table column.
+    protected = line.strip().strip("|").replace("\\|", "\x00")
+    return [cell.replace("\x00", "|").strip() for cell in protected.split("|")]
 
 
 def extract_commands() -> dict[str, dict[str, Any]]:

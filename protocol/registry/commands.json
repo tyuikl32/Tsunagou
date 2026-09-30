@@ -85,9 +85,7 @@
       "principal": "U",
       "required_fields": [
         "conversation_evidence",
-        "installation_id",
-        "kind",
-        "role"
+        "installation_id"
       ],
       "schema": "commands/agent/ticket/create/user.schema.json",
       "uri": "/control/enrollment-tickets（实际统一入口 /api/v1/commands/agent.ticket.create.user）"
@@ -401,14 +399,14 @@
     },
     "discrepancy.advance": {
       "payload_fields": [
+        "discrepancy_id",
         "evidence_refs",
         "reason",
         "status"
       ],
       "principal": "B",
       "required_fields": [
-        "evidence_refs",
-        "reason",
+        "discrepancy_id",
         "status"
       ],
       "schema": "commands/discrepancy/advance.schema.json",
@@ -438,6 +436,7 @@
     "discrepancy.resolve": {
       "payload_fields": [
         "accepted_by",
+        "discrepancy_id",
         "evidence_refs",
         "input_digest",
         "kind",
@@ -445,11 +444,8 @@
       ],
       "principal": "M",
       "required_fields": [
-        "accepted_by",
-        "evidence_refs",
-        "input_digest",
-        "kind",
-        "reason"
+        "discrepancy_id",
+        "kind"
       ],
       "schema": "commands/discrepancy/resolve.schema.json",
       "uri": "/discrepancies/{id}:resolve"
@@ -1229,14 +1225,13 @@
         "disposition",
         "expected_attempt_id",
         "reason",
-        "residual_risk_refs"
+        "task_id"
       ],
       "principal": "M",
       "required_fields": [
         "disposition",
         "expected_attempt_id",
-        "reason",
-        "residual_risk_refs"
+        "task_id"
       ],
       "schema": "commands/task/recover.schema.json",
       "uri": "/tasks/{id}:recover"
@@ -1294,15 +1289,15 @@
     },
     "task.scope.resolve": {
       "payload_fields": [
+        "approved_scope",
         "choice",
-        "proposal_digest",
-        "reason"
+        "reason",
+        "scope_request_id"
       ],
       "principal": "M",
       "required_fields": [
         "choice",
-        "proposal_digest",
-        "reason"
+        "scope_request_id"
       ],
       "schema": "commands/task/scope/resolve.schema.json",
       "uri": "/scope-requests/{id}:resolve"
@@ -1527,6 +1522,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:f574e1308cb05d16e9833a2570f1476ca718844cbf4daa5e3bd172260142d2b4",
+  "schema_bundle_digest": "sha256:18fac2118245d78ecc08f6f1a3320bb36b4f49a04bee01d21b434f3775346247",
   "supported_previous_version": "0.9"
 }

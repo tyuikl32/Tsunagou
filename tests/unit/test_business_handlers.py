@@ -676,6 +676,31 @@ def test_inbox_fetch_exposes_own_response_obligation(tmp_path: Path) -> None:
     assert fetched["response_obligations"][0]["obligation_id"] in messages.obligations
 
 
+def test_inbox_fetch_returns_payload_only_to_the_recipient(tmp_path: Path) -> None:
+    _, authority, _, _, messages, endpoint = _harness(tmp_path)
+    recipient = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    outsider = _enroll_ready(authority, installation="install-b", conversation="conversation-b")
+    message = messages.send(
+        command_id="payload-cmd", sender_agent_id="other", recipient_agent_id=recipient.agent_id,
+        kind="message", subject_ref="s", summary="payload probe",
+        payload={"marker": "TG-BODY-UNIT"},
+    )
+
+    claimed = _call(endpoint, "inbox.claim", {"limit": 50}, recipient)
+    assert claimed["count"] == 1
+    # The claim listing must stay metadata-only: no payload projection leak.
+    assert "payload" not in claimed["messages"][0]
+
+    fetched = _call(endpoint, "inbox.fetch", {"message_id": message.message_id}, recipient)
+    assert fetched["payload"] == {"marker": "TG-BODY-UNIT"}
+    assert fetched["summary"] == "payload probe"
+
+    with pytest.raises(HTTPException) as exc:
+        _call(endpoint, "inbox.fetch", {"message_id": message.message_id}, outsider)
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "inbox_access_denied"
+
+
 def test_business_commands_denied_for_degraded_session(tmp_path: Path) -> None:
     # A degraded session has no agent_base grant and must fail closed before any
     # business command is dispatched.

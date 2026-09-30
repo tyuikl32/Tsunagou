@@ -53,7 +53,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
 | agent.ticket.create | `/enrollment-tickets` | M / agent.enroll | kind:worker\|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id? | TicketReceipt；secret仅私有交付 |
-| agent.ticket.create.user | `/control/enrollment-tickets`（实际统一入口 `/api/v1/commands/agent.ticket.create.user`） | U / — | kind,installation_id,conversation_evidence:{conversation_id},role:worker\|main,ttl_seconds?,host_binding? | `role` 为用户请求；host_binding 的 provider/endpoint/thread_id/host_generation 绑定原会话，thread_id 必须等于票据 conversation_id。enroll/rebind 提交后自动登记唤醒 provider，不允许 Worker 指定其他 Agent |
+| agent.ticket.create.user | `/control/enrollment-tickets`（实际统一入口 `/api/v1/commands/agent.ticket.create.user`） | U / — | installation_id,conversation_evidence:{conversation_id},kind:worker\|main\|session_rebind?,role:worker\|main?,ttl_seconds?,host_binding? | `role` 为用户请求，默认 worker；host_binding 的 provider/endpoint/thread_id/host_generation 绑定原会话，thread_id 必须等于票据 conversation_id。enroll/rebind 提交后自动登记唤醒 provider，不允许 Worker 指定其他 Agent |
 | agent.enroll | `/sessions:enroll` | T / — | installation_id,conversation_evidence,descriptor_ref,probe_payload,client_nonce,negotiation | EnrollmentResult；secret走专用header/安全通道 |
 | session.rebind | `/sessions:rebind` | T / — | target_agent_id,installation_id,conversation_evidence,probe_payload,client_nonce | replacement HostSession；旧token和Grant撤销 |
 | session.reconnect | `/sessions/{id}:reconnect` | D / — | expected_connection_epoch,reconnect_nonce,continuity_evidence,probe_payload,host_binding_refresh? | ConnectionResult；token认证+nonce CAS；私有宿主刷新仅作用于当前已绑定Agent |
@@ -89,9 +89,9 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | task.cancel_request | `/tasks/{id}:request-cancel` | M / task.coordinate | reason | current Attempt claimed/running 时 cancel_requested；否则直接 cancelled，保留 submitted 结果 |
 | task.cancel_ack | `/tasks/{id}:ack-cancel` | B / task.coordinate_self | attempt_id,stop_evidence,reason | Task cancelled；owner，仅收敛 |
 | task.fail | `/tasks/{id}:fail` | B / task.coordinate_self | attempt_id,reason,evidence_refs,stop_evidence? | Task failed；owner，无成功伪装 |
-| task.recover | `/tasks/{id}:recover` | M / task.coordinate | expected_attempt_id,disposition:reopen\|cancel\|fail,residual_risk_refs,reason | Task；关闭旧Attempt再reopen |
+| task.recover | `/tasks/{id}:recover` | M / task.coordinate | task_id,expected_attempt_id,disposition:reopen\|cancel\|fail,reason? | Task；关闭旧Attempt再reopen |
 | task.scope.request | `/tasks/{id}/scope-requests` | B / task.coordinate_self | attempt_id,requested_scope,reason,expected_revisions | ScopeExpansionRequest；owner |
-| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | choice:approve\|reject,proposal_digest,reason | ScopeRequest+Task；审批不超ceiling，执行先block |
+| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | scope_request_id,choice:approve\|reject,approved_scope?,reason? | ScopeRequest+Task；审批不超ceiling，执行先block |
 
 ## Main 协调计划与 Worker 唤醒
 
@@ -106,8 +106,8 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 |---|---|---|---|---|
 | cognition.report | `/reports` | B / cognition.report | task_id,attempt_id?,boundary,understanding,assumptions,uncertainties,claims,confidence,confidence_reason,evidence_refs,input_revisions,supersedes_id? | EpistemicReport；owner/指定参与者 |
 | discrepancy.create | `/discrepancies` | B / cognition.discuss | subject_ref,report_refs,severity,participants,summary,affected_actions | Discrepancy；有subject参与关系 |
-| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | status:clarifying\|negotiating,reason,evidence_refs | Discrepancy；participant |
-| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | kind:consensus\|dismissal\|override,reason,evidence_refs,accepted_by,input_digest | Resolution；override不冒充共识 |
+| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | discrepancy_id,status:clarifying\|negotiating,reason?,evidence_refs? | Discrepancy；participant |
+| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | discrepancy_id,kind:consensus\|dismissal\|override,reason?,evidence_refs?,accepted_by?,input_digest? | Resolution；override不冒充共识 |
 | contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,subject_ref?,contract_kind?,payload,participants_required,participants_optional?,input_refs?,supersedes_id? | 两组元素为 {slot,agent_id}；required 至少一项、slot 全局唯一、Agent 属于本项目；替代只允许原提议者 |
 | contract.accept | `/contract-proposals/{id}:accept` | B / contract.accept | participant_slot,proposal_digest,evidence_refs? | self slot；仅 proposed；status 表示本 slot 接受，proposal_status 表示整个契约 |
 | contract.accept_proxy | `/contract-proposals/{id}:accept-proxy` | M / contract.accept_proxy | participant_slot_id,proposal_digest,proxy_policy_ref?,reason?,evidence_refs? | 仅 proposed；返回 proposal_status、real_actor_id 与 represented_participant（实际 Agent ID） |
