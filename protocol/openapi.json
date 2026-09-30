@@ -3307,6 +3307,15 @@
               ],
               "title": "Tsunagou-Connection-Epoch"
             }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3502,6 +3511,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -4223,6 +4241,122 @@
         "summary": "Project History Export"
       }
     },
+    "/api/v1/projects/{project_id}/inbox": {
+      "get": {
+        "description": "What is waiting for this caller right now: a peek, not a claim.",
+        "operationId": "project_inbox_api_v1_projects__project_id__inbox_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 160,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Session-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Session-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Tsunagou-Connection-Epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tsunagou-Connection-Epoch"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Inbox Api V1 Projects  Project Id  Inbox Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Inbox"
+      }
+    },
     "/api/v1/projects/{project_id}/intents": {
       "get": {
         "operationId": "project_intents_api_v1_projects__project_id__intents_get",
@@ -4233,6 +4367,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -4374,6 +4517,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -4566,6 +4718,15 @@
             "required": true,
             "schema": {
               "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for paths without a project ID when this daemon serves multiple projects. Must match the URL ID.",
+            "in": "header",
+            "name": "Tsunagou-Project-Id",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }

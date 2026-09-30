@@ -580,7 +580,8 @@ async function main(): Promise<void> {
     { name: "tsunagou", version: "0.1.0" },
     {
       capabilities: { tools: {} },
-      instructions: "Read context__project_read and inbox on each coordination turn. "
+      instructions: "Read context__project_read and inbox on each coordination turn, and again at every natural break "
+        + "- after finishing a sub-step, a build or a test run. "
         + "Use task__begin before work, task__submit for delivery, task__block before waiting. "
         + "Main handles routine worker requests within existing authorization; only major decisions require the user.",
     },

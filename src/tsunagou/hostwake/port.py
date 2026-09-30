@@ -59,6 +59,26 @@ class HostWakeRequest:
     scope_digest: str | None = None
     policy_digest: str | None = None
     connection_epoch: int | None = None
+    pending_count: int | None = None
+    oldest_pending_seconds: int | None = None
+
+    @property
+    def waiting_hint(self) -> str | None:
+        """How much is waiting, in counts and ages only.
+
+        The host boundary may learn *that* something waits, never *what*: bodies stay
+        behind the authenticated pull. This is "the doorbell may ring, but the news stays
+        in the inbox" expressed in code.
+        """
+
+        if not self.pending_count:
+            return None
+        if self.oldest_pending_seconds is None:
+            return f"{self.pending_count} coordination message(s) are waiting for you."
+        seconds = max(0, self.oldest_pending_seconds)
+        age = f"{seconds // 60} min" if seconds >= 60 else f"{seconds} s"
+        return (f"{self.pending_count} coordination message(s) are waiting for you; "
+                f"the oldest has been waiting {age}.")
 
     def validate(self) -> None:
         if not self.wake_attempt_id or not self.agent_id or not self.message_id:

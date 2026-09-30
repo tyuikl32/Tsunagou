@@ -562,6 +562,31 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
 
+    @app.get("/api/v1/projects/{project_id}/inbox")
+    def project_inbox(
+        project_id: str,
+        agent_id: Annotated[str | None, Query(max_length=160)] = None,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
+        connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
+    ) -> dict[str, Any]:
+        """What is waiting for this caller right now: a peek, not a claim."""
+        try:
+            viewer = authenticator.authenticate(
+                "B" if session_id is not None else "U", authorization,
+                session_id=session_id, connection_epoch=connection_epoch,
+            )
+            if query_provider is None:
+                return {"project_id": project_id, "agent_id": agent_id, "items": []}
+            return query_provider("inbox", project_id, viewer=viewer, agent_id=agent_id)
+        except PermissionError as exc:
+            raise HTTPException(status_code=401 if str(exc) == "authentication_failed" else 403,
+                                detail={"code": str(exc)}) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"code": str(exc)}) from exc
+
     @app.get("/api/v1/projects/{project_id}/diagnostics", response_model=DiagnosticPageModel)
     def project_diagnostics(
         project_id: str,

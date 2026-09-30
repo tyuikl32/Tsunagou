@@ -35,7 +35,7 @@ from tsunagou.modules.coordination import (
     CoordinationPlan,
     CoordinationService,
 )
-from tsunagou.modules.messaging import Delivery, Message, MessageStore, ResponseObligation
+from tsunagou.modules.messaging import WAKE_WORTHY_KINDS, Delivery, Message, MessageStore, ResponseObligation
 from tsunagou.modules.projects import ConfigProvenance, Project, ProjectRegistry
 from tsunagou.modules.resources import (
     ResourceKey,
@@ -699,9 +699,14 @@ class ServiceStateRuntime:
             if change["change_kind"] == "created" and change["subject_ref"].startswith("message/"):
                 message_id = change["subject_ref"].split("/", 1)[1]
                 message = self.messages.messages.get(message_id)
-                if message is not None:
-                    # Every transport and domain-generated message takes this
-                    # same commit boundary. IPC happens later, outside SQLite.
+                if message is not None and message.kind in WAKE_WORTHY_KINDS:
+                    # Every transport and domain-generated message takes this same
+                    # commit boundary, but only "someone is blocked until you act"
+                    # is worth interrupting a host for. Everything else waits for
+                    # the next pull. The row is staged even when this process has
+                    # no dispatcher: it records the intent to wake, so a later
+                    # wake-enabled run can still drain it. IPC happens later,
+                    # outside SQLite.
                     uow.stage_outbox(kind="host_wake", target_ref=change["subject_ref"], payload={
                         "message_id": message_id, "recipient_agent_id": message.recipient_agent_id,
                     })

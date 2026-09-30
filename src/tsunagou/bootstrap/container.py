@@ -31,7 +31,7 @@ from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.cognition import CognitionService
 from tsunagou.modules.coordination import CoordinationService
 from tsunagou.modules.evaluation import AuditProjector
-from tsunagou.modules.messaging import MessageStore
+from tsunagou.modules.messaging import WAKE_WORTHY_KINDS, MessageStore
 from tsunagou.modules.projects import ProjectRegistry
 from tsunagou.modules.resources import ResourceService
 from tsunagou.modules.tasks import TaskService
@@ -218,7 +218,7 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
     application.state.maintenance = maintenance
     application.state.hostwake_provider = hostwake_provider
     if database is not None and wake_dispatcher is not None:
-        host_delivery = HostDeliveryWorker(database, wake_dispatcher, telemetry)
+        host_delivery = HostDeliveryWorker(database, wake_dispatcher, telemetry, messages=messages)
         application.state.host_delivery = host_delivery
 
         @application.on_event("startup")
@@ -428,6 +428,7 @@ def _query_provider(
         task_id: str | None = None,
         message_id: str | None = None,
         project_filter: str | None = None,
+        agent_id: str | None = None,
         verify: bool = False,
     ) -> dict[str, Any]:
         if kind == "artifact":
@@ -923,6 +924,35 @@ def _query_provider(
                     {**change, "created_at": format_timestamp(change.get("created_at")),
                      "updated_at": format_timestamp(change.get("updated_at"))}
                     for change in audit_payload.get("changes", [])
+                ],
+            }
+
+        if kind == "inbox":
+            # A read-only look at what is waiting. No lease, no attempt counter: peeking
+            # must not change what the next look sees. Summaries only — bodies stay behind
+            # inbox.fetch — and another Agent's inbox is off limits.
+            if viewer is None:
+                raise PermissionError("authentication_failed")
+            subject = agent_id or viewer.principal_id
+            if subject != viewer.principal_id and viewer.kind != "U":
+                raise PermissionError("inbox_access_denied")
+            waiting = messages.waiting(subject)
+            observed = now_ms()
+            return {
+                "project_id": requested_project_id, "agent_id": subject,
+                "items": [
+                    {
+                        "message_id": message.message_id,
+                        "sender_agent_id": message.sender_agent_id,
+                        "kind": message.kind,
+                        "subject_ref": message.subject_ref,
+                        "summary": message.summary,
+                        "payload_digest": message.payload_digest,
+                        "created_at": format_timestamp(int(message.created_at * 1000)),
+                        "waiting_seconds": max(0, int(observed / 1000 - message.created_at)),
+                        "wake_worthy": message.kind in WAKE_WORTHY_KINDS,
+                    }
+                    for message in waiting
                 ],
             }
 

@@ -16,6 +16,20 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 
+# Message kinds that mean "someone is blocked until you act". Only these are worth
+# interrupting a host for: a wake costs a whole host turn, so the set is deliberately a
+# whitelist, and a single one, so "what counts as urgent" cannot drift between callers.
+WAKE_WORTHY_KINDS = frozenset({
+    "task.assigned",           # work was handed to the recipient
+    "task.submitted",          # a result is waiting to be reviewed
+    "task.reviewed",           # a verdict the executor has to act on
+    "contract.proposed",       # the recipient's answer is required for a contract to exist
+    "contract.revised",        # a version is in force that the executor has to catch up with
+    "user_decision.resolved",  # the answer unblocks work that was paused for it
+})
+# Deliberately absent: plain ``message``/``notice`` peer traffic (nothing is blocked), and
+# ``user_decision.pending`` — its recipient is a running attempt by construction, so the
+# host is already awake and the pause is enforced by the task.begin gate instead.
 MAX_SUMMARY = 4_096
 MAX_PAYLOAD_BYTES = 256 * 1024
 
@@ -189,13 +203,7 @@ class MessageStore:
             raise ValueError("invalid_batch_limit")
         now = _now() if now is None else now
         with self._lock:
-            candidates = [
-                delivery for delivery in self.deliveries.values()
-                if delivery.recipient_agent_id == recipient_agent_id
-                and delivery.available_at <= now
-                and (delivery.status == "pending" or (delivery.status == "leased" and (delivery.lease_until or 0) <= now))
-            ]
-            candidates.sort(key=lambda item: (-item.priority, item.available_at, item.message_id))
+            candidates = self._waiting_deliveries(recipient_agent_id, now)
             selected = candidates[:limit]
             for delivery in selected:
                 delivery.status = "leased"
@@ -203,6 +211,32 @@ class MessageStore:
                 delivery.lease_until = now + 30
             self._save()
             return [self.messages[item.message_id] for item in selected]
+
+    def _waiting_deliveries(self, recipient_agent_id: str, now: float) -> list[Delivery]:
+        """Deliveries this Agent can act on right now: pending, or a lease that lapsed.
+
+        One rule, two readers: ``fetch`` leases what it returns, and ``waiting`` describes
+        the same set without touching it.
+        """
+        candidates = [
+            delivery for delivery in self.deliveries.values()
+            if delivery.recipient_agent_id == recipient_agent_id
+            and delivery.available_at <= now
+            and (delivery.status == "pending" or (delivery.status == "leased" and (delivery.lease_until or 0) <= now))
+        ]
+        candidates.sort(key=lambda item: (-item.priority, item.available_at, item.message_id))
+        return candidates
+
+    def waiting(self, recipient_agent_id: str, *, now: float | None = None) -> list[Message]:
+        """What is waiting for this Agent, without taking any of it.
+
+        Anything that only needs to *describe* an inbox — a wake prompt's count, a
+        console column — must leave it exactly as it found it, or looking would change
+        what the next look sees.
+        """
+        now = _now() if now is None else now
+        with self._lock:
+            return [self.messages[item.message_id] for item in self._waiting_deliveries(recipient_agent_id, now)]
 
     def ack(self, recipient_agent_id: str, message_id: str) -> None:
         with self._lock:

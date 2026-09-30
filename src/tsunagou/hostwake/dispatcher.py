@@ -49,6 +49,7 @@ class WakeDispatcher:
         callback_status: str | None = None,
         command_id: str | None = None, task_id: str | None = None,
         attempt_id: str | None = None, actor_id: str | None = None,
+        pending_count: int | None = None, oldest_pending_seconds: int | None = None,
     ) -> dict[str, Any]:
         """Persist dispatch identity before RPC; serialize only this recipient."""
         key = self._key(recipient_agent_id, message_id)
@@ -83,6 +84,7 @@ class WakeDispatcher:
                     "command_id": command_id, "task_id": task_id,
                     "attempt_id": business_attempt_id, "actor_id": actor_id,
                     "trigger_source": "daemon_delivery",
+                    "pending_count": pending_count, "oldest_pending_seconds": oldest_pending_seconds,
                 }
                 self._append_diagnostic("wake_requested", **self._correlation(base), occurred_at=base["updated_at"])
                 if callback_status is not None:
@@ -138,6 +140,7 @@ class WakeDispatcher:
             message_id=item["message_id"], project_id=item.get("project_id"), binding=binding,
             cwd_digest=binding.cwd_digest, scope_digest=binding.scope_digest,
             policy_digest=binding.policy_digest, connection_epoch=binding.connection_epoch,
+            pending_count=item.get("pending_count"), oldest_pending_seconds=item.get("oldest_pending_seconds"),
         )
 
     def _update(self, key: str, result: dict[str, Any]) -> None:
@@ -406,6 +409,22 @@ class WakeDispatcher:
             "message_id", "wake_attempt_id", "trigger_source",
         )}
 
+    def note_waiting(self, *, project_id: str | None, recipient_agent_id: str, message_id: str,
+                     pending_count: int, oldest_pending_seconds: int) -> None:
+        """Record that deliveries have been waiting a long time, once per message.
+
+        The delivery loop cannot tell a host that ignored the doorbell from a host that has
+        no doorbell at all, so the journal states the fact instead. Repeated calls for the
+        same message are deduplicated.
+        """
+
+        with self._lock:
+            self._append_diagnostic(
+                "message_waiting", project_id=project_id, agent_id=recipient_agent_id,
+                message_id=message_id, wake_attempt_id=None, occurred_at=format_timestamp(now_ms()),
+                details={"pending_count": pending_count, "oldest_pending_seconds": oldest_pending_seconds},
+            )
+
     def record_command_failure(self, *, project_id: str | None, actor_id: str | None,
                                command_id: str | None, command_kind: str, error_code: str = "command_rejected") -> None:
         with self._lock:
@@ -458,7 +477,7 @@ class WakeDispatcher:
                             "error_code", "callback_status", "evidence_kind", "connection_epoch",
                             "thread_id_digest", "turn_id_digest",
                             "trigger_source", "host_started_at", "host_completed_at", "command_kind",
-                            "completion_reason",
+                            "completion_reason", "pending_count", "oldest_pending_seconds",
                         } and (value is None or type(value) is int or isinstance(value, str)
                                and re.fullmatch(r"[a-zA-Z0-9_:./-]{1,160}", value))},
         }

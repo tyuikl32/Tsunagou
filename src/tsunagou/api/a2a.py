@@ -217,7 +217,7 @@ class A2AGateway:
                 "project_id": self.project_id,
                 "internal_source_of_truth": "project-runtime",
                 "wake": "push-notification" if self.push_notifier is not None else "unsupported",
-                "host_wake": "managed" if self.wake_dispatcher is not None else "unsupported",
+                "host_wake": "binding-dependent" if self.wake_dispatcher is not None else "unsupported",
                 "delivery": "push-or-durable-pull" if self.push_notifier is not None else "durable-pull-or-client-poll",
                 "methods": sorted(_SUPPORTED_METHODS),
             },

@@ -10,15 +10,34 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from tsunagou.hostwake.dispatcher import WakeDispatcher
+from tsunagou.modules.messaging import MessageStore
 from tsunagou.platform.db.sqlite import ProjectDatabase
 from tsunagou.platform.telemetry import Telemetry
 from tsunagou.shared_kernel.time import now_ms
 
+# A wake row is retried with doubling delays and then gives up. "No usable binding" is
+# almost always deterministic — only a few providers can be woken at all — so an
+# uncapped 5-second retry turns every message to an unwakeable Agent into a permanent
+# background task that never changes anything.
+MAX_WAKE_ATTEMPTS = 12
+_WAKE_BACKOFF_MS = (5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000)
+# How long a delivery may sit unread before the journal says so out loud.
+_WAITING_NUDGE_SECONDS = 600
+
+
+def _wake_backoff_ms(attempts: int) -> int:
+    """Delay before the next try: doubling from 5s, capped at 5 minutes."""
+    index = min(max(attempts, 1), len(_WAKE_BACKOFF_MS)) - 1
+    return _WAKE_BACKOFF_MS[index]
+
 
 class HostDeliveryWorker:
-    def __init__(self, database: ProjectDatabase, dispatcher: WakeDispatcher, telemetry: Telemetry | None = None) -> None:
+    def __init__(self, database: ProjectDatabase, dispatcher: WakeDispatcher, telemetry: Telemetry | None = None,
+                 messages: MessageStore | None = None) -> None:
         self.database, self.dispatcher = database, dispatcher
         self.telemetry = telemetry or Telemetry()
+        # Only ever used to *describe* what is waiting, never to take it.
+        self.messages = messages
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tsunagou-host-delivery")
@@ -76,10 +95,19 @@ class HostDeliveryWorker:
                 result = {"error_code": "host_wake_dispatch_failed", "state": "failed"}
             retry = result.get("error_code") in {"host_binding_not_found", "host_binding_not_ready", "host_wake_dispatch_failed"}
             with self.database.transaction("host-wake-outbox") as uow:
+                current = uow.conn.execute(
+                    "SELECT attempt_count FROM outbox WHERE project_id=? AND id=? AND kind='host_wake'",
+                    (self.database.project_id, identity),
+                ).fetchone()
+                attempts = int(current[0] if current is not None else 0) + 1
+                # Bounded retry: an Agent that can never be woken reaches a terminal row
+                # instead of being retried for the life of the project.
+                exhausted = retry and attempts >= MAX_WAKE_ATTEMPTS
+                status = "failed" if exhausted else ("pending" if retry else "done")
                 uow.conn.execute(
                     "UPDATE outbox SET status=?,attempt_count=attempt_count+1,next_attempt_at=? "
                     "WHERE project_id=? AND id=? AND kind='host_wake'",
-                    ("pending" if retry else "done", now_ms() + 5000, self.database.project_id, identity),
+                    (status, now_ms() + _wake_backoff_ms(attempts), self.database.project_id, identity),
                 )
             self._pending.pop(identity)
         with self.database.lock, contextlib.closing(self.database._connect()) as conn:
@@ -126,9 +154,20 @@ class HostDeliveryWorker:
     def _deliver(self, message_id: str, recipient: str, correlation: dict[str, Any], parent: str | None) -> dict[str, Any]:
         attrs = {**correlation, "message_id": message_id, "agent_id": recipient,
                  "project_id": self.database.project_id, "trigger_source": "daemon_delivery"}
+        # The prompt may say how much waits and how long, never what it says.
+        waiting = self.messages.waiting(recipient) if self.messages is not None else []
+        oldest = max(0, int(now_ms() / 1000 - min(item.created_at for item in waiting))) if waiting else None
+        if waiting and oldest is not None and oldest >= _WAITING_NUDGE_SECONDS:
+            # Nobody reading it is itself a fact worth recording, however it was caused.
+            self.dispatcher.note_waiting(
+                project_id=self.database.project_id, recipient_agent_id=recipient,
+                message_id=message_id, pending_count=len(waiting), oldest_pending_seconds=oldest,
+            )
         with self.telemetry.activate(parent), self.telemetry.span("outbox.deliver", attrs) as span:
             result = self.dispatcher.on_delivery(message_id=message_id, recipient_agent_id=recipient,
-                                                project_id=self.database.project_id, **correlation)
+                                                project_id=self.database.project_id,
+                                                pending_count=len(waiting) or None, oldest_pending_seconds=oldest,
+                                                **correlation)
             self.telemetry.annotate(span, {"wake_attempt_id": result.get("wake_attempt_id")})
             self.telemetry.outcome(span, result["state"], result.get("error_code"))
             return result

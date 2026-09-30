@@ -325,10 +325,12 @@ class CodexDesktopProvider:
     def _send(self, request: HostWakeRequest, attempt: WakeAttempt) -> WakeAttempt:
         record = self._record(request.binding)
         client = self.client_factory(record)
+        # Counts and ages only: the body stays behind the authenticated pull.
+        hint = f"{request.waiting_hint} " if request.waiting_hint else ""
         try:
             client.call_tool("send_message_to_thread", {
                 "threadId": record["thread_id"], "hostId": record["extra"].get("host_id", "local"),
-                "prompt": f"{self._marker(request.wake_attempt_id)} Read your Tsunagou project context and "
+                "prompt": f"{self._marker(request.wake_attempt_id)} {hint}Read your Tsunagou project context and "
                           "pending coordination inbox using its MCP tools, present/ACK the messages, "
                           "then handle them under your current role and task scope. "
                           "This notification contains no task instructions or new permissions.",
