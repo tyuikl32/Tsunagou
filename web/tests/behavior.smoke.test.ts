@@ -169,4 +169,88 @@ describe("控制台页面（web/）结构冒烟", () => {
   it("style.css 里 .colu-t 仍然是竖排（多行格子的样式契约）", () => {
     expect(readWeb("assets/css/style.css")).toMatch(/\.colu-t\s*\{[^}]*flex-direction:\s*column/);
   });
+
+  /* 2026-09-30：胶囊写**昵称**、说明写**后端代号**、图标跟**厂商**走。
+     这里连后端形状一起过一遍（不联调后端，只把 fetch 换成应答表）——
+     名字/图标是渲染时按 agent_id 从用户档案现算的，改坏任何一半这张卡就残。*/
+  it("Agent 卡片：胶囊=昵称、说明=后端代号、图标=厂商（厂商未知时不冒充 DeepSeek）", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", {
+        version: 1, nickname: "", theme: "",
+        agents: { "a-1": { nickname: "熊猫", vendor: "Codex" } },
+      }],
+      ["/projects/p-1/agents", {
+        items: [
+          { agent_id: "a-1", role: "worker", status: "active" },
+          { agent_id: "a-2", role: "worker", status: "active" },
+        ],
+        main_agent_id: "a-1",
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["agents", "settings"]);
+
+    const cards = page.querySelectorAll("#pane-agents .boxerbox > .item");
+    expect(cards).toHaveLength(2);
+    const descOf = (card: Element): Element => {
+      const title = [...card.querySelectorAll(".title")].find((node) => node.textContent === "说明");
+      expect(title).toBeDefined();
+      return title!.nextElementSibling!;
+    };
+
+    // 档案里有昵称与厂商：胶囊写昵称，说明写得下后端代号，图标是那家的 logo。
+    const named = cards[0]!;
+    expect(named.querySelector(".listfieldbox .item .right")!.textContent).toBe("熊猫");
+    expect(descOf(named).textContent).toBe("后端代号：a-1");
+    expect(named.querySelector(".listfieldbox .item img")!.getAttribute("src")).toMatch(/codex-[ld]\.png/);
+
+    // 档案里什么都没有：胶囊退回代号（不能是个没字的胶囊），
+    // 厂商未知时摆 Tsunagou 自己的小标 —— 拿 DeepSeek 冒充会让人以为项目里真有个 DeepSeek。
+    const unnamed = cards[1]!;
+    expect(unnamed.querySelector(".listfieldbox .item .right")!.textContent).toBe("a-2");
+    expect(descOf(unnamed).textContent).toBe("后端代号：a-2");
+    expect(unnamed.querySelector(".listfieldbox .item img")!.getAttribute("src")).toMatch(/logo-little-[ld]\.png/);
+  });
+
+  it("DAG：有节点但彼此没依赖时，不再往画布上摆一块会压住节点的 .empty", () => {
+    const dag = (dom.window as unknown as {
+      Tsunagou: { dag: { setData: (sources: unknown) => unknown; render: () => unknown } };
+    }).Tsunagou.dag;
+    dag.setData({
+      tasks: { items: [
+        { task_id: "t-1", title: "协商接口并实现", status: "running", current_attempt_id: "at-1" },
+        { task_id: "t-2", title: "写回归测试", status: "running", current_attempt_id: "at-2" },
+      ] },
+      attempts: { items: [
+        { attempt_id: "at-1", task_id: "t-1", owner_agent_id: "a-1", status: "running" },
+        { attempt_id: "at-2", task_id: "t-2", owner_agent_id: "a-2", status: "running" },
+      ] },
+      agents: { items: [{ agent_id: "a-1", role: "worker" }, { agent_id: "a-2", role: "worker" }] },
+    });
+    dag.render();
+
+    const canvas = page.querySelector("#canvas")!;
+    expect(canvas.querySelectorAll(".node")).toHaveLength(2);
+    /* 节点是绝对定位的，.empty 是流转内的块 —— 两者同时存在就会叠字
+       （曾经那句「都是独立任务」正好压在第一个节点上）。那句话改由通知说。*/
+    expect(canvas.querySelector(".empty")).toBeNull();
+  });
 });
