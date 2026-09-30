@@ -1,0 +1,12 @@
+{
+  "host": "127.0.0.1",
+  "port": 0,
+  "projects_root": "~/Tsunagou/projects",
+  "scan_roots": [
+    "E:/Tsunagou"
+  ],
+  "index_path": "~/.tsunagou/projects.json",
+  "profile_path": "~/.tsunagou/console-profile.json",
+  "poll_ms": 5000,
+  "daemon_autostart": false
+}

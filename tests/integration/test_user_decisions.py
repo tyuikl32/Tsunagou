@@ -65,6 +65,8 @@ def test_decision_cli_http_content_times_pending_restart_and_resolve(runtime, mo
         page = json.loads(output.output)
         assert page["project_id"] == runtime.project_id
         row = page["items"][0]
+        extra = {key: row[key] for key in ("expected_revision", "input_digest", "payload")}
+        row = {key: value for key, value in row.items() if key not in extra}
         assert row == {
             "decision_id": item["decision_id"], "kind": "design.change", "subject_ref": "design-choice",
             "revision": 7, "proposal_digest": item["proposal_digest"], "status": "pending",
@@ -72,6 +74,13 @@ def test_decision_cli_http_content_times_pending_restart_and_resolve(runtime, mo
             "decision": None, "reason": None,
             "created_at": format_timestamp(clock), "updated_at": format_timestamp(clock),
         }
+        # The console's decision panel also reads what the proposer actually asked, the
+        # revision the question was raised against, and the digest the answer has to
+        # echo back; the local daemon keeps all three beside the choices/summary
+        # spellings (see bootstrap/container.py).
+        assert extra["expected_revision"] == 7
+        assert extra["payload"] == {"choices": ["approved", "rejected"], "summary": "Keep the demonstrated behavior?"}
+        assert extra["input_digest"].startswith("sha256:")
         for secret in (private["message_id"], "PRIVATE-DECISION-SUMMARY", "PRIVATE-DECISION-BODY", main["secret_token"]):
             assert secret not in output.output
         clock += 24 * 60 * 60 * 1000

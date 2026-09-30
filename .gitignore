@@ -32,6 +32,10 @@ pytest-cache-files-*/
 !.env.example
 .tsunagou/local/
 
+# Console (local web control surface): the live config holds machine paths
+.tsunagou-console.json
+.tsunagou-console.local.json
+
 # Local editor state
 .idea/
 .vscode/

@@ -82,7 +82,13 @@ def test_begin_conflict_is_atomic_and_submit_releases(runtime, monkeypatch):
     assert "resource_conflict" in str(exc.value.detail)
     assert exc.value.status_code == 409
     assert exc.value.detail["blockers"][0]["owner_agent_id"] == worker["agent_id"]
-    assert state.capture() == before and events(app) == event_before
+    # The refusal rolls the whole command back. The one durable trace it leaves is the
+    # recorded denial itself: ``command.<kind>.denied`` is appended outside the command's
+    # own transaction (api/app.py) precisely so a refusal survives its own rollback, and
+    # the console's conflict ledger reads exactly those rows. Nothing else may move.
+    assert state.capture() == before
+    recorded = [event for event in events(app) if event not in event_before]
+    assert [event["event_type"] for event in recorded] == ["command.task.begin.denied"]
     # No clock advancement invalidates the execution reservation.
     monkeypatch.setattr("tsunagou.modules.resources.now_ms", lambda: reservation.created_at + 365 * 24 * 3600 * 1000)
     root = state.project_registry.repository

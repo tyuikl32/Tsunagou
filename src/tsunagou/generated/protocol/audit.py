@@ -1,5 +1,5 @@
 """Generated from protocol/schemas/queries/audit-page.schema.json; do not edit."""
-# Source digest: sha256:414ad447ce045e89d52ddcef2bb4b0f6adb1db8d3738b34697e03b3e0c2c6358; generator: query-v1
+# Source digest: sha256:4ce893bab4133a37e5a422adbc089eea47121af614604126a5cdd36fc396b1ab; generator: query-v1
 
 from typing import Literal
 
@@ -43,6 +43,8 @@ class AuditEventModel(BaseModel):
     revision_after: int | None = Field(ge=0)
     evidence_level: Literal['agent_asserted', 'host_observed', 'system_verified', 'user_confirmed', None]
     changes: list[AuditChangeModel]
+    session_status: str | None
+    missing_admission: list[str]
 
 
 class AuditPageModel(BaseModel):

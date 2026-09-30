@@ -28,6 +28,7 @@ class ExecutionCommands:
         messages: MessageStore,
     ) -> None:
         self.authority, self.tasks, self.resources = authority, tasks, resources
+        self.cognition = cognition
         self.workspaces, self.coordination = workspaces, coordination
         self.evidence, self.artifacts, self.lifecycle = evidence, artifacts, lifecycle
         self.project_id, self.state_runtime = project_id, state_runtime
@@ -45,6 +46,21 @@ class ExecutionCommands:
         self.authority.authorize(agent_id=context["principal_id"], session_id=context["session_id"],
                                  grant_id=grant.grant_id, capability=capability, **scope)
 
+    def _require_contract_alignment(self, task_id: str) -> None:
+        """Refuse a boundary while an agreement this task depends on is unsettled.
+
+        A contract a task declares (``payload["task_id"]``) that nobody has accepted
+        yet, or that has a revision still under discussion, is exactly the "which
+        version governs" ambiguity the contract layer exists to stop: work would
+        start from — or publish on top of — a version that can still change.
+
+        Both boundaries ask the same question, so "settled enough to start" and
+        "settled enough to publish" can never drift apart. A task with no linked
+        contract is not refused: there is nothing to be aligned with.
+        """
+        if self.cognition.unaligned_contracts_for_task(task_id):
+            raise ValueError("contract_not_accepted")
+
     def check_begin(self, payload: dict[str, Any], context: dict[str, Any]) -> Task:
         self.authorize(context, "task.claim")
         expected_revision = payload.get("expected_task_revision")
@@ -52,6 +68,7 @@ class ExecutionCommands:
             raise ValueError("expected_task_revision_required")
         task = self.workflow.validate_begin(payload["task_id"], context["principal_id"], expected_revision)
         self.coordination.require_assigned_worker(task.task_id, context["principal_id"])
+        self._require_contract_alignment(task.task_id)
         if self.lifecycle is not None:
             pending = next((item for item in self.lifecycle.decisions.values()
                             if item.subject_ref == task.task_id and item.status == "pending"), None)
@@ -188,6 +205,11 @@ class ExecutionCommands:
         task_id, attempt_id = payload["task_id"], payload["attempt_id"]
         self.authorize(context, "task.execute", task_id=task_id, attempt_id=attempt_id)
         self.workflow.validate_submit(task_id, context["principal_id"], attempt_id)
+        # A result must not be published on top of a superseded agreement. The refusal
+        # closes nothing — the attempt, its reservation and its files stay in place —
+        # so the caller can read the current version, bring the work up to date and
+        # submit again instead of starting over.
+        self._require_contract_alignment(task_id)
         prepared = context["_prepared"]
         workspace, observed = prepared["workspace"], prepared["observed"]
         result_ref = None

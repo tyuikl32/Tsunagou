@@ -28,8 +28,8 @@ def _admission_baseline() -> dict[str, Any]:
     }}
 
 
-def _request(payload: dict[str, Any]) -> CommandRequest:
-    return CommandRequest(command_id="c", protocol_version="1", schema_bundle_digest="sha256:x", payload=payload)
+def _request(payload: dict[str, Any], *, command_id: str = "c") -> CommandRequest:
+    return CommandRequest(command_id=command_id, protocol_version="1", schema_bundle_digest="sha256:x", payload=payload)
 
 
 def _harness(
@@ -63,9 +63,11 @@ def _enroll_ready(authority: AuthorityService, *, installation: str, conversatio
     return authority.redeem_ticket(ticket, installation, conversation, baseline=_admission_baseline())
 
 
-def _call(endpoint: Any, kind: str, payload: dict[str, Any], receipt: Any) -> dict[str, Any]:
+def _call(
+    endpoint: Any, kind: str, payload: dict[str, Any], receipt: Any, *, command_id: str = "c"
+) -> dict[str, Any]:
     return endpoint(
-        kind, _request(payload), Response(),
+        kind, _request(payload, command_id=command_id), Response(),
         f"Bearer {receipt.secret_token}", receipt.session_id, receipt.connection_epoch,
     )["result"]
 
@@ -138,6 +140,62 @@ def test_cognition_report_rejects_string_claims(tmp_path: Path) -> None:
     assert exc.value.detail["code"] == "invalid_claim"
 
 
+def test_a_report_keeps_the_contract_version_it_was_written_under(tmp_path: Path) -> None:
+    """A report's declared premises used to be dropped by the handler, so "these two
+    reports were written under different agreements" could not be answered at all.
+
+    The declaration is kept, and one that no longer matches what is in force becomes a
+    hard disagreement instead of a silent assumption.
+    """
+    _, authority, tasks, cognition, _, endpoint = _harness(tmp_path)
+    agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    task_id = _open_task(tasks)
+
+    def propose(payload: dict[str, Any], supersedes_id: str = "") -> dict[str, Any]:
+        return _call(endpoint, "contract.propose", {
+            "contract_id": "api", "contract_kind": "interface", "payload": payload,
+            "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
+            "participants_optional": [], "subject_ref": task_id, "input_refs": [],
+            "supersedes_id": supersedes_id,
+        }, agent)
+
+    def accept(proposal: dict[str, Any]) -> None:
+        _call(endpoint, "contract.accept", {
+            "proposal_id": proposal["proposal_id"], "participant_slot": "self",
+            "proposal_digest": proposal["digest"], "evidence_refs": [],
+        }, agent)
+
+    def report(revisions: Any = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"task_id": task_id, "attempt_id": "a1", "claims": []}
+        if revisions is not None:
+            payload["input_revisions"] = revisions
+        return _call(endpoint, "cognition.report", payload, agent)
+
+    agreed = propose({"task_id": task_id, "label": "接口契约 v1"})
+    accept(agreed)
+    in_force = [f"{agreed['proposal_id']}:{agreed['digest']}"]
+
+    settled = report({"contract": in_force})
+    assert cognition.reports[settled["report_id"]].input_revisions == {"contract": in_force}
+    assert cognition.discrepancies == {}
+
+    # A revision moves what is in force, so a report still declaring the old version is
+    # exactly the "someone is working from the outdated agreement" case.
+    revision = propose({"task_id": task_id, "label": "接口契约 v2"}, agreed["proposal_id"])
+    accept(revision)
+    drifted = report({"contract": in_force})
+    assert cognition.reports[drifted["report_id"]].input_revisions == {"contract": in_force}
+
+    (discrepancy,) = cognition.discrepancies.values()
+    assert discrepancy.rule_id == "claim.contract_digest_mismatch"
+    assert discrepancy.severity == "hard"
+    assert discrepancy.subject_key == task_id
+
+    with pytest.raises(HTTPException) as refusal:
+        report("not-an-object")
+    assert refusal.value.detail["code"] == "input_revisions_object_required"
+
+
 def test_contract_propose_accept_roundtrip(tmp_path: Path) -> None:
     _, authority, _, cognition, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
@@ -152,6 +210,208 @@ def test_contract_propose_accept_roundtrip(tmp_path: Path) -> None:
     }, receipt)
     assert accepted["status"] == "accepted"
     assert cognition.proposals[proposed["proposal_id"]].status == "accepted"
+
+
+def test_a_contract_proposal_asks_its_required_slots_to_answer(tmp_path: Path) -> None:
+    """Proposing has to reach the people who must agree.
+
+    Acceptances only ever happen if a slot learns it is waiting, so the daemon tells
+    the required slots itself (they are mechanically derivable) and attaches a response
+    obligation whose answer must quote the digest it answers — "I read it" becomes a
+    checkable fact instead of a claim.
+    """
+    _, authority, _, cognition, _, endpoint = _harness(tmp_path)
+    proposer = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    peer = _enroll_ready(authority, installation="install-b", conversation="conversation-b")
+
+    proposed = _call(endpoint, "contract.propose", {
+        "contract_id": "api", "contract_kind": "interface", "payload": {"x": 1},
+        "participants_required": [{"slot": "peer", "agent_id": peer.agent_id}],
+        "participants_optional": [], "subject_ref": "s", "input_refs": [], "supersedes_id": "",
+    }, proposer)
+
+    claimed = _call(endpoint, "inbox.claim", {"limit": 10}, peer)
+    assert claimed["count"] == 1
+    notice = claimed["messages"][0]
+    assert notice["kind"] == "contract.proposed"
+    assert notice["sender_agent_id"] == proposer.agent_id
+    assert notice["subject_ref"] == proposed["proposal_id"]
+    obligation = notice["response_obligations"][0]
+    assert obligation["status"] == "open"
+    assert obligation["contract"]["required"] is True
+
+    wrong = _call(endpoint, "message.send", {
+        "recipient_agent_id": proposer.agent_id, "kind": "message", "summary": "ack",
+        "in_reply_to": notice["message_id"],
+        "payload": {"proposal_id": proposed["proposal_id"], "proposal_digest": "stale",
+                    "decision": "accept"},
+    }, peer, command_id="reply-stale")
+    with pytest.raises(HTTPException) as failure:
+        _call(endpoint, "message.respond", {
+            "obligation_id": obligation["obligation_id"],
+            "response_message_id": wrong["message_id"],
+        }, peer)
+    assert failure.value.detail["code"] == "response_schema_violation"
+
+    right = _call(endpoint, "message.send", {
+        "recipient_agent_id": proposer.agent_id, "kind": "message", "summary": "accepted",
+        "in_reply_to": notice["message_id"],
+        "payload": {"proposal_id": proposed["proposal_id"], "proposal_digest": proposed["digest"],
+                    "decision": "accept"},
+    }, peer, command_id="reply-read")
+    answered = _call(endpoint, "message.respond", {
+        "obligation_id": obligation["obligation_id"],
+        "response_message_id": right["message_id"],
+    }, peer)
+    assert answered["status"] == "responded"
+    # Answering is not agreeing: the contract still needs the command that changes it.
+    assert cognition.proposals[proposed["proposal_id"]].status == "proposed"
+
+
+def test_begin_refuses_a_contract_that_is_not_settled(tmp_path: Path) -> None:
+    """Starting work is where "which contract version governs" has to be settled.
+
+    A task declares the contracts it depends on by naming itself in their payload. While a
+    declared contract has nothing accepted yet, or a revision is still under discussion,
+    the start boundary is held: otherwise the work would begin from a version that can
+    still move. Accepting it is the way out, and the console reads the same facts back
+    through ``context.project_read``.
+    """
+    _, authority, tasks, _, _, endpoint = _harness(tmp_path)
+    agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    task_id = _open_task(tasks)
+
+    def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
+        return _call(endpoint, "contract.propose", {
+            "contract_id": "api", "contract_kind": "interface",
+            "payload": {"task_id": task_id, "label": label},
+            "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
+            "participants_optional": [], "subject_ref": task_id, "input_refs": [],
+            "supersedes_id": supersedes_id,
+        }, agent)
+
+    def accept(proposal: dict[str, Any]) -> None:
+        _call(endpoint, "contract.accept", {
+            "proposal_id": proposal["proposal_id"], "participant_slot": "self",
+            "proposal_digest": proposal["digest"], "evidence_refs": [],
+        }, agent)
+
+    def begin() -> dict[str, Any]:
+        return _call(endpoint, "task.begin", {
+            "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
+        }, agent)
+
+    agreed = propose("接口契约 v1")
+    with pytest.raises(HTTPException) as failure:
+        begin()
+    assert failure.value.detail["code"] == "contract_not_accepted"
+
+    accept(agreed)
+    assert begin()["status"] == "running"
+
+    # A revision retires its predecessor on the spot (contract.supersede), so nothing is
+    # in force again until the revision is accepted — which is exactly why both boundaries
+    # hold while one is under discussion.
+    revision = propose("接口契约 v2", agreed["proposal_id"])
+    with pytest.raises(HTTPException) as failure:
+        begin()
+    assert failure.value.detail["code"] == "contract_not_accepted"
+
+    view = _call(endpoint, "context.project_read", {}, agent)
+    entry = view["contracts"]["tasks"][0]
+    assert entry["task_id"] == task_id
+    assert entry["in_force"] == []
+    by_status = {item["status"]: item for item in entry["proposals"]}
+    assert by_status["proposed"]["payload"] == {"task_id": task_id, "label": "接口契约 v2"}
+    assert by_status["proposed"]["supersedes_id"] == agreed["proposal_id"]
+    assert by_status["superseded"]["payload"] == {"task_id": task_id, "label": "接口契约 v1"}
+
+    accept(revision)
+    view = _call(endpoint, "context.project_read", {}, agent)
+    entry = view["contracts"]["tasks"][0]
+    assert entry["in_force"] == [f"{revision['proposal_id']}:{revision['digest']}"]
+    assert {item["status"] for item in entry["proposals"]} == {"accepted", "superseded"}
+    assert len(view["contracts"]["participating"]) == 2
+
+
+def test_a_refused_proposal_is_readable_with_its_reason(tmp_path: Path) -> None:
+    """A refusal is a decision someone will have to explain later, so it has to survive
+    the round trip: the reason is stored on the proposal (the audit trail keeps no free
+    text) and the read shows both the refusal and the fact that nothing is in force."""
+    _, authority, tasks, _, _, endpoint = _harness(tmp_path)
+    agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    task_id = _open_task(tasks)
+    _call(endpoint, "task.begin", {
+        "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
+    }, agent)
+    proposed = _call(endpoint, "contract.propose", {
+        "contract_id": "api", "contract_kind": "interface", "payload": {"task_id": task_id},
+        "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
+        "participants_optional": [], "subject_ref": task_id, "input_refs": [], "supersedes_id": "",
+    }, agent)
+    rejected = _call(endpoint, "contract.reject", {
+        "proposal_id": proposed["proposal_id"], "proposal_digest": proposed["digest"],
+        "reason": "接口字段对不上", "evidence_refs": [],
+    }, agent)
+    assert rejected["status"] == "rejected"
+
+    view = _call(endpoint, "context.project_read", {}, agent)
+    entry = view["contracts"]["tasks"][0]
+    assert entry["in_force"] == []
+    assert entry["proposals"][0]["status"] == "rejected"
+    assert entry["proposals"][0]["resolution_reason"] == "接口字段对不上"
+
+
+def test_submit_refuses_while_a_revision_is_under_discussion(tmp_path: Path) -> None:
+    """Delivery is the second boundary that has to settle which contract version governs.
+
+    A result must not be published on top of an agreement that is being revised — and the
+    refusal has to be *repairable*: the attempt keeps running, so settling the revision
+    and submitting again is enough. Nothing has to be started over.
+    """
+    _, authority, tasks, _, _, endpoint = _harness(tmp_path)
+    agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    task_id = _open_task(tasks)
+
+    def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
+        return _call(endpoint, "contract.propose", {
+            "contract_id": "api", "contract_kind": "interface",
+            "payload": {"task_id": task_id, "label": label},
+            "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
+            "participants_optional": [], "subject_ref": task_id, "input_refs": [],
+            "supersedes_id": supersedes_id,
+        }, agent)
+
+    def accept(proposal: dict[str, Any]) -> None:
+        _call(endpoint, "contract.accept", {
+            "proposal_id": proposal["proposal_id"], "participant_slot": "self",
+            "proposal_digest": proposal["digest"], "evidence_refs": [],
+        }, agent)
+
+    first = propose("接口契约 v1")
+    accept(first)
+    started = _call(endpoint, "task.begin", {
+        "task_id": task_id, "expected_task_revision": tasks.tasks[task_id].revision,
+    }, agent)
+
+    def submit() -> dict[str, Any]:
+        return _call(endpoint, "task.submit", {
+            "task_id": task_id, "attempt_id": started["attempt_id"], "summary": "done",
+        }, agent)
+
+    # The revision lands while the attempt is already running.
+    revision = propose("接口契约 v2", first["proposal_id"])
+
+    with pytest.raises(HTTPException) as failure:
+        submit()
+    assert failure.value.detail["code"] == "contract_not_accepted"
+    # The refusal closed nothing: same attempt, still running and still able to deliver.
+    assert tasks.attempts[started["attempt_id"]].status == "running"
+    assert tasks.tasks[task_id].status == "running"
+
+    accept(revision)
+    assert submit()["result_id"]
+    assert tasks.tasks[task_id].status == "submitted"
 
 
 def test_inbox_claim_fetch_ack_roundtrip(tmp_path: Path) -> None:

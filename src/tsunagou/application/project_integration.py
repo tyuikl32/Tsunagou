@@ -127,6 +127,11 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
    恢复前重读状态并再次 begin。静默、断线或同库重启不会转移资源 owner，主 Agent 可以显式回收。
 6. 需要扩大范围、改变项目设计或处理无法协调的冲突时向主 Agent 提出；越过用户上限时建立 UserDecision，不能自行绕过。
 
+## 被拒时怎么办
+
+工具调用失败会以错误返回，形如 `{{"error": "tsunagou_error:<错误码>", "code": "...", "next_steps": [...]}}`。
+**先看错误里给出的 `next_steps` 与清单，按它做，再重试** —— 不要换一种说法反复硬试，也不要自己构造或粘贴凭据。
+
 ## 接入入口
 
 - 安装/恢复向导：`tsunagou-agent-onboarding` skill。

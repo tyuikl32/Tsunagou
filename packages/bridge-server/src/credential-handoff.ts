@@ -293,7 +293,12 @@ export class CredentialHandoff {
     if (!pending && session?.delivery_ack_pending && !reconnect && !ticket) {
       return { finished: true, session };
     }
-    if (!pending && session && !ticket && !reconnect) return { finished: true, session };
+    // Nothing to do without a ticket — except when the saved session is not known to be
+    // ready: a degraded host has to re-report its baseline on its next call, because that
+    // fresh report is the one thing the daemon re-judges it by.
+    if (!pending && session && !ticket && !reconnect && session.baseline_status === "ready") {
+      return { finished: true, session };
+    }
     if (!pending && !ticket && !session) return { finished: true };
 
     const kind = pending?.kind ?? (ticket ? (session ? "session.rebind" : "agent.enroll") : "session.reconnect");
@@ -311,6 +316,13 @@ export class CredentialHandoff {
       const payload: Record<string, unknown> = kind === "session.reconnect" ? {
         reconnect_nonce: session!.reconnect_nonce,
         expected_connection_epoch: session!.connection_epoch,
+        // A degraded session cannot use the replay door (the daemon requires a ready
+        // session for that), so it sends a fresh report: this is the one call the
+        // daemon re-judges a degraded host by (api/auth.py: authenticate_reconnect_refresh
+        // + session_reconnect in handlers). A ready session stays quiet on purpose — a
+        // flaky startup probe must not downgrade a host that is already working, and
+        // the nonce + epoch replay is the normal way back in.
+        ...(session!.baseline_status === "ready" ? {} : { probe_payload: input.baseline ?? {} }),
         ...(input.hostBindingRefresh ? { host_binding_refresh: input.hostBindingRefresh } : {}),
       } : {
         installation_id: ticket!.installation_id,

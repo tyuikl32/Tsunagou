@@ -38,6 +38,13 @@ Tsunagou/
 │   │   ├── output.py              # Rich / JSON / exit code
 │   │   ├── enrollment.py          # 接入组合流程，秘密只给bridge
 │   │   └── commands/              # project/root/agent/authority/decision等
+│   ├── console/
+│   │   ├── app.py                 # 本机控制台中间层：/console/* 与 /api/v1 通路，同源托管页面
+│   │   ├── config.py              # 一份可读配置（.tsunagou-console.json）与命令行覆盖
+│   │   ├── projects.py            # 创建/登记/删除项目，起停它们的 daemon
+│   │   ├── enrollment.py          # Agent 接入的准备/等待/作废（秘密只给 bridge）
+│   │   ├── agents.py              # 项目 id → 负责人名单（daemon 自己答不了的问题）
+│   │   └── glossary.py            # 后端取值 → 中文对照表
 │   ├── application/
 │   │   ├── project_integration.py # 项目本地无秘密入口生成器
 │   │   ├── command_dispatcher.py  # 唯一authorize-and-handle入口
@@ -111,6 +118,13 @@ Tsunagou/
 │   ├── fault_injection/ conformance/
 │   ├── benchmarks/ manual_live_agents/
 │   └── fixtures/                  # 测试项目，绝非真实用户项目
+├── web/                           # 本机控制台页面（零构建：一个 index.html + 一个 IIFE JS）
+│   ├── index.html                 # 静态骨架：标签页 + 侧栏 + 窗口
+│   ├── assets/js/behavior.js      # 整个前端（单文件 IIFE）
+│   ├── assets/css/                # 组件库样式；**归使用者，实现方不改**
+│   ├── tests/behavior.smoke.test.ts   # vitest + jsdom 的前端结构冒烟
+│   ├── console.config.js          # 前端侧默认配置（中间层托管时另生成一份）
+│   └── method.md                  # 前端侧契约文档（改前端必须同步）
 ├── docs/{overview,implementation,decisions,research,history}/
 ├── .agents/skills/                # 可跨宿主发现的项目级 Agent skill
 │   ├── tsunagou-install/          # 从 GitHub 安装 Tsunagou 和 skill
@@ -138,6 +152,8 @@ Tsunagou/
 ```
 
 `project-integration.json` 的 source checkout 路径只是本机诊断提示；GitHub URL、版本和项目相对规范链接才是可移植引用。一个 daemon 的多项目选择仍由 runtime/doctor 的实际配置证明，入口文件不创建全局项目单例。
+
+项目之外还有一份**可选**的机器级索引 `~/.tsunagou/projects.json`：`project init` 与 `daemon start` 成功后会登记一条 `{project_id, name, objective, path, state_dir, sources, created_at, updated_at}`，让项目之外的东西（控制台、人）不必爬盘就知道本机有哪些项目。它只是便利缓存，不是事实来源——每个项目自己的 `.tsunagou/project.json` 才是权威；条目按 `project_id` 合并，所以重复运行不会产生重复行，读者应核对路径后再信任一行。测试与演示可用 `TSUNAGOU_PROJECT_INDEX` 改写位置。
 
 以 tasks 为例，其余模块按实际需要采用相同边界：
 

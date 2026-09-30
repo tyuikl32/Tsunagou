@@ -8,26 +8,32 @@ from pathlib import Path
 import pytest
 
 from tsunagou.cli.app import (
-    _bridge_environment,
     _profile_identity,
     _resolve_codex_executable,
     _write_ticket_private,
 )
+from tsunagou.platform.bridge_files import write_bridge_config
 
 
-def test_bridge_environment_declares_per_call_host_metadata(tmp_path: Path) -> None:
+@pytest.mark.parametrize("adapter", ["opencode", "codex"])
+def test_bridge_config_declares_per_call_host_metadata(tmp_path: Path, adapter: str) -> None:
     # OpenCode delivers its conversation id per tool call; the declaration is
-    # what makes the bridge reject calls without valid metadata. Both
-    # `agent connect` and `agent enroll` build their config from this helper.
-    common = {
-        "daemon_url": "http://127.0.0.1:9", "daemon_state_dir": "",
-        "ticket_path": tmp_path / "ticket.json", "session_path": tmp_path / "bridge-session.json",
-        "project_root": str(tmp_path), "state_dir": tmp_path,
-    }
-    opencode = _bridge_environment(adapter="opencode", **common)
-    codex = _bridge_environment(adapter="codex", **common)
-    assert opencode["TSUNAGOU_HOST_META_KEY"] == "ai.opencode/sessionID"
-    assert "TSUNAGOU_HOST_META_KEY" not in codex
+    # what makes the bridge reject calls without valid metadata. CLI connect,
+    # CLI enroll and Console enrollment all use this shared config writer.
+    path = write_bridge_config(
+        adapter=adapter, mode="attach", installation_id=f"{adapter}:worker", output_dir=tmp_path,
+        ticket_path=tmp_path / "ticket.json", daemon_url="http://127.0.0.1:9",
+        daemon_state_dir="", project_root=tmp_path,
+    )
+    config = json.loads(path.read_text(encoding="utf-8"))
+    environment = config["env"]
+    assert environment["TSUNAGOU_TICKET_FILE"] == str(tmp_path / "ticket.json")
+    assert environment["TSUNAGOU_SESSION_FILE"] == str(tmp_path / "bridge-session.json")
+    assert config["secret_fields"] == []
+    if adapter == "opencode":
+        assert environment["TSUNAGOU_HOST_META_KEY"] == "ai.opencode/sessionID"
+    else:
+        assert "TSUNAGOU_HOST_META_KEY" not in environment
 
 
 def test_ticket_is_written_to_private_file_not_returned_in_output(tmp_path: Path) -> None:
@@ -72,7 +78,9 @@ def test_codex_executable_prefers_host_path(monkeypatch, tmp_path: Path) -> None
     executable = tmp_path / "codex.exe"
     executable.write_text("", encoding="utf-8")
     monkeypatch.setenv("CODEX_CLI_PATH", str(executable))
-    monkeypatch.setattr("tsunagou.cli.app.shutil.which", lambda _: None)
+    # 探测逻辑现在住在 `tsunagou.platform.host_registration`（一个厂商一行），
+    # CLI 只是它的一个调用者，所以 path 也打在那里。
+    monkeypatch.setattr("tsunagou.platform.host_registration.shutil.which", lambda _: None)
     assert _resolve_codex_executable() == str(executable)
 
 
@@ -83,6 +91,6 @@ def test_codex_executable_discovers_desktop_install(monkeypatch, tmp_path: Path)
     executable.parent.mkdir(parents=True)
     executable.write_text("", encoding="utf-8")
     monkeypatch.delenv("CODEX_CLI_PATH", raising=False)
-    monkeypatch.setattr("tsunagou.cli.app.shutil.which", lambda _: None)
+    monkeypatch.setattr("tsunagou.platform.host_registration.shutil.which", lambda _: None)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     assert _resolve_codex_executable() == str(executable)
