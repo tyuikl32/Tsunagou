@@ -129,6 +129,13 @@ def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
             "agent_id": str(item.get("agent_id") or ""),
             "status": str(item.get("status") or ""),
             "role": str(item.get("role") or ""),
+            # "到了"和"就位"是两件事，而这个名单要同时回答两件：谁连上了（上面三项），
+            # 以及谁真的就绪了（下面两项）。中断校验要用后者：一个还在 degraded 的会话
+            # 也在名单里，但它既不持有角色、也干不了活。
+            "session_status": str(item.get("session_status") or ""),
+            "missing_admission": [
+                str(name) for name in (item.get("missing_admission") or []) if str(name)
+            ],
             # The daemon publishes this digest, and ``canonical_digest({"conversation_id": …})``
             # recomputes it — that is how a bridge folder can be matched to an Agent
             # that never went through the console.

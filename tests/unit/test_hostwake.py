@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 
+import tsunagou.hostwake.dispatcher as dispatcher_module
 from tsunagou.api.app import HostBindingRequest, create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.hostwake import (
@@ -25,6 +28,7 @@ from tsunagou.hostwake import (
     WakeDispatcher,
 )
 from tsunagou.interfaces.runtime import CommandDispatcher
+from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 
 class FakeProcess:
@@ -638,3 +642,108 @@ def test_user_http_desktop_attach_requires_an_enrolled_active_agent(tmp_path: Pa
         )
     assert error.value.status_code == 403
     assert error.value.detail == {"code": "host_agent_not_enrolled"}
+
+
+def _bound_provider(tmp_path: Path, *, agent_id: str = "agent-1") -> tuple[ManagedCodexProvider, FakeClient]:
+    store = PrivateBindingStore(tmp_path / "bindings.json")
+    client = FakeClient()
+    provider = ManagedCodexProvider(store, client_factory=lambda record: client, wake_timeout=0.1)
+    provider.register_binding(
+        agent_id=agent_id, binding_id="binding-1", adapter_profile="codex-worker",
+        cwd=tmp_path, scope_digest="sha256:scope", policy_digest="sha256:policy",
+    )
+    return provider, client
+
+
+def test_a_host_without_the_wake_methods_is_never_called(tmp_path: Path) -> None:
+    """A published catalogue that omits the wake methods is an answer, not an outage.
+
+    Acting on it ends the attempt instead of queueing work that cannot succeed, and the
+    binding is marked degraded so the judgement is visible rather than implied.
+    """
+    provider, client = _bound_provider(tmp_path)
+    binding = provider.store.get("agent-1")[0]
+    provider.store.put(replace(binding, capabilities={**binding.capabilities, "turn/start": "unsupported"}))
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json")
+    result = dispatcher.on_delivery(message_id="message-1", recipient_agent_id="agent-1", project_id="project-1")
+    assert result["state"] == "failed"
+    assert result["error_code"] == "host_wake_capability_unsupported"
+    assert client.calls == []
+    assert provider.store.get("agent-1")[0].status == "degraded"
+    assert [item["kind"] for item in dispatcher.diagnostics(project_id="project-1")] == ["wake_requested", "wake_failed"]
+
+
+def test_a_degraded_binding_ends_the_attempt_without_a_host_call(tmp_path: Path) -> None:
+    """Degraded means "not wakeable this way"; retrying it would loop on a known answer."""
+    provider, client = _bound_provider(tmp_path)
+    provider.store.update_status("agent-1", "degraded", reason="desktop_thread_unavailable")
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json")
+    result = dispatcher.on_delivery(message_id="message-1", recipient_agent_id="agent-1", project_id="project-1")
+    assert result["state"] == "failed"
+    assert result["error_code"] == "host_binding_degraded"
+    assert client.calls == []
+
+
+def test_an_unobservable_wake_is_closed_after_its_grace_period(tmp_path: Path) -> None:
+    """A restart cannot inspect the original host turn, so the question must still end."""
+    attempts = tmp_path / "attempts.json"
+    attempts.write_text(json.dumps({
+        "agent-1:message-1": {
+            "wake_attempt_id": "wake-1", "agent_id": "agent-1", "message_id": "message-1",
+            "project_id": "project-1", "state": "running", "evidence": [],
+        },
+    }), encoding="utf-8")
+    provider, _client = _bound_provider(tmp_path)
+    dispatcher = WakeDispatcher(provider, attempts_path=attempts)
+    # Loading a restarted runtime turns "running" into "unknown" and starts the clock.
+    assert dispatcher.status(message_id="message-1", recipient_agent_id="agent-1")["state"] == "unknown"
+    assert dispatcher.sweep_unknown(grace_ms=0) == 1
+    closed = dispatcher.status(message_id="message-1", recipient_agent_id="agent-1")
+    assert closed["state"] == "failed"
+    assert closed["error_code"] == "host_wake_unknown_expired"
+    # Both transitions are on the record, including the one that closed the question.
+    assert [item["kind"] for item in dispatcher.diagnostics(project_id="project-1")] == ["wake_unknown", "wake_failed"]
+
+
+def test_the_attempt_journal_keeps_a_bounded_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The journal is rewritten whole on every change, so it may not grow forever."""
+    monkeypatch.setattr(dispatcher_module, "_MAX_ATTEMPTS_KEPT", 2)
+    attempts = tmp_path / "attempts.json"
+    attempts.write_text(json.dumps({
+        f"agent-1:message-{index}": {
+            "wake_attempt_id": f"wake-{index}", "agent_id": "agent-1", "message_id": f"message-{index}",
+            "project_id": "project-1", "state": "completed", "evidence": [],
+            "updated_at": format_timestamp(now_ms() - (10 - index) * 1000),
+        }
+        for index in range(4)
+    }), encoding="utf-8")
+    provider, _client = _bound_provider(tmp_path)
+    dispatcher = WakeDispatcher(provider, attempts_path=attempts)
+    # In-flight work is never dropped; only closed history is trimmed, oldest first.
+    dispatcher._save()
+    kept = json.loads(attempts.read_text(encoding="utf-8"))
+    assert len(kept) == 2
+    assert set(kept) == {"agent-1:message-2", "agent-1:message-3"}
+
+
+def test_the_callback_fact_is_recorded_without_starting_a_turn(tmp_path: Path) -> None:
+    """The A2A request path reports a callback; it does not become a second wake path."""
+    provider, client = _bound_provider(tmp_path)
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json",
+                                diagnostics_path=tmp_path / "diagnostics.json")
+    recorded = dispatcher.note_callback(
+        message_id="message-1", recipient_agent_id="agent-1", project_id="project-1",
+        callback_status="delivered", command_id="a2a:message:1", actor_id="peer",
+    )
+    assert recorded["status"] == "recorded"
+    assert client.calls == []
+    assert dispatcher.status(message_id="message-1", recipient_agent_id="agent-1") is None
+    assert [item["kind"] for item in dispatcher.diagnostics(project_id="project-1")] == ["callback_received"]
+    # Re-recording the same callback adds nothing: one fact, one line.
+    dispatcher.note_callback(
+        message_id="message-1", recipient_agent_id="agent-1", project_id="project-1",
+        callback_status="delivered", command_id="a2a:message:1", actor_id="peer",
+    )
+    assert len(dispatcher.diagnostics(project_id="project-1")) == 1

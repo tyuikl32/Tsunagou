@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, cast
 
+from tsunagou.modules.projects import PENDING_OBJECTIVE
 from tsunagou.platform import host_registration
 from tsunagou.platform.bridge_files import HOST_META_KEYS, write_bridge_config, write_ticket_file
 from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
@@ -126,7 +127,7 @@ if typer is not None:
     def project_init(
         coordination_root: Path = typer.Option(..., "--coordination-root"),  # noqa: B008
         name: str = typer.Option("Tsunagou project", "--name"),
-        objective: str = typer.Option("Coordinate local agents", "--objective"),
+        objective: str = typer.Option(PENDING_OBJECTIVE, "--objective"),
     ) -> None:
         from tsunagou.modules.projects import ProjectRegistry
 
@@ -594,7 +595,7 @@ if typer is not None:
         host: str = typer.Option("127.0.0.1", "--host"),
         port: int = typer.Option(0, "--port", min=0, max=65535),
         name: str = typer.Option("Tsunagou project", "--name"),
-        objective: str = typer.Option("Coordinate local agents", "--objective"),
+        objective: str = typer.Option(PENDING_OBJECTIVE, "--objective"),
         host_wake: str = typer.Option("auto", "--host-wake"),
         reuse: Path | None = typer.Option(None, "--reuse"),  # noqa: B008
     ) -> None:

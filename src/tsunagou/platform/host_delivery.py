@@ -6,6 +6,7 @@ import contextlib
 import json
 import sqlite3
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
@@ -33,11 +34,15 @@ def _wake_backoff_ms(attempts: int) -> int:
 
 class HostDeliveryWorker:
     def __init__(self, database: ProjectDatabase, dispatcher: WakeDispatcher, telemetry: Telemetry | None = None,
-                 messages: MessageStore | None = None) -> None:
+                 messages: MessageStore | None = None,
+                 wake_policy: Callable[[], bool] | None = None) -> None:
         self.database, self.dispatcher = database, dispatcher
         self.telemetry = telemetry or Telemetry()
         # Only ever used to *describe* what is waiting, never to take it.
         self.messages = messages
+        # The project's own answer to "do we want automatic wake here?". Read on every
+        # pass so a runtime policy change takes effect without a restart.
+        self.wake_policy = wake_policy
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tsunagou-host-delivery")
@@ -110,6 +115,14 @@ class HostDeliveryWorker:
                     (status, now_ms() + _wake_backoff_ms(attempts), self.database.project_id, identity),
                 )
             self._pending.pop(identity)
+        # A question that can no longer be answered still has to end; this is cheap and
+        # self-throttled, and an unknown attempt belongs to no row in the outbox.
+        self.dispatcher.sweep_unknown()
+        # The project decides whether it wants automatic wake at all. When it says no the
+        # staged rows are left pending: they are the *intent* to wake, so turning the
+        # switch back on delivers what accumulated instead of losing it.
+        if self.wake_policy is not None and not self.wake_policy():
+            return 0
         with self.database.lock, contextlib.closing(self.database._connect()) as conn:
             rows = conn.execute(
                 "SELECT o.id,o.target_ref,e.command_id,e.actor_ref,e.payload_json FROM outbox o "

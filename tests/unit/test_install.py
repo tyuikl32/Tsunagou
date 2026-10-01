@@ -54,6 +54,26 @@ def test_explicit_project_root_initializes_then_bootstraps(tmp_path: Path) -> No
     assert "--objective" in commands[init_index]
 
 
+def test_the_installer_invents_no_objective_of_its_own(tmp_path: Path) -> None:
+    """没让人指定目标时，安装器不要把一句话塞进去。
+
+    目标由用户与主 Agent 谈定（见 docs/decisions/2026-10-01-objective-from-dialogue.md），
+    所以这里什么都不传，让 `project init` 自己写占位 —— 措辞只有一处。
+    """
+
+    result = _dry_run(
+        "--destination", str(tmp_path / "source"),
+        "--project-root", str(tmp_path / "business"),
+        "--project-name", "Business project",
+        "--host", "codex",
+    )
+
+    commands = result["commands"]
+    init_index = next(index for index, command in enumerate(commands) if "project init" in command)
+    assert "--name" in commands[init_index]
+    assert "--objective" not in commands[init_index]
+
+
 def test_existing_project_manifest_skips_reinitialization(tmp_path: Path) -> None:
     project_root = tmp_path / "business"
     (project_root / ".tsunagou").mkdir(parents=True)

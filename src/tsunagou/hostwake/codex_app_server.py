@@ -47,6 +47,18 @@ _HOST_ID_ENV_NAMES = (
 )
 
 
+def _method_status(method: str, observed: set[str], catalogue: set[str]) -> str:
+    """What a probe may honestly say about one method.
+
+    ``unsupported`` is reserved for a server that published a method catalogue without
+    this method in it — a deterministic answer the dispatcher is allowed to act on.
+    Without a catalogue nothing can be concluded, so the answer stays ``unknown``.
+    """
+    if method in observed:
+        return "supported"
+    return "unsupported" if catalogue and method not in catalogue else "unknown"
+
+
 class _TransportClosed(RuntimeError):
     pass
 
@@ -715,6 +727,9 @@ class ManagedCodexProvider:
                 reason=exc.code,
             )
         methods = set(client.methods)
+        # The catalogue is what the server says it can do, before this probe proved
+        # anything by actually calling a method.
+        catalogue = set(methods)
         version = client.server_info.get("version") if isinstance(client.server_info, dict) else None
         try:
             thread = self.ensure_thread(binding)
@@ -732,17 +747,26 @@ class ManagedCodexProvider:
                 reason=exc.code,
             )
         capabilities = {
-            method: cast(Any, "supported" if method in methods else "unknown")
+            method: cast(Any, _method_status(method, methods, catalogue))
             for method in _REQUIRED_METHODS
         }
-        # Some app-server versions expose no method catalogue.  An initialize
-        # response alone proves connectivity, not method support.
-        status = cast(Any, "supported" if methods and all(value == "supported" for value in capabilities.values()) else "unknown")
+        # Some app-server versions expose no method catalogue, so an initialize response
+        # alone proves connectivity, not method support. A published catalogue that omits
+        # a required method is a different, actionable answer.
+        if any(value == "unsupported" for value in capabilities.values()):
+            status = cast(Any, "unsupported")
+        elif methods and all(value == "supported" for value in capabilities.values()):
+            status = cast(Any, "supported")
+        else:
+            status = cast(Any, "unknown")
         evidence = canonical_digest({"provider": self.provider_name, "version": version, "methods": sorted(methods)})
         current_item = self.store.get(binding.agent_id)
         current_ref, current_record = current_item if current_item is not None else (binding, record)
+        # A probe that proves the wake path works restores a binding that was degraded for
+        # a capability reason. Anything less keeps what was already recorded.
         self.store.put(
-            replace(current_ref, status=current_ref.status, capabilities=capabilities,
+            replace(current_ref, status=cast(Any, "ready" if status == "supported" else current_ref.status),
+                    capabilities=capabilities,
                     last_probe={"version": version, "methods": sorted(methods), "evidence_digest": evidence}),
             executable=current_record.get("executable"), extra=current_record.get("extra", {}),
         )
@@ -1085,9 +1109,11 @@ class DesktopAttachProvider(ManagedCodexProvider):
         record = self._record(binding)
         client = self._client(binding.agent_id, record)
         methods: set[str] = set()
+        catalogue: set[str] = set()
         try:
             client.initialize()
             methods.update(client.methods)
+            catalogue = set(client.methods)
             thread_id = record.get("thread_id")
             if not thread_id:
                 raise HostWakeError("desktop_thread_required", "Desktop attach has no private thread id")
@@ -1096,31 +1122,35 @@ class DesktopAttachProvider(ManagedCodexProvider):
             if str(thread.get("id") or "") != str(thread_id):
                 raise HostWakeError("desktop_thread_identity_mismatch", "thread/read returned a different thread")
             methods.add("thread/read")
-            session_id = thread.get("sessionId")
-            if session_id:
-                updated = replace(
-                    binding,
-                    session_id_digest=canonical_digest({"session_id": str(session_id)}),
-                    capabilities={**binding.capabilities, "thread/read": "supported"},
-                    last_probe={"thread_confirmation": "supported"},
-                )
-                self.store.put(
-                    updated,
-                    thread_id=str(thread_id),
-                    session_id=str(session_id),
-                    endpoint=record.get("endpoint"),
-                    executable=record.get("executable"),
-                    extra=record.get("extra", {}),
-                )
             capabilities = {
                 "thread/read": "supported",
-                "thread/resume": "supported" if "thread/resume" in methods else "unknown",
-                "turn/start": "supported" if "turn/start" in methods else "unknown",
+                "thread/resume": _method_status("thread/resume", methods, catalogue),
+                "turn/start": _method_status("turn/start", methods, catalogue),
             }
             status = (
-                "supported"
+                "unsupported"
+                if any(value == "unsupported" for value in capabilities.values())
+                else "supported"
                 if capabilities["thread/resume"] == "supported" and capabilities["turn/start"] == "supported"
                 else "unknown"
+            )
+            session_id = thread.get("sessionId")
+            # Persist what the probe learned: the dispatcher acts on these capabilities,
+            # so a probe that never records them changes nothing.
+            self.store.put(
+                replace(
+                    binding,
+                    status=cast(Any, "ready" if status == "supported" else binding.status),
+                    session_id_digest=(canonical_digest({"session_id": str(session_id)})
+                                       if session_id else binding.session_id_digest),
+                    capabilities={**binding.capabilities, **cast(dict[str, Any], capabilities)},
+                    last_probe={"thread_confirmation": "supported"},
+                ),
+                thread_id=str(thread_id),
+                session_id=str(session_id) if session_id else None,
+                endpoint=record.get("endpoint"),
+                executable=record.get("executable"),
+                extra=record.get("extra", {}),
             )
             version = client.server_info.get("version") if isinstance(client.server_info, dict) else None
             evidence = canonical_digest({"provider": self.provider_name, "thread_confirmation": True, "methods": sorted(methods)})

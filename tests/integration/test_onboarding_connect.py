@@ -16,6 +16,11 @@ def test_background_daemon_survives_starting_cli_and_resolves_from_subdirectory(
     child = root / "src/nested"
     child.mkdir(parents=True)
     env = {name: value for name, value in os.environ.items() if not name.startswith("TSUNAGOU_")}
+    # This test strips the TSUNAGOU_ slate to prove the daemon is found without project
+    # env. The machine-level index is a different concern: without keeping its override,
+    # the client below registers a throwaway project into the developer's home directory.
+    if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
+        env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
 
     def cli(*args, cwd=root):
         result = subprocess.run([sys.executable, "-m", "tsunagou", *args], cwd=cwd, env=env,
@@ -50,6 +55,10 @@ def test_one_connect_and_shared_mcp_keep_two_host_conversations_separate(tmp_pat
     nested = root / "nested"
     nested.mkdir()
     env = {name: value for name, value in os.environ.items() if not name.startswith(("TSUNAGOU_", "CODEX_"))}
+    # Keep the machine-index override: this test is not about where the machine records
+    # its projects, and dropping it would write a throwaway line into the user's home.
+    if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
+        env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
     env["TSUNAGOU_ROUTING_DIR"] = str(tmp_path / "routes")
 
     def cli(*args):

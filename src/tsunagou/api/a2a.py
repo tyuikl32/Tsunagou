@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 from tsunagou import __version__
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.interfaces.runtime import CommandDispatcher, PrincipalContext
+from tsunagou.modules.messaging import WAKE_WORTHY_KINDS
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.errors import TsunagouError
 
@@ -406,10 +407,17 @@ class A2AGateway:
                     # Durable pull remains the recovery path.  Do not turn a
                     # callback outage into a lost message or expose credentials.
                     push_status = {"requested": True, "status": "failed"}
-        host_wake: dict[str, Any] = {"status": "not_configured"}
+        # The notification is *staged*, never dispatched inline. The durable outbox row
+        # committed with the message is the single place a wake starts: dispatching here as
+        # well made one message reachable through two wake paths with two retry rules, and
+        # put host latency inside this caller's own response.
+        host_wake: dict[str, Any] = {
+            "status": "staged" if kind in WAKE_WORTHY_KINDS else "not_staged",
+            "dispatched_by": "daemon_delivery_worker",
+        }
         if self.wake_dispatcher is not None:
             try:
-                host_wake = self.wake_dispatcher.on_delivery(
+                self.wake_dispatcher.note_callback(
                     message_id=internal_message_id,
                     recipient_agent_id=recipient,
                     project_id=self.project_id,
@@ -418,10 +426,9 @@ class A2AGateway:
                     task_id=subject_ref.split("/", 1)[1] if subject_ref.startswith("task/") else None,
                 )
             except Exception:
-                # Host wake is an enhancement.  Durable delivery has already
-                # committed and remains the recovery path if the provider is
-                # unavailable or malformed.
-                host_wake = {"status": "failed", "error_code": "host_wake_dispatch_failed"}
+                # The callback is a transport fact. Losing its recording must not fail a
+                # message that is already durably committed.
+                pass
         response_message["metadata"] = {
             "tsunagou": {
                 "project_id": self.project_id,

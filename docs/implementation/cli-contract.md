@@ -23,10 +23,10 @@ CLI 是用户控制入口，持有 user_control 凭据。用户已授权安装/�
 | `installation-info [--json]` | 本机用户级安装记录白名单投影；无需 daemon | source_root/commit/source_dirty/runtime 版本、安装起止及 duration_ms；缺失时间为 null，不含接入秘密 |
 | `daemon start` | 用户配置+OS启动，绑定127.0.0.1随机端口 | endpoint/instance，不含token |
 | `daemon status` / `stop` | 本机实例身份核验；stop 等待确认进程退出 | running/0、stopped/3、unverified/4；重复 stop 为 already_stopped/0；不杀未核实的 PID |
-| `project init --coordination-root <path> [--name <name>] [--objective <text>]` | `project.initialize`；缺name/objective交互询问，JSON模式要求补齐 | Project与genesis Operation |
+| `project init --coordination-root <path> [--name <name>] [--objective <text>]` | `project.initialize`；缺 name 用默认名，缺 objective 写占位文本（目标是用户与主 Agent 确认后才有的事实，见[决策](../decisions/2026-10-01-objective-from-dialogue.md)） | Project与genesis Operation |
 | `project bootstrap --coordination-root <path> [--source-root <path>] [--source-ref <ref>] [--host <kind>] [--refresh]` | 项目本地入口物化；不创建Agent/任务，不写秘密 | 受管文件状态、project_id、source reference |
 
-安装器的显式 `--project-root` 表示用户已选择业务项目：若 `<root>/.tsunagou/project.json` 不存在，安装器会先调用 `project init`（可用 `--project-name`、`--project-objective` 指定初始化文字），随后调用 `project bootstrap`。不传 `--project-root` 时不会猜测项目或写入业务项目。
+安装器的显式 `--project-root` 表示用户已选择业务项目：若 `<root>/.tsunagou/project.json` 不存在，安装器会先调用 `project init`（可用 `--project-name`、`--project-objective` 指定初始化文字；没给 `--project-objective` 时不自己编一句，让 `project init` 写占位），随后调用 `project bootstrap`。不传 `--project-root` 时不会猜测项目或写入业务项目。
 | `project list` / `show` | GET项目列表/指定Project | 同query DTO |
 | `project complete <proposal_id> --expected-project-revision <n> --digest <digest>` | `project.completion.confirm`；proposal_id与digest绑定已审阅的CompletionProposal，project revision必须匹配 | Project completed与强制checkpoint Operation；仅U可调用 |
 | `root register --request-file <json>` | `root.register.user`；文件是catalog的业务payload | RootRegistration |

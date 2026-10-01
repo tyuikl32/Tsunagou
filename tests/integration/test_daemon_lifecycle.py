@@ -83,6 +83,11 @@ def test_daemon_parent_job_exit(tmp_path: Path, scenario: str) -> None:
     subprocess.run(["git", "init", "--quiet", str(root)], check=True)
     report = tmp_path / "job-result.json"
     env = {key: value for key, value in os.environ.items() if not key.startswith(("TSUNAGOU_", "CODEX_"))}
+    # The child starts from a clean TSUNAGOU_ slate on purpose. The machine-level project
+    # index is not what this test exercises, and without keeping its override the child
+    # registers a throwaway project in the developer's own ~/.tsunagou/projects.json.
+    if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
+        env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
     result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--job-helper", str(root), str(report), scenario],
                             env=env, capture_output=True, text=True, timeout=40,
                             creationflags=subprocess.CREATE_BREAKAWAY_FROM_JOB | subprocess.CREATE_NO_WINDOW)

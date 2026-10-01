@@ -545,12 +545,17 @@ async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<stri
     sessionFile, conversationBindingDigest, hostDigest,
   });
   const recover = async (forceReconnect = false): Promise<PersistedSession> => {
+    /* 续接证据的两个输入（票、会话文件）都在本地磁盘上，而它们**会在调用过程中变**：
+       第一次兑换把会话文件写下来、把票删掉。所以基线得按"这一刻磁盘上有什么"现算，
+       不能拿调用开头那份快照 —— 否则首次降级之后紧接着的那次重报，会把"已经接上了"
+       又说成"还没有续接证据"，白报一次。*/
+    const known = loadSession(sessionFile);
     const current = await handoff.recover({
       ticket, ticketFile: cfg.ticketFile || undefined,
       forceReconnect,
       baseline: buildBaseline({
         hostDigest, projectDigest: readProjectDigest(cfg.projectRoot), tools: TOOLS,
-        continuityRefs: prior ? continuityRefs(prior.host_conversation_id_digest, hostDigest)
+        continuityRefs: known ? continuityRefs(known.host_conversation_id_digest, hostDigest)
           : ticket ? ["ticket:bound_conversation"] : undefined,
       }),
       hostBindingRefresh: refresh,
@@ -560,6 +565,25 @@ async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<stri
   };
   let session = await recover();
   if (refresh && session.host_binding_generation !== refresh.host_generation) session = await recover();
+  /* 降级会话的"下一次调用"不该由模型来发。
+
+     宿主第一次连上时报的基线可能缺一项 —— 典型是这一次调用手上没有票、也还没有自己的会话
+     文件，于是续接证据是 `unknown`。权威侧重新判定它的那一次，就是**再报一次基线**的那一次，
+     而机器已经在了：会话文件在上面那次调用里已经写下来，这条路会带着 `resume:*` 重报
+     （`prepare()` 在降级时本来就会附上 `probe_payload`）。
+
+     为什么非要现在补：主 Agent 的任命发生在"变成 ready 的那一次调用"里
+     （`authority.redeem_ticket` / `rebind`）。把它压在模型的下一个动作上，就等于让"连上
+     之后只回一段话、不再调工具"的会话永远停在 provisioning、角色永远停在 worker ——
+     真机上就是这样：前端走到了第 3 步，名单里却只有一个子 Agent。
+     只补一次；补不成就照第一次拿到的会话走，不把一次本来可用的调用变成错误。*/
+  if (session.baseline_status !== "ready") {
+    try {
+      session = await recover(true);
+    } catch {
+      // 这一步是"一步到位"，不是必经环节：失败就保留第一次的结果。
+    }
+  }
   if (refresh && cfg.conversationId && env("TSUNAGOU_ROUTING_DIR")) {
     const routeFile = join(env("TSUNAGOU_ROUTING_DIR"), hash(cfg.conversationId) + ".json");
     await withPrivateFileLock(routeFile, () => {

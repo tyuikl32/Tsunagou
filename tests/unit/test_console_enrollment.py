@@ -74,16 +74,31 @@ def _entry(tmp_path: Path) -> ProjectEntry:
 
 
 class Rosters:
-    """The console's roster memory, told what to answer."""
+    """The console's roster memory, told what to answer.
 
-    def __init__(self, agent_ids: tuple[str, ...] = ()) -> None:
+    ``session_status`` / ``role`` / ``missing`` default to "就绪、而且是票要的那个角色":
+    the arrival rule reads all three, so a test that only cares about *who* is in the
+    roster should not have to spell them out -- and a test that cares about the rule
+    has to say so explicitly.
+    """
+
+    def __init__(
+        self, agent_ids: tuple[str, ...] = (), *,
+        session_status: str = "ready", role: str = "worker", missing: tuple[str, ...] = (),
+    ) -> None:
         self.agent_ids = agent_ids
+        self.session_status = session_status
+        self.role = role
+        self.missing = missing
 
     def roster(self, project_id: str, root: Path, endpoint: dict[str, Any] | None, *, force: bool = False) -> AgentRoster | None:
         return AgentRoster(
             project_id=project_id, main_agent_id=self.agent_ids[0] if self.agent_ids else None,
             agents=tuple(
-                {"agent_id": agent_id, "status": "active", "role": "worker"}
+                {
+                    "agent_id": agent_id, "status": "active", "role": self.role,
+                    "session_status": self.session_status, "missing_admission": list(self.missing),
+                }
                 for agent_id in self.agent_ids
             ),
             fetched_at="2026-09-28T00:00:00.000Z",
@@ -316,6 +331,92 @@ def test_a_waiting_enrollment_turns_into_an_arrival_and_the_nickname_lands(
     assert enrollment.status(enrollment_id, settings=config, directory=rosters)["status"] == "arrived", (
         "asking again must not change the answer"
     )
+
+
+def _prepared(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, role: str, rosters: Rosters,
+) -> tuple[dict[str, Any], ConsoleConfig, str]:
+    """Prepare one enrollment against the stub daemon, ready for ``status`` calls."""
+
+    entry = _entry(tmp_path)
+    monkeypatch.setattr(enrollment, "forward", Daemon())
+    _registered(monkeypatch)
+    monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
+    prepared = enrollment.prepare(
+        entry, dict(entry.daemon or {}), vendor="codex", role=role, nickname="熊猫", directory=rosters,
+    )
+    return prepared, _config(tmp_path), str(prepared["enrollment_id"])
+
+
+@pytest.mark.parametrize(
+    "session_status,role,missing",
+    [
+        ("degraded", "worker", ("identity.continuity_evidence",)),
+        ("ready", "worker", ()),
+    ],
+)
+def test_a_session_that_joined_without_the_requested_role_is_not_an_arrival(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, session_status: str, role: str, missing: tuple[str, ...],
+) -> None:
+    """"到了"和"就位"是两件事。
+
+    名单里多出一个人只说明那个会话兑换了票。主 Agent 的任命是 daemon 在就绪那一步
+    顺手做的，而首次接入天然还不就绪 —— 所以只数人头会把一个既没有角色、也没有基础
+    授权的成员报成"主 Agent 已接入"。
+    """
+
+    rosters = Rosters(("agent-old",))
+    _prepared_answer, config, enrollment_id = _prepared(monkeypatch, tmp_path, role="main", rosters=rosters)
+
+    rosters.agent_ids = ("agent-old", "agent-new")
+    rosters.session_status = session_status
+    rosters.role = role
+    rosters.missing = missing
+
+    answer = enrollment.status(enrollment_id, settings=config, directory=rosters)
+
+    assert answer["status"] == "waiting", "还没就位就不能报成功"
+    assert answer["agent_id"] is None, "不能把人头当成任命：这个成员还没有角色"
+    pending = answer["pending"]
+    assert pending["agent_id"] == "agent-new"
+    assert pending["session_status"] == session_status
+    assert pending["missing_admission"] == list(missing)
+
+
+def test_a_ready_main_is_the_arrival_this_ticket_asked_for(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    rosters = Rosters(("agent-old",))
+    _prepared_answer, config, enrollment_id = _prepared(monkeypatch, tmp_path, role="main", rosters=rosters)
+
+    rosters.agent_ids = ("agent-old", "agent-new")
+    rosters.role = "main"
+
+    answer = enrollment.status(enrollment_id, settings=config, directory=rosters)
+
+    assert answer["status"] == "arrived"
+    assert answer["agent_id"] == "agent-new"
+
+
+def test_a_joined_but_unsettled_session_makes_the_expiry_notice_actionable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """人来了但没就位时，票过期不该说"重新添加" —— 票早就被兑换了。"""
+
+    rosters = Rosters(("agent-old",))
+    _prepared_answer, config, enrollment_id = _prepared(monkeypatch, tmp_path, role="main", rosters=rosters)
+    rosters.agent_ids = ("agent-old", "agent-new")
+    rosters.session_status = "degraded"
+    rosters.role = "worker"
+    assert enrollment.status(enrollment_id, settings=config, directory=rosters)["status"] == "waiting"
+
+    record = enrollment.pending(enrollment_id)
+    assert record is not None
+    record.expires_at = 0.0
+    expired = enrollment.status(enrollment_id, settings=config, directory=rosters)
+
+    assert expired["status"] == "expired"
+    assert "读一次项目上下文" in expired["note"], "票已经被兑换了，就别叫用户重新添加"
 
 
 def test_a_project_that_cannot_be_read_keeps_waiting_instead_of_failing(

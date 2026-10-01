@@ -18,7 +18,7 @@
 
 用户指定业务仓库后，安装向导完成 project init/bootstrap，写入 AGENTS、项目 Skill、agent-context 和选定宿主配置。用户分别打开原 Codex 对话并指示加入；各 Agent 执行 agent prepare，得到已填好路径的 connect 命令。已有授权就自行执行，必要时给用户这一个命令。真实会话决定独立身份，profile 仅作显示；connect 自动启动或验证 daemon、兑换票据并登记原会话绑定。原对话自己调用 context__project_read 后才 ready，不把 enrolled 或配置文件存在当作就绪。详见[快速接入](agent-quick-start.md)。
 
-当前 CLI 没有 `agent list/show`；通过 bridge 的 `context__project_read`、`/api/v1/projects/{project_id}/agents` 或主 Agent typed tools 查看两个不同 `agent_id` 和各自 HostSession。能力检查通过才 ready；同目录工作不共享身份。用户只需设定目标、选择 main 和必要边界，主 Agent 随后负责普通任务拆分。它创建/发布子任务，子 Agent 各自读取黑板、claim 并准备执行；加入项目本身不自动获得任务 owner 或执行 Grant。
+当前 CLI 没有 `agent list/show`；通过 bridge 的 `context__project_read`、`/api/v1/projects/{project_id}/agents` 或主 Agent typed tools 查看两个不同 `agent_id` 和各自 HostSession。能力检查通过才 ready；同目录工作不共享身份。用户选择 main 和必要边界，并**和主 Agent 谈定项目目标**；主 Agent 把谈定的那句作为 `user_decision.propose`（`kind=project.objective`）提给用户确认，确认后它才是项目目标（项目记录里在建项目时写的是占位文本，见[决策记录](../decisions/2026-10-01-objective-from-dialogue.md)）。之后主 Agent 负责普通任务拆分：它创建/发布子任务，子 Agent 各自读取黑板、claim 并准备执行；加入项目本身不自动获得任务 owner 或执行 Grant。
 
 如果ready之前进入degraded，先修复adapter诊断，不能当作可工作成员。完整步骤和不同宿主/会话恢复规则见[子Agent指南](subagent-guide.md)与[CLI/HTTP手册](cli-http-manual.md)。
 
