@@ -155,6 +155,8 @@ Tsunagou/
 
 项目之外还有一份**可选**的机器级索引 `~/.tsunagou/projects.json`：`project init` 与 `daemon start` 成功后会登记一条 `{project_id, name, objective, path, state_dir, sources, created_at, updated_at}`，让项目之外的东西（控制台、人）不必爬盘就知道本机有哪些项目。它只是便利缓存，不是事实来源——每个项目自己的 `.tsunagou/project.json` 才是权威；条目按 `project_id` 合并，所以重复运行不会产生重复行，读者应核对路径后再信任一行。测试与演示可用 `TSUNAGOU_PROJECT_INDEX` 改写位置。
 
+> **测试必须改写它。** 测试会驱动真实 CLI（`project init`、`daemon start`），不改写就会把临时项目永久写进开发机的家目录——曾经因此累积过 260 条同名条目，控制台全部列了出来。`tests/conftest.py` 的会话级 autouse fixture 把索引指向临时文件；少数**故意剥掉 `TSUNAGOU_*`** 以验证"没有项目环境也能找到 daemon"的测试，必须在自己的子进程环境里把 `TSUNAGOU_PROJECT_INDEX` 显式带回去。
+
 以 tasks 为例，其余模块按实际需要采用相同边界：
 
 ```text

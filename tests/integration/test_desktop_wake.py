@@ -32,7 +32,11 @@ WAKE_WORTHY = "task.assigned"
 @pytest.fixture
 def runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
-    ProjectRegistry.initialize(tmp_path, name="desktop", objective="message delivery")
+    registry = ProjectRegistry.initialize(tmp_path, name="desktop", objective="message delivery")
+    # Automatic wake is opt-in at the project level, exactly like the switch
+    # ``project.configure`` writes. These tests are about delivery mechanics, so they say
+    # yes explicitly instead of relying on an implicit default.
+    registry.configure(policy_patch={"auto_wake_multi_agent": True}, reason="wake delivery tests")
     monkeypatch.setenv("TSUNAGOU_PROJECT_ROOT", str(tmp_path))
     monkeypatch.setenv("TSUNAGOU_STATE_DIR", str(tmp_path / ".tsunagou" / "local"))
     monkeypatch.setenv("TSUNAGOU_CONTROL_TOKEN", "test-control")
@@ -372,3 +376,63 @@ def test_ack_suppression_preserves_previous_host_failure(runtime) -> None:
     assert any(event["kind"] == "wake_failed" and event["wake_attempt_id"] == first["wake_attempt_id"] for event in events)
     assert not any(event["kind"] == "turn_completed" for event in events)
     assert not host.turns
+
+
+def test_the_project_switch_really_controls_automatic_wake(runtime) -> None:
+    """The switch advertised to Main has to do something, and must not lose work.
+
+    Off means nothing is dispatched; the staged row waits. Turning it back on delivers
+    what accumulated, because the row is the intent to wake rather than a one-shot nudge.
+    """
+    app, call, sender, receiver, host = runtime
+    registry = app.state.project_registry
+    registry.configure(policy_patch={"auto_wake_multi_agent": False}, reason="deliver without ringing")
+    call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY,
+                          "subject_ref": "task/task-1", "summary": "work is waiting", "payload": {}}, sender)
+    drain(app)
+    assert not host.turns and not host.calls
+    with contextlib.closing(app.state.project_database._connect()) as conn:
+        assert conn.execute("SELECT status FROM outbox WHERE kind='host_wake'").fetchone()[0] == "pending"
+    registry.configure(policy_patch={"auto_wake_multi_agent": True}, reason="ring again")
+    drain(app)
+    assert len(host.turns) == 1
+
+
+def test_an_unwakeable_host_ends_the_delivery_instead_of_retrying(runtime) -> None:
+    """Desktop holding the writer is a fact, not a transient outage.
+
+    The attempt ends with the reason on record, the binding is marked degraded so the
+    judgement is visible, and the outbox row is finished rather than retried behind a call
+    that cannot succeed.
+    """
+    app, call, sender, receiver, host = runtime
+    host.read_error = "desktop_thread_unavailable"
+    message = call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY,
+                                    "subject_ref": "project", "summary": "blocked until you act", "payload": {}}, sender)
+    drain(app)
+    attempt = app.state.wake_dispatcher.status(message_id=message["message_id"], recipient_agent_id=receiver["agent_id"])
+    assert attempt["state"] == "failed" and attempt["error_code"] == "desktop_thread_unavailable"
+    assert app.state.hostwake_provider.native.store.get(receiver["agent_id"])[0].status == "degraded"
+    with contextlib.closing(app.state.project_database._connect()) as conn:
+        row = conn.execute("SELECT status,attempt_count FROM outbox WHERE kind='host_wake'").fetchone()
+    assert tuple(row) == ("done", 1)
+    assert any(item["kind"] == "wake_failed" for item in app.state.wake_dispatcher.diagnostics())
+
+
+def test_a2a_reports_staging_without_running_a_host_turn_inline(runtime) -> None:
+    """One message must not be reachable through two wake paths with two retry rules."""
+    app, call, sender, receiver, host = runtime
+    response = app.state.a2a_gateway.dispatch({
+        "jsonrpc": "2.0", "id": 1, "method": "message/send",
+        "params": {"message": {
+            "messageId": "external-1", "role": "user", "parts": [{"text": "private body sentinel"}],
+            "metadata": {"tsunagou": {"kind": WAKE_WORTHY}},
+        }},
+    }, authorization=f"Bearer {sender['secret_token']}", session_id=sender["session_id"],
+       connection_epoch=sender["connection_epoch"], recipient_agent_id=receiver["agent_id"])
+    host_wake = response["result"]["message"]["metadata"]["tsunagou"]["host_wake"]
+    assert host_wake["status"] == "staged"
+    # Nothing has touched the host yet: the durable outbox row is the only wake path.
+    assert not host.turns and not host.calls
+    drain(app)
+    assert len(host.turns) == 1

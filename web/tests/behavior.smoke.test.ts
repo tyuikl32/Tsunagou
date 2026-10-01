@@ -6,6 +6,8 @@
  *      选择器（两级 `>`）再也匹配不上 —— 行点不开；
  *   2) 「任务验收情况」的结果格把标签和几行说明当**兄弟节点**摆进那个宽 200px 的
  *      flex 行容器，于是一格被挤成竖排、文字全糊：多行内容必须套 `.colu-t`。
+ *   3) 左栏项目卡片少了一个闭合 `</div>`，浏览器把后面的卡片全嵌进第一张里；
+ *      选中态用的是后代选择器，于是"点一张，下面一片跟着高亮"（同名只是个巧合）。
  *
  * 这两类只有把真页面、真 DOM 拉起来才拦得住，所以这里用 jsdom 载入仓库里**真正的**
  * index.html + console.config.js + behavior.js，然后断言结构，而不是断言字符串。
@@ -79,6 +81,35 @@ describe("控制台页面（web/）结构冒烟", () => {
     const provided = (dom.window as unknown as { TSUNAGOU_CONSOLE_CONFIG: Record<string, unknown> })
       .TSUNAGOU_CONSOLE_CONFIG;
     expect(Object.keys(provided).sort()).toEqual(["baseUrl", "poll_ms"]);
+  });
+
+  it("同名的多个协作里，左栏卡片互为兄弟、选中只会点亮一张", () => {
+    /* 卡片若少一个闭合标签，浏览器会把它们互相嵌套：` .projItemSelected .inner .title `
+       是后代选择器，于是选中上面那张会把**它里面所有卡片**的标题一起点亮。名字相同
+       只是让人更容易注意到，真正的错因是结构。这里断言结构，不断言字符串。*/
+    const card = (id: string) => ({
+      id,
+      name: "main",
+      status: "working",
+      statusText: "进行中",
+      time: "daemon 运行中",
+    });
+    const result = api.dispatch("project.list", [card("p-1"), card("p-2"), card("p-3")]);
+    expect(result.ok).toBe(true);
+
+    const rail = page.querySelector("#projList");
+    expect(rail).not.toBeNull();
+    expect(rail!.querySelectorAll(".projItem")).toHaveLength(3);
+    // 卡片不能落在另一张卡片里面。
+    expect(rail!.querySelectorAll(".projItem .projItem")).toHaveLength(0);
+
+    const first = rail!.querySelector(".projItem");
+    expect(first).not.toBeNull();
+    first!.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    expect(rail!.querySelectorAll(".projItemSelected")).toHaveLength(1);
+    // 点亮的是"那一张"的标题：嵌套时这里会数出 3。
+    expect(rail!.querySelectorAll(".projItemSelected .title")).toHaveLength(1);
   });
 
   it("总路径的行仍然是 .taskFlow > .inner > .item（两级选择器点得开的前提）", () => {

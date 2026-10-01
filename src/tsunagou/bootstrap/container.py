@@ -217,8 +217,20 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
     application.state.checkpoint_worker = checkpoint_worker
     application.state.maintenance = maintenance
     application.state.hostwake_provider = hostwake_provider
+    application.state.project_registry = project_registry
     if database is not None and wake_dispatcher is not None:
-        host_delivery = HostDeliveryWorker(database, wake_dispatcher, telemetry, messages=messages)
+        def project_wants_automatic_wake() -> bool:
+            """Whether this project opted in to automatic worker wake.
+
+            Read on every delivery pass so ``project.configure`` takes effect without a
+            restart. Absent means off: the console snapshot shows the same value, and a
+            switch that reads "off" has to mean off.
+            """
+            project = getattr(project_registry, "project", None) if project_registry is not None else None
+            return bool(project is not None and project.settings.get("auto_wake_multi_agent", False))
+
+        host_delivery = HostDeliveryWorker(database, wake_dispatcher, telemetry, messages=messages,
+                                           wake_policy=project_wants_automatic_wake)
         application.state.host_delivery = host_delivery
 
         @application.on_event("startup")

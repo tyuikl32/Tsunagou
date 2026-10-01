@@ -27,6 +27,7 @@
 | D181 main呈现与CLI查询，无系统通知 | runtime-prompts、command-catalog | T07、T16 |
 | D182 ZCode首发验收后置 | release-gates、roadmap、host-matrix、首发验收执行单 | T20、T23、T24 |
 | D184 唤醒窄化触发、有界重试与诚实声明 | codex-host-wake、cli-http-manual、messaging/host_delivery | — |
+| D185 唤醒听项目开关、醒不了就收尾、一次只走一条路 | codex-host-wake、messaging/host_delivery、hostwake | — |
 
 重要的早期边界也已贯穿规范：本机首发与Python后端；三个首发宿主正式共同基线，ZCode后置；所有Git写操作归main；初始化即项目内持久化；主子身份/Attempt所有权分离；用户不答不超时；父子任务不隐式门禁/级联；机械代码不作复杂业务语义裁决；减少强制用户决策；Web和远程认证延后。
 

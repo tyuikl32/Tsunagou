@@ -23,6 +23,67 @@ from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 from tsunagou.shared_kernel.time import format_timestamp, now_ms, parse_timestamp
 
+# "No host turn was ever observed" must not be a permanent answer. After a daemon
+# restart the original turn cannot be inspected any more, so the record is closed as
+# failed with evidence instead of staying unknown forever.
+_UNKNOWN_GRACE_MS = 600_000
+_UNKNOWN_SWEEP_INTERVAL_MS = 30_000
+# Both journals are rewritten as a whole on every change. They are capped so a
+# long-lived project cannot grow them without bound; in-flight records are never
+# dropped, and a coalescing alias keeps pointing at a retained attempt.
+_MAX_ATTEMPTS_KEPT = 500
+_MAX_DIAGNOSTICS_KEPT = 2_000
+_LIVE_STATES = frozenset({"starting", "queued", "running", "unknown"})
+# Failure codes that mean "this host cannot be woken as configured", not "the network
+# hiccupped". They end the attempt and mark the binding degraded so later deliveries
+# are not queued behind an impossible call.
+DEGRADING_WAKE_CODES = frozenset({
+    "desktop_thread_unavailable",        # e.g. Codex still holds the writer of that thread
+    "desktop_thread_required",
+    "desktop_thread_identity_mismatch",
+    "desktop_attach_transport_unsupported",
+    "desktop_attach_endpoint_invalid",
+    "host_wake_capability_unsupported",
+})
+
+
+def _binding_block_code(binding_item: Any | None) -> str:
+    """Why a wake cannot be dispatched for this Agent.
+
+    Only ``ready`` may be woken. A degraded binding has already been judged unusable for
+    this path, so retrying it would loop; a detached or stale one may come back after a
+    reconnect and keeps its retry.
+    """
+    if binding_item is None:
+        return "host_binding_not_found"
+    return "host_binding_degraded" if binding_item[0].status == "degraded" else "host_binding_not_ready"
+
+
+def _capability_block(binding: Any) -> str | None:
+    """Whether the binding already says this host cannot be woken at all.
+
+    A host that published a method catalogue without the methods a wake needs has given
+    a deterministic answer. Queueing it anyway only produces attempts that cannot
+    succeed, so the caller may end the attempt instead.
+    """
+    for name in ("wake", "thread/resume", "turn/start"):
+        if binding.capabilities.get(name) == "unsupported":
+            return "host_wake_capability_unsupported"
+    return None
+
+
+def _unknown_since_ms(item: dict[str, Any]) -> int | None:
+    for key in ("unknown_since", "updated_at"):
+        value = item.get(key)
+        if isinstance(value, str):
+            try:
+                parsed = parse_timestamp(value)
+            except (ValueError, OverflowError):
+                continue
+            if parsed is not None:
+                return int(parsed)
+    return None
+
 
 class WakeDispatcher:
     def __init__(
@@ -40,6 +101,7 @@ class WakeDispatcher:
         # Bound by HostDeliveryWorker to committed, recipient-scoped deliveries.
         self.deliveries_acked: Callable[[str, tuple[str, ...]], bool] | None = None
         self._stop = threading.Event()
+        self._last_unknown_sweep = 0.0
         self._load()
         self._load_diagnostics()
         self._mark_inflight_after_restart()
@@ -95,10 +157,21 @@ class WakeDispatcher:
                 if already_acked:
                     return self._complete_consumed(key, base)
                 if binding_item is None or binding_item[0].status != "ready":
-                    base.update(state="failed", error_code="host_binding_not_found" if binding_item is None else "host_binding_not_ready")
+                    base.update(state="failed", error_code=_binding_block_code(binding_item),
+                                error_message="the host binding is not usable for a wake request")
                     self._update(key, base)
                     return dict(base)
                 binding = binding_item[0]
+                impossible = _capability_block(binding)
+                if impossible is not None:
+                    # The host already said this wake path is unsupported. That is a
+                    # deterministic answer, so the attempt ends and the binding is marked
+                    # degraded instead of being retried like a transient outage.
+                    self._degrade_binding(recipient_agent_id, impossible)
+                    base.update(state="failed", error_code=impossible,
+                                error_message="the host reported that this wake path is unsupported")
+                    self._update(key, base)
+                    return dict(base)
                 # Messages already waiting for the same idle opportunity share
                 # one pull notification. New messages during a running turn
                 # wait for its end, as that turn may already have read its inbox.
@@ -130,6 +203,8 @@ class WakeDispatcher:
                 result = {**current, **self._serialize(attempt)}
                 result["evidence"] = self._merge_evidence(current.get("evidence"), result.get("evidence"))
                 self._update(key, result)
+                if result.get("state") == "failed" and result.get("error_code") in DEGRADING_WAKE_CODES:
+                    self._degrade_binding(recipient_agent_id, str(result["error_code"]))
                 self._ensure_watcher(key, result)
                 return dict(result)
 
@@ -202,6 +277,69 @@ class WakeDispatcher:
                 return False
             self._complete_consumed(key, current)
         return True
+
+    def _degrade_binding(self, agent_id: str, error_code: str) -> None:
+        """Mark a binding unusable for this wake path, with the reason on record.
+
+        Degrading is a statement about automatic wake, not about the Agent: the durable
+        message stays in the inbox and pull still works. A later successful probe puts the
+        binding back to ready.
+        """
+        store = getattr(self.provider, "store", None)
+        if store is None:
+            return
+        try:
+            store.update_status(agent_id, "degraded", reason=error_code)
+        except (KeyError, OSError, RuntimeError):
+            pass
+
+    def note_callback(self, *, message_id: str, recipient_agent_id: str, project_id: str | None,
+                      callback_status: str | None, command_id: str | None = None,
+                      task_id: str | None = None, actor_id: str | None = None) -> dict[str, Any]:
+        """Record that an A2A push callback landed, without starting a host turn.
+
+        The A2A request path used to dispatch a wake inline. That made one message
+        reachable through two wake paths with two different retry rules, and put host
+        latency into the caller's own response. The callback fact is recorded here; the
+        durable outbox row stays the single place that dispatches a wake.
+        """
+        with self._lock:
+            self._append_diagnostic(
+                "callback_received", project_id=project_id, agent_id=recipient_agent_id,
+                message_id=message_id, wake_attempt_id=None, actor_id=actor_id,
+                command_id=command_id, task_id=task_id,
+                occurred_at=format_timestamp(now_ms()),
+                details={"callback_status": callback_status} if callback_status else None,
+            )
+        return {"status": "recorded", "callback": callback_status}
+
+    def sweep_unknown(self, *, grace_ms: int = _UNKNOWN_GRACE_MS) -> int:
+        """Close attempts whose outcome can no longer be observed.
+
+        An attempt left in ``unknown`` has no other way to end: nothing will poll it, and
+        the original host turn cannot be inspected after a restart. Past the grace period
+        it becomes failed with evidence, so "we do not know" stops being permanent.
+        """
+        moment = now_ms()
+        with self._lock:
+            if moment - self._last_unknown_sweep < _UNKNOWN_SWEEP_INTERVAL_MS:
+                return 0
+            self._last_unknown_sweep = moment
+            expired = [key for key, item in self.attempts.items()
+                       if item.get("state") == "unknown" and not item.get("coalesced_into")
+                       and (_unknown_since_ms(item) or moment) + grace_ms <= moment]
+        for key in expired:
+            with self._lock:
+                current = self.attempts.get(key)
+                if current is None or current.get("state") != "unknown":
+                    continue
+                # The attempt keeps its evidence; only the unanswered question is closed.
+                self._update(key, {
+                    **current, "state": "failed", "error_code": "host_wake_unknown_expired",
+                    "error_message": "the host turn was never observed; the attempt is closed",
+                    "completion_reason": "unknown_expired",
+                })
+        return len(expired)
 
     def _ensure_watcher(self, key: str, prior: dict[str, Any]) -> None:
         if prior.get("coalesced_into") or self._stop.is_set():
@@ -364,6 +502,8 @@ class WakeDispatcher:
                 item["state"] = "unknown"
                 item["error_code"] = "host_wake_process_restarted"
                 item["error_message"] = "daemon restarted; original host turn must be inspected"
+                # Start the clock that ends the question (see ``sweep_unknown``).
+                item["unknown_since"] = format_timestamp(now_ms())
                 self._update(key, item)
                 changed = True
         if changed:
@@ -378,6 +518,7 @@ class WakeDispatcher:
             item["state"] = "unknown"
             item["error_code"] = error_code
             item["error_message"] = "host wake state is no longer observable"
+            item["unknown_since"] = format_timestamp(now_ms())
             self._update(key, item)
 
     def _record_evidence(self, item: dict[str, Any], *, only_kinds: set[str] | None = None) -> None:
@@ -482,7 +623,30 @@ class WakeDispatcher:
                                and re.fullmatch(r"[a-zA-Z0-9_:./-]{1,160}", value))},
         }
         self.diagnostic_events.append(event)
+        if len(self.diagnostic_events) > _MAX_DIAGNOSTICS_KEPT:
+            # Oldest first: the journal answers "what happened recently", and the durable
+            # facts it points at live in the domain history, not here.
+            del self.diagnostic_events[: len(self.diagnostic_events) - _MAX_DIAGNOSTICS_KEPT]
         self._save_diagnostics()
+
+    def _retained_attempts(self) -> dict[str, dict[str, Any]]:
+        """Keep in-flight records and the most recent closed ones.
+
+        Nothing that is still being tracked is dropped, and a coalescing alias survives
+        with the attempt it points at, so a cap can never resurrect a second wake.
+        """
+        if len(self.attempts) <= _MAX_ATTEMPTS_KEPT:
+            return self.attempts
+        live = {key: item for key, item in self.attempts.items()
+                if item.get("state") in _LIVE_STATES or item.get("coalesced_into")}
+        closed = sorted(
+            (pair for pair in self.attempts.items() if pair[0] not in live),
+            key=lambda pair: str(pair[1].get("updated_at") or ""),
+        )
+        budget = _MAX_ATTEMPTS_KEPT - len(live)
+        retained = dict(closed[len(closed) - budget:]) if budget > 0 else {}
+        retained.update(live)
+        return retained
 
     def _save(self) -> None:
         if self.attempts_path is None:
@@ -491,7 +655,7 @@ class WakeDispatcher:
         fd, temp_name = tempfile.mkstemp(prefix=f".{self.attempts_path.name}.", dir=self.attempts_path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                json.dump(self.attempts, handle, ensure_ascii=False, sort_keys=True, indent=2)
+                json.dump(self._retained_attempts(), handle, ensure_ascii=False, sort_keys=True, indent=2)
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
