@@ -13,6 +13,10 @@ from pathlib import Path
 def test_two_projects_share_process_but_not_agents_or_authority(tmp_path: Path) -> None:
     roots = [tmp_path / "first", tmp_path / "second"]
     env = {k: v for k, v in os.environ.items() if not k.startswith(("TSUNAGOU_", "CODEX_"))}
+    # Keep the machine-index override: this test is not about where the machine records
+    # its projects, and dropping it would write a throwaway line into the user's home.
+    if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
+        env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
     for root in roots:
         subprocess.run(["git", "init", "--quiet", str(root)], check=True)
 
