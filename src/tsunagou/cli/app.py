@@ -1573,6 +1573,8 @@ if typer is not None:
             settings.host = host
         if port is not None:
             settings.port = port
+            # 人明确写下的端口被占用时不回退（隧道/防火墙是对着它配的）。
+            settings.port_explicit = True
         ctx.ensure_object(dict)
         return settings
 
@@ -1593,6 +1595,11 @@ if typer is not None:
                 print(json.dumps({"status": "serving", **record}, sort_keys=True))
             else:
                 print(f"Tsunagou console: {record['url']}  (Ctrl+C to stop)")
+                if record.get("port_fallback"):
+                    print(
+                        f"默认端口 {record.get('port_requested')} 被占用，改用 {record.get('port')}"
+                        "；要收藏的是上面这个地址。"
+                    )
 
         try:
             serve(settings, on_ready=announce)
