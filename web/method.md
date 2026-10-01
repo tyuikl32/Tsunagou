@@ -167,6 +167,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 ### 3.7 `Tsunagou.app` —— 页面级命令（index.html 的 onclick 全指向这里）
 `createProject()` `openProject(id?)` `openHome()` `openAgents()` `openAgentInfo(id)` `editAgent(id)` `saveAgentInfo()`
 `deleteProject(id)`
+`setAgentNetwork(id, online)` `clearAgentNetwork(id)`（跨机器协作那条，见下面的注与 §5.1）
 `openSettings(key?)`
 `settingTab(key)` `openWindow(id)` `closeWindow(id)` `addSubAgent({name,vendor,source}?)`
 `cancelWaiting()`
@@ -195,6 +196,14 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 > 把**昵称**存进中间层的用户档案（`PUT /console/profile` 的 `{agents:{<id>:{nickname}}}`），
 > **厂商从不上送**（它来自哪个宿主是接入时定下的，不让改）；值没变就只关窗、不发请求。
 > 没有 `agent_id` 的记录（宿主自己 dispatch 的 `agent.info` 可能没带）会如实说改不了。
+
+> `setAgentNetwork(id, online)` / `clearAgentNetwork(id)` 是**跨机器协作**里「这个 Agent 是从网络
+> 接进来的」那个标记（2026-10-02）。中间层（控制台）知道一个**子 Agent** 的桥不在本机时调它：
+> `online` 给 `true`/`false`（网络在线 / 网络离线），也可以给 `{network, online}` 两个都说；
+> `clearAgentNetwork(id)` 等于撤回（回到“本机接入”）。**本机接入的不用调** —— 默认就不画徽标
+> （「网络在线 / 网络离线」和右边那个 `<i class="fa-solid fa-circle-nodes">` **一个都不出现**）。
+> 只动状态与徽标，**不发请求**；主 Agent 必须在 daemon 所在机器上，推了也不画。
+> 接口里带 `network`/`online` 字段（随刷新到）也行，两条通道等价 —— 推来的优先于数据里的。
 
 > `wizardPrev()` 现在**只提示未实现**（2026-09-28）：向导的「上一步」想做的事 = 撤回上一步的效果，
 > 而项目建好不能删、接上的 Agent 也不能撤回。低层导航仍可用 `ui.wizard.prev()`（给宿主脚本），
@@ -288,7 +297,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | 情况 | 行为 |
 |---|---|
 | input 所在窗口/区块**有**主按钮（如 `#addSubAgent`、向导每一步） | 点按钮才提交。向导的「下一步」在第 1/2 步会**真的做事**（建项目 / 接入主 Agent，失败就停在原地），第 3 步只是翻页；「完成」只收窗复位、不再发请求。**校验不过时窗口/步骤保持不动**，只弹提示 |
-| `#mgrAgentInfo` 的输入 | **昵称可改**，其余只读（2026-09-28）：`index.html` 里只给「项目名称 / 任务名称」写了 `readonly`，昵称那栏没有；值由 `render.agentInfoWindow` 按标签文字回填（`mgrAgentInfo.昵称` 等）。窗口里**没有「厂商」那一栏** —— 标题与胶囊上的 logo 已经说明它来自哪个宿主，而那个值是按 id 从用户档案现算的。窗口里的「确定」= `app.saveAgentInfo()`（存昵称再关窗），**不再是关窗按钮**；因为 `#mgrAgentInfo` 在 `AUTOCOMMIT_EXCLUDE` 里，昵称框失焦**不会**自动提交 |
+| `#mgrAgentInfo` 的输入 | **昵称可改**，项目/任务只读（2026-10-02 换版式）：窗口里已经没有 `.items/.item`，是「标签 + 值」一路排下来 —— `>.title2` 当标签、`.textbox2 > input` 是昵称、`>.dspText` 依次是项目名称与任务名称。所以回填**按位置**（`render.agentInfoWindow`：`form.fill(node, [昵称])` + 两个 `.dspText`），不再按标签文字，`keyOfInput` 在这里也用不上（没有 `.item .fword`）。窗口里**没有「厂商」那一栏** —— 标题与胶囊上的 logo 已经说明它来自哪个宿主，而那个值是按 id 从用户档案现算的。标题文字由 `setWindowTitleText` 替换，**保留**标题里那个 `<i>` 图标（直接写 `textContent` 会把图标擦掉）。窗口里的「确定」= `app.saveAgentInfo()`（存昵称再关窗），**不再是关窗按钮**；因为 `#mgrAgentInfo` 在 `AUTOCOMMIT_EXCLUDE` 里，昵称框失焦**不会**自动提交 |
 | input **没有**提交按钮（`.textbox` / `.textbox2` 里、不在 `#addProj` / `#addSubAgent` / `#mgrAgentInfo` 中，且所在区块没有按钮 —— 目前 `index.html` 里没有这样的静态输入框，这是留给动态渲染/宿主注入内容的机制） | **失焦即提交**，并提示"改动已成功保存"；按 Enter 等效于失焦；值没变化不重复提交、不重复提示 |
 | 设置里的"颜色主题"下拉框 | 选中即生效（立即换肤）。**选回同一个值不会重复提示**；程序化回填必须走 `{silent:true}` |
 
@@ -334,7 +343,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 ```
 返回值：同步类型为 `{ok, type, value}`；异步类型（如 `dialog.confirm`）返回 Promise<同结构>。
 未知 type 返回 `{ok:false, error:'未知的 dispatch 类型：xxx'}`，并派发 `dispatch:error`。
-`Tsunagou.types()` 可以列出全部 39 个类型。
+`Tsunagou.types()` 可以列出全部 47 个类型（2026-10-02 在真页面上数过：`Tsunagou.types().length` —— 这句以前写 39，已经跟不上了）。
 
 ### 5.1 数据类
 | type | payload | 作用 |
@@ -357,6 +366,8 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `task.detail` | 单条任务的额外详情 | 存进 `state.taskDetail`，点任务行时合并到侧栏（详见 §7） |
 | `settings.data` | `{theme}` | 回填设置控件（现在只剩颜色主题） |
 | `wizard.subAgents` | 数组 | 新建协作第 3 步的子 Agent 列表 |
+| `agent.network` | `{agent_id, online}` | 跨机器：定一个 Agent 是“网络接入”（`online` 定在线/离线）并**立刻重画**徽标；`{network:false}` 等于撤回 |
+| `agent.network.clear` | `{agent_id}` 或 id | 撤回：这个 Agent 是本机接入的（回到“不画徽标”） |
 
 ### 5.2 反馈类
 `notify.success`（payload 同 `notify.success()` 的参数）、`notify.info`、`notify.error`、
@@ -445,6 +456,10 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `tsunagou web start`（推荐） | 真项目：daemon 的查询出口（中间层代发 + 补令牌） | 中间层在同名路径上生成一份 |
 | 直接双击 `index.html`（file://，不起任何服务） | 没有：只有空骨架 + 拉取失败的提示 | 仓库里那份（`baseUrl` + `poll_ms`） |
 
+`tsunagou web start` 默认监听 `127.0.0.1:2812`：端口固定是为了人能把页面**收藏**下来；被占用时会
+另取一个空闲端口，并在启动那行说明"默认端口被占用、改用 X，要收藏的是这个地址"。它**只允许监听回环地址**
+（控制台自身没有任何认证，转发用的是各项目的控制令牌），要从别的机器看页面请走隧道。
+
 以前这里有一份 `assets/js/mock-backend.js`：拦 `window.fetch`、按 §6 的接口表造样例数据。
 它已在 2026-09-29 删掉 —— 它的代价是“页面看起来能用”与“后端真的能用”分不清，
 而本仓库要交付的是后者。要看页面在真数据上的样子，用 `tsunagou web start`（真 daemon），
@@ -488,10 +503,12 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 
 ### Agent 列表窗口 `render.agentWindow`
 ```
-[{ id, agent_id, project, task }]
+[{ id, agent_id, project, task, network, online }]
 ```
 > 行是 **(项目, Agent) 这一对**，不是 Agent：同一个 Agent 在两个项目里干活就出现两行，
 > 所以 `id` 是 `项目号/Agent号`（详情窗口按它找）。
+> `network` / `online` 与 Agent 管理页同一个口径（只有网络接入的才画那个右侧标记；
+> 本机接入不画），见 `render.agents` 那条。
 >
 > 数据来自中间层的 `GET /console/agents` —— 一个 daemon 只答自己那一个项目，
 > “谁在哪干活”只有中间层能汇总（它拿已有的名单缓存拼，不额外问项目）。
@@ -605,10 +622,15 @@ POST /console/enrollments/{enrollment_id}:cancel                     ← 「取�
 ### Agent 管理 `render.agents`
 ```
 { id, role:'主 Agent'|'子 Agent', name, icon, statusText, statusOk,
-  desc, currentTask,
+  desc, currentTask, network, online,
   basic: [{text, ok}], ops: [{text, ok}],
   actions: [{text, kind:'active'|'', action}] }   // action 为空则是纯占位按钮
 ```
+> **右上角那句「网络在线 / 网络离线」（跨机器协作，2026-10-02）**：只有**网络接入**的 Agent
+> 才画 （`network:true`），`online` 定在线还是离线；**本机接入的什么都不画** —— 连右边那个
+> `<i>` 图标也不出现，所以本机接入的卡片和加这个功能之前一模一样。
+> 主 Agent 永远不算网络接入（它必须与 daemon 同机）。判断值来自接口字段，或中间层随时推的
+> `app.setAgentNetwork(id, online)` / dispatch `agent.network`（推来的优先），见 §3.7。
 > `basic` / `ops` 是 `agents` 出口里那 11 项能力的现场快照（`session_status` +
 > `missing_admission` / `missing_operational` + 词表两栏，见 §7.3）。`ok:true` 用 `.tagZOK`（勾），
 > 否则 `.tagZ`（灰杠）。**读不到会话（那三个字段是 null）时两栏都返回空数组**，
@@ -799,7 +821,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 `.boxerbox > .item/.itemL/.itemAdd`、`.tablebox > .th/.tr > .colu(.colu-l/.colu-m/.colu-cdt) > .citem1/.citem2/.citem3`、
 `.table > .item > .itemTh/.itemTd(.itemTdActive)`、`.tags`→`.tagZ(.tagZOK/.tagZS)`、
 `.listfieldbox > .item(.itemS/.itemC/.itemJ)`、`.st.st-1…13`、`.title/.title2/.title3/.bgTxt/.textArea/.textZ/.textZbox/.textN/.textTime/.bgTitle`、
-`.option > .buttonbox2(.buttonbox2active/.buttonbox2important)`、`.buttonbox`、`.uiBlock`、`.textbox/.textbox2 > input`。
+`.option > .buttonbox2(.buttonbox2active/.buttonbox2important)`、`.buttonbox`、`.uiBlock`（其内 `>.title2` 当标签、`>.dspText` 当长文本值）、`.textbox/.textbox2 > input`。
 
 ---
 
@@ -818,8 +840,9 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
   `openWindow('loadW')`→`app.demo.loading()`、`openTST()`→`app.demo.decision()`。
 - 新增一行 `<script src="./assets/js/mock-backend.js">`（模拟后端，接真后端时删掉）。
 - 去掉 `#addSubAgent` “确定”按钮的内联关窗：改由 JS 提交成功后再关，
-  这样校验不过时窗口会留在原地。（`#mgrAgentInfo` 的“确定”相反：那个窗口只展示、
-  没有可提交的东西，2026-09-28 起它的两个输入是 `readonly`，“确定”内联关窗。）
+  这样校验不过时窗口会留在原地。（`#mgrAgentInfo` 的“确定”相反：那个窗口当时只展示、
+  没有可提交的东西，那两个输入是 `readonly`，“确定”内联关窗；2026-09-28 起昵称可改、“确定”= 保存，
+  见 §4.4 与 §11。）
 
 **新增文件**
 - `assets/js/mock-backend.js` —— 模拟后端（拦 `fetch`，两个完整协作项目的写死数据）。
@@ -1003,6 +1026,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 归档 / 退席 / 路径记录 | **暂不实现**（归档按钮已于 2026-09-29 从验收页撤掉）：`project.archive` / `agent.retire` 未装配；路径记录后端没这个事实
 | 存档点回退 | **不做**（2026-09-28 你定的，撤掉）：没有 restore 命令，界面也不做"假装回退"；存档点只读不漏 |
 | Agent 删除 / agent 地位变更（完整版） | **暂不实现**（不是待做项）：`agent.retire` 未装配；「撤销主 Agent / 代次上限」那一整套没人实现 —— 「设为主 Agent」本身仍然能用 |
+| 「网络在线 / 离线」徽标在真数据下还不会出现 | 页面这一侧已经就绪（`network`/`online` 字段 + `app.setAgentNetwork` 两条通道），但**中间层还没给这两个字段**，所以真项目里所有 Agent 都按"本机接入"处理 —— 不画徽标（这本来就是对的本机行为）。要让它真出现，中间层得先知道自己管的 Agent 里哪些是网络接入的（见 `跨机器协作可行性.md`） |
 
 ### 12.4 新补的界面
 

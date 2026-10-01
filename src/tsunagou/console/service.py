@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from tsunagou.console.config import ConsoleConfig
+from tsunagou.console.config import ConsoleConfig, is_loopback_host
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 CONSOLE_MANIFEST = ".tsunagou-console.local.json"
@@ -31,14 +31,32 @@ def manifest_path(config: ConsoleConfig) -> Path:
     return base / CONSOLE_MANIFEST
 
 
-def choose_port(host: str, requested: int) -> int:
-    """Honour an explicit port; pick a free one when the config asks for ``0``."""
+def choose_port(host: str, requested: int, *, fallback: bool = True) -> tuple[int, bool]:
+    """Listen where we were asked to, and say whether we had to move.
 
+    Returns ``(port, moved)``. The default port is fixed on purpose (a person bookmarks
+    the page), so when it is already taken we take a free one instead of refusing to
+    start; that case is reported so nobody bookmarks a stale address. A port somebody
+    deliberately wrote down is never moved: a tunnel or firewall rule was written
+    against it, and a silent switch would look like a successful start that nobody can
+    reach. The probe socket is closed before the caller binds for real — a small window
+    in which somebody else could take the port, which is why the bind failure is still
+    possible and still surfaces.
+    """
+
+    if requested and not fallback:
+        return requested, False
     if requested:
-        return requested
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((host, requested))
+            except OSError:
+                pass
+            else:
+                return requested, False
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind((host, 0))
-        return int(probe.getsockname()[1])
+        return int(probe.getsockname()[1]), bool(requested)
 
 
 def serve(
@@ -46,16 +64,21 @@ def serve(
 ) -> dict[str, Any]:
     """Run the console until interrupted, announcing where it listens."""
 
+    # 先拒绝，再去导入 uvicorn：拒绝不该依赖一个只在真要监听时才需要的东西。
+    if not is_loopback_host(config.host):
+        raise RuntimeError(f"console_host_must_be_loopback:{config.host}")
+
     import uvicorn
 
     from tsunagou.console.app import create_console_app
 
-    port = choose_port(config.host, config.port)
+    port, moved = choose_port(config.host, config.port, fallback=not config.port_explicit)
     url = f"http://{config.host}:{port}"
     manifest = manifest_path(config)
     manifest.parent.mkdir(parents=True, exist_ok=True)
     record: dict[str, Any] = {
         "url": url, "host": config.host, "port": port, "pid": os.getpid(),
+        "port_requested": config.port, "port_fallback": moved,
         "config": str(config.path) if config.path is not None else None,
         "started_at": format_timestamp(now_ms()),
     }

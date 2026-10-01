@@ -23,6 +23,7 @@ CLI 是用户控制入口，持有 user_control 凭据。用户已授权安装/�
 | `installation-info [--json]` | 本机用户级安装记录白名单投影；无需 daemon | source_root/commit/source_dirty/runtime 版本、安装起止及 duration_ms；缺失时间为 null，不含接入秘密 |
 | `daemon start` | 用户配置+OS启动，绑定127.0.0.1随机端口 | endpoint/instance，不含token |
 | `daemon status` / `stop` | 本机实例身份核验；stop 等待确认进程退出 | running/0、stopped/3、unverified/4；重复 stop 为 already_stopped/0；不杀未核实的 PID |
+| `web start [--host <addr>] [--port <n>] [--config <path>]` | 托管控制台页面并把页面请求转发给各项目 daemon（补控制令牌）；**只允许回环地址**；端口默认 2812（固定是为了能收藏），被占用时另取空闲端口并在启动行说明；显式 `--port` 或配置里的 `port` 被占用则失败，不静默改 | 启动行与 `.tsunagou-console.local.json` 里的 url/host/port/pid（另带 port_requested、port_fallback）；`web status` 报告在跑的那个 |
 | `project init --coordination-root <path> [--name <name>] [--objective <text>]` | `project.initialize`；缺 name 用默认名，缺 objective 写占位文本（目标是用户与主 Agent 确认后才有的事实，见[决策](../decisions/2026-10-01-objective-from-dialogue.md)） | Project与genesis Operation |
 | `project bootstrap --coordination-root <path> [--source-root <path>] [--source-ref <ref>] [--host <kind>] [--refresh]` | 项目本地入口物化；不创建Agent/任务，不写秘密 | 受管文件状态、project_id、source reference |
 

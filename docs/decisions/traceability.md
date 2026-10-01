@@ -30,6 +30,8 @@
 | D185 唤醒听项目开关、醒不了就收尾、一次只走一条路 | codex-host-wake、messaging/host_delivery、hostwake | — |
 | D186 项目目标由对话产生、由用户确认，不由建项目时填 | runtime-walkthrough、cli-contract、command-catalog、runtime-prompts、projects/console 中间层、控制台主视图 | — |
 | D187 降级会话的重报由 bridge 在同一次工具调用里补 | a2a-boundary、bridge-server 凭据交接 | — |
+| D188 跨机器协作采用"主机 + 远端接入方"（形态 A） | 跨机器协作可行性（工作区根目录文档）；消息投递跨机器降级为拉取 | — |
+| D189 控制台只监听回环、默认端口固定为 2812 | cli-contract、web/method.md、console 配置与启动 | — |
 
 重要的早期边界也已贯穿规范：本机首发与Python后端；三个首发宿主正式共同基线，ZCode后置；所有Git写操作归main；初始化即项目内持久化；主子身份/Attempt所有权分离；用户不答不超时；父子任务不隐式门禁/级联；机械代码不作复杂业务语义裁决；减少强制用户决策；Web和远程认证延后。
 

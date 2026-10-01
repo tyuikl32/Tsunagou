@@ -34,7 +34,7 @@ Tsunagou 项目 前端 Web UI - CSS 文件
     --col-2: #1D1D1F;
     --col-3: #2C2C2E;
     --col-4: #303435;
-    --col-4-5: #404040;
+    --col-4-5: #3B3B3B;
     --col-5: #595959;
     --col-6: #999999;
     --col-7: #C9C9C9;
@@ -1093,11 +1093,25 @@ body {
                             border-radius: 12px 12px 0 0;
                             border-bottom: none;
                             transition: border-color 0.15s;
-
-
-                            img {
-                                height: 18px;
+                            justify-content: space-between;
+                            
+                            >.left {
+                                display:flex;
+                                align-items: center;
+                                gap: 10px;
+                                
+                                img {
+                                    height: 18px;
+                                }
                             }
+
+                            >.right {
+                                display: flex;
+                                gap: 10px;
+                                color: var(--col-7);
+                                align-items: center;
+                            }
+
                         }
 
                         .content {
@@ -1167,8 +1181,8 @@ body {
     /* 小型窗口（查看信息） */
 
     .window2 {
-        width: 500px;
-        min-height: 300px;
+        width: 480px;
+        min-height: 280px;
         background-color: var(--col-3);
         border-radius: 20px;
         display: flex;
@@ -1176,8 +1190,7 @@ body {
         flex-wrap: nowrap;
         /* box-shadow: 0 0 4px 1px var(--col-1); */
         justify-content: space-between;
-
-
+        
         .titleBar {
             color: var(--col-7-5);
             display: flex;
@@ -1214,11 +1227,32 @@ body {
         }
 
         .content {
-            padding: 20px;
+            padding: 24px;
             flex-grow: 1;
             padding-top: 0;
             display: flex;
             align-items: center;
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            .uiBlock {
+                gap:12px;
+            }
         }
 
         .options {
@@ -1660,10 +1694,26 @@ body {
         user-select: none;
     }
 
+    >.title2 {
+        color: var(--col-6);
+        user-select: none;
+    }
+
+    >.dspText {
+        color: var(--col-8);
+        font-size: 20px;
+        text-align: justify;
+        word-break: break-all;
+    }
+    
     .items {
         background-color: var(--col-4-5);
         /* margin-top: 20px; */
         border-radius: 8px;
+        /* display: flex; */
+        /* flex-direction: column; */
+        /* gap: 10px; */
+        /* padding: 14px 0; */
 
         .item {
             padding: 10px 15px;
@@ -1671,7 +1721,7 @@ body {
             display: flex;
             flex-direction: row;
             flex-wrap: nowrap;
-
+            
             >.left {
                 flex-grow: 1;
                 display: flex;
@@ -1686,8 +1736,8 @@ body {
                 .sword {
                     color: var(--col-6);
                     font-size: 13px;
-                    margin-top: 5px;
                 }
+
             }
 
             >.right {
@@ -1698,6 +1748,11 @@ body {
                 justify-content: flex-end;
             }
         }
+    }
+
+    .itemsZ {
+        background-color: var(--col-2);
+        padding: 10px 0;
     }
 }
 
@@ -1758,6 +1813,11 @@ body {
     }
 }
 
+.chooseboxE {
+    background-color: var(--col-4-5);
+    /* border: 1px solid var(--col-4-5); */
+}
+
 .chooseboxD {
     background-color:var(--col-3);
 }
@@ -1787,53 +1847,6 @@ body {
     /* box-shadow: 0 0 6px 1px var(--col-2); */
     border: 1.5px solid var(--col-5);
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
     >p>img {
             height:20px;
             margin-right:10px;
@@ -1855,12 +1868,28 @@ body {
     }
 }
 
+.chooseboxTOG {
+    display:flex;
+    justify-content: space-between;
+    gap: 20px;
+    
+    .TOG0 {
+        flex-grow:0;
+    }
+    
+    .TOG1 {
+        flex-grow:1;
+    }
+}
+
 .textbox {
     background-color: var(--col-5);
     border-radius: 5px;
     color: var(--col-8);
     display: flex;
     overflow: hidden;
+    
+    
 
     .left {
         outline: none;
@@ -1895,11 +1924,12 @@ body {
 }
 
 .textbox2 {
-    background-color: var(--col-5);
+    /* background-color: var(--col-5); */
     border-radius: 5px;
     color: var(--col-8);
     display: flex;
     overflow: hidden;
+    /* border: 1px solid var(--col-4-5); */
 
     .inner {
         outline: none;
@@ -2451,17 +2481,25 @@ body {
         user-select: none;
         justify-content: space-between;
         
-        
-        
-        
-        
-
         >.header {
             color: var(--col-8);
             font-size: 20px;
             font-weight: 600;
             padding-bottom: 10px;
             border-bottom: 1px solid var(--col-4);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            >.right {
+                font-size:16px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color:var(--col-6);
+                i {
+                    font-size:18px;
+                }
+            }
         }
 
         .title {
