@@ -31,7 +31,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | project.reconcile | `:reconcile` | M / project.reconcile | scope_refs,reason | Operation；只读观察、合并计划另确认 |
 | ceiling.set | `/control/ceiling:set` | U / — | ceiling,reason | UserCeiling；撤销不再满足范围的Grant |
 | project.trust_change | `/control/trust:change` | U / — | change_kind,proposal_ref,proposal_digest,expected_revisions,reason | UserDecision+Operation；协调根/信任边界/高敏root |
-| user_decision.propose | `/decisions` | M / decision.propose | kind,proposal_ref,proposal_digest?,expected_revisions?,choices,summary | UserDecision pending，无deadline；省略 proposal_digest 时由 daemon 根据提案内容计算，省略 expected_revisions 时按初始版本 1 |
+| user_decision.propose | `/decisions` | M / decision.propose | kind,proposal_ref,proposal_digest?,expected_revisions?,choices,summary | UserDecision pending，无deadline；省略 proposal_digest 时由 daemon 根据提案内容计算，省略 expected_revisions 时按初始版本 1。`kind` 是自由字符串，其中 `project.objective` 为**保留值**：`summary` 写主 Agent 与用户谈定的项目目标、`choices` 给可选项，用户确认后它才是项目目标（见[决策](../decisions/2026-10-01-objective-from-dialogue.md)） |
 | user_decision.resolve | `/control/decisions/{id}:resolve` | U / — | decision_id,choice,proposal_digest,expected_revisions,reason? | UserDecision；审批与相应领域变更同UoW或生成Operation |
 | user_decision.cancel | `/decisions/{id}:cancel` | M / decision.propose | reason | UserDecision；仅尚pending，不等于用户拒绝 |
 | project.completion.propose.main | `/completion-proposals` | M / project.configure | objective_ref,evidence_refs,outstanding_summary,expected_project_revision | CompletionProposal |

@@ -272,6 +272,38 @@ def test_object_choices_match_the_public_proposal_digest_and_bad_digest_rolls_ba
     }) == item["proposal_digest"] == row["proposal_digest"]
 
 
+def test_the_project_objective_is_an_ordinary_decision_the_console_can_read(runtime):
+    """项目目标就是一条普通用户决定：主 Agent 提、用户答，答完界面才按它显示。
+
+    目标文字放在 ``summary``（命令里唯一的自由文本位），``kind`` 用约定的保留值；
+    没有为它新增命令或字段，见 docs/decisions/2026-10-01-objective-from-dialogue.md。
+    界面只认 ``status=resolved`` 的那条（web/assets/js/behavior.js 的 confirmedObjective）。
+    """
+
+    main, _ = runtime.enroll("main")
+    runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
+    asked = "让两个 Agent 对齐 API 并交付可运行实现"
+    item = runtime.call("user_decision.propose", {
+        "kind": "project.objective", "proposal_ref": "project/objective/v1",
+        "choices": ["确认", "要改"], "summary": asked,
+    }, main)
+
+    rows = decisions(runtime)["items"]
+    pending = next(entry for entry in rows if entry["decision_id"] == item["decision_id"])
+    assert pending["kind"] == "project.objective" and pending["status"] == "pending"
+    assert pending["summary"] == asked
+
+    runtime.call("user_decision.resolve", {
+        "decision_id": item["decision_id"], "choice": "确认",
+        "expected_revisions": {"decision": item["revision"]},
+        "proposal_digest": item["proposal_digest"], "reason": "用户确认目标",
+    })
+
+    resolved = [entry for entry in decisions(runtime)["items"] if entry["decision_id"] == item["decision_id"]][0]
+    assert resolved["status"] == "resolved" and resolved["decision"] == "确认"
+    assert resolved["summary"] == asked
+
+
 def test_decision_list_uses_selected_project_credentials(runtime, tmp_path, monkeypatch):
     main, _ = runtime.enroll("main")
     runtime.call("authority.appoint", {"agent_id": main["agent_id"]})

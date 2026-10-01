@@ -14,6 +14,8 @@ sections 固定包括 objective、assigned_tasks、task_dependencies、active_bl
 
 核心维护 `protocol/prompts/v1/` 的 host-neutral 文本与 manifest digest，片段为 identity、responsibility、runtime_principles、blockers、coordination_tools。attach/resume/task 边界注入最小包：身份与代次、项目目标、当前 Task/Attempt、相关 blocker、水位、详情查询入口。历史和正文按需工具获取。
 
+> 关于"项目目标"：项目记录里的 `objective` 在用户确认之前只是占位文本（`待主 Agent 与用户确认`，见[决策](../decisions/2026-10-01-objective-from-dialogue.md)）。注入时要把这个区别表达出来，不能让 Agent 把占位句当目标复述；真正的目标来自 `user_decision.propose`（`kind=project.objective`）经用户确认的那条决定。
+
 HostSession 保存 template version/digest。adapter 只格式转换和预算裁剪；身份、权限、当前阻塞、查询入口不可裁剪。预算不足先移除可选摘要，仍不足则诊断，不能漏约束继续运行。
 
 模板必须表达：你代表哪个 Agent，Full Access 不扩大协调授权；以当前黑板事实为准；主动公开相关理解/假设/不确定性；只接受核对过的契约版本；以 task.begin 获取执行上下文，task.submit 自动采集结果并释放；上游阻塞时 task.block 保存进度并挂起相关工作，无关任务可继续；时间不转移 owner；ACK 不等于接受；Git 写由 main，重大设计/项目完成由用户确认。

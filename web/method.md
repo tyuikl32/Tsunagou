@@ -120,7 +120,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | `ui.tabs.project(slug\|序号\|中文名)` / `.current()` / `.list()` | 项目八个标签页（slug 见 §7） |
 | `ui.blockTabs.select(block, i)` / `.selectByText` / `.current` / `.conflict(i)` / `.audit(i)` | 区块内标签组 |
 | `ui.settingTabs.select(key)` / `.personal()` / `.about()` / `.current()` | 设置窗口两个页（`personal` 个性化设置 / `about` 关于）。传别的键（含已删除的 `data`）返回 `''`，不报错 |
-| `ui.wizard.open()` / `.go(n)` / `.next()` / `.prev()` / `.reset()` / `.current()` / `.collect()` / `.finish()` | 新建协作四步向导。`.next()` 在第 1/2 步会真的建项目 / 接入主 Agent（返回 Promise，成功才翻页），第 3 步只是翻页；`.finish()` 只收窗复位。`.collect()` 返回 `{name, objective, mainAgent:{name,vendor,icon}, subAgents:[]}` |
+| `ui.wizard.open()` / `.go(n)` / `.next()` / `.prev()` / `.reset()` / `.current()` / `.collect()` / `.finish()` | 新建协作四步向导。`.next()` 在第 1/2 步会真的建项目 / 接入主 Agent（返回 Promise，成功才翻页），第 3 步只是翻页；`.finish()` 只收窗复位。`.collect()` 返回 `{name, mainAgent:{name,vendor,icon}, subAgents:[]}` —— **没有 `objective`**：目标是用户与主 Agent 确认过之后才存在的事实，不作为建项目时的输入（见 §12 的 2026-10-01 两条） |
 | `ui.aside.show(slug, section?)` / `.load(slug, section, title?)` / `.fill(...)` / `.hide(slug)` / `.hideAll()` / `.clearAll()` / `.isOpen(slug)` | 右侧侧栏（**默认全隐藏**，见 4.3；启动时会 `clearAll()` 清掉 index.html 里的占位内容） |
 | `ui.choosebox.open/close/toggle/closeAll/setValue/value/isOpen` | 下拉选择框。`setValue(box, 值, {silent:true})` 只改显示值、不派发事件（**代码回填必须加 silent**）。展开的面板由 JS 定位：**与选择框等宽、对齐其右边缘、贴框正下方**，窗口缩放/滚动容器滚动时会跟随；收起时清掉行内 `width/left/top` |
 | 表单“清空”时回到哪一项 | `resetCsBox(box)`（窗口/向导每次打开都会调）：面板里带 `data-default` 的那一项，没标记才退回第一项。两个厂商面板（`#newXz2Vendor` / `#addSubAgentVendor`）的默认都标在 **Codex** 上（它是目前唯一有注册命令的宿主），所以向导第 2 步与添加子 Agent 窗口打开时选的都是 Codex |
@@ -210,9 +210,10 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 失败由 `api` 统一提示并抛出，不会出现"界面变了但后端没变"的情况。
 
 几个例外/补充：
-- `createProject({name, objective, path?})` —— 中间层掌管的写入口（`POST /projects`：建目录、`git init`、
-  登记进索引，并顺手把 daemon 起起来）。**返回后端那份项目**（`{project_id, name, …}`），失败返回 `false` ——
+- `createProject({name, path?})` —— 中间层掌管的写入口（`POST /projects`：建目录、`git init`、
+  登记进索引，并顺手把 daemon 起起来）。**返回后端那份项目**（`{project_id, name, objective, …}`），失败返回 `false` ——
   向导要靠这个 id 把"当前协作"切过去，才能接着接入 Agent。
+  `objective` 仍然是可选项（脚本调用可以直接给），只是向导不再问它；不给时中间层写占位文本。
 - `addSubAgent({name,vendor,source})` —— **不发任何"创建 Agent"的请求**（后端没有这个概念）：
   它走的是§7.1 那条"准备接入 → 等宿主连上"的完整路，两个入口只是收尾不同：
   `source:'wizard'` 把结果记进向导第 3 步，`source:'agents'` 成功后重拉名单/卡片/昵称。
@@ -415,7 +416,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `acceptanceConfirm` | `project.completion.confirm` | `{proposal_id, proposal_digest, expected_project_revision, expected_revisions}` |
 | `decisionResolve` | `user_decision.resolve` | `{decision_id, choice, expected_revisions, proposal_digest, reason}`（`choice` 取待决定项的 `payload.choices` 原文） |
 | `settingSave` | `PUT /console/profile` | `{theme}` 或 `{agents:{<agent_id>:{nickname,vendor}}}`（主题与 Agent 昵称不属于协作事实，存中间层） |
-| `projectCreate` | `POST /projects` | `{name, objective}` 在中间层配的 `projects_root` 下新建；传 `{path}` 则登记一个已存在的项目 |
+| `projectCreate` | `POST /projects` | `{name}` 在中间层配的 `projects_root` 下新建（不传 objective 时中间层写占位文本；目标不由建项目的人填，见 `docs/decisions/2026-10-01-objective-from-dialogue.md`）；传 `{path}` 则登记一个已存在的项目。**新建**时中间层会顺手写项目的 Agent 入口（`AGENTS.md` / `.tsunagou/agent-context.md` / 项目 skill），结果放在回答的 `project.bootstrap` 里；**登记**已有项目不动它的文件，所以没有这个键 |
 | `projectForget` | `POST /console/projects/{project}:forget` | `{delete_files}`（默认 false）。**一次删掉整个项目**：停 daemon + 注销该项目的 bridge + 忘票 + 删索引条目 + （可选）删目录；路径里带的是**卡片那个** id，所以页面直接拼字面路径，不走 `WRITE_COMMANDS` 的 `{project}` 模板 |
 | `acceptanceArchive` | —— | **已从界面撤掉**（决定 11）：`project.archive` 未装配，留着按钮只能弹「尚未实现」；`WRITE_COMMANDS` 里那条 `null` 还在，用于“后端没这个能力”的报错文案 |
 | `agentRemove` | —— | **暂不实现**（决定 11）：`agent.retire` 未装配；同上 |
@@ -523,8 +524,19 @@ POST /console/enrollments/{enrollment_id}:cancel                     ← 「取�
   改用名换名不会挪本机目录。向导第 2 步重试时**沿用上一次的 profile**，宿主那边的登记名跟着它走，
   不会每点一次「下一步」就在宿主配置里多堆一条。
 - **票准备好了 ≠ Agent 存在**：真正加入要宿主把 bridge 拉起来、由 bridge 兑换票。所以窗口按
-  `确定` 之后：遮罩就在原地转，文案是「请打开（或重载）Codex 窗口完成接入，正在等待连接」，
-  页面每 2 秒问一次 `enrollments/{id}`，**到了才收遮罩并报成功**。
+  `确定` 之后：遮罩就在原地转，页面每 2 秒问一次 `enrollments/{id}`，**到了才收遮罩并报成功**。
+  这句话**必须带上项目目录**：文案是「请在「`<项目目录>`」下打开（或重载）Codex 窗口完成接入，正在等待连接」（`openWindowHint()`，两个向导入口共用）。
+  原因是宿主的窗口开在哪个目录，决定了那个会话里的 Agent 能不能按相对路径读到这个项目的规矩文件
+  （`.tsunagou/agent-context.md`、`AGENTS.md` 受管区块）—— 读不到它不会报错，只会没有任何"我在哪个项目"
+  的线索，然后照自己的"安装并初始化"说明去别处新建一个项目（真实发生过）。目录从项目列表里取（`path`），
+  取不到就换成不含路径的说法。
+- **"到了"和"就位"是两件事**：名单里多出一个会话只说明它兑换了票。这一份等待要的是"就位"——
+  会话就绪（准入能力都证明过）**而且**角色已经落到票要求的那个（主 Agent 的任命是 daemon 在就绪那一步
+  顺手做的，而首次接入天然还不就绪）。中间层因此在 `waiting` 里多给一个 `pending`
+  （`{agent_id, role, session_status, missing_admission}`，见 `console/enrollment.py`）；页面拿到它就把
+  遮罩上的话换成 `joiningNote()`：「「Codex」那边的会话已经连上了，但还没就位（还缺：…）。请在
+  「`<项目目录>`」下让它再读一次项目上下文，就能完成接入。正在等待连接」。不换这句话，人只会看到一个
+  转不停、最后报"票过期"的遮罩，却不知道票早就被兑换了、该做的是让那边再读一次上下文。
 - **取消等待**（人可以放弃这段等待）：遮罩上多了「取消等待」入口，**只在能取消的等待里出现**
   （`notify.loading(text, {cancel: fn})` 传了回调才显示）。点击 → 二次确认（`dialog.confirm`，
   遮罩在背后接着转）→ 确认后：`POST …/{id}:cancel` 让中间层**删掉那张票、把宿主配置里刚加的那条登记注销**，
@@ -1045,6 +1057,22 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
   后端没有"工位地址"这个概念，已删）。
   已知达不到的：`unreadable`（daemon 起着但没答的项目）名单里带了，但窗口没有能写这句话的
   标记位置，所以那种情况下窗口只会少几行 —— 要区分得先有位置。
+- **等待接入的提示里写明项目目录**（2026-10-01）：遮罩上那句话从「请打开（或重载）X 窗口…」改成「请在「`<项目目录>`」下打开（或重载）X 窗口…」。原因是上面那条缺口：Agent 是按**它自己的工作目录**去找项目的规矩文件的，而 skill 里写的是相对路径、措辞又是"存在就读"——窗口开错目录它既不报错也不知情，于是照自己的"安装并初始化"说明去别处新建一个项目。目录只有一个来源：中间层的项目列表（`projects[].path`；daemon 的概况出口不含文件路径），取不到就换成不含路径的说法。两个入口（向导第 2 步 / 第 3 步与添加子 Agent）共用 `openWindowHint()` 这一句，不再各自拼。
+- **等待接入时改说"已连上但还没就位"**（2026-10-01）：中间层的 `enrollments/{id}` 不再把"名单里多了一个人"当成成功 —— 要**会话就绪、而且角色已经落到票要求的那个**才算（见 `console/enrollment.py`）。没就位时它回 `waiting` + `pending`（还缺哪几项准入能力），页面用 `joiningNote()` 把缺哪几项、该在哪个目录做哪件事写到遮罩上。为什么必须分开：主 Agent 的任命发生在"就绪"那一步，而首次接入天然还不就绪，于是老逻辑会把一个还没有角色、也没有基础授权的普通成员报成"主 Agent 已接入"（真实发生过）。票过期时的提示也分成两句：从未来过 → "重新添加"，已连上但没就位 → "让它读一次项目上下文，不用重新添加"。
+- **新建协作补写 Agent 入口**（2026-10-01）：中间层建完项目后顺手跑一次项目的 `bootstrap`（只写 host-neutral 入口：`AGENTS.md` 受管区块、`.tsunagou/agent-context.md`、项目 skill、`.gitignore` 区块）。原因是**接入这条链本来就要它**：向导第 2 步马上请一个宿主会话接入，而那个 Agent 的第一条指令是"存在就读项目的规矩文件"——不存在它不会报错，只会没有任何线索，然后照它自己的"安装并初始化"说明去**别处新建一个项目**（真实发生过）。只写 host-neutral 入口，不要求宿主文件：中间层在准备接入时已经把 bridge 注册进宿主自己的配置了，再让 bootstrap 写一份会把同一个会话登记两次。写失败**不会**让建项目失败（项目本身已经建好），失败原因会放在回答的 `project.bootstrap` 里，页面会提醒一句。**登记已有项目不动它的文件**——那属于把项目放这儿的人。
+- **项目目标改由「对话 + 用户确认」产生**（2026-10-01，缺口清单里那条"项目目标只写不读"的收尾）：
+  向导第 1 步不再问目标（只问名字），中间层在调用方没给 objective 时写占位文本
+  `待主 Agent 与用户确认`（常量在 `src/tsunagou/modules/projects.py` 的 `PENDING_OBJECTIVE`，
+  `project init` 的默认值也用它）—— 原来那种"没填就等于项目名"的写法会让人读到一句看起来像目标、
+  其实只是名字的话。项目记录里那个字段不能为空（`project.initialize` 的 schema 是 `minLength: 1`），
+  所以占位句是**真的写进 `.tsunagou/project.json`** 的，不是界面兜底。
+- **主视图那句目标改读「用户确认过的决定」**（2026-10-01）：主 Agent 与用户谈定目标后提一条
+  `user_decision.propose`（`kind=project.objective`、`summary` 写目标本身、`choices` 给可选项），
+  用户在「待用户决定」里答过之后，主视图的 `.textArea` 才显示那句；没确认过就显示项目记录里那句占位。
+  取**最后一条** `status=resolved` 的（已答的决定不能被撤回，只能再提一条，所以"最后一条"就是最新那版理解）。
+  **`coordination.plan` 的抬头故意不算数**：那是"这一批任务要干什么"，换个阶段就会变。
+  这一条没有新增命令或字段 —— `kind` 本来就是自由字符串，而 `summary` 是唯一的自由文本位；
+  完整的取舍写在 `docs/decisions/2026-10-01-objective-from-dialogue.md`。
 - **「添加 Agent」接通**（2026-09-28，见 §7.1）：`POST /console/projects/{id}/agents:prepare` 由中间层做
   「本机那半」——签一张一次性票据、写私有票据文件、写 bridge 启动说明、**按厂商注册进宿主**
   （表在 `platform/host_registration.py`，现在只有 Codex 有命令，其它厂商照实说"还没实现"）；
@@ -1063,9 +1091,9 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
   保存后 `profile` 与 `settings` **两份 state 都更新**（设置面板读 `settings`，名字显示读 `profile`）。
   向导里的 `mainAgent` / `subAgents` 现在也是真接入（见 §7.1、下面的"向导四步各有各的实事"）；
   项目建好之后的「添加子 Agent」走的是同一条路。
-- **向导四步各有各的实事**（2026-09-28）：原来是"前四步只填表，只有「完成」发一条命令"，
-  现在拆成：① 创建一个新的协作（标题下多了一个描述框）—— 点「创建」就真建（目录 + `git init` +
-  登记 + 顺手起 daemon），建完两个输入框**只读**、按钮从此只是"下一步"（再点不会建第二个）；
+- **向导四步各有各的实事**（2026-09-28；2026-10-01 起第 1 步只问名字）：原来是"前四步只填表，只有「完成」发一条命令"，
+  现在拆成：① 创建一个新的协作 —— 点「创建」就真建（目录 + `git init` +
+  登记 + 顺手起 daemon），建完那个输入框**只读**、按钮从此只是"下一步"（再点不会建第二个）；
   ② 连接到主 Agent —— 真准备接入并等它连上；③ 连接到子 Agent —— 同上，可多个也可一个都不接；
   ④ **接入结果**（标题「请确定以下配置」）—— 只列出已经发生的事（项目名/描述 + 接上了谁），
   不发任何请求，「完成」只收窗复位。

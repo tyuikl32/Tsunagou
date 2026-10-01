@@ -10,7 +10,7 @@
 
 | 表/实体 | 必须字段（除通用字段） | 约束与索引 |
 |---|---|---|
-| projects / Project | name, objective, lifecycle, coordination_repository_id, current_lineage_id, current_replica_id, runtime_epoch, policy_revision | project ID 唯一；active lineage 必须 open |
+| projects / Project | name, objective, lifecycle, coordination_repository_id, current_lineage_id, current_replica_id, runtime_epoch, policy_revision | project ID 唯一；active lineage 必须 open。`objective` 在用户确认目标之前是占位文本（`待主 Agent 与用户确认`），**不是**目标本身；真正的目标是 `user_decision.propose`（`kind=project.objective`）经用户确认的那条决定，见[决策](../../decisions/2026-10-01-objective-from-dialogue.md) |
 | lineages / Lineage | status, parent_lineage_id?, base_checkpoint_digest?, sealed_checkpoint_digest?, transition_reason | 历史祖先引用不可改；同项目一个当前 open |
 | replicas / Replica | role, registration_digest, last_checkpoint_digest?, last_runtime_epoch | 本机 registry 对 `(project,lineage)` 最多一个 active_writer；不声称跨机器强锁 |
 | roots / RootRegistration | name, root_kind:directory\|repository, repository_id?, required, descriptor_digest | name 项目内唯一；共享行无绝对路径 |

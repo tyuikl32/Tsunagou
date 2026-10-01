@@ -18,7 +18,7 @@ from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.time import format_timestamp, now_ms, parse_timestamp
 
 SOURCE_REPOSITORY = "https://github.com/tyuikl32/Tsunagou.git"
-GENERATOR_VERSION = "project-bootstrap-v2"
+GENERATOR_VERSION = "project-bootstrap-v3"
 START_MARKER = "<!-- TSUNAGOU:START -->"
 END_MARKER = "<!-- TSUNAGOU:END -->"
 
@@ -121,12 +121,16 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
    子 Agent 只能使用自己领取的 Attempt，不能任命自己为 main、接管主任务或代用户确认。
    main 收到子 Agent 请求后，检查现有任务及重复请求，再自主发布合适任务、明确回复无需新任务，或说明实际阻塞。
    普通调度沿已有用户授权执行，不再次询问“是否需要发布任务”；必须履行回复义务，不能只读消息或 ACK。
-3. 读取任务的当前 revision 后调用 `task.begin`，成功才获得当前 scope 的执行授权；`task.submit` 自动收集结果并释放占用。
+3. 项目目标不是建项目时填好的：项目记录里那句只是占位（“待主 Agent 与用户确认”）。
+   主 Agent 与用户把目标谈清楚后，用 `user_decision.propose` 提一条决定（`kind=project.objective`、
+   `summary` 写目标本身、`choices` 给出可选答复）；用户确认后那句才是项目目标，界面也才显示它。
+   在那之前不要把占位句当目标复述，也不要替用户宣称目标已经确定。
+4. 读取任务的当前 revision 后调用 `task.begin`，成功才获得当前 scope 的执行授权；`task.submit` 自动收集结果并释放占用。
    Full Access 宿主不等于获得 Tsunagou scope，也不等于 OS 沙箱。
-4. 认知报告、契约接受、消息 ACK、Task 完成和 Project 完成是不同事实；ACK 不表示同意，项目完成必须由用户确认。
-5. 上游决定阻塞时调用 `task.block` 保存进展、释放占用并结束本轮；不相交的任务可以继续。
+5. 认知报告、契约接受、消息 ACK、Task 完成和 Project 完成是不同事实；ACK 不表示同意，项目完成必须由用户确认。
+6. 上游决定阻塞时调用 `task.block` 保存进展、释放占用并结束本轮；不相交的任务可以继续。
    恢复前重读状态并再次 begin。静默、断线或同库重启不会转移资源 owner，主 Agent 可以显式回收。
-6. 需要扩大范围、改变项目设计或处理无法协调的冲突时向主 Agent 提出；越过用户上限时建立 UserDecision，不能自行绕过。
+7. 需要扩大范围、改变项目设计或处理无法协调的冲突时向主 Agent 提出；越过用户上限时建立 UserDecision，不能自行绕过。
 
 ## 被拒时怎么办
 
@@ -183,6 +187,9 @@ The main Agent proactively handles routine worker requests: check existing work,
 Do not ask the user to authorize ordinary scheduling again.
 `task.begin` prepares and starts the owned attempt; `task.submit` captures results and releases it.
 Full Access does not expand Tsunagou scope.
+The project goal is agreed with the user, not filled in when the project is created: the `objective` field holds a
+placeholder until the main Agent proposes `user_decision.propose` with `kind=project.objective` and the user confirms it.
+Do not quote the placeholder as if it were the goal, and do not claim a goal the user has not confirmed.
 Major design, permission and project-completion decisions remain user-controlled.
 Use `tsunagou-agent-onboarding` for enrollment and recovery. Do not put tokens, tickets or bridge sessions in prompts or commits.
 

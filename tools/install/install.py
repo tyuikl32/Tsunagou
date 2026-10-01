@@ -257,19 +257,23 @@ def bootstrap_project(
     initialized = project_manifest.is_file()
     if not initialized:
         resolved_name = project_name or project_root.name or "Tsunagou project"
-        resolved_objective = project_objective or f"Coordinate local agents in {resolved_name}"
+        command_arguments = [
+            *command,
+            "project",
+            "init",
+            "--coordination-root",
+            str(project_root),
+            "--name",
+            resolved_name,
+        ]
+        # No objective of our own: the goal is agreed between the user and the
+        # main Agent after the project exists, so ``project init`` supplies the
+        # placeholder. Only pass one through when the user asked for it, which
+        # keeps the wording in exactly one place (the CLI's own default).
+        if project_objective:
+            command_arguments += ["--objective", project_objective]
         run(
-            [
-                *command,
-                "project",
-                "init",
-                "--coordination-root",
-                str(project_root),
-                "--name",
-                resolved_name,
-                "--objective",
-                resolved_objective,
-            ],
+            command_arguments,
             cwd=repo,
             dry_run=dry_run,
             log=log,

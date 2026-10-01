@@ -320,6 +320,27 @@ def prepare(
     }
 
 
+def _requested_role_landed(agent: dict[str, Any], requested_role: str) -> bool:
+    """Is this newcomer actually the Agent the ticket asked for, and is it ready?
+
+    Both halves are required and they are independent facts:
+
+    * ``session_status == "ready"`` -- the session proved every admission capability.
+      A degraded session is already in the roster while being unable to work at all.
+    * ``role == requested_role`` -- ``main`` is not something a session has by existing;
+      the daemon appoints it right after a *ready* enrollment. Until that happens the
+      Agent keeps the default ``worker`` role.
+
+    Reading either half alone is what produced "主 Agent 已接入" for a session that had
+    no role and no base grant.
+    """
+
+    return (
+        agent.get("session_status") == "ready"
+        and agent.get("role") == requested_role
+    )
+
+
 def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirectory) -> dict[str, Any]:
     """Has that Agent arrived yet? — the question the waiting overlay keeps asking.
 
@@ -336,7 +357,12 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
     if time.time() > record.expires_at:
         return {
             "status": "expired", **record.public(),
-            "note": "票据有效期已过，请重新添加；上一次的票据已经作废。",
+            "note": (
+                "票的有效期过了，但那个会话已经连上了，只是还没就位 —— "
+                "在那边让它读一次项目上下文就能完成接入，不用重新添加。"
+                if record.extras.get("settling_agent_id") else
+                "票据有效期已过，请重新添加；上一次的票据已经作废。"
+            ),
         }
     entry = None
     try:
@@ -354,10 +380,33 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
             "status": "waiting", **record.public(),
             "note": "暂时读不到这个项目的 Agent 名单（daemon 没起或没答），先按还没到处理。",
         }
-    arrived = [agent["agent_id"] for agent in lineup.agents if agent["agent_id"] not in record.known_agents]
+    arrived = [agent for agent in lineup.agents if agent["agent_id"] not in record.known_agents]
     if not arrived:
         return {"status": "waiting", **record.public()}
-    record.arrived_agent_id = arrived[0]
+    # "到了"和"就位"是两件事，这份等待要的是后者。
+    #
+    # 名单里多出一个人只说明那个会话兑换了那张票。它还要：**会话就绪**（准入能力都被
+    # 证明过），而且**角色已经落到这张票要求的那一个**。要紧的是后者不是因为别的窗口
+    # 先兑换了票，而是因为主 Agent 的任命是兑换之后、由 daemon 判定就绪那一步顺手做的
+    # —— 首次接入必然还不就绪，所以"人数变了"会把一个**还没有角色的普通成员**报成
+    # "主 Agent 已接入"，而按票要求核对角色就能挡住它（顺带也挡住"另一个窗口先兑换了
+    # 子 Agent 那张票"这种情形）。
+    settled = [agent for agent in arrived if _requested_role_landed(agent, record.role)]
+    if not settled:
+        candidate = arrived[0]
+        # 记下"人来了但没就位"，这样票过期时能说清该做什么（见上面 expired 分支）。
+        record.extras["settling_agent_id"] = candidate["agent_id"]
+        return {
+            "status": "waiting", **record.public(),
+            "pending": {
+                "agent_id": candidate["agent_id"],
+                "role": candidate["role"],
+                "session_status": candidate["session_status"],
+                "missing_admission": list(candidate["missing_admission"]),
+            },
+            "note": "已经连上，但还没就位。",
+        }
+    record.arrived_agent_id = settled[0]["agent_id"]
     if record.nickname or record.label:
         # 昵称跟着 Agent 走：名字只有等这个人真的存在了才能落到它头上。
         # 没有昵称也要登记一行：厂商（label）是这台机器知道的事实，界面上"按厂商
@@ -387,7 +436,8 @@ def cancel(enrollment_id: str, *, settings: ConsoleConfig) -> dict[str, Any]:
     if record.arrived_agent_id:
         raise ConsoleError(
             "enrollment_already_arrived", status=409,
-            detail={"agent_id": record.arrived_agent_id, "hint": "它已经连上了；要撤它得走退席那条路。"},
+            detail={"agent_id": record.arrived_agent_id,
+                    "hint": "它已经连上了；这次等待到此为止，不用再取消。"},
         )
     record.cancelled = True
     ticket = Path(record.ticket_file) if record.ticket_file else None

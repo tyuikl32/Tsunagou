@@ -173,7 +173,8 @@ def test_reading_a_daemon_parses_its_answer_without_a_token(monkeypatch: pytest.
         seen["timeout"] = timeout
         body = json.dumps({
             "items": [
-                {"agent_id": "agent-main", "status": "active", "role": "main", "conversation_digest": "sha256:x"},
+                {"agent_id": "agent-main", "status": "active", "role": "main", "conversation_digest": "sha256:x",
+                 "session_status": "ready", "missing_admission": []},
                 {"agent_id": "agent-worker", "status": "provisioning", "role": "worker"},
                 "not-an-object",
                 {"status": "active"},
@@ -191,8 +192,13 @@ def test_reading_a_daemon_parses_its_answer_without_a_token(monkeypatch: pytest.
     assert seen["authorization"] is None, "the agents exit needs no control token"
     assert roster.main_agent_id == "agent-main"
     assert roster.agents == (
-        {"agent_id": "agent-main", "status": "active", "role": "main", "conversation_digest": "sha256:x"},
-        {"agent_id": "agent-worker", "status": "provisioning", "role": "worker", "conversation_digest": ""},
+        {"agent_id": "agent-main", "status": "active", "role": "main", "conversation_digest": "sha256:x",
+         "session_status": "ready", "missing_admission": []},
+        # 名单行带着会话状态与缺哪几项准入能力：等接入的人靠这两项分辨"到了"和"就位"。
+        # daemon 没答那两项时补空串/空表 —— 空串不等于 "ready"，也就是"没就位"，
+        # 比默认成"就绪"安全（那会把还没就位的会话报到成功里）。
+        {"agent_id": "agent-worker", "status": "provisioning", "role": "worker", "conversation_digest": "",
+         "session_status": "", "missing_admission": []},
     )
 
 

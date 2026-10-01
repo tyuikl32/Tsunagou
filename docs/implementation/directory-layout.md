@@ -136,7 +136,7 @@ Tsunagou/
 
 ## 用户项目初始化后的入口
 
-`project bootstrap` 在用户选定的协调根生成轻量、无秘密的项目入口；它不复制本仓库源码：
+`project bootstrap` 在用户选定的协调根生成轻量、无秘密的项目入口；它不复制本仓库源码。**控制台新建项目时也会跑同一件事**（只写 host-neutral 入口，不写宿主配置——接入时中间层自己把 bridge 注册进宿主）：项目一建好就要请一个宿主会话接入，而那个 Agent 读的第一份东西就是这里的入口文件。
 
 ```text
 <user-coordination-root>/
