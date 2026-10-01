@@ -1,0 +1,44 @@
+{
+  "scope": "does a per-call host identity reach the bridge, and is a borrowed overlay refused",
+  "design": {
+    "what_was_missing": "the stock @deepseek-ai/dsh-mcp-client calls client.callTool({name, arguments}) with no _meta, so the bridge cannot tell which conversation is calling",
+    "where_the_identity_comes_from": "exec.agent.session.id, inside the harness process, for that call. Measured in the feasibility step - see host-identity-source.json",
+    "how_it_travels": "a minimal host provider registers the same tools over the same stdio MCP server and adds _meta[<key>] to every tools/call",
+    "why_no_shared_change_is_needed": "the bridge already requires and digests _meta[TSUNAGOU_HOST_META_KEY] when it is declared: `conversation_metadata_required` when absent, and it routes each conversation to its own stateDir/sessions/bridge-session-<digest>.json. That path was built for OpenCode; DeepSeek never declared the key",
+    "codex_and_opencode": "untouched: the gate is the adapter's own overlay declaring the key"
+  },
+  "measured": {
+    "enrolled_conversation": {
+      "session_arg": "sha256:67cec445686183d1",
+      "session_digest": "sha256:67cec445686183d1",
+      "tool": "mcp__tsunagou__context__project_read",
+      "result": "agent beb92813-f2c6-47ef-ae5c-3f0da5d0f439, Tsunagou session fe7df5f9-0030-41b0-a3c7-e828ef493ef2, connection_epoch 3",
+      "reading": "the live session id was delivered per call and the enrolled identity executed the business call"
+    },
+    "new_conversation_same_overlay": {
+      "session_arg": null,
+      "tool": "mcp__tsunagou__context__project_read",
+      "result": "not_enrolled:no_ticket_or_session_file",
+      "reading": "the borrowed overlay did NOT yield the enrolled identity: the new conversation is routed by its own session digest to a private session file that holds no credential. This is the R1 counterexample, closed at the routing level"
+    },
+    "first_positive_attempt_failed_for_an_environment_reason": "the first positive run returned bridge_request_failed because the coordination daemon was stopped; after `tsunagou daemon start` the same command returned the enrolled identity. Recorded so the failed run is not mistaken for a routing defect - it did not answer not_enrolled, so routing had already succeeded.",
+    "transcripts": [
+      "meta-enrolled-after-restart.jsonl",
+      "meta-new-session.jsonl"
+    ]
+  },
+  "not_yet_done": [
+    "the overlay generator still names the stock client, and does not declare TSUNAGOU_HOST_META_KEY",
+    "the provider package is not installed into the host profile by `agent connect`",
+    "those three changes are inseparable - the new name without the install fails to load, and the key without the provider turns every call into conversation_metadata_required - so they were reverted rather than left half-landed",
+    "agent connect/bootstrap and the Codex/OpenCode regressions were therefore not re-run against the new wiring"
+  ],
+  "product_files_state": {
+    "host_registration_still_uses_the_stock_client": true,
+    "host_registration_has_no_provider_reference": true,
+    "host_registration_has_no_meta_key": true,
+    "reading": "src/ is unchanged by this attempt; the seven already-pending files are as they were"
+  },
+  "recorded_at": "2026-10-01T11:28:05Z",
+  "redaction_note": "The raw enrolled host session_arg was replaced with its existing digest during independent review; original backed up outside the repository. Observation results are unchanged."
+}

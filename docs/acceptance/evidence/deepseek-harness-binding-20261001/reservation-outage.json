@@ -1,0 +1,67 @@
+{
+  "after_restart": {
+    "blockers": [
+      {
+        "attempt_id": "723e14fb-6847-41dc-87ae-431a7f9eaa2e",
+        "mode": "exclusive_write",
+        "owner_agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+        "reservation_id": "01b51052-4878-4a2f-bc6e-bcc101a240e7",
+        "resource_key": "path:coordination:",
+        "task_id": "16f3c9b2-d85b-43f6-b1df-90d55c9f077a"
+      }
+    ],
+    "code": "resource_conflict",
+    "http_status": 409
+  },
+  "answer": {
+    "reading": "the reservation survived the restart intact: the challenger was refused 409 resource_conflict and the blockers named the same attempt, reservation id, task and owner that the daemon had granted before the daemon was stopped. A restart therefore does not silently drop occupancy, which would have let a second agent write the same workspace.",
+    "reservation_survived": true,
+    "same_attempt": true,
+    "same_owner": true,
+    "same_reservation_id": true
+  },
+  "begin_while_stopped": {
+    "error": "URLError",
+    "returned": "socket"
+  },
+  "cleared_leftovers": [
+    {
+      "attempt_id": "59005f01-a807-4066-a862-b627995a632a",
+      "owner": "worker2",
+      "release_status": 200,
+      "status": "blocked"
+    },
+    {
+      "attempt_id": "75b90fb3-58f9-4c9e-b50e-c85a36efb81d",
+      "cleared": "preflight"
+    }
+  ],
+  "daemon_after_clearing": "running",
+  "daemon_before": "running",
+  "endpoint_after_restart": {
+    "pid": 18784,
+    "url": "http://127.0.0.1:60186"
+  },
+  "holder": {
+    "attempt_id": "723e14fb-6847-41dc-87ae-431a7f9eaa2e",
+    "begin_status": 200,
+    "code": null,
+    "reservation_id": "01b51052-4878-4a2f-bc6e-bcc101a240e7",
+    "workspace_id": "d42b8187-68bc-4d16-ba3a-98abc980ab76"
+  },
+  "holder_owner_is_the_worker": true,
+  "holder_task_id_before_the_outage": "16f3c9b2-d85b-43f6-b1df-90d55c9f077a",
+  "holder_task_still_held_after_the_outage": true,
+  "host": "deepseek-harness",
+  "kept_failures": "the two earlier runs are kept in this object rather than deleted; the executor did not overwrite history",
+  "question": "does a workspace reservation taken before an outage still hold afterwards?",
+  "run_history": {
+    "attempt_1": "inconclusive: the begin that was meant to take the reservation ran while a leftover from an earlier probe already held the root, so nothing was under test; the wire layer also raised a socket error against the stopped daemon, which the probe did not catch, and `daemon status` keeps reporting the old pid after a stop so the is-it-running test was wrong",
+    "attempt_2": "invalid: the holder task was created but never begun before the stop, so there was no reservation for the outage to act on and the challenger's 200 meant only that the root was free",
+    "attempt_3": "the run recorded above, with the pre-flight clearing leftovers and the begin taken before the stop"
+  },
+  "scene_cleared": true,
+  "scope": "reservation_across_a_daemon_outage",
+  "start": "started",
+  "stop": "stopped"
+}

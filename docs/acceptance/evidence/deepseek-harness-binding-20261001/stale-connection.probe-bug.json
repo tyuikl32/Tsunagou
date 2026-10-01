@@ -1,0 +1,34 @@
+{
+  "agent_id": "cee43638-4401-41ff-a8a8-b7a482345686",
+  "anomaly": "session.reconnect returned 200 with a new epoch, yet the credential from that same response was refused 401 at its own epoch; do not read this run as proof that the epoch alone fences a connection",
+  "connection_epoch_before": 1,
+  "current_connection_accepted": false,
+  "epoch_isolation_established": false,
+  "host": "deepseek",
+  "kept_for_traceability": "This run used a probe that sent an invalid admission baseline, which downgraded the session to degraded and revoked its authorization, so the fresh credential was refused and the epoch fence could not be told apart from the token rotation. The second independent review identified the cause. The corrected run is stale-connection.json; this file is kept rather than overwritten.",
+  "rotation": {
+    "error_code": null,
+    "http_status": 200,
+    "new_connection_epoch": 2
+  },
+  "scope": "bridge_wire_recovery",
+  "secrets_in_report": false,
+  "session_id": "2dbb23da-7c2c-4694-93d9-6d535ca12f5c",
+  "stale_connection": {
+    "fresh_token_current_epoch": {
+      "epoch_sent": 2,
+      "http_status": 401
+    },
+    "fresh_token_previous_epoch": {
+      "epoch_sent": 1,
+      "error_code": "authentication_failed",
+      "http_status": 401
+    },
+    "old_token_previous_epoch": {
+      "epoch_sent": 1,
+      "error_code": "authentication_failed",
+      "http_status": 401
+    }
+  },
+  "stale_connection_refused": true
+}

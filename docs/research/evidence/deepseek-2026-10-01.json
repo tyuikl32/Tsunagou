@@ -1,0 +1,93 @@
+{
+  "baseline": {
+    "cognition.report": {
+      "reason": "真实宿主角色权限负例已补齐并通过独立复核；本文件保留原有门禁状态，最新结论见 review.report。",
+      "status": "unknown"
+    },
+    "command.typed_tools": {
+      "reason": "实际工具调用有证据，另有共享契约分歧；结构差异数量不等于功能缺陷数量。同口径结论待复核，门禁未升级。",
+      "status": "unknown"
+    },
+    "context.project_read": {
+      "evidence_refs": [
+        "docs/acceptance/evidence/deepseek-harness-20261001T0500Z/host/read-main.jsonl",
+        "docs/acceptance/evidence/deepseek-harness-20261001T0500Z/host/read-worker.jsonl",
+        "docs/acceptance/evidence/deepseek-harness-20261001T0500Z/script-results/c3-scope-negatives.json",
+        "docs/acceptance/evidence/deepseek-harness-binding-20261001/blackboard-surface.json"
+      ],
+      "status": "unknown",
+      "strength": "observed",
+      "reason": "项目读取有证据；黑板实现缺失另列共享产品问题。同口径验收结论待独立复核，门禁未升级。"
+    },
+    "contract.participation": {
+      "reason": "当前精确 digest 接受、旧 digest 拒绝的对照成立。",
+      "status": "unknown"
+    },
+    "delivery.deduplicate": {
+      "reason": "真实 headless MCP 重投递已核对：claim 不携带正文、显式重读单列、合法重复响应被拒；本文件保留原有门禁状态，最新结论见 review.report。",
+      "status": "unknown"
+    },
+    "identity.continuity_evidence": {
+      "reason": "resume/new 已有正例；compact、clear、fork 的指定身份行为未完成。",
+      "status": "unknown"
+    },
+    "identity.session_isolation": {
+      "reason": "旧覆盖层可让另一会话取得已登记身份，反例未关闭。",
+      "status": "unknown"
+    },
+    "inbox.pull_fetch_ack": {
+      "evidence_refs": [
+        "docs/acceptance/evidence/deepseek-harness-20261001T0500Z/host/c5b-review.jsonl",
+        "docs/acceptance/evidence/deepseek-harness-20261001T0500Z/host/c9-main.jsonl",
+        "docs/acceptance/evidence/deepseek-harness-20261001T0500Z/script-results/c3-scope-negatives.json"
+      ],
+      "status": "supported",
+      "strength": "observed",
+      "reason": "无 push 的拉取/呈现/ACK 与非收件人正文拒绝成立。"
+    },
+    "recovery.idempotent_reconnect": {
+      "reason": "同数据库重启后同 Agent，轮换后新凭据配旧 epoch 被拒；wire 探针不冒充模型调用。",
+      "status": "unknown"
+    },
+    "response.structured": {
+      "reason": "义务关联、ACK 不代替响应及错误目标/关联的拒绝成立。",
+      "status": "unknown"
+    },
+    "task.lifecycle": {
+      "reason": "所引用宿主与 wire 证据支持 begin/block/submit、owner/版本冲突、取消与显式回收。",
+      "status": "unknown"
+    }
+  },
+  "branch": "elysia",
+  "bridge_server_version": "0.1.0",
+  "date_local": "2026-10-01",
+  "dirty_worktree_preserved": true,
+  "git_head": "3607f5501f1a85e6ddb81cfb994593df8f5edb4d",
+  "host": "deepseek",
+  "integration": "stdio MCP via @deepseek-ai/dsh-mcp-client; the entry is written into the conversation's own private bridge directory and passed on its launch command via --patch",
+  "review": {
+    "report": "docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md",
+    "verdict": "not_accepted"
+  },
+  "runtime_package": "@deepseek-ai/dsh-desktop-runtime",
+  "scope": "two_real_harness_conversations_eleven_baseline",
+  "status_note": "Independent review accepted the final cognition permission and headless delivery observations; see review.report for the 11-row result and limits. Overall not accepted due to identity isolation failure and incomplete continuity. Capability gate statuses are intentionally unchanged; this review does not promote the release gate.",
+  "timezone": "Asia/Shanghai",
+  "tsunagou_version": "0.1.0",
+  "version": "0.2.0-rc.2",
+  "withdrawn_mechanisms": [
+    {
+      "module": "packages/bridge-server/src/host-spawner.ts (deleted)",
+      "state": "removed; packages/bridge-server/src/server.ts is back at its committed state and no code refuses an unproven caller",
+      "switch": "TSUNAGOU_TRUST_UNPROVEN_HOST (no longer read by any code)",
+      "what": "bridge-side guard comparing the spawning process's --session-id with the enrolled conversation",
+      "why_withdrawn": "bypassable by a prompt argument containing '--session-id <id>', and it refused the connect bootstrap helper, breaking enrollment"
+    },
+    {
+      "state": "reverted; the hand-written tools are back and the comparator reports 29 tools / 159 differences",
+      "what": "published tool schemas derived from the protocol payload schema",
+      "where": "packages/bridge-server/src/server.ts (reverted to HEAD)",
+      "why_withdrawn": "the protocol files describe an older REST payload where target ids sat in the URI, so deriving dropped task_id, attempt_id, proposal_id and participant_slot; five commands returned 400 for parameters that followed the published schema"
+    }
+  ]
+}

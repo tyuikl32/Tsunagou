@@ -1,0 +1,66 @@
+{
+  "conclusion": "A design/implementation gap in the shared product: runtime-prompts.md and the onboarding text require reading the blackboard, and no route, command or tool provides one. For the adapter row this means the named scenario cannot be exercised by any host conversation - recorded as not_exercised with the reason being an absent implementation rather than a limitation of the test surface.",
+  "correction": "An earlier version of this file said this build exposes no blackboard at all. That was too strong and is corrected here: docs/implementation/runtime-prompts.md documents GET P/blackboard returning a BlackboardSnapshot with eleven fixed sections, so the entry point is DESIGNED. What the current code lacks is any implementation of it - no route registration, BlackboardComposer has no caller, the command registry has no such command and none of the 43 MCP tools exposes it - while the onboarding text still tells an agent to read it.",
+  "host": "deepseek-harness",
+  "method": "read the call's payload, enumerate the published tools, and search the source for the composer's callers",
+  "not_claimed": [
+    "that the blackboard existed in an earlier design and was removed; no history was inspected",
+    "that the missing entry point changes any other row's result"
+  ],
+  "observations": {
+    "blackboard_composer": {
+      "callers_under_src": 0,
+      "defined_at": "src/tsunagou/interfaces/runtime.py:322",
+      "reading": "defined and never invoked - dead code in this build"
+    },
+    "blackboard_field_present": false,
+    "documented_design": {
+      "reading": "the requirement is not invented by the baseline; it is documented here as an HTTP entry point",
+      "route": "GET P/blackboard?task_id=<optional>&after_seq=<optional>",
+      "sections": [
+        "objective",
+        "assigned_tasks",
+        "task_dependencies",
+        "active_blockers",
+        "user_decisions",
+        "discrepancies",
+        "contracts",
+        "workspace_summary",
+        "inbox_summary",
+        "response_obligations",
+        "pending_operations"
+      ],
+      "source": "docs/implementation/runtime-prompts.md"
+    },
+    "implemented": {
+      "composer_callers": 0,
+      "mcp_tool": null,
+      "reading": "documented, not implemented; and not reachable from a host conversation either way, since MCP has no such tool",
+      "registry_command": null,
+      "route_registered": false
+    },
+    "nearest_tools": [
+      "context__project_read",
+      "project__configure",
+      "project__completion_propose"
+    ],
+    "project_read_payload_keys": [
+      "agent_id",
+      "main_agent_id",
+      "open_tasks",
+      "project_id",
+      "role",
+      "scope",
+      "session",
+      "tasks"
+    ],
+    "published_tools_named_like_a_blackboard": [],
+    "text_still_referring_to_it": {
+      "baseline": "docs/implementation/adapters.md requires \u6b63\u786e\u9879\u76ee\u6458\u8981\u4e0e\u9ed1\u677f\u5165\u53e3",
+      "onboarding": "src/tsunagou/application/project_integration.py:164 tells an agent to read the incremental inbox and blackboard on each turn"
+    }
+  },
+  "question": "the baseline requires a project summary and a blackboard entry; does this build expose one?",
+  "scope": "blackboard_entry_point_exists",
+  "version": "0.2.0-rc.2"
+}

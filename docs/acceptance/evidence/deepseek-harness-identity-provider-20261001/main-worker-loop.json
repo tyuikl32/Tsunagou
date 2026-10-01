@@ -1,0 +1,45 @@
+{
+  "scope": "shortest real main/worker task and message loop on the new wiring",
+  "participants": {
+    "main": {
+      "host_session_digest": "sha256:45273438b200d144",
+      "agent_id": "5cee40b8-0231-4742-8c1d-f010502276b4",
+      "enrolled_as": "mainflow, role main, overlay written by `agent connect` with the provider and meta key"
+    },
+    "worker": {
+      "host_session_digest": "sha256:713735dd454b23d9",
+      "agent_id": "ea11a9ad-2d89-4f97-b90b-5c500f7ea69f",
+      "enrolled_as": "verify2, role worker"
+    }
+  },
+  "observed_sequence": [
+    {
+      "seq": 44,
+      "step": "task.create",
+      "result": "task 6489367b-29ea-4d13-aa7e-3cb02d3115b7, status draft, revision 1"
+    },
+    {
+      "seq": 50,
+      "step": "task.ready",
+      "result": "status ready, revision 2"
+    },
+    {
+      "seq": 56,
+      "step": "task.publish",
+      "result": "status open, revision 3"
+    },
+    {
+      "seq": 73,
+      "step": "inbox.claim by main",
+      "result": "message 8f33556c-5459-45d6-a81d-673ffce7782b, kind task.submitted, sender ea11a9ad (worker), recipient 5cee40b8 (main)"
+    },
+    {
+      "seq": 79,
+      "step": "inbox.fetch by main",
+      "result": "the same message"
+    }
+  ],
+  "reading": "two separately enrolled conversations completed a real cycle: main created, readied and published a task; the worker conversation began and submitted it; the submission arrived in main's inbox addressed to main's own agent. The two conversations hold different agents throughout",
+  "correction": "the driver printed agent ea11a9ad for the main step because the reader had taken the first agent_id-looking field out of the newest tool result, and main's inbox message carries the worker's id. Main's own agent is the recipient, 5cee40b8-0231-4742-8c1d-f010502276b4",
+  "recorded_at": "2026-10-01T12:42:40Z"
+}

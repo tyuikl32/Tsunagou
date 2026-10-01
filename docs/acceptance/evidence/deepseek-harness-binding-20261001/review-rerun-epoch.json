@@ -1,0 +1,26 @@
+{
+  "reviewed_at": "2026-10-01T06:01:21.133216+00:00",
+  "mode": "epoch",
+  "original_probe_header_names": [
+    "authorization",
+    "content-length",
+    "content-type",
+    "tsunagou-connection-epoch",
+    "tsunagou-project-id",
+    "tsunagou-session-id"
+  ],
+  "original_probe_sends_epoch": true,
+  "original_probe_reports_sent": true,
+  "live_read_only_authentication": [
+    {
+      "epoch_sent": null,
+      "http_status": 401,
+      "error_code": "authentication_failed"
+    },
+    {
+      "epoch_sent": 3,
+      "http_status": 200,
+      "error_code": null
+    }
+  ]
+}

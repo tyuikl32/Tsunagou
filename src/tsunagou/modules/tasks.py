@@ -503,6 +503,12 @@ class TaskService:
             if task.current_attempt_id is not None and task.current_attempt_id != expected_attempt_id:
                 raise TaskStateError("attempt_id_mismatch")
             if disposition == "reopen":
+                if task.current_attempt_id is None and attempt.status in ATTEMPT_TERMINAL:
+                    # Nothing is owned and the named attempt has already ended, so this
+                    # recovery already happened. Re-applying it would mint a new revision
+                    # for a state change that did not occur, which silently invalidates
+                    # every other agent's expected revision.
+                    raise TaskStateError("attempt_already_recovered")
                 if task.status not in {"open", "claimed", "running", "blocked", "orphaned", "cancel_requested", "changes_requested"}:
                     raise TaskStateError("task_not_recoverable")
                 if attempt.status not in {"claimed", "running", "blocked", "orphaned", "failed", "cancelled"}:

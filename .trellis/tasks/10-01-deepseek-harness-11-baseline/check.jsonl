@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Which gates must run and why a passing unit suite is not proof that CLI/HTTP/persistence are connected."}
+{"file": ".trellis/spec/adapters/index.md", "reason": "Capability rows need real host evidence with non-empty refs; configured is not the same as observed."}
+{"file": "docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md", "reason": "Single acceptance record; distinguish executor claims, raw observations and outstanding independent checks."}

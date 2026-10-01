@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/adapters/index.md", "reason": "Adapter/host rules this task extends: identity from the host, no vendor API guessing, supported/unsupported/unknown evidence discipline, epoch and inbox contracts."}
+{"file": ".trellis/spec/backend/entrypoint-contracts.md", "reason": "CLI/enrollment/MCP identity and registration contracts the DeepSeek Harness row has to satisfy."}
+{"file": "docs/implementation/adapters.md", "reason": "The 11-capability common baseline and the four host access routes this run had to match."}
+{"file": "docs/implementation/adapter-deepseek.md", "reason": "The DeepSeek adapter's stated integration surface and its recorded gaps; superseded where this run measured the 0.2.0-rc.2 host directly."}
+{"file": ".trellis/tasks/10-01-deepseek-harness-11-baseline/research/dsh-0.2.0-rc.2-host-interfaces.md", "reason": "Verified host facts (profile patches, MCP naming, no per-call metadata, session lifecycle commands) that the implementation and the tests both rest on."}

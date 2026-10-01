@@ -1,0 +1,32 @@
+{
+  "agent_id": "498bc765-260c-4047-b208-7fd20f61f786",
+  "connection_epoch_before": 1,
+  "current_connection_accepted": true,
+  "epoch_isolation_established": true,
+  "host": "deepseek",
+  "rotation": {
+    "error_code": null,
+    "http_status": 200,
+    "new_connection_epoch": 2
+  },
+  "scope": "bridge_wire_recovery",
+  "secrets_in_report": false,
+  "session_id": "5fb40bc0-c614-4c2e-8970-0f3a25b8c6f4",
+  "stale_connection": {
+    "fresh_token_current_epoch": {
+      "epoch_sent": 2,
+      "http_status": 200
+    },
+    "fresh_token_previous_epoch": {
+      "epoch_sent": 1,
+      "error_code": "authentication_failed",
+      "http_status": 401
+    },
+    "old_token_previous_epoch": {
+      "epoch_sent": 1,
+      "error_code": "authentication_failed",
+      "http_status": 401
+    }
+  },
+  "stale_connection_refused": true
+}

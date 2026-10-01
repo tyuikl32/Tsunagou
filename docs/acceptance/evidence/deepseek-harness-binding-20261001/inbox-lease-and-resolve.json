@@ -1,0 +1,74 @@
+{
+  "host": "deepseek",
+  "scope": "inbox_lease_and_resolve_permission_on_the_wire",
+  "checks": {
+    "in_lease_second_claim": {
+      "message_digest": "d5f7d0609e0cc66169f360f4b464f11bd8cafdf6a14d07fa5bcc900bf1be7680",
+      "listed_on_first_claim": true,
+      "listed_on_second_claim_within_lease": false,
+      "held_for_lease": true
+    },
+    "redelivery_after_lease": {
+      "waited_seconds": 40,
+      "listed_after_lease_expiry": true,
+      "redelivered": true
+    },
+    "repeat_ack_idempotent": {
+      "first_status": 200,
+      "first_acked": true,
+      "repeat_status": 200,
+      "repeat_acked": true,
+      "repeat_code": null,
+      "idempotent": true,
+      "listed_after_ack": false
+    },
+    "worker_cannot_resolve": {
+      "report_created": false,
+      "discrepancy_created": false,
+      "create_status": 400,
+      "not_exercised_because": "the probe could not create the precondition: cognition.report for this session was refused (create_status 400), so no discrepancy existed to resolve"
+    }
+  },
+  "baseline": {
+    "identity.session_isolation": {
+      "status": "unknown"
+    },
+    "identity.continuity_evidence": {
+      "status": "unknown"
+    },
+    "context.project_read": {
+      "status": "unknown"
+    },
+    "command.typed_tools": {
+      "status": "unknown"
+    },
+    "task.lifecycle": {
+      "status": "unknown"
+    },
+    "cognition.report": {
+      "status": "unknown"
+    },
+    "contract.participation": {
+      "status": "unknown"
+    },
+    "inbox.pull_fetch_ack": {
+      "status": "supported",
+      "evidence_refs": [
+        "in_lease_second_claim",
+        "redelivery_after_lease",
+        "repeat_ack_idempotent"
+      ]
+    },
+    "response.structured": {
+      "status": "unknown"
+    },
+    "recovery.idempotent_reconnect": {
+      "status": "unknown"
+    },
+    "delivery.deduplicate": {
+      "status": "unknown"
+    }
+  },
+  "ready": false,
+  "baseline_rule_satisfied": false
+}

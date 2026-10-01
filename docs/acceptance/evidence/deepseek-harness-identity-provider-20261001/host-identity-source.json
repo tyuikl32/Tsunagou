@@ -1,0 +1,38 @@
+{
+  "scope": "can a minimal host-side component obtain the live conversation identity per tool call",
+  "question": "R1 needs the caller's real identity. The MCP transport carries none, so the only candidate was code running inside the harness process, where the live session is observable.",
+  "method": "installed a local plugin package into the isolated headless profile with `dsh plugin --profile headless add <path>`, pointed a probe overlay at it instead of the mcp-client, and drove one real conversation asking the model to call the tool it registers",
+  "answers": {
+    "plugin_mounts_without_zod_config": true,
+    "note_on_config": "exporting name/inject/apply is enough; no zod import and no external dependency was needed",
+    "tools_register_accepts_a_plain_definition": true,
+    "exec_agent_session_id_present": true,
+    "observed_session_id_digest": "sha256:cd1170ab97e8938f",
+    "exec_keys": [
+      "token",
+      "callId",
+      "rootCallId",
+      "name",
+      "signal",
+      "agent",
+      "deferContext",
+      "concludeTurn",
+      "arguments"
+    ],
+    "session_object_keys_present": true,
+    "header_fold_keys": [
+      "config",
+      "adapterDefaults",
+      "tools"
+    ]
+  },
+  "why_this_is_the_right_source": "the value comes from the runtime's own execution context for that call, not from a model-supplied field, not from the overlay, not from a process id or command line. A conversation that borrows another conversation's overlay runs its own plugin instance and therefore reports its own session id.",
+  "what_it_does_not_yet_prove": [
+    "that the value reaches the bridge - the provider currently registers its own probe tool, not the Tsunagou tools",
+    "that the bridge refuses a mismatch - no gate has been written yet",
+    "that agent connect/bootstrap still works with the provider in place",
+    "that Codex and OpenCode are unaffected"
+  ],
+  "next_step": "the provider proxies the Tsunagou bridge over stdio (initialize / tools/list / tools/call), registers every discovered tool while injecting the live session id into the arguments, and the bridge - gated to the deepseek adapter - compares its digest with the enrolled conversation digest and refuses on mismatch or absence",
+  "recorded_at": "2026-10-01T11:23:21Z"
+}

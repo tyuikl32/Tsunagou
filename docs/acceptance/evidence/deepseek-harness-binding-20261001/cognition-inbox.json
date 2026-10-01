@@ -1,0 +1,28 @@
+{
+  "discrepancy": {
+    "code": null,
+    "discrepancy_id": "10322576-c45b-46d6-8dbe-ef9c46a4e4fd",
+    "http_status": 200,
+    "status": "open"
+  },
+  "host": "deepseek",
+  "inbox_reinjection": {
+    "ack_returned_acked_true": true,
+    "listed_on_first_claim": true,
+    "listed_on_second_claim": false,
+    "message_id_digest": "sha256:47d15347723de296",
+    "not_reinjected": true
+  },
+  "resolution": {
+    "code": null,
+    "discrepancy_id": "10322576-c45b-46d6-8dbe-ef9c46a4e4fd",
+    "http_status": 200,
+    "status": "overridden"
+  },
+  "scope": "cognition_disagreement_and_inbox_reinjection",
+  "second_report": {
+    "code": null,
+    "http_status": 200,
+    "report_id": "fe9fbd2e-e1d6-4c04-baeb-9191f6687773"
+  }
+}

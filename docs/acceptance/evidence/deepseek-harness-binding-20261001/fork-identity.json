@@ -1,0 +1,24 @@
+{
+  "conclusion": "fork produces a distinct host conversation, but the one-shot headless runner refuses to run a forked session at all, so whether a fork would inherit the parent Tsunagou identity could not be tested on this surface. Driving it needs an app surface that composes agent presets (web/tui).",
+  "drive_attempts": [
+    {
+      "host_message": "session runs under agent preset standard, which the one-shot runner does not compose",
+      "host_refused": true,
+      "launched_with": "no overlay"
+    },
+    {
+      "host_message": "session runs under agent preset standard, which the one-shot runner does not compose",
+      "host_refused": true,
+      "launched_with": "the parent conversation overlay",
+      "note": "the bridge itself started (the patch loaded), but the session never ran, so no tool call was possible"
+    }
+  ],
+  "fork": {
+    "child_host_session_digest": "sha256:b3584581e87b583e",
+    "distinct": true,
+    "parent_host_session_digest": "sha256:8279b35c4278ffc1"
+  },
+  "host": "deepseek",
+  "scope": "fork_identity_separation",
+  "tsunagou_tool_calls_observed": 0
+}

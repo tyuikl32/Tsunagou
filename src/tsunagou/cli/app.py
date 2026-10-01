@@ -994,6 +994,46 @@ if typer is not None:
                 _remove_legacy_codex_servers(codex, project_root=legacy_project_root, bridge=config)
         return f"registered:{name}"
 
+    def _register_deepseek_mcp(*, profile: str, bridge_config_path: Path) -> str:
+        """Write this conversation's own Harness overlay, and nothing shared.
+
+        Harness has no `mcp add`, and a profile-wide entry would hand the enrolled
+        identity to whatever conversation boots that profile, so the entry lives in
+        this conversation's private bridge directory instead and travels on its launch
+        command. An unbound conversation then has no Tsunagou tools at all.
+        """
+
+        config = json.loads(bridge_config_path.read_text(encoding="utf-8"))
+        project_root = Path(str((config.get("env") or {}).get("TSUNAGOU_PROJECT_ROOT") or _project_root()))
+        # The identity provider is installed and required inside `register` itself, so the
+        # CLI and the console take the same path and neither can write an overlay that
+        # cannot prove its caller.
+        result = host_registration.register(
+            "deepseek", profile=profile, project_root=project_root, bridge=config,
+        )
+        if result.status == host_registration.REGISTERED:
+            return f"registered:{result.name}"
+        return f"deepseek_{result.status}"
+
+    def _deepseek_launch_command(*, profile: str, bridge_config_path: Path) -> str:
+        """The one command that boots this conversation with its own overlay.
+
+        It is emitted rather than executed: Harness only learns which conversation it
+        is when that conversation starts, so the binding has to travel on the launch.
+        """
+
+        from tsunagou.application.onboarding import powershell_quote
+        from tsunagou.platform.host_registration import deepseek_overlay_path
+
+        config = json.loads(bridge_config_path.read_text(encoding="utf-8"))
+        overlay = deepseek_overlay_path(config)
+        host = host_registration.host_for("deepseek")
+        executable = host_registration.find_executable(host) if host is not None else None
+        return (f"& {powershell_quote(executable or 'dsh')} "
+                f"--profile {powershell_quote(host_registration.dsh_app_profile(profile))} "
+                f"--patch {powershell_quote(str(overlay))} "
+                f"--session-id <this conversation's Harness session id>")
+
     @host_app.command("bind")
     def host_bind(
         agent_id: str = typer.Option(..., "--agent-id"),
@@ -1313,12 +1353,22 @@ if typer is not None:
                 # This verifies enrollment through a helper bridge. Original-host
                 # MCP readiness remains a separate observation after connect.
                 enrolled_at = format_timestamp(now_ms())
-                registration = (_register_codex_mcp(
-                                    profile=profile,
-                                    bridge_config_path=bridge_config_path,
-                                    legacy_project_root=runtime.project_root,
-                                )
-                                if register_host and adapter == "codex" else "not_requested")
+                launch_command = ""
+                if register_host and adapter == "codex":
+                    registration = _register_codex_mcp(
+                        profile=profile,
+                        bridge_config_path=bridge_config_path,
+                        legacy_project_root=runtime.project_root,
+                    )
+                elif register_host and adapter == "deepseek":
+                    registration = _register_deepseek_mcp(
+                        profile=profile, bridge_config_path=bridge_config_path,
+                    )
+                    launch_command = _deepseek_launch_command(
+                        profile=profile, bridge_config_path=bridge_config_path,
+                    )
+                else:
+                    registration = "not_requested"
 
                 public_context = {key: context[key] for key in ("project_id", "agent_id", "role")}
                 for name, fields in (("session", ("status", "connection_epoch", "baseline_status")),
@@ -1331,6 +1381,10 @@ if typer is not None:
                              "source_root": str(source),
                              "version": _daemon_request("GET", "/api/v1/health")["version"],
                              "next": "call_context__project_read_in_original_conversation"}
+                if adapter == "deepseek" and launch_command:
+                    # The private overlay avoids adding tools to the shared profile.
+                    # Reusing it in another conversation can still reuse this identity.
+                    connected["launch_command"] = launch_command
                 connection_file = destination / "connection.json"
                 previous = read_object(connection_file)
                 connected["connected_at"] = previous.get("connected_at") if connection_file.exists() else enrolled_at

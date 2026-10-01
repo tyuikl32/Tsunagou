@@ -191,6 +191,14 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
         },
         worker,
     )
+    # The reviewer learns a result exists only from this notification, and the review
+    # boundary compares result_digest. A notice carrying the id alone leaves the
+    # reviewer able to see the obligation but unable to act on it.
+    claimed = agent_call("inbox.claim", {"limit": 20}, main)
+    notice = next(item for item in claimed["messages"] if item["kind"] == "task.submitted")
+    fetched_notice = agent_call("inbox.fetch", {"message_id": notice["message_id"]}, main)
+    assert fetched_notice["payload"]["result_id"] == submitted["result_id"]
+    assert fetched_notice["payload"]["result_digest"] == submitted["digest"]
     reviewed = call(
         "task.review.accept",
         {

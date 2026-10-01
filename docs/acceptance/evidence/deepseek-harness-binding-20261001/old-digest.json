@@ -1,0 +1,33 @@
+{
+  "control_current_digest": {
+    "code": null,
+    "http_status": 200,
+    "status": "accepted"
+  },
+  "current_hash_still_accepted": true,
+  "first": {
+    "digest": "sha256:6eb3cffded9370638e72f785a0af355cff5d9a2e97877b67394195349638449f",
+    "proposal_id": "639cc114-b79d-477a-8d1e-424845c80702",
+    "status": "proposed"
+  },
+  "host": "deepseek-harness",
+  "old_digest_against_current_revision": {
+    "code": "proposal_digest_mismatch",
+    "http_status": 400
+  },
+  "old_digest_against_its_own_retired_revision": {
+    "code": "proposal_not_proposed",
+    "http_status": 400
+  },
+  "old_hash_is_invalid": true,
+  "predecessor_superseded": true,
+  "reading": "An old hash is invalid in both senses the requirement can mean. Presented against the current revision it is refused proposal_digest_mismatch, because the content it describes is no longer that proposal; presented against the predecessor it is refused proposal_not_proposed, because accepting a revision retires its predecessor. The control shows the current digest is still accepted, so the refusals are about the hash being old rather than about acceptance being broken.",
+  "scope": "old_proposal_digest_is_invalid",
+  "second": {
+    "digest": "sha256:e05ffcf2413f41cd3a95626b69cbb33f641a178a01a302e78db682e2c12bc84f",
+    "proposal_id": "beb4df35-5847-459c-a4f0-c5990f2a015d",
+    "status": "proposed",
+    "supersedes_id": "639cc114-b79d-477a-8d1e-424845c80702"
+  },
+  "what_this_replaces": "the earlier wrong-digest case, which used an all-zero value and therefore showed only that a wrong digest is refused"
+}

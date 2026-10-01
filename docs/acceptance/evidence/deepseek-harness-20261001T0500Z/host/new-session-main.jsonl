@@ -1,0 +1,7 @@
+{"cwd": "<TEST_ROOT>\\coord", "sessionId": "session:8279b35c4278", "type": "session"}
+{"phase": "turn_start", "turn": 1, "type": "status"}
+{"phase": "step_start", "step": 1, "turn": 1, "type": "status"}
+{"text": "READY", "type": "text"}
+{"phase": "step_end", "step": 1, "turn": 1, "type": "status", "usage": {"cacheReadTokens": 5504, "cacheWriteTokens": 0, "inputTokens": 867, "outputTokens": 3, "totalTokens": 6374}}
+{"phase": "turn_end", "reason": {"kind": "completed"}, "turn": 1, "type": "status"}
+{"text": "READY", "type": "final"}

@@ -1,6 +1,6 @@
 # 四宿主与 MCP 可行性矩阵
 
-最近核验：Codex 2026-09-20；其他宿主 2026-09-19（Windows 11，Python 3.13.15，Node 24.20.0）。这是 T02/T23 的真实宿主诊断证据，不等同于四个正式适配器已交付。首发发布门禁只要求 Codex、OpenCode、DeepSeek Harness；ZCode 适配器和本矩阵记录保留，但正式基线与宿主演示后置。原始会话 ID、token、cookie、转录和本机私密路径不写入仓库；证据只保存脱敏 digest、状态和可复现原因。
+最近核验：DeepSeek Harness 2026-10-01；Codex 2026-09-20；其他宿主 2026-09-19（Windows 11，Python 3.13.15，Node 24.20.0）。这是 T02/T23 的真实宿主诊断证据，不等同于四个正式适配器已交付。首发发布门禁只要求 Codex、OpenCode、DeepSeek Harness；ZCode 适配器和本矩阵记录保留，但正式基线与宿主演示后置。原始会话 ID、token、cookie、转录和本机私密路径不写入仓库；证据只保存脱敏 digest、状态和可复现原因。
 
 ## 环境与接入面
 
@@ -9,7 +9,7 @@
 | Codex CLI/App Server | codex 0.155.0-alpha.9.2 可执行 | app-server --stdio、thread lifecycle、MCP | 单宿主能力基线按组合证据口径 11/11 supported；严格的真实 bridge 在途断线场景仍未直接观察，见下文 |
 | OpenCode | `opencode-ai 1.18.31` 可通过 npm 临时运行 | headless server REST、Session、fork、MCP/OpenAPI | 已完成无模型轮次真实 probe；完整共同基线仍 unknown |
 | ZCode Agent | 未安装；公开 npm/GitHub 结果只有非官方客户端或社区桥接 | z.ai 原生 session/hook/MCP | unknown；没有可锁定的官方 CLI/API 版本，hook 资料要求变更后新会话，不能假设热生效 |
-| DeepSeek Harness | `@deepseek-ai/dsh 0.1.5-rc.2` 可通过 npm 临时运行 | deepseek-ai/deepseek-harness Web RPC、session/tool 扩展 | 已完成临时家目录的无模型真实 probe；完整共同基线仍 unknown |
+| DeepSeek Harness | 桌面版 `@deepseek-ai/dsh-desktop-runtime 0.2.0-rc.2` | profile patch、stdio MCP、session controller | 尚未通过完整验收；身份隔离有反例，其余最新自报结果待独立复核 |
 
 ## 共同基线
 
@@ -17,14 +17,14 @@
 
 | capability | Codex | OpenCode | ZCode | DeepSeek Harness | 证据 |
 |---|---|---|---|---|---|
-| identity.session_isolation | supported（两个 thread digest 不同） | supported（两个 session 与 fork digest 不同） | unknown | supported（两个同目录 session digest 不同） | 各宿主 disposable/temporary-home probe |
+| identity.session_isolation | supported（两个 thread digest 不同） | supported（两个 session 与 fork digest 不同） | unknown | unknown（另一会话可复用 overlay 取得原身份） | 各宿主 disposable/temporary-home probe |
 | identity.continuity_evidence | supported（有内容会话 compact、fork、new 元数据） | unknown | unknown | unknown | [Codex 宿主事件补证](evidence/codex-2026-09-20-final-two-audit.json)；fork/new 未另行 bridge 入会 |
 | context.project_read | supported | unknown | unknown | unknown | [Codex 五项复验](evidence/codex-2026-09-20T1628-fivecaps-live.json) |
 | command.typed_tools | supported | unknown | unknown | unknown | [Codex 业务复验](evidence/codex-2026-09-20T0002-live.json) |
 | task.lifecycle | supported | unknown | unknown | unknown | [Codex 业务复验](evidence/codex-2026-09-20T0002-live.json) |
 | cognition.report | supported | unknown | unknown | unknown | [Codex 业务复验](evidence/codex-2026-09-20T0002-live.json) |
 | contract.participation | supported（独立双会话提案与指定 worker 接受正例） | unknown | unknown | unknown | [Codex 独立复验](evidence/codex-2026-09-19T2136-independent.json) |
-| inbox.pull_fetch_ack | supported（独立双会话拉取、呈现、ACK 正例） | unknown | unknown | unknown | [Codex 独立复验](evidence/codex-2026-09-19T2136-independent.json) |
+| inbox.pull_fetch_ack | supported（独立双会话拉取、呈现、ACK 正例） | unknown | unknown | supported | [Codex 独立复验](evidence/codex-2026-09-19T2136-independent.json) |
 | response.structured | supported | unknown | unknown | unknown | [Codex 五项复验](evidence/codex-2026-09-20T1628-fivecaps-live.json) |
 | recovery.idempotent_reconnect | supported（真实 bridge 重连及旧凭据拒绝 + 一次性 HTTP 在途注入） | unknown | unknown | unknown | [Codex 恢复补证](evidence/codex-2026-09-20-final-two-audit.json)；同一真实 bridge 在途断线未直接观察 |
 | delivery.deduplicate | supported | unknown | unknown | unknown | [Codex 五项复验](evidence/codex-2026-09-20T1628-fivecaps-live.json) |
@@ -54,3 +54,5 @@
 - Codex `0.155.0-alpha.9.2` 的 [新无模型探针](evidence/codex-2026-09-19T170100.json)与 [十项专项记录](../acceptance/codex-pilot-2026-09-19.md)再次确认仅原生隔离有证据，`ready: false`；它不替代项目 bridge/HostSession 验收。
 - 2026-09-19 21:10–21:41 的 [Codex 独立真实 bridge 复验](../acceptance/codex-independent-2026-09-19.md)在隔离项目和状态中完成双会话入会，并取得契约参与和 inbox 全程的真实 MCP 正例。连续性、项目语义读取、typed schema、完整任务生命周期、认知报告、结构化回应、在途断线恢复和完整去重仍保留 `unknown`：其中报告 `invalid_claim`、不存在的回复消息被接受、同 command ID 改输入生成第二条消息都有隔离环境的实际反例。运行时两个 session 曾为 `ready`，不等于 11 项正式基线通过；最新脱敏证据为 [Codex JSON](evidence/codex-2026-09-19T2136-independent.json)。
 - 2026-09-20 的 [Codex 十一项汇总](evidence/codex-2026-09-20-final-two-live.json)现有逐项 `evidence_refs`，`require_baseline` 返回 true。最后两项的[审计补证](evidence/codex-2026-09-20-final-two-audit.json)从保留的宿主 rollout 元数据独立核实 compact/fork/new 与重连后工具结果；bridge 轮换状态码和一次性 HTTP 在途注入引用协同方脱敏记录。严格的“同一真实 bridge 请求在途断线”仍缺直接观察；Codex 单宿主能力基线的结论不改变 OpenCode、DeepSeek Harness 或发布门禁。
+
+DeepSeek 0.2.0-rc.2 的证据与待核对项统一见[验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)。本表 DeepSeek 列保留发布门禁的保守状态，不采用执行者未经独立复验的通过数量；黑板与契约分歧另列为共享产品问题。历史 0.1.5-rc.2 无模型诊断记录保留供版本对照。

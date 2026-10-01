@@ -1,0 +1,100 @@
+{
+  "actor": "a second real Harness conversation (agent f0348317) with its own overlay and credential",
+  "host": "deepseek",
+  "peer_worker_attempt_cross_operation": [
+    {
+      "input": {},
+      "refused": false,
+      "result_code": null,
+      "tool": "mcp__tsunagou__context__project_read"
+    },
+    {
+      "input": {
+        "expected_task_revision": 3,
+        "task_id": "fc666150-d729-403a-852f-0bdfa76b4e96"
+      },
+      "refused": false,
+      "result_code": null,
+      "tool": "mcp__tsunagou__task__begin"
+    },
+    {
+      "input": {
+        "attempt_id": "641b4913-0334-4792-ad53-70c134850593",
+        "reason": "peer worker acting on another worker's attempt",
+        "task_id": "0108a623-4f59-4d8e-be4e-67ea1667a106"
+      },
+      "refused": true,
+      "result_code": "attempt_owner_required",
+      "tool": "mcp__tsunagou__task__block"
+    },
+    {
+      "input": {
+        "attempt_id": "641b4913-0334-4792-ad53-70c134850593",
+        "summary": "peer worker acting on another worker's attempt",
+        "task_id": "0108a623-4f59-4d8e-be4e-67ea1667a106"
+      },
+      "refused": true,
+      "result_code": "capability_denied",
+      "tool": "mcp__tsunagou__task__submit"
+    },
+    {
+      "input": {
+        "attempt_id": "641b4913-0334-4792-ad53-70c134850593",
+        "reason": "peer worker acting on another worker's attempt",
+        "task_id": "0108a623-4f59-4d8e-be4e-67ea1667a106"
+      },
+      "refused": true,
+      "result_code": "cancel_not_requested",
+      "tool": "mcp__tsunagou__task__cancel_ack"
+    }
+  ],
+  "scope": "peer_worker_and_uninvited_participant_negatives",
+  "uninvited_participant": [
+    {
+      "input": {},
+      "refused": false,
+      "result_code": null,
+      "tool": "mcp__tsunagou__context__project_read"
+    },
+    {
+      "input": {
+        "attempt_id": "641b4913-0334-4792-ad53-70c134850593",
+        "summary": "peer worker probing another worker's attempt",
+        "task_id": "0108a623-4f59-4d8e-be4e-67ea1667a106"
+      },
+      "refused": true,
+      "result_code": "capability_denied",
+      "tool": "mcp__tsunagou__task__progress"
+    },
+    {
+      "input": {
+        "attempt_id": "641b4913-0334-4792-ad53-70c134850593",
+        "summary": "peer worker probing another worker's attempt",
+        "task_id": "0108a623-4f59-4d8e-be4e-67ea1667a106"
+      },
+      "refused": true,
+      "result_code": "capability_denied",
+      "tool": "mcp__tsunagou__task__submit"
+    },
+    {
+      "input": {
+        "participant_slot": "worker",
+        "proposal_digest": "sha256:c0732997a3e7df24f73df90f6e3751da9cbdfe9b4c34c2a4c22a711aa70c4919",
+        "proposal_id": "3f34b65f-a2e9-4c2e-95f8-329666389485"
+      },
+      "refused": true,
+      "result_code": "participant_slot_denied",
+      "tool": "mcp__tsunagou__contract__accept"
+    },
+    {
+      "input": {
+        "participant_slot": "worker2",
+        "proposal_digest": "sha256:c0732997a3e7df24f73df90f6e3751da9cbdfe9b4c34c2a4c22a711aa70c4919",
+        "proposal_id": "3f34b65f-a2e9-4c2e-95f8-329666389485"
+      },
+      "refused": true,
+      "result_code": "participant_slot_denied",
+      "tool": "mcp__tsunagou__contract__accept"
+    }
+  ]
+}

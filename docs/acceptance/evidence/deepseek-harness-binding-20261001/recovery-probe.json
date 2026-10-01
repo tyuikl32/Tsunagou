@@ -1,0 +1,45 @@
+{
+  "agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+  "changed_input_replay": {
+    "error_code": "idempotency_conflict",
+    "http_status": 409
+  },
+  "connection_epoch_before": 1,
+  "effects_after_replay": {
+    "changed_input_created_nothing": true,
+    "replay_returned_the_committed_message": true
+  },
+  "host": "deepseek",
+  "idempotent_replay": {
+    "http_status": 200,
+    "message_id_digest": "sha256:f48ec423371c3dd0e235d2e1c6eef1bb0daf9a3868b25b7a09698b2faeabcdb0",
+    "same_message_id_as_committed": true
+  },
+  "in_flight_request": {
+    "client_error": "RemoteDisconnected",
+    "command_id": "probe-962f3f016497",
+    "daemon_saw_message_id_digest": "sha256:f48ec423371c3dd0e235d2e1c6eef1bb0daf9a3868b25b7a09698b2faeabcdb0",
+    "daemon_status": 200,
+    "epoch_sent": 1,
+    "headers_sent": [
+      "Authorization",
+      "Content-Type",
+      "Tsunagou-Connection-Epoch",
+      "Tsunagou-Project-Id",
+      "Tsunagou-Session-Id"
+    ],
+    "payload_nonce": "inflight-9eab3f9fa596",
+    "response_read": false
+  },
+  "rotation": {
+    "skipped": "rotate=False; run this against a disposable conversation"
+  },
+  "scope": "bridge_wire_recovery",
+  "secrets_in_report": false,
+  "server_committed_without_reading_response": {
+    "inbox_claim_status": 200,
+    "message_id_digest": "sha256:f48ec423371c3dd0e235d2e1c6eef1bb0daf9a3868b25b7a09698b2faeabcdb0",
+    "messages_carrying_nonce": 1
+  },
+  "session_id": "14b3d90c-526e-4c40-be2c-d1a557169850"
+}

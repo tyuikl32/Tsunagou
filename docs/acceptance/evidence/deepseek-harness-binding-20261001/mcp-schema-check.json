@@ -1,0 +1,715 @@
+{
+  "drifted": [
+    "cognition__report",
+    "contract__accept",
+    "contract__accept_proxy",
+    "contract__reject",
+    "contract__withdraw",
+    "discrepancy__create",
+    "discrepancy__resolve",
+    "durability__reconcile",
+    "project__completion_propose",
+    "task__block",
+    "task__cancel_ack",
+    "task__cancel_request",
+    "task__edge_add",
+    "task__edge_remove",
+    "task__fail",
+    "task__progress",
+    "task__publish",
+    "task__ready",
+    "task__review_accept",
+    "task__review_request_changes",
+    "task__scope_request",
+    "task__self_accept"
+  ],
+  "host": "deepseek",
+  "rows": [
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": true,
+      "command_kind": "cognition.report",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "boundary",
+        "confidence",
+        "confidence_reason",
+        "evidence_refs",
+        "supersedes_id",
+        "understanding"
+      ],
+      "protocol_only_required": [
+        "assumptions",
+        "boundary",
+        "claims",
+        "confidence",
+        "confidence_reason",
+        "evidence_refs",
+        "input_revisions",
+        "supersedes_id",
+        "uncertainties",
+        "understanding"
+      ],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "cognition__report",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "context.project_read",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "context__project_read",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "contract.accept",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "evidence_refs"
+      ],
+      "protocol_only_required": [
+        "evidence_refs"
+      ],
+      "served_only_fields": [
+        "participant_slot",
+        "proposal_id"
+      ],
+      "served_only_required": [
+        "participant_slot",
+        "proposal_id"
+      ],
+      "tool": "contract__accept",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "contract.accept_proxy",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "evidence_refs"
+      ],
+      "protocol_only_required": [
+        "evidence_refs",
+        "proxy_policy_ref",
+        "reason"
+      ],
+      "served_only_fields": [
+        "proposal_id"
+      ],
+      "served_only_required": [
+        "proposal_id"
+      ],
+      "tool": "contract__accept_proxy",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "contract.propose",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "contract__propose",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "contract.reject",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "evidence_refs"
+      ],
+      "served_only_fields": [
+        "proposal_id"
+      ],
+      "served_only_required": [
+        "proposal_id"
+      ],
+      "tool": "contract__reject",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "contract.withdraw",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [
+        "proposal_id"
+      ],
+      "served_only_required": [
+        "proposal_id"
+      ],
+      "tool": "contract__withdraw",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "coordination.plan",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "coordination__plan",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "coordination.takeover",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "coordination__takeover",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "user_decision.propose",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "decision__propose",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "discrepancy.advance",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "discrepancy__advance",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "discrepancy.create",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "affected_actions",
+        "participants"
+      ],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "discrepancy__create",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "discrepancy.resolve",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "accepted_by",
+        "input_digest"
+      ],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "discrepancy__resolve",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "durability.reconcile",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "scope_refs"
+      ],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "durability__reconcile",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "inbox.ack",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "inbox__ack",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "inbox.claim",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "inbox__claim",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "inbox.fetch",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "inbox__fetch",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "inbox.presented",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "inbox__presented",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "message.respond",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "message__respond",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "message.send",
+      "documented_extra_fields": [
+        "command_id"
+      ],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "message__send",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "project.completion.propose.main",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "evidence_refs",
+        "expected_project_revision",
+        "outstanding_summary"
+      ],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "project__completion_propose",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "project.configure",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "project__configure",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.begin",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "task__begin",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.block",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "checkpoint_summary",
+        "dependency_refs",
+        "evidence_refs"
+      ],
+      "protocol_only_required": [
+        "checkpoint_summary",
+        "dependency_refs",
+        "evidence_refs",
+        "reason_code"
+      ],
+      "served_only_fields": [
+        "reason",
+        "task_id"
+      ],
+      "served_only_required": [
+        "task_id"
+      ],
+      "tool": "task__block",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.cancel_ack",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "stop_evidence"
+      ],
+      "served_only_fields": [
+        "task_id"
+      ],
+      "served_only_required": [
+        "task_id"
+      ],
+      "tool": "task__cancel_ack",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.cancel_request",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [
+        "task_id"
+      ],
+      "served_only_required": [
+        "task_id"
+      ],
+      "tool": "task__cancel_request",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.create",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "task__create",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.edge.add",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "expected_revisions"
+      ],
+      "protocol_only_required": [
+        "expected_revisions",
+        "kind"
+      ],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "task__edge_add",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.edge.remove",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "expected_revisions"
+      ],
+      "protocol_only_required": [
+        "expected_revisions",
+        "reason"
+      ],
+      "served_only_fields": [
+        "source_task_id",
+        "target_task_id"
+      ],
+      "served_only_required": [
+        "source_task_id",
+        "target_task_id"
+      ],
+      "tool": "task__edge_remove",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.fail",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "evidence_refs",
+        "stop_evidence"
+      ],
+      "served_only_fields": [
+        "task_id"
+      ],
+      "served_only_required": [
+        "task_id"
+      ],
+      "tool": "task__fail",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.progress",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "evidence_refs",
+        "summary"
+      ],
+      "served_only_fields": [
+        "attempt_id",
+        "task_id"
+      ],
+      "served_only_required": [
+        "attempt_id",
+        "task_id"
+      ],
+      "tool": "task__progress",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.publish",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "reason"
+      ],
+      "served_only_fields": [
+        "task_id"
+      ],
+      "served_only_required": [
+        "task_id"
+      ],
+      "tool": "task__publish",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.ready",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "reason"
+      ],
+      "served_only_fields": [
+        "task_id"
+      ],
+      "served_only_required": [
+        "task_id"
+      ],
+      "tool": "task__ready",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.recover",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "task__recover",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.review.accept",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "evidence_refs",
+        "reason"
+      ],
+      "served_only_fields": [
+        "attempt_id",
+        "result_id",
+        "task_id"
+      ],
+      "served_only_required": [
+        "result_id",
+        "task_id"
+      ],
+      "tool": "task__review_accept",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.review.request_changes",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "evidence_refs",
+        "reason"
+      ],
+      "served_only_fields": [
+        "attempt_id",
+        "result_id",
+        "task_id"
+      ],
+      "served_only_required": [
+        "result_id",
+        "task_id"
+      ],
+      "tool": "task__review_request_changes",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.scope.request",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [
+        "expected_revisions"
+      ],
+      "protocol_only_required": [
+        "expected_revisions"
+      ],
+      "served_only_fields": [
+        "task_id"
+      ],
+      "served_only_required": [
+        "task_id"
+      ],
+      "tool": "task__scope_request",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.scope.resolve",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "task__scope_resolve",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.self_accept",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [
+        "evidence_refs",
+        "reason"
+      ],
+      "served_only_fields": [
+        "result_id",
+        "task_id"
+      ],
+      "served_only_required": [
+        "result_id",
+        "task_id"
+      ],
+      "tool": "task__self_accept",
+      "verdict": "drift"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.submit",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "task__submit",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "task.update_plan",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "task__update_plan",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "workspace.integrate",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "workspace__integrate",
+      "verdict": "match"
+    },
+    {
+      "additional_properties_protocol": false,
+      "additional_properties_served": false,
+      "command_kind": "workspace.select",
+      "documented_extra_fields": [],
+      "protocol_only_fields": [],
+      "protocol_only_required": [],
+      "served_only_fields": [],
+      "served_only_required": [],
+      "tool": "workspace__select",
+      "verdict": "match"
+    }
+  ],
+  "scope": "published_tool_schema_vs_protocol",
+  "tools_published": 43,
+  "tools_with_a_command_mapping": 43
+}

@@ -1,0 +1,43 @@
+{
+  "host": "deepseek-harness",
+  "measurement": {
+    "call_without_slot_id": {
+      "http_status": 200,
+      "outcome": "task completed",
+      "result_id": "3fd5df59-ced2-4e76-99dc-857743c173df"
+    },
+    "command": "task.review.accept",
+    "conclusion": "a protocol-required field is not enforced: the daemon accepted a payload without slot_id and completed the task, and handlers.task_review never reads it",
+    "handler_ignores": [
+      "slot_id"
+    ],
+    "handler_reads": [
+      "task_id",
+      "result_id",
+      "result_digest"
+    ],
+    "protocol_declares_required": [
+      "evidence_refs",
+      "reason",
+      "result_digest",
+      "slot_id"
+    ]
+  },
+  "next_step_not_taken": "Correcting protocol/schemas/commands/** to the semantics the server enforces, together with the packaged copies, the fixtures and schema_bundle_digest. That digest is embedded in every command envelope, so changing it is a public-contract change with a blast radius beyond this adapter; the executor did not make it unilaterally.",
+  "schema_check_after": {
+    "constraint_differences": 19,
+    "drifted_tools": [
+      "cognition__report",
+      "task__review_accept"
+    ],
+    "note": "both remaining entries drift because the PROTOCOL file is wrong, not the tool: task.review.accept is missing task_id/result_id/result_digest and invents a required slot_id; cognition.report declares ten required fields the handler does not use"
+  },
+  "scope": "protocol_overstates_what_the_server_enforces",
+  "version": "0.2.0-rc.2",
+  "what_was_changed": {
+    "cognition__report": "unchanged override: the bridge fills input_revisions, and the protocol declares ten required fields the handler does not use",
+    "file": "packages/bridge-server/src/server.ts",
+    "task__review_accept": "hand-written override stating the contract the server enforces (required: task_id, result_id, result_digest; slot_id kept and documented as unread)"
+  },
+  "why_it_matters": "Deriving the published tool from such a protocol file asks the model for a field the server ignores and no read surface provides. The first derivation pass did exactly that, so this command now carries a measured override instead."
+}

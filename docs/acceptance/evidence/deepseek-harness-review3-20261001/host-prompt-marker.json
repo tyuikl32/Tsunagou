@@ -1,0 +1,37 @@
+{
+  "reviewed_at": "2026-10-01T07:47:37.243477+00:00",
+  "mode": "prompt-marker",
+  "bound_agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+  "bound_host_digest": "sha256:67cec445686183d195717a6e4f0143707b32ac65db7dcbc29c036bc177fc6e45",
+  "observations": [
+    {
+      "label": "new_with_marker_inside_positional_prompt",
+      "exit_code": 0,
+      "host_session_digest": "sha256:10586291b6f2e426a18d339785e546131c21a5a5fc21f81cbe6d12d2ecf1261b",
+      "tool_calls": [
+        "mcp__tsunagou__context__project_read"
+      ],
+      "results": [
+        {
+          "length": 8192,
+          "truncated": true,
+          "host_status": "completed",
+          "result_digest": "sha256:d8da5c1a767a25ad9d8a91c709095721b4105949ee8d1f140261f43f3df696e3",
+          "identity": {
+            "project_id": "89b4313b-a3e3-427d-a104-c0f8498d22c0",
+            "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+            "role": "worker"
+          },
+          "session": {
+            "session_id": "fe7df5f9-0030-41b0-a3c7-e828ef493ef2",
+            "status": "ready",
+            "connection_epoch": 3
+          },
+          "error_code": null,
+          "reason": null
+        }
+      ],
+      "stdout_digest": "sha256:ecd2c11662e03c0f9b04ad24150a7d63a0c8c7f03e0deda05838b7159343acd2"
+    }
+  ]
+}

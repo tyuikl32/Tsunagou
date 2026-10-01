@@ -270,9 +270,16 @@ class ExecutionCommands:
                                        session_id=main_session.session_id, task_id=task_id,
                                        capabilities={"task.review"}, scope={"task_id": task_id})
         if main and main != context["principal_id"]:
+            # The review boundary compares result_digest against the stored result, and
+            # this notification is the only place the reviewer learns a result exists.
+            # Sending the id without the digest leaves the reviewer able to see the
+            # obligation but unable to act on it, so both travel together. The digest is
+            # a version pin, not a secret: it is the value review already requires back.
             self.messages.send(command_id=context["command_id"] + ":submitted", sender_agent_id=context["principal_id"],
                                recipient_agent_id=main, kind="task.submitted", subject_ref="task/" + task_id,
-                               summary="Task result available for review", payload={"task_id": task_id, "result_id": result.result_id})
+                               summary="Task result available for review",
+                               payload={"task_id": task_id, "result_id": result.result_id,
+                                        "result_digest": result.digest})
         return {"task_id": task_id, "attempt_id": attempt_id, "result_id": result.result_id, "digest": result.digest,
                 "workspace_result_ref": result_ref, "status": "submitted"}
 

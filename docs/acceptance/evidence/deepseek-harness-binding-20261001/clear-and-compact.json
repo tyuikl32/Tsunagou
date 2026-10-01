@@ -1,0 +1,25 @@
+{
+  "effect_on_the_baseline": "the continuity row's compact and clear gaps are now explained by the host surface rather than left unexamined: compaction exists as a human command this adapter's one-shot surface cannot drive, and clearing has no command to execute at all.",
+  "findings": {
+    "clear_has_no_command_package": {
+      "observation": "the packages whose names mention commands are dsh-client-ui-commands, dsh-command-compact, dsh-command-feedback, dsh-command-goal, dsh-commands, dsh-native-command, dsh-session-title-first-prompt-llm and dsh-system-prompt - there is no dsh-command-clear",
+      "reading": "nothing in this build registers a `/clear` command; the practical meaning of clearing is starting a fresh conversation, which is the `new` case already measured end to end",
+      "trace": "the only mention found is in dsh-agent/README.md, which does not register a command"
+    },
+    "compact_is_a_command_plugin": {
+      "mounted_in": "dsh-base/cordis.patch.yml as the entry `command-compact`",
+      "package": "@deepseek-ai/dsh-command-compact",
+      "reading": "compaction is offered to a person inside a session, as a command. It is not a session controller RPC, which is why the two argument shapes tried earlier answered 404, and why the one-shot headless runner - which does not compose the command layer - treats it as prompt text.",
+      "shipped_comment": "Human `/compact`: one useful reduction below the automatic threshold. Backend independent, so it follows whichever compaction service this leaf mounts."
+    }
+  },
+  "host": "deepseek-harness",
+  "method": "read the shipped packages under app.asar/dsh/node_modules/@deepseek-ai",
+  "not_claimed": [
+    "that compaction was executed - it was not, and this adapter has no surface that can drive it",
+    "that a future build keeps this shape; the finding is pinned to 0.2.0-rc.2"
+  ],
+  "scope": "clear_and_compact_on_this_surface",
+  "version": "0.2.0-rc.2",
+  "why": "the continuity row said compact was never executed and clear was never verified as a distinct operation. Those were inferences from a 404 and from a chat-UI habit; this session already produced two inferences that measuring overturned, so this one was checked against the build instead of left standing."
+}

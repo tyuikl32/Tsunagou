@@ -1,0 +1,35 @@
+{
+  "reviewed_at": "2026-10-01T06:01:25.632224+00:00",
+  "mode": "identity",
+  "observations": [
+    {
+      "label": "resume_bound_worker",
+      "exit_code": 0,
+      "profile": "worker",
+      "tool_calls": [
+        "mcp__tsunagou__context__project_read"
+      ],
+      "contexts": [
+        {
+          "error": "context_result_not_json",
+          "error_code": null,
+          "result_digest": "sha256:dfb25475c3701267f634c0255c953854efbf4c77e75575cabb28100264f50539"
+        }
+      ],
+      "host_session_digest": "sha256:67cec445686183d195717a6e4f0143707b32ac65db7dcbc29c036bc177fc6e45"
+    },
+    {
+      "label": "new_session_same_profile",
+      "exit_code": 0,
+      "profile": "worker",
+      "tool_calls": [],
+      "contexts": [],
+      "host_session_digest": "sha256:ce0d7494322c4a4ec65ed85b4a617e701ee9b914611bca9efc4113a3de7edcd2"
+    }
+  ],
+  "host_sessions_differ": true,
+  "same_tsunagou_agent": null,
+  "same_tsunagou_session": null,
+  "new_session_inherits_enrolled_worker": false,
+  "new_session_expected": "Reject unbound host conversation or enroll a distinct identity; never return the previous Agent as ready."
+}

@@ -1,0 +1,20 @@
+{
+  "companion": "dsh-plugin-resolution.json records what shipping a host-side provider costs",
+  "conclusion": "No configuration of an MCP entry can bind identity on this host: the transport discards the session, and the child environment carries only what the (copyable) entry configures. Closing the counterexample therefore needs a tool provider that runs INSIDE the harness process and reads the live session per call, i.e. a DSH plugin using ctx.tools.register + exec.agent.session, in place of @deepseek-ai/dsh-mcp-client. Until such a provider exists and the bridge requires the identity it supplies, the overlay carries a credential and not a proof of the caller, and the executor does not claim R1 closed. The companion finding dsh-plugin-resolution.json shows such a provider must be a package installed into the profile-local prefix, which makes closing R1 a product change rather than a configuration fix.",
+  "counter_evidence_same_build": {
+    "accessor": "exec.agent?.session.requestHeader()?.config appears in the same package (its LLM routing path)",
+    "meaning": "inside the harness process a tool implementation CAN read the live session; only the MCP transport loses it"
+  },
+  "file_bytes": 35009,
+  "file_sha256": "not computable from outside the archive: app.asar is a virtual filesystem; the extraction used Electron itself as the runtime (ELECTRON_RUN_AS_NODE=1), and the byte length above is the check available from here",
+  "host": "deepseek-harness",
+  "method": "read the shipped client at app.asar/dsh/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js",
+  "observations": {
+    "child_environment": "function buildChildEnv(extra) { return { ...scrubbedParentEnv(), ...extra }; } and the stdio transport passes env: buildChildEnv(config.env) \u2014 so a child sees the scrubbed parent environment plus exactly what the entry configures",
+    "initialize_client_info": "no clientInfo construction in this package; the handshake is performed by @modelcontextprotocol/client, which has no conversation to name",
+    "meta_hits": "the string _meta does not occur in this package at all",
+    "per_call_payload": "call: (args, execution) => client.callTool({ name: tool.name, arguments: args }, { signal, timeout, toolDefinition }) \u2014 the wire call carries the tool name and its arguments and nothing else"
+  },
+  "question": "Can an MCP child learn which conversation is calling it?",
+  "version": "0.2.0-rc.2"
+}

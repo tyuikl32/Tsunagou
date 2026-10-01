@@ -1,0 +1,50 @@
+{
+  "adapter_scope": {
+    "found_by": "reviewing this round change before handing it back: the first version of the guard read the identity file and did not check the adapter, which would have been a cross-adapter regression",
+    "regression": "packages/bridge-server/tests/host-spawner.test.ts pins both other adapters as not-applicable",
+    "rule": "the spawner question is asked only for the adapter whose launch command carries the conversation on --session-id",
+    "why": "every adapter writes host-identity.json, so gating on that file alone would make this guard refuse Codex (identity in CODEX_THREAD_ID) and OpenCode (identity in a per-call _meta field) on every call - their host process command lines carry no --session-id at all"
+  },
+  "deliberate_refusals": [
+    "A surface that runs many conversations in one long-lived process (dsh web) puts no --session-id on that process, so the question cannot be answered there and calls are refused rather than allowed. That is the agreed choice for this adapter: proceeding unproven is the defect.",
+    "An operator can set TSUNAGOU_TRUST_UNPROVEN_HOST=1 to restore the previous behaviour. Doing so reopens the counterexample and must be recorded as such wherever it is used."
+  ],
+  "host": "deepseek-harness",
+  "mechanism": "a Harness conversation that is being driven was started with --session-id <its conversation>; a child can read its parent process command line, so the bridge compares that value with the conversation_id recorded in its own host-identity.json.",
+  "not_yet_done": [
+    "the deepseek adapter documentation and the host matrix still describe the overlay alone as the binding",
+    "the adapter scoping is pinned by unit tests; the deepseek enforcement is verified end to end on the real host both before and after that change"
+  ],
+  "observations": [
+    {
+      "case": "the enrolled conversation with its own overlay",
+      "host_command": "dsh --profile headless --patch <its own overlay> --session-id <enrolled conversation>",
+      "result": "project_read succeeded: agent beb92813, session fe7df5f9, connection_epoch 3, status ready",
+      "transcript": "host-guard-resume.jsonl",
+      "tsunagou_tool_calls": 1
+    },
+    {
+      "case": "a brand-new conversation handed the enrolled overlay (the counterexample the second review reproduced)",
+      "error_code": "host_conversation_unproven",
+      "host_command": "dsh --profile headless --patch <the enrolled conversation overlay>",
+      "reason": "spawner_named_no_session",
+      "result": "refused before the daemon was contacted",
+      "transcript": "host-guard-new-with-overlay.jsonl",
+      "tsunagou_tool_calls": 1
+    },
+    {
+      "case": "a different existing conversation handed the enrolled overlay",
+      "error_code": "host_conversation_unproven",
+      "host_command": "dsh --profile headless --patch <the enrolled conversation overlay> --session-id <the other conversation>",
+      "reason": "spawner_is_a_different_conversation",
+      "result": "refused before the daemon was contacted",
+      "transcript": "host-guard-wrong-conversation.jsonl",
+      "tsunagou_tool_calls": 1
+    }
+  ],
+  "scope": "runtime_host_conversation_binding",
+  "version": "0.2.0-rc.2",
+  "what_changed": "packages/bridge-server/src/host-spawner.ts now asks whether the process that spawned this bridge was started for the conversation this bridge is enrolled for, and packages/bridge-server/src/server.ts refuses a tool call before anything reaches the daemon when that question cannot be answered or answers no.",
+  "why_configuration_could_not_do_it": "mcp-call-context.json: tools/call carries name plus arguments only, the child environment is scrubbedParentEnv() plus the copyable entry config, so an entry carries a credential and not a proof of the caller.",
+  "withdrawn": "HISTORICAL: this records a guard that has since been DELETED. It was bypassable - the third review put '--session-id <enrolled id>' inside an ordinary prompt argument and the guard let the new conversation through - and it also refused the helper agent connect uses, breaking enrollment. packages/bridge-server/src/server.ts is back at its committed state and no code refuses an unproven caller. Kept as the record of an attempt, not as current behaviour."
+}

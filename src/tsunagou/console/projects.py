@@ -373,7 +373,12 @@ def forget(
     daemon = stop_daemon(root)
     registrations: list[dict[str, Any]] = []
     for adapter, profile in bridge_profiles(root):
-        outcome = host_registration.unregister(adapter, profile=profile, project_root=root, run=run)
+        # Forgetting a project removes every registration it holds, which is a different
+        # request from cancelling one enrollment: without this the call carries no
+        # bridge_dir, a project with two conversations answers ambiguous, and every
+        # overlay plus the shared entry survive a forget that reported success.
+        outcome = host_registration.unregister(adapter, profile=profile, project_root=root,
+                                              all_registrations=True, run=run)
         registrations.append({"adapter": adapter, "profile": profile, **outcome.public()})
     dropped = enrollment.forget_project(entry.project_id)
     in_own_root = _is_inside(root, config.projects_root)
