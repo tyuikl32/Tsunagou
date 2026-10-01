@@ -1,0 +1,67 @@
+{
+  "compact": {
+    "accepted": null,
+    "attempts": [
+      {
+        "args": {
+          "request": {
+            "sessionId": "session:8279b35c4278"
+          }
+        },
+        "transport_error": "rpc_status_404"
+      },
+      {
+        "args": {
+          "sessionId": "session:8279b35c4278"
+        },
+        "transport_error": "rpc_status_404"
+      }
+    ],
+    "endpoint": "session/compact"
+  },
+  "fork": {
+    "accepted": {
+      "request": {
+        "sessionId": "session:8279b35c4278"
+      }
+    },
+    "attempts": [
+      {
+        "args": {
+          "request": {
+            "sessionId": "session:8279b35c4278"
+          }
+        },
+        "response": {
+          "result": {
+            "ok": true,
+            "value": {
+              "sessionId": "session:366c1c385ca0"
+            }
+          },
+          "rpcId": "tsunagou-probe-3ae24f211eb64befaec5cfe62b1cf81c",
+          "type": "server-response"
+        }
+      }
+    ],
+    "endpoint": "session/fork",
+    "response": {
+      "result": {
+        "ok": true,
+        "value": {
+          "sessionId": "session:366c1c385ca0"
+        }
+      },
+      "rpcId": "tsunagou-probe-3ae24f211eb64befaec5cfe62b1cf81c",
+      "type": "server-response"
+    }
+  },
+  "fork_child_session_id": "session:366c1c385ca0",
+  "fork_distinct_from_source": true,
+  "host": "deepseek",
+  "scope": "web_session_lifecycle",
+  "session_list_contains_child": true,
+  "session_list_count_before": 2,
+  "session_list_ok": true,
+  "source_session_id": "session:8279b35c4278"
+}

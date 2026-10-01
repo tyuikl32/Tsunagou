@@ -1,0 +1,72 @@
+{
+  "bound_agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+  "bound_host_session_digest": "sha256:67cec445686183d195717a6e4f0143707b32ac65db7dcbc29c036bc177fc6e45",
+  "new_with_overlay_inherits": true,
+  "new_without_overlay_has_no_tsunagou_tools": true,
+  "new_without_overlay_inherits": false,
+  "observations": [
+    {
+      "argv_tail": [
+        "--profile",
+        "worker",
+        "--patch",
+        "<TEST_ROOT>\\coord\\.tsunagou\\bridges\\deepseek-67cec445686183d1\\dsh-overlay.yml",
+        "--session-id",
+        "session:67cec4456861"
+      ],
+      "context": {
+        "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+        "connection_epoch": 3,
+        "project_id": "89b4313b-a3e3-427d-a104-c0f8498d22c0",
+        "role": "worker",
+        "session_id": "fe7df5f9-0030-41b0-a3c7-e828ef493ef2",
+        "status": "ready"
+      },
+      "exit_code": 0,
+      "final_digest": "sha256:55dcc87d7fabb7a6d099ec6a5cf70c61dd9f898f98f05efb8444354d1b4cb3fa",
+      "host_session_digest": "sha256:67cec445686183d195717a6e4f0143707b32ac65db7dcbc29c036bc177fc6e45",
+      "label": "resume_with_overlay",
+      "tool_unavailable": false,
+      "tsunagou_tool_calls": 1
+    },
+    {
+      "argv_tail": [
+        "--profile",
+        "worker"
+      ],
+      "context": null,
+      "exit_code": 0,
+      "final_digest": "sha256:5ab0c6d54a00f4d78aa103ffbffe339962753b593e984e83e198db7173988985",
+      "host_session_digest": "sha256:b6753466d92a6e11ce30d03b3739430505a416226d098035c42a11dbeb09448c",
+      "label": "new_without_overlay",
+      "tool_unavailable": true,
+      "tsunagou_tool_calls": 0
+    },
+    {
+      "argv_tail": [
+        "--profile",
+        "worker",
+        "--patch",
+        "<TEST_ROOT>\\coord\\.tsunagou\\bridges\\deepseek-67cec445686183d1\\dsh-overlay.yml"
+      ],
+      "context": {
+        "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+        "connection_epoch": 3,
+        "project_id": "89b4313b-a3e3-427d-a104-c0f8498d22c0",
+        "role": "worker",
+        "session_id": "fe7df5f9-0030-41b0-a3c7-e828ef493ef2",
+        "status": "ready"
+      },
+      "exit_code": 0,
+      "final_digest": "sha256:047b8b69eca087d398f4dac4c1dcdc964125cb1b2aaf5782c3155b13dae19bd2",
+      "host_session_digest": "sha256:57a988421966c4734033b38c185e9ef54426e070f6817eb08fc52891cf673f82",
+      "label": "new_with_overlay",
+      "tool_unavailable": false,
+      "tsunagou_tool_calls": 1
+    }
+  ],
+  "residual_limit": "Harness gives an MCP child no per-call session identity, so launching a different conversation with this conversation's overlay is indistinguishable from resuming it. new_with_overlay measures that case instead of hiding it.",
+  "resume_still_works": true,
+  "reviewed_at": "2026-10-01T05:42:10.784810+00:00",
+  "role": "worker"
+}

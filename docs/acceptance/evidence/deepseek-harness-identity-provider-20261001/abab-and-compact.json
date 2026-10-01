@@ -1,0 +1,51 @@
+{
+  "scope": "A -> B -> A identity switching inside one host process, and /compact through session/prompt",
+  "method": "one web profile process served both conversations. Every reading is limited to the events that appeared after that prompt was sent, so a historical tool result cannot be mistaken for this call's result - the mistake that invalidated an earlier claim in this same round",
+  "a_b_a": {
+    "A": {
+      "role": "the fork, enrolled with its own overlay",
+      "session_digest": "sha256:16940f317edfe4bc"
+    },
+    "B": {
+      "role": "the enrolled worker conversation, a different credential",
+      "session_digest": "sha256:67cec445686183d1"
+    },
+    "A_first": [
+      "8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94",
+      "7179dccd-9c31-44a1-b54c-8f7923cfd7ed"
+    ],
+    "B_between": [
+      null,
+      null,
+      null
+    ],
+    "A_again": [
+      "8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94",
+      "7179dccd-9c31-44a1-b54c-8f7923cfd7ed"
+    ],
+    "reading": "A answered as agent 8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94 before and after B - its own identity, distinct from the parent worker's beb92813, and stable across an intervening call in the same process",
+    "open_question": "B produced no identity reading at all: not the fork's, not the worker's, and no error code extracted. Whether B was refused, or the model simply made no Tsunagou call, is not yet determined"
+  },
+  "compact_through_session_prompt": {
+    "what_was_tried": "the text '/compact' sent with session/prompt, which is how a person's input reaches a session",
+    "observed": {
+      "accepted": true,
+      "fresh_events": 9,
+      "compaction_events": []
+    },
+    "reading": "the prompt was delivered and ran, but no compaction happened: session/prompt is not the command path. A slash command is recognised when the composer submits it, not when an RPC injects a user message, so the earlier human-driven compact remains the only real compact evidence",
+    "identity_after": [
+      "8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94",
+      "7179dccd-9c31-44a1-b54c-8f7923cfd7ed"
+    ]
+  },
+  "fixed_along_the_way": {
+    "writer_held": "session/writer-held came from the launcher being a .cmd wrapper: killing it left the node child alive holding the session's write handle. Stopping the process tree cleared it"
+  },
+  "still_not_verified": [
+    "fork driven on its own overlay was attempted through the same path and is covered by the A reading above; the standalone fork-on-parent-overlay comparison still needs the parent re-enrolled (its overlay predates this work)",
+    "a shortest main/worker task and message loop",
+    "compact before/after on the new wiring (needs the human entry or the composer path)"
+  ],
+  "recorded_at": "2026-10-01T12:35:20Z"
+}

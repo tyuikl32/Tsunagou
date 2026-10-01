@@ -162,11 +162,14 @@ def test_forgetting_takes_the_bridge_registrations_back_out(
     bridge.mkdir(parents=True)
     (bridge / "bridge.json").write_text(json.dumps({"adapter": "codex"}), encoding="utf-8")
     asked: list[tuple[str, str]] = []
+    scopes: list[bool] = []
 
     def fake_unregister(
-        adapter: str, *, profile: str, project_root: Path, run: object = None,
+        adapter: str, *, profile: str, project_root: Path, all_registrations: bool = False,
+        run: object = None,
     ) -> host_registration.Registration:
         asked.append((adapter, profile))
+        scopes.append(all_registrations)
         return host_registration.Registration(
             adapter=adapter, label=adapter, status="unregistered", name=f"tsunagou-{profile}",
         )
@@ -176,6 +179,9 @@ def test_forgetting_takes_the_bridge_registrations_back_out(
     report = forget(config, project_id)
 
     assert asked == [("codex", "main")], "每个 bridge 目录都要注销一次，profile 不能被拆错"
+    # Forgetting a project is the whole-project request, not one enrollment: without it a
+    # project holding two conversations answered ambiguous and kept every overlay.
+    assert scopes == [True], "forget 必须以整项目范围注销"
     assert report["host_registrations"][0]["status"] == "unregistered"
 
 

@@ -1,0 +1,101 @@
+{
+  "agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+  "all_refused": true,
+  "host": "deepseek",
+  "obligation_id_digest": "sha256:44f0ff35fe561648",
+  "refusals": {
+    "message.respond(foreign_agent)": {
+      "code": "obligation_recipient_mismatch",
+      "http_status": 403
+    },
+    "message.respond(nonexistent)": {
+      "code": "obligation_recipient_mismatch",
+      "http_status": 403
+    },
+    "message.respond(unlinked_reply)": {
+      "code": "response_not_linked_to_obligation",
+      "http_status": 400
+    }
+  },
+  "scope": "response_obligation_negatives",
+  "steps": [
+    {
+      "code": null,
+      "http_status": 200,
+      "message_id": "2820abbc-99de-45ad-96f0-8d5c55a4b819",
+      "recipient_agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+      "step": "message.send(question_to_self)"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "in_reply_to": null,
+      "kind": "question",
+      "message_id": "2820abbc-99de-45ad-96f0-8d5c55a4b819",
+      "payload": {
+        "probe": "response-negatives"
+      },
+      "payload_digest": "sha256:571899732a2e5f3ddfe80c3fefa788e984e051daabd4507db6bb027862ab0f0e",
+      "recipient_agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+      "response_obligations": [
+        {
+          "contract": {
+            "required": true
+          },
+          "obligation_id": "9e066798-184a-48ac-aa5a-c6116cef5248",
+          "status": "open"
+        }
+      ],
+      "sender_agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+      "step": "inbox.fetch",
+      "subject_ref": "probe/response",
+      "summary": "Response-negatives probe"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "message_id": "0fd08dd0-bd27-4a62-b1d6-b84bc653bbb3",
+      "recipient_agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+      "step": "message.send(loose)"
+    },
+    {
+      "code": "obligation_recipient_mismatch",
+      "detail": {
+        "code": "obligation_recipient_mismatch"
+      },
+      "http_status": 403,
+      "step": "message.respond(nonexistent)"
+    },
+    {
+      "code": "response_not_linked_to_obligation",
+      "detail": {
+        "code": "response_not_linked_to_obligation"
+      },
+      "http_status": 400,
+      "step": "message.respond(unlinked_reply)"
+    },
+    {
+      "code": "obligation_recipient_mismatch",
+      "detail": {
+        "code": "obligation_recipient_mismatch"
+      },
+      "http_status": 403,
+      "step": "message.respond(foreign_agent)"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "message_id": "16147827-0545-466a-bb29-a11122533086",
+      "recipient_agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+      "step": "message.send(reply)"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "obligation_id": "9e066798-184a-48ac-aa5a-c6116cef5248",
+      "response_message_id": "16147827-0545-466a-bb29-a11122533086",
+      "status": "responded",
+      "step": "message.respond(valid)"
+    }
+  ]
+}

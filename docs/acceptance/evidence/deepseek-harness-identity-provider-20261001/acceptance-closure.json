@@ -1,0 +1,26 @@
+{
+  "scope": "closing the acceptance per the user's decision",
+  "decision": {
+    "eleven_supported": true,
+    "clear": "recorded as a marked gap, not silently passed",
+    "decided_by": "the user. Earlier rounds reserved this judgement to independent review, so the report records whose decision it is and the executor did not upgrade it unilaterally"
+  },
+  "fixes_recorded_as_verified": [
+    "installation failure no longer writes an impersonatable stock overlay: the gate sits inside host_registration.register, so the CLI and the console (console/enrollment.py:298) share one path",
+    "readiness is the resolved package directory, across every profile in the home",
+    "MCP initialization instructions preserved and published (measured 340 characters)",
+    "child process error contained (measured mcp_spawn_failed, host process alive)"
+  ],
+  "clear_gap": {
+    "command_registry": [
+      "compact",
+      "feedback",
+      "goal",
+      "plan"
+    ],
+    "equivalent_alias": null,
+    "new_substituted": false
+  },
+  "release_gate": "not upgraded by the executor; docs/research/evidence/deepseek-2026-10-01.json left as it stands",
+  "recorded_at": "2026-10-01T14:06:54Z"
+}

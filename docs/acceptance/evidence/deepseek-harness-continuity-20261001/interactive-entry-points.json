@@ -1,0 +1,52 @@
+{
+  "host": "deepseek-harness",
+  "version": "0.2.0-rc.2",
+  "scope": "can_the_installed_interactive_surfaces_drive_compact_clear_fork",
+  "method": "read the shipped packages under app.asar/dsh/node_modules/@deepseek-ai with the desktop executable as node, then drive the isolated web profile the same way its own browser client does",
+  "entry_points_found": {
+    "cli": "no session subcommands: the launcher offers only profile booting, --patch, plugin, rescue and tui --resume",
+    "web_session_controller_client_methods": [
+      "prompt",
+      "fork",
+      "create",
+      "list",
+      "page",
+      "follow",
+      "rename",
+      "search",
+      "cancel"
+    ],
+    "no_compact_or_clear_method": "the controller exposes no compact or clear method; there is nothing to call for either operation at that layer",
+    "command_run_is_an_event_not_an_endpoint": "'command/run' appears as a session EVENT type pairing with 'command/done', not as an RPC",
+    "how_a_slash_command_is_executed": "@deepseek-ai/dsh-commands parses a leading /name out of user input and executes the command without sending it to the model, so a person reaches compact by typing it into a session - the browser does that through session/prompt",
+    "compact_registers_as": "@deepseek-ai/dsh-command-compact, command name 'compact'",
+    "clear": "the build inspection did not find a dsh-command-clear package or a usable clear entry point; absence of that package name alone does not prove that every surface lacks an equivalent operation"
+  },
+  "executed": {
+    "session_fork": {
+      "call": "session/fork {request:{sessionId:<target>}} through the web profile's own client path",
+      "result": "ok, child session created",
+      "target_host_session_digest": "sha256:67cec445686183d1",
+      "child_host_session_digest": "sha256:16940f317edfe4bc",
+      "child_is_a_different_host_conversation": true,
+      "session_count_before": 40,
+      "session_count_after": 41,
+      "target_still_listed_afterwards": true,
+      "reading": "fork is drivable on this surface: a real, distinct child conversation was produced from the target. Its Tsunagou enrollment state was NOT observed, because that needs a model turn in the child and the prompt call below did not accept a request."
+    },
+    "session_prompt_for_compact": {
+      "attempts": 6,
+      "outcome": "every shape was refused at the gateway boundary: 'session/prompt: wire field \"request\" failed boundary validation', details.field = request, with no inner field named",
+      "consequence": "/compact could not be typed into the target conversation, and no model turn was produced in it either. compact remains not executed; this is a shape-matching failure of the probe, not a host refusal of compaction."
+    }
+  },
+  "not_executed": {
+    "compact": "the surface offers it as a typed command; the probe could not deliver user input to the target session",
+    "clear": "no usable clear entry point was found during this review - kept as an untested gap, and 'new' was NOT substituted for it",
+    "identity_after_compact": "needs a model turn in the target session, which needs the same prompt call",
+    "identity_in_the_fork": "needs a model turn in the child session"
+  },
+  "observation_about_the_fork_surface": "The web profile was launched with the worker conversation's overlay. The shared MCP configuration and the established R1 counterexample imply a risk of reusing the worker identity; this is an inference, not an observed Tsunagou call from the child. The child's Tsunagou identity remains unobserved, so successful host-side fork is not identity-continuity evidence.",
+  "stopped_because": "the remaining obstacle is the probe's own request shape, and the scope forbids building more machinery",
+  "recorded_at": "2026-10-01T10:08:00Z"
+}

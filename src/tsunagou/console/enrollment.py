@@ -404,7 +404,13 @@ def cancel(enrollment_id: str, *, settings: ConsoleConfig) -> dict[str, Any]:
     except ConsoleError:
         root = None
     registration = (
-        host_registration.unregister(record.adapter, profile=record.profile, project_root=root)
+        host_registration.unregister(
+            record.adapter, profile=record.profile, project_root=root,
+            # Cancel exactly the registration this enrollment created. The bridge
+            # directory is derived the same way `prepare` derived it, so cancelling one
+            # enrollment cannot delete a sibling conversation's launch configuration.
+            bridge_dir=(root / BRIDGE_DIRECTORY / f"{record.adapter}-{record.profile}").resolve(),
+        )
         if root is not None
         else host_registration.Registration(
             adapter=record.adapter, label=record.label, status=host_registration.UNSUPPORTED,

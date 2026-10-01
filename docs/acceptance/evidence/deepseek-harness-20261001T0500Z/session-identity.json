@@ -1,0 +1,25 @@
+{
+  "harness_version": "0.2.0-rc.2",
+  "host": "deepseek",
+  "note": "conversation ids are the harness's own persisted session ids; bridge credentials are named by digest only",
+  "roles": {
+    "main": {
+      "dsh_profile_bootstrap": "headless",
+      "harness_session_id": "session:8279b35c4278",
+      "host_registration": "registered:tsunagou-main-eb346edb",
+      "installation_id": "deepseek:local",
+      "tsunagou_agent_id": "baa984a1-f417-4a62-84d3-6e2fd2eae216",
+      "tsunagou_profile": "main",
+      "tsunagou_role": "main"
+    },
+    "worker": {
+      "dsh_profile_bootstrap": "headless",
+      "harness_session_id": "session:67cec4456861",
+      "host_registration": "registered:tsunagou-worker-eb346edb",
+      "installation_id": "deepseek:local",
+      "tsunagou_agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+      "tsunagou_profile": "worker",
+      "tsunagou_role": "worker"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "scope": "cognition.report: may an enrolled worker resolve a discrepancy, in a real host conversation",
+  "discrepancy_id": "10322576-c45b-46d6-8dbe-ef9c46a4e4fd",
+  "payload_used": {
+    "discrepancy_id": "10322576-c45b-46d6-8dbe-ef9c46a4e4fd",
+    "kind": "override",
+    "reason": "<role-specific text>"
+  },
+  "payload_is_schema_valid": true,
+  "schema": "protocol/schemas/commands/discrepancy/resolve.schema.json requires discrepancy_id and kind; the actual calls also carry optional reason",
+  "worker": {
+    "transcript": "resolve-worker.jsonl",
+    "tool": "mcp__tsunagou__discrepancy__resolve",
+    "result": "tsunagou_error:capability_denied",
+    "next_steps": [
+      "your role lacks this capability: hand it to the main agent or the user"
+    ],
+    "reading": "the enrolled worker is refused on capability"
+  },
+  "main_control": {
+    "transcript": "resolve-main.jsonl",
+    "tool": "mcp__tsunagou__discrepancy__resolve",
+    "result": "tsunagou_error:discrepancy_already_resolved",
+    "reading": "The same tool, discrepancy_id and kind from the main role reached discrepancy_already_resolved. Optional reason text differs between calls. The existing resolved target is sufficient for this authorization control; its earlier creation and successful resolution are separately recorded."
+  },
+  "not_a_pass_if": [
+    "the discrepancy id did not exist",
+    "the payload failed validation",
+    "the host could not find the tool"
+  ],
+  "excluded": {
+    "f7bf105d-ebe5-4512-b828-bd480fa04c3a": "the main agent got 404 for it, so this id is not in the live database"
+  },
+  "independent_review": {
+    "status": "supported",
+    "role_scope": "real Harness calls using the existing main/worker registration credentials in fresh host conversations",
+    "same_required_arguments": true,
+    "identical_full_payload": false,
+    "continuity_not_claimed": true,
+    "original_summary_backup": "D:\\AB\\Tsunagou-acceptance-backups\\deepseek-final-review-20261001T095430Z.zip"
+  }
+}

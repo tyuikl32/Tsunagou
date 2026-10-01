@@ -1,0 +1,98 @@
+{
+  "scope": "compaction inside one real host conversation, operated by the user in the installed web UI",
+  "operated": {
+    "where": "the isolated web profile, conversation offered first by its session list",
+    "typed": [
+      "/compact",
+      "Call mcp__tsunagou__context__project_read and reply with agent_id, session_id, connection_epoch"
+    ]
+  },
+  "conversations": {
+    "expected_target": {
+      "host_session_digest": "sha256:67cec445686183d1",
+      "title": "You are the worker participant",
+      "log_written_at": "15:46:53 - untouched; the command did not land here"
+    },
+    "actually_used": {
+      "host_session_digest": "sha256:16940f317edfe4bc",
+      "why": "the conversation session/fork created earlier in this round; newest, so first in the list"
+    }
+  },
+  "log_facts": {
+    "session_header_id_matches": true,
+    "bytes": 168577,
+    "zstd_frames": 15,
+    "events": 778,
+    "event_indices": {
+      "command/run": [
+        750
+      ],
+      "compaction/start": [
+        751
+      ],
+      "compaction/summary": [
+        753
+      ],
+      "compaction/end": [
+        755
+      ],
+      "command/done": [
+        756
+      ]
+    },
+    "compaction_summary_serialized_chars": 8016,
+    "compaction_summary_text_chars": 7869,
+    "sha256": "278bfcfaaa4e8db8dbb58e49403573d0883bfe1dc0cd65e7e27598899bdb2a5c"
+  },
+  "identity_across_compaction": {
+    "results_containing_agent_id_before": 34,
+    "results_containing_agent_id_after": 1,
+    "child_live_reads_before": 0,
+    "child_live_reads_after": 1,
+    "before_results_origin": "All 34 tool/result entries containing agent_id before compaction are inherited parent history, not calls made by the child conversation. The complete parent event prefix after its header matches child indices 1 through 748; index 749 is session/end-seed with inherited=true.",
+    "last_before": {
+      "index": 742,
+      "origin": "inherited_parent_history",
+      "time_utc": "2026-10-01T07:46:42.326Z",
+      "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+      "tsunagou_session_id": "fe7df5f9-0030-41b0-a3c7-e828ef493ef2",
+      "connection_epoch": 3
+    },
+    "first_after": {
+      "index": 771,
+      "origin": "child_live_tool_result",
+      "time_utc": "2026-10-01T10:21:25.678Z",
+      "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+      "tsunagou_session_id": "fe7df5f9-0030-41b0-a3c7-e828ef493ef2",
+      "connection_epoch": 3
+    },
+    "same_agent": true,
+    "same_tsunagou_session": true,
+    "epoch_unchanged": true
+  },
+  "verdict": {
+    "native_compact_subscenario": "supported",
+    "host_session_id_preserved": true,
+    "post_compact_tool_call_succeeded": true,
+    "identity_values_match_inherited_history": true,
+    "live_tsunagou_identity_before_after_observed": false,
+    "continuity_capability": "unknown",
+    "reading": "The forked host conversation completed compact successfully and retained its native host session ID. Its later real tool call returned the same Tsunagou identity as the inherited parent history. There is no child-owned live tool read before compact, so this is not a live Tsunagou identity before/after pair within the child. Native compact is accepted under the existing host-ID continuity scope; clear remains unresolved."
+  },
+  "caveats": [
+    "the conversation used is a fork of the target, not the target itself; the command was typed into the conversation the UI presented first",
+    "being a fork, it also shows the known R1 defect: it reaches Tsunagou as the same worker with no enrollment of its own. That is the failed row, not a continuity result",
+    "clear remains unexecuted: no usable entry point or documented new/clear equivalence was established; absence of dsh-command-clear alone does not prove that every surface lacks such an operation",
+    "The original interpretation of index 742 as the child's own pre-compaction call was incorrect: it predates child creation at 2026-10-01T10:07:35.917Z and exactly matches the parent's index 742. This affects the stronger tool-identity claim, not the observed successful native compact."
+  ],
+  "reading_method": "Independent review decoded all 15 zstd frames of the 168577-byte child log in order and parsed all 778 nonempty JSON lines without swallowing decompression or JSON errors. Header identity, command pairing, the inherited parent prefix and the post-compaction tool call were checked directly.",
+  "independent_review": {
+    "child_created_at_utc": "2026-10-01T10:07:35.917Z",
+    "inherited_end_index": 749,
+    "compaction_started_at_utc": "2026-10-01T10:20:55.218Z",
+    "command_done_kind": "success",
+    "baseline_scope": "Reliable native host_conversation_id across resume/compact; native new/fork IDs are distinct. Fork inheritance of Tsunagou credentials remains the separate failed isolation row.",
+    "clear_decision": "No automatic supported or not-applicable decision: the common baseline lists clear and no absence waiver was found. OpenCode has an explicit clear/new alias basis; the older Codex accepted report does not separately cover clear, which is a cross-host acceptance-scope inconsistency, not evidence that DSH clear passed.",
+    "original_records_backup": "D:/AB/Tsunagou-acceptance-backups/deepseek-compact-review-20261001T103035Z.zip"
+  }
+}

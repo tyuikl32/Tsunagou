@@ -1,0 +1,40 @@
+{
+  "target_host_session": "sha256:67cec445686183d1",
+  "steps": [
+    {
+      "step": "baseline_prompt_sent",
+      "at": "18:06:15",
+      "value": {
+        "ok": false,
+        "raw": "{\"type\": \"server-response\", \"rpcId\": \"tsunagou-probe-b946cc9395754fce81b86543978d5a1c\", \"result\": {\"ok\": false, \"error\": {\"code\": \"gateway/input-invalid\", \"message\": \"typert gateway: session/prompt: wire field \\\"request\\\" failed boundary validation\", \"details\": {\"endpoint\": \"session/prompt\", \"field\""
+      }
+    },
+    {
+      "step": "compact_sent",
+      "at": "18:06:40",
+      "value": {
+        "ok": false,
+        "raw": "{\"type\": \"server-response\", \"rpcId\": \"tsunagou-probe-e7e6467c70204f009066e653c2c5a855\", \"result\": {\"ok\": false, \"error\": {\"code\": \"gateway/input-invalid\", \"message\": \"typert gateway: session/prompt: wire field \\\"request\\\" failed boundary validation\", \"details\": {\"endpoint\": \"session/prompt\", \"field\""
+      }
+    },
+    {
+      "step": "after_compact_prompt_sent",
+      "at": "18:07:10",
+      "value": {
+        "ok": false,
+        "raw": "{\"type\": \"server-response\", \"rpcId\": \"tsunagou-probe-d5f08274f7bc42cc9c3ff940eb7f0c4f\", \"result\": {\"ok\": false, \"error\": {\"code\": \"gateway/input-invalid\", \"message\": \"typert gateway: session/prompt: wire field \\\"request\\\" failed boundary validation\", \"details\": {\"endpoint\": \"session/prompt\", \"field\""
+      }
+    },
+    {
+      "step": "session/fork",
+      "at": "18:07:36",
+      "value": {
+        "ok": true,
+        "value": "{'sessionId': 'sha256:16940f317edfe4bc'}"
+      }
+    }
+  ],
+  "session_count_after": 41,
+  "target_still_listed": true,
+  "sanitization": "The two host session IDs were replaced with the matching existing SHA-256 markers. Original records were backed up outside the repository before editing; operation results are unchanged."
+}

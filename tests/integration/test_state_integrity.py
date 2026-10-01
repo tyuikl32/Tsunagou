@@ -213,3 +213,31 @@ def test_only_owner_ack_or_main_reclaim_can_finish_active_cancel(runtime) -> Non
             result = call("task.cancel_ack", body, worker)
         assert result["status"] == "cancelled"
         assert app.state.state_runtime.tasks.attempts[attempt["attempt_id"]].ended_at is not None
+
+
+def test_a_repeated_reopen_recovery_does_not_mint_another_revision(runtime) -> None:
+    """An explicit reclaim is a compare-and-swap, not a repeatable no-op.
+
+    Once the attempt is released the task owns nothing, so a second reclaim has
+    nothing to compare against. Accepting it anyway would advance the task revision
+    for a change that did not happen, silently invalidating every other agent's
+    expected revision.
+    """
+
+    app, call, main, worker = runtime
+    task = call("task.create", {"title": "blocked once", "objective": "recover exactly once"}, main)
+    task_payload = {"task_id": task["task_id"]}
+    call("task.ready", task_payload, main)
+    published = call("task.publish", task_payload, main)
+    attempt = call("task.begin", {**task_payload, "expected_task_revision": published["revision"]}, worker)
+    call("task.block", {**task_payload, "attempt_id": attempt["attempt_id"], "reason": "waiting"}, worker)
+    body = {**task_payload, "expected_attempt_id": attempt["attempt_id"], "disposition": "reopen", "reason": "resume"}
+
+    first = call("task.recover", body, main)
+    assert first["status"] == "open"
+
+    with pytest.raises(HTTPException) as exc:
+        call("task.recover", body, main)
+
+    assert exc.value.detail["code"] == "attempt_already_recovered"
+    assert app.state.state_runtime.tasks.tasks[task["task_id"]].revision == first["revision"]

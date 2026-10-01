@@ -1,0 +1,27 @@
+{
+  "host": "deepseek-harness",
+  "version": "0.2.0-rc.2",
+  "question": "If a host-side tool provider is the only way to bind identity, what does shipping one cost?",
+  "method": "read the shipped plugin loader at app.asar/dsh/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js (181826 bytes)",
+  "plugin_module_shape": {
+    "exports": "a plugin module exports a zod Config and an async apply(ctx, config)",
+    "evidence": "the shipped @deepseek-ai/dsh-mcp-client ends with `export { Config, apply, createMcpToolDefinition, ... }`, and its apply body calls ctx.tools.register(definition) for each discovered tool",
+    "tool_registration": "apply receives the Cordis context; each registered tool definition exposes call(args, execution), which is where a host-side provider would read the live session"
+  },
+  "how_a_name_resolves": {
+    "mechanism": "a patch entry names a PACKAGE, resolved through a layered Node resolver rather than a file path",
+    "evidence": [
+      "packageDirFromAnchor(anchor, packageName) walks createRequire(anchor).resolve.paths(packageName) looking for a package.json",
+      "localPackageCandidate(searchPath, name, flavor) together with layer.localPrefix indicates a profile-local package location is preferred over the global one",
+      "the resolver mentions pnpm isolated layout and symlink following, so a locally installed package is a supported shape"
+    ],
+    "consequence": "shipping the provider means producing and installing a real package into the profile-local prefix, not dropping a file next to the overlay"
+  },
+  "why_a_provider_is_required": "The companion finding mcp-call-context.json shows the MCP transport discards the session (callTool carries name plus arguments only) and that the child environment is scrubbedParentEnv() plus the copyable entry config, while the same build obtains the live session inside the harness process via exec.agent?.session.requestHeader(). Only code running in that process can see who is calling.",
+  "decision_needed": "Two conforming fixes exist and both are product changes rather than configuration: (A) ship a host-side tool provider package that passes the live session on every call and have the bridge require it; (B) refuse business calls whenever the current conversation cannot be proven, which on this surface means refusing wherever no host-side proof is available. The executor has not chosen between them and does not claim R1 closed until one is delivered.",
+  "not_attempted": [
+    "installing anything into the harness profile prefix",
+    "writing or shipping a plugin package",
+    "changing the bridge to require a new header"
+  ]
+}

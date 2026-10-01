@@ -1,0 +1,33 @@
+{
+  "branch": "elysia",
+  "build": {
+    "packages/bridge-server/dist/server.js": "sha256:c4648d8c1a608bf97e344b20b06b04ad08d8e115a131035fe9391e21aa7e23c2",
+    "packages/bridge-server/src/server.ts": "sha256:e7896335af52708a10f986e8524df815f78695560b29020896b0e9259046585d"
+  },
+  "head": "3607f5501f1a85e6ddb81cfb994593df8f5edb4d",
+  "probes": {
+    "audit_evidence_bundle.py": "sha256:0d8cd6326cb340bdadad202bbf1fcbd09cb320c01e80135587ac6fdbde31e578",
+    "build_evidence.py": "sha256:ff110d06e8638e86fa783afe6b5948a50dcad72bc88d2f0ab66e099b860a6291",
+    "dsh_baseline.py": "sha256:2fe78f10f4a64ca00442ac06fe544f4ff7617df91330d3e5efbf1331b0c23941",
+    "dsh_binding_probe.py": "sha256:6c2a04f06a9af249ac349494a6662c7eb60040254284794fa0bfb8dd3e2ebe19",
+    "dsh_cognition_inbox_probe.py": "sha256:0901ab67cec9f532c742bec4b4067a1132854c83cfc453d14029aa10f80c60af",
+    "dsh_recovery_probe.py": "sha256:a5dc535d069abd6ed20b55f4e4a163d4a109d7a064a8f3d4e79fb95702874afc",
+    "dsh_response_probe.py": "sha256:8e0b9366838e5678c015bff199d3bab0d704ede1bf38a56fce2f500af3f25c6e",
+    "dsh_workspace_probe.py": "sha256:ba170a53be3666e78b7acc7817a2e489195a33663448c21b456c393e47b8ac60",
+    "mcp_schema_check.py": "sha256:2aefe6be3e3ddd388b780b3cd3d4085d65880dc98977013b117d97be3b885b27"
+  },
+  "protocol": {
+    "schema_bundle_digest": "sha256:18fac2118245d78ecc08f6f1a3320bb36b4f49a04bee01d21b434f3775346247"
+  },
+  "purpose": "pin exactly which source, build and probe versions produced the evidence in this directory",
+  "recorded_at": "2026-10-01T00:27:34+08:00",
+  "source": {
+    "src/tsunagou/application/project_integration.py": "sha256:29129f83e11d7affcdb1ad428384f7cda93e278a6f09a3d9b1dc8dd2072a263f",
+    "src/tsunagou/application/workflows/execution_commands.py": "sha256:f88f977eb082c0e00dd82c4099d5ab51ebc3731287261970caabd34cd65c1c98",
+    "src/tsunagou/cli/app.py": "sha256:35c25251bae3e1925f694d115309ff371d488267482e1be4aa6cd160711760ab",
+    "src/tsunagou/console/enrollment.py": "sha256:411a23192067524abff3f5b22ca7233aad6e3f94662280faad67a7d494774287",
+    "src/tsunagou/modules/tasks.py": "sha256:dced537f278c29147e95111e0a19711577fcee8f1517f720d0462e6e79ffa8a1",
+    "src/tsunagou/platform/host_registration.py": "sha256:3c6dff084942576f058bd6d98ace29186f3f4e6450c3965a73e2c386f9288c59"
+  },
+  "worktree": "carries uncommitted changes; the digests below are of the files as they were when the evidence was produced"
+}

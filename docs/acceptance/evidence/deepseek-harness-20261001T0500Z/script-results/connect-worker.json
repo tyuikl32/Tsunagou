@@ -1,0 +1,27 @@
+{
+  "adapter": "deepseek",
+  "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+  "bridge_config": "<TEST_ROOT>\\coord\\.tsunagou\\bridges\\deepseek-67cec445686183d1\\deepseek-deepseek-local.json",
+  "connect_finished_at": "2026-10-01T04:42:53.744Z",
+  "connect_started_at": "2026-10-01T04:42:53.246Z",
+  "connected_at": "2026-10-01T04:42:39.025Z",
+  "duration_ms": 497,
+  "enrolled_at": "2026-10-01T04:42:53.724Z",
+  "exit_code": 0,
+  "host_binding": null,
+  "host_registration": "registered:tsunagou-worker-eb346edb",
+  "installation_id": "deepseek:local",
+  "mode": "attach",
+  "next": "call_context__project_read_in_original_conversation",
+  "profile": "worker",
+  "project_id": "89b4313b-a3e3-427d-a104-c0f8498d22c0",
+  "requested_role": "worker",
+  "role": "worker",
+  "session": {
+    "connection_epoch": 1,
+    "status": "ready"
+  },
+  "source_root": "<SOURCE_ROOT>",
+  "status": "enrolled",
+  "version": "0.1.0"
+}

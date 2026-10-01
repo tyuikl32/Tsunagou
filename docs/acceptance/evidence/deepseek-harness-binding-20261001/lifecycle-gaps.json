@@ -1,0 +1,45 @@
+{
+  "A_cancel": {
+    "attempt_id": "9cd9b6de-a9cd-4d73-a295-0d3bbd6274a9",
+    "cancel_ack": {
+      "code": null,
+      "http_status": 200,
+      "status": "cancelled"
+    },
+    "cancel_request": {
+      "code": null,
+      "http_status": 200,
+      "status": "cancel_requested"
+    }
+  },
+  "B_fail": {
+    "attempt_id": "12cc67fb-41ab-40db-87e9-6ce6f785c3d7",
+    "code": null,
+    "http_status": 200,
+    "status": "failed"
+  },
+  "C_stale_owner_after_submit": {
+    "attempt_id": "8649aadb-682d-4584-989d-53b75d7893dc",
+    "block_after_submit": {
+      "code": "attempt_not_running",
+      "http_status": 400
+    },
+    "progress_after_submit": {
+      "code": "capability_denied",
+      "http_status": 403
+    },
+    "submit": {
+      "http_status": 200,
+      "result_id": "15177949-bbc4-4a01-9b4f-2c89fadb749d"
+    }
+  },
+  "all_three_measured": true,
+  "host": "deepseek-harness",
+  "probe_history": "The first run of this probe stopped on an executor bug (a tuple was passed where a body was expected) after the cancel and fail flows had already run; the second run is the one recorded here. Both runs created tasks in the isolated test project, which is left with that litter.",
+  "reading": {
+    "cancel": "main asked and the worker acknowledged: the task moved cancel_requested -> cancelled, so the two-step cancel is a real handshake and not a single command",
+    "fail": "the worker stopped its own attempt and the task ended failed",
+    "stale_owner": "after submitting, the same worker could no longer act on that attempt: block answered 400 attempt_not_running and progress answered 403 capability_denied, so the authorization that came with the attempt ended with it"
+  },
+  "scope": "lifecycle_scenarios_previously_unexercised"
+}

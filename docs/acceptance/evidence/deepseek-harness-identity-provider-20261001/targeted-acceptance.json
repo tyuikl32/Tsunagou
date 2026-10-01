@@ -1,0 +1,38 @@
+{
+  "scope": "targeted real-host acceptance after the four wiring fixes",
+  "established": {
+    "enrolled_conversation_gets_its_own_identity": {
+      "headless": "session-555d26f4 enrolled as verify2; driving it returned agent ea11a9ad-2d89-4f97-b90b-5c500f7ea69f, epoch 1",
+      "web_surface": "the enrolled worker conversation driven through the web profile returned agent beb92813-f2c6-47ef-ae5c-3f0da5d0f439, Tsunagou session fe7df5f9-0030-41b0-a3c7-e828ef493ef2, epoch 3 - the same identity, on a different host surface"
+    },
+    "another_conversation_on_the_same_overlay_is_refused": {
+      "hand_built_overlay": "not_enrolled:no_ticket_or_session_file",
+      "product_written_overlay": "not_enrolled:no_ticket_or_session_file"
+    },
+    "the_web_surface_can_now_be_driven_by_a_probe": {
+      "why_it_mattered": "a forked conversation runs under agent preset 'standard', which the one-shot headless runner refuses to compose, so forks could only be driven from web/tui",
+      "how": "session/prompt with mode 'queue' - the enum is queue|steer, and 'normal' was why every earlier attempt failed boundary validation"
+    }
+  },
+  "found_and_not_yet_fixed": {
+    "existing_enrollments_are_not_retrofitted": {
+      "observation": "driving the fork session-e9212995 on its PARENT's overlay returned the parent identity (agent beb92813, epoch 3)",
+      "cause": "that overlay was written before this round: it still names the stock client and declares no TSUNAGOU_HOST_META_KEY, so the bridge had no per-call identity to require and fell back to the fixed credential file",
+      "checked": {
+        "parent_overlay_has_provider": false,
+        "parent_overlay_has_meta_key": false,
+        "fork_own_overlay_has_provider": true,
+        "fork_own_overlay_has_meta_key": true
+      },
+      "consequence": "every conversation enrolled before this change keeps a vulnerable overlay until it is enrolled again; nothing rewrites it. This is a migration gap, not a defect in the new wiring, and the new wiring is what makes it visible"
+    }
+  },
+  "not_completed": [
+    "fork on its own overlay (the second drive aborted on a driver error, not a product result)",
+    "A -> B -> A identity switching inside one host process",
+    "a shortest main/worker task and message loop",
+    "compact before/after under the new wiring",
+    "clear: entry point still unfound"
+  ],
+  "recorded_at": "2026-10-01T12:09:29Z"
+}

@@ -1,6 +1,6 @@
 # 四宿主适配与共同 bridge-sdk
 
-首发发布门禁覆盖 Codex、OpenCode、DeepSeek Harness 三个宿主。ZCode 适配器仍保留在共享 SDK、目录和研究矩阵中，但正式共同基线与首发验收后置；unknown 不得写成 supported。
+首发发布门禁覆盖 Codex、OpenCode、DeepSeek Harness 三个宿主。ZCode 适配器仍保留在共享 SDK、目录和研究矩阵中，但正式共同基线与首发验收后置；unknown 不得写成 supported。DeepSeek Harness 0.2.0-rc.2 尚未通过验收，当前证据与待核对项统一见[验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)。
 
 `packages/bridge-sdk` 拥有协议客户端、私有凭据注入、command_id/重试、连接 epoch、probe 报告、inbox 拉取去重、MCP 传输、提示渲染和诊断。adapter 负责宿主生命周期、会话身份、工具/上下文入口和唤醒增强；不复制领域状态，不做资源续租。
 
@@ -33,7 +33,7 @@ daemon 的共享项目 MCP 服务由官方 Python SDK 接入 FastAPI/ASGI；官�
 | Codex | CLI/App Server/MCP 与已发布 hooks，固定版本 | thread ID 的 resume/compact/fork 语义；工具身份不来自模型 |
 | OpenCode | 官方 SDK、Sessions API、plugin 事件/MCP | 多 session 隔离、事件连续性与工具调用绑定 |
 | ZCode | 官方 Hook/session_id、SessionStart 来源、MCP | hook 是否实际启用，clear/fork 与恢复 ID 变化 |
-| DeepSeek Harness | 官方 session 事件/持久对象与工具扩展 | 分支与恢复证据、重复事件、实际工具入口 |
+| DeepSeek Harness | 官方 session 事件/持久对象与工具扩展；0.2.0-rc.2 实测为 profile patch + `dsh-mcp-client` stdio MCP 与会话控制器 | 每个会话一个 profile 与 bridge（`tools/call` 不带会话元数据）；`compact` 只在交互聊天面存在 |
 
 这是研究候选路线，尚未完成当前版本真宿主验证。T02 必须保存官方 URL、版本、最小 probe、脱敏结果和可行性结论。不凭产品名猜接口；DeepSeek 模型 API 不是 Harness。宿主未安装或资料不足就标具体缺口，其他内核工作可以继续；不能因此把 diagnostic-only 算正式支持。
 

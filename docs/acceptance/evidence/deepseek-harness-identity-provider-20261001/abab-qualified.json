@@ -1,0 +1,28 @@
+{
+  "scope": "A -> B -> A inside one host process, with B now qualified",
+  "arrangement": "one web profile process launched with the FORK's overlay, which carries the provider and the meta key. A is the fork (enrolled by that overlay). B is the worker conversation, whose credential lives in a different bridge directory",
+  "measured": {
+    "A_first": {
+      "agent_id": "8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94",
+      "tsunagou_session_id": "7179dccd-9c31-44a1-b54c-8f7923cfd7ed"
+    },
+    "B_between": {
+      "tool_result_seq": 851,
+      "result": "not_enrolled:no_ticket_or_session_file",
+      "reading": "B was REFUSED inside the process that serves A. The same process cannot answer B with A's credential: B routes by its own session digest to a private session file that does not exist here"
+    },
+    "A_again": {
+      "agent_id": "8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94",
+      "tsunagou_session_id": "7179dccd-9c31-44a1-b54c-8f7923cfd7ed"
+    },
+    "conclusion": "one process, three consecutive calls: A's own identity, then a refusal for a different conversation, then A's own identity again. No identity crossed over"
+  },
+  "correction": "the earlier note in this round said B produced no identity reading at all and left it undetermined. Reading the log window shows the refusal; the reader had simply not extracted it because the bridge reports it as `Error: {..}` rather than as `tsunagou_error:...`",
+  "also_in_that_window": {
+    "seq": 832,
+    "result": "unknown tool \"mcp__tsunagou__context__project_read\"",
+    "reading": "an earlier attempt in the same session, from before the provider was installed into the web profile"
+  },
+  "blocked_afterwards": "a later attempt to re-drive B returned session/writer-held: a leftover harness process (pid 38372) still holds that session's write handle. The executor's cleanup pattern only matched `--profile web` with a known port, so that process survived. Stopping broader process sets is not safe here - the executor already grazed the DSH job runner once doing that",
+  "recorded_at": "2026-10-01T12:39:42Z"
+}

@@ -1,0 +1,31 @@
+{
+  "scope": "is there any clear entry point, and do the regressions still hold",
+  "clear_investigation": {
+    "method": "walked every @deepseek-ai package in the installed build (js, md and json, three levels deep) and searched for /clear, /new, /reset, clearSession, session/clear, clearHist and resetSession, plus the command registrations themselves",
+    "commands_this_build_registers": [
+      "compact",
+      "feedback",
+      "goal",
+      "plan"
+    ],
+    "clear_command": "absent - there is no clear or reset command to type on any surface",
+    "every_needle_hit_explained": {
+      "goals/clear": "clears the goal, not the conversation",
+      "connection/reset": "a transport reconnect event",
+      "clearHistory()": "the editor's undo history",
+      "session/new (ACP docs)": "an ACP protocol method that creates a session; it is not a /clear alias and the executor did not substitute `new` for clear",
+      "resetSession(sessionId)": "re-resolves that session's command composition"
+    },
+    "conclusion": "no entry point and no documented equivalent exists on this build. This is stated as a fact about the build, not as an inference from a missing package name: the registration list itself is the evidence"
+  },
+  "regressions_this_round": {
+    "three_adapter_suites": "18 passed (3 files: codex, opencode, deepseek)",
+    "bridge_credential_handoff_and_metadata": "26 passed, 0 failed - including 'host-metadata bridge rejects a first call without valid metadata' and 'unconfigured metadata bridge never falls back to its bootstrap credential after observing metadata', which is the fail-closed property this adapter now relies on",
+    "bridge_message_contract": "1 passed",
+    "python_registration_and_enrolment": "64 passed",
+    "deepseek_registration_alone": "22 passed",
+    "docs": "validate_docs PASS"
+  },
+  "why_the_bridge_tests_matter_here": "the DeepSeek overlay now declares TSUNAGOU_HOST_META_KEY, so this adapter is served by the same metadata routing the OpenCode path uses. Those tests are the evidence that the routing refuses rather than falling back",
+  "recorded_at": "2026-10-01T13:00:29Z"
+}

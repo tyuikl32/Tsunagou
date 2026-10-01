@@ -247,7 +247,7 @@ class ProjectIntegration:
         if not registry.is_git_repository():
             raise ProjectIntegrationError("coordination_repository_must_be_git_repository")
         selected_hosts = sorted(set(hosts or ["generic"]))
-        if set(selected_hosts) - {"generic", "codex", "claude", "cursor", "opencode", "gemini", "zcode"}:
+        if set(selected_hosts) - {"generic", "codex", "claude", "cursor", "opencode", "gemini", "zcode", "deepseek"}:
             raise ProjectIntegrationError("unsupported_skill_host")
         source_path = Path(source_root).expanduser().resolve() if source_root else running_source_root()
         source = _source_metadata(source_path, source_ref)
@@ -257,7 +257,9 @@ class ProjectIntegration:
         gitignore_block = _render_gitignore_block()
         host_files = [
             _ManagedFile(self.root / f".{host}/skills/tsunagou-project/SKILL.md", skill)
-            for host in selected_hosts if host not in {"generic", "codex"}
+            # DeepSeek Harness discovers project skills at `<projectRoot>/.agents/skills`
+            # with no vendor-specific root, so it needs no extra copy of the same file.
+            for host in selected_hosts if host not in {"generic", "codex", "deepseek"}
         ]
         host_config: str | None = None
         if "codex" in selected_hosts:

@@ -1,8 +1,10 @@
 # Adapter and TypeScript guidance
 
-Status: diagnostic adapters and shared bridge implemented; Codex and OpenCode have real-host 11/11 baseline evidence (OpenCode on 2026-09-28); DeepSeek Harness and the full release gate remain gated. Sources: [adapter plan](../../../docs/implementation/adapters.md), [OpenCode live acceptance](../../../docs/acceptance/opencode-11-baseline-live-2026-09-28.md), [wire protocol](../../../docs/implementation/protocol.md), [runtime prompts](../../../docs/implementation/runtime-prompts.md).
+Status: shared bridge and diagnostic adapters are implemented. Existing Codex/OpenCode acceptance remains unchanged. DeepSeek Harness 0.2.0-rc.2 has not passed acceptance; use the [single acceptance report](../../../docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md) for evidence and outstanding checks.
 
 Host fact proven on OpenCode v2.0.18: local MCP servers receive no session env vars; the host conversation id arrives per tool call via `_meta["ai.opencode/sessionID"]`. Bridge identity for such hosts must be derived from that field, and a project-shared bridge must keep one private session file per conversation.
+
+Host fact observed on DeepSeek Harness 0.2.0-rc.2: MCP `tools/call` supplies no per-call conversation metadata, and `DSH_SESSION_ID` only reaches shell tool subprocesses. Registration therefore uses a private conversation overlay instead of a shared profile entry. This does not prove runtime caller identity: another conversation can reuse the overlay and obtain the enrolled identity. The command-line guard was withdrawn; multi-conversation surfaces remain unaccepted. Test helpers must reuse `tools/conformance/probes/common.py` and the existing host probe rather than maintain another baseline framework.
 
 ## Pre-Development Checklist
 

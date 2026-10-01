@@ -1,0 +1,40 @@
+{
+  "scope": "the four wiring defects found around the identity fix, and what was changed for each",
+  "fixes": {
+    "no_fallback_to_an_impersonatable_path": {
+      "what_was_wrong": "an install failure produced an overlay naming the stock client, which sends no caller identity; the console's add-Agent path took the same old route",
+      "change": "the requirement now lives inside host_registration.register for this adapter, so every caller - CLI and console - passes one gate: the provider is ensured first, and an unavailable provider returns a failed registration instead of writing an overlay",
+      "console_path_confirmed": "console/enrollment.py:298 calls the same host_registration.register",
+      "regression": "test_registration_is_refused_when_the_identity_provider_is_missing"
+    },
+    "declared_is_not_installed": {
+      "what_was_wrong": "package.json listing the package was read as ready, even with nothing to resolve",
+      "change": "readiness is the resolved directory profiles/<app>/node_modules/<package>/package.json; the same check runs again after an install, and an unverified install is reported rather than assumed",
+      "regression": "test_a_declared_provider_that_is_not_installed_is_not_ready"
+    },
+    "initialization_instructions": {
+      "what_was_wrong": "the provider dropped the server's initialization instructions, losing the inbox, task-flow and permission guidance from the host",
+      "change": "the initialize result is kept and published as the mcp:<server> prompt section",
+      "measured": "the bridge publishes 340 characters; one section registered, text length 340"
+    },
+    "spawn_errors": {
+      "what_was_wrong": "a bridge command that does not exist emitted an unhandled error event and took the host process down",
+      "change": "the child's error event rejects the pending calls with mcp_spawn_failed and marks the transport closed",
+      "measured": "apply rejected with mcp_spawn_failed:spawn ... ENOENT; process alive, no uncaught exception"
+    }
+  },
+  "verified_this_round": {
+    "unit": "56 passed across the deepseek registration, registration, console-project and CLI suites",
+    "lint_types_docs": "ruff and mypy clean",
+    "provider_module_direct": "instructions section present, spawn failure contained, 43 tools registered with identity key tsunagou.hostSessionId"
+  },
+  "not_yet_verified": [
+    "the four-way real host acceptance: original session, borrowed overlay, new fork, fork independently enrolled",
+    "A -> B -> A identity switching inside one host process",
+    "a shortest main/worker task and message loop on the new wiring",
+    "compact before/after under the new wiring",
+    "clear: entry point still unfound"
+  ],
+  "conclusion": "the core identity fix stands and the four wiring defects are repaired; the round stays unaccepted until the real host acceptance above is run",
+  "recorded_at": "2026-10-01T11:59:24Z"
+}

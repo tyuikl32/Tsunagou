@@ -1,0 +1,79 @@
+{
+  "attempt_id": "0c2bfc3f-9853-4fae-b56d-342e7b4337c2",
+  "first_recovery_revision": 7,
+  "first_recovery_status": "open",
+  "host": "deepseek",
+  "repeat_refused": true,
+  "revision_advanced_on_repeat": false,
+  "scope": "recover_cas_after_fix",
+  "second_recovery_code": "attempt_already_recovered",
+  "second_recovery_http_status": 400,
+  "steps": [
+    {
+      "code": null,
+      "http_status": 200,
+      "objective": "explicit recovery is a CAS",
+      "revision": 1,
+      "status": "draft",
+      "step": "task.create",
+      "task_id": "0406172f-d361-48da-9d78-ddf037eab45f",
+      "title": "recover once"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 2,
+      "status": "ready",
+      "step": "task.ready",
+      "task_id": "0406172f-d361-48da-9d78-ddf037eab45f"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 3,
+      "status": "open",
+      "step": "task.publish",
+      "task_id": "0406172f-d361-48da-9d78-ddf037eab45f"
+    },
+    {
+      "attempt_id": "0c2bfc3f-9853-4fae-b56d-342e7b4337c2",
+      "code": null,
+      "execution_scope": {},
+      "http_status": 200,
+      "owner_agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+      "reservation_id": null,
+      "revision": 5,
+      "scope_revision": 1,
+      "status": "running",
+      "step": "task.begin",
+      "task_id": "0406172f-d361-48da-9d78-ddf037eab45f",
+      "workspace_id": null
+    },
+    {
+      "attempt_id": "0c2bfc3f-9853-4fae-b56d-342e7b4337c2",
+      "code": null,
+      "http_status": 200,
+      "revision": 6,
+      "status": "blocked",
+      "step": "task.block",
+      "task_id": "0406172f-d361-48da-9d78-ddf037eab45f"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 7,
+      "status": "open",
+      "step": "task.recover#1",
+      "task_id": "0406172f-d361-48da-9d78-ddf037eab45f"
+    },
+    {
+      "code": "attempt_already_recovered",
+      "detail": {
+        "code": "attempt_already_recovered"
+      },
+      "http_status": 400,
+      "step": "task.recover#2"
+    }
+  ],
+  "task_id": "0406172f-d361-48da-9d78-ddf037eab45f"
+}

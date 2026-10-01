@@ -1,0 +1,40 @@
+{
+  "scope": "why the web-surface runs produced no identity reading, and what it corrects",
+  "cause": "the provider was installed into the headless profile only. The web runs launched with --profile web, whose node_modules cannot resolve @tsunagou/dsh-host-identity, so the overlay's entry did not mount and the conversation had no Tsunagou tools at all",
+  "measured": {
+    "profiles": {
+      "headless": {
+        "node_modules_entry_exists": true,
+        "profile_exists": true
+      },
+      "main": {
+        "node_modules_entry_exists": false,
+        "profile_exists": true
+      },
+      "web": {
+        "node_modules_entry_exists": false,
+        "profile_exists": true
+      },
+      "worker": {
+        "node_modules_entry_exists": false,
+        "profile_exists": true
+      }
+    },
+    "tool_call_outcome": "Error: unknown tool \"mcp__tsunagou__context__project_read\"",
+    "both_sessions": [
+      "session-e9212995 (the fork)",
+      "session-bd69bb3e (the enrolled worker)"
+    ]
+  },
+  "correction_of_an_earlier_claim": "this round's report said the enrolled worker conversation 'returned agent beb92813 on the web surface'. That reading came from the newest tool/result in the session log, which is that conversation's own earlier history - not from the prompt this probe sent. The web surface was never shown to reach Tsunagou. The claim is withdrawn.",
+  "what_the_earlier_run_did_establish": "the writer-held refusal is real and is caused by leftover web processes holding a write handle; after stopping the executor's own test processes, session/prompt is accepted and the conversation really runs",
+  "why_no_tools_is_the_safe_direction": "an overlay whose entry cannot mount yields a conversation with no Tsunagou tools, which is the fail-closed behaviour the four wiring fixes aimed at - the opposite of handing over an identity",
+  "still_not_verified": [
+    "A -> B -> A identity switching inside one host process",
+    "fork on its own overlay",
+    "/compact delivered through session/prompt",
+    "a shortest main/worker task and message loop"
+  ],
+  "next_step": "install the provider into every profile a DeepSeek conversation may boot - including web and tui - and have ensure_deepseek_provider cover that, then re-run these four",
+  "recorded_at": "2026-10-01T12:20:49Z"
+}

@@ -1,0 +1,34 @@
+{
+  "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+  "connection_epoch": 1,
+  "credential_digest": "238f281586525eda18792dc2adfbd7d3b0ba1d61cbc7438ee3c9b18267487161",
+  "current_epoch": {
+    "epoch_sent": 1,
+    "http_status": 200
+  },
+  "host": "deepseek",
+  "in_flight_replay": {
+    "changed_input_code": "idempotency_conflict",
+    "changed_input_status": 409,
+    "command_id_prefix": "baseline-inflight-0ce183",
+    "first_status": 200,
+    "message_id_digest": "sha256:84c644eb55c7072f6f3ca57661f0d8d2d755db254d835724e5219365d3def56c",
+    "same_message_id": true,
+    "second_status": 200
+  },
+  "in_flight_send": {
+    "bytes": 401,
+    "response_read": false,
+    "sent": true
+  },
+  "reconnect_nonce_present": true,
+  "scope": "bridge_wire_recovery",
+  "secrets_in_report": false,
+  "session_id": "fe7df5f9-0030-41b0-a3c7-e828ef493ef2",
+  "stale_epoch": {
+    "epoch_sent": 0,
+    "error_code": "authentication_failed",
+    "http_status": 401
+  },
+  "stale_epoch_refused": true
+}

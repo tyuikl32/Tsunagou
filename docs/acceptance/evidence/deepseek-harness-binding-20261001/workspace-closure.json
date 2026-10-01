@@ -1,0 +1,110 @@
+{
+  "baseline_recorded": true,
+  "file_written": "WORKSPACE-PROBE.md",
+  "host": "deepseek",
+  "loop_closed": true,
+  "scope": "resource_and_workspace_closure",
+  "second_agent_could_begin": true,
+  "steps": [
+    {
+      "code": null,
+      "execution_scope": null,
+      "http_status": 200,
+      "revision": 1,
+      "status": "draft",
+      "step": "task.create(scoped)",
+      "task_id": "b0156199-3ff0-4f20-a3d8-9d03aa0c80c6"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 2,
+      "status": "ready",
+      "step": "task.ready"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 3,
+      "status": "open",
+      "step": "task.publish"
+    },
+    {
+      "baseline_manifest_id": null,
+      "code": null,
+      "driver_kind": null,
+      "http_status": 200,
+      "status": "selected",
+      "step": "workspace.select",
+      "workspace_id": null
+    },
+    {
+      "attempt_id": "5bedc3a5-9b09-4b37-ad7e-53dc62a8612c",
+      "code": null,
+      "execution_scope": {
+        "roots": [
+          "coordination"
+        ]
+      },
+      "http_status": 200,
+      "reservation_id": "4b08a476-e20c-4205-9e6f-6c4f534604cb",
+      "revision": 5,
+      "status": "running",
+      "step": "task.begin",
+      "workspace_id": "b90edc6a-b423-4f14-a0cf-84b2e289f0c4"
+    },
+    {
+      "code": null,
+      "digest": "sha256:b59c848dfc42c239efdb1a4650cd26265174196a79ace7f506293524e6666e02",
+      "http_status": 200,
+      "result_id": "7f8e8517-0a7b-4925-9dcb-83420693973a",
+      "status": "submitted",
+      "step": "task.submit",
+      "workspace_result_ref": "67bbd245-5885-4433-a4b1-67289700dfd3"
+    },
+    {
+      "code": null,
+      "decision": "accepted",
+      "http_status": 200,
+      "status": "completed",
+      "step": "task.review.accept"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 1,
+      "step": "task.create(second scoped)",
+      "task_id": "9b3d0ca5-4b00-42b9-887e-7af50c7d41f6"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 2,
+      "step": "task.ready(second)"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "revision": 3,
+      "step": "task.publish(second)"
+    },
+    {
+      "code": null,
+      "http_status": 200,
+      "status": "selected",
+      "step": "workspace.select(second)",
+      "workspace_id": null
+    },
+    {
+      "attempt_id": "a4d59de7-acf0-42f6-b711-fb5860c2b732",
+      "code": null,
+      "http_status": 200,
+      "reservation_id": "ac472696-1d41-4276-bd08-3bccc6539110",
+      "status": "running",
+      "step": "task.begin(second)",
+      "workspace_id": "1507ae72-23a0-486e-bb7a-3664ad8dfc28"
+    }
+  ],
+  "workspace_handed_to_begin": true,
+  "workspace_result_recorded": true
+}

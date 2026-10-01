@@ -1,0 +1,62 @@
+{
+  "scope": "delivery.deduplicate: real host redelivery with body and action counting",
+  "scenario": "main sends M (response obligation, unique marker only in the payload) and N; the worker claims, fetches M once, answers it once and acks N only; the lease is left to expire; the worker claims again, and the completed business action must not run twice",
+  "message_M": "f693a146-ad4d-4fc2-bc68-4ad154934f88",
+  "message_N": "41a7b72e-1ec7-44ef-97a4-29075d1b110b",
+  "payload_marker": "DEDUP-BODY-807e98c953c5",
+  "obligation_id": "0a4ec5dc-036b-440e-bede-5a4739d346e7",
+  "response_message_id": "e8312727-5c7a-4bcc-8ec7-1fb78f5b2815",
+  "lease_wait_seconds": 45,
+  "transcripts": {
+    "send": "dedup-1-main-send.jsonl",
+    "first_pass": "dedup-2-worker-process.jsonl",
+    "after_lease": "dedup-3-worker-redelivery.jsonl",
+    "repeat_with_valid_parameters": "dedup-4-repeat-respond-valid.jsonl"
+  },
+  "observed": {
+    "M_listed_on_first_claim": true,
+    "M_listed_on_second_claim_after_lease": true,
+    "claim_results_carrying_the_body_marker": 0,
+    "fetch_results_carrying_the_body_marker": 2,
+    "respond_calls": 3,
+    "first_response": {
+      "obligation_id": "0a4ec5dc-036b-440e-bede-5a4739d346e7",
+      "status": "responded"
+    },
+    "repeat_after_redelivery": {
+      "result": "tsunagou_error:obligation_already_closed",
+      "parameters_valid": false,
+      "note": "the redelivery pass sent response_message_id as the literal string None, so this refusal could have been read as a parameter error"
+    },
+    "repeat_with_valid_parameters": {
+      "result": "tsunagou_error:obligation_already_closed",
+      "parameters_valid": true,
+      "tool_call": {
+        "obligation_id": "0a4ec5dc-036b-440e-bede-5a4739d346e7",
+        "response_message_id": "e8312727-5c7a-4bcc-8ec7-1fb78f5b2815"
+      }
+    },
+    "ack_order": [
+      "N",
+      "M"
+    ],
+    "inbox_closed_after_acking_M": null,
+    "M_acknowledged": true,
+    "post_ack_claim_observed": false
+  },
+  "reading": "In the tested headless MCP path, both claims contained metadata without the body marker. Each of the two body results corresponds to an explicit fetch call, including the reread requested by the probe. One response message was sent and its obligation was resolved once; the repeat with valid parameters returned obligation_already_closed. M was acknowledged successfully; no post-ACK claim was recorded, so whole-inbox closure is not established.",
+  "probe_defect_found_and_corrected": "the first redelivery prompt interpolated a missing variable, so the repeat response carried response_message_id 'None'; dedup-4 re-ran it with valid parameters",
+  "independent_review": {
+    "status": "supported",
+    "scope": "observed headless MCP delivery behavior; not host conversation continuity",
+    "explicit_fetch_calls": 2,
+    "automatic_body_results_observed": 0,
+    "worker_host_sessions_distinct": true,
+    "reason": "The common contract forbids automatic repeated body injection, not an authorized explicit reread. Raw calls and results show no body in either claim and no second accepted response.",
+    "corrections": [
+      "inbox_closed_after_acking_M changed from true to null: ACK succeeded but no subsequent claim was recorded",
+      "Worker processing, redelivery and valid retry used different host conversations with the same registered worker overlay; no original-conversation continuity is inferred."
+    ],
+    "original_summary_backup": "D:\\AB\\Tsunagou-acceptance-backups\\deepseek-final-review-20261001T095430Z.zip"
+  }
+}

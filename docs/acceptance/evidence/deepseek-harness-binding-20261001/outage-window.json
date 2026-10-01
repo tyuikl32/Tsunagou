@@ -1,0 +1,42 @@
+{
+  "host": "deepseek-harness",
+  "measured_precisely": [
+    "what a business call answers while the daemon is down",
+    "that the same conversation, agent and epoch come back after a restart",
+    "that the recovery answer is truncated at 8192 characters and how to read it honestly"
+  ],
+  "method": "`tsunagou daemon stop` on the isolated project, then the enrolled conversation called context__project_read; then `tsunagou daemon start` and the same conversation called again",
+  "not_measured": [
+    "a running attempt's reservation held across the outage window (no attempt was running when the daemon stopped)",
+    "whether a retry issued by the bridge itself, rather than by the caller, would have succeeded"
+  ],
+  "observations": {
+    "after_restart": {
+      "body_length": 8192,
+      "pid": 22992,
+      "reading": "the same Agent and the same Tsunagou session came back unchanged, so the outage did not cost an enrolment or advance the epoch. The 8192-character truncation is the host behaviour the second review identified; the identity fields were recovered with the prefix decoder rather than guessed from the cut body.",
+      "same_conversation": {
+        "agent_id_prefix": "beb92813",
+        "connection_epoch": 3,
+        "session_id_prefix": "fe7df5f9",
+        "status": "ready"
+      },
+      "truncated": true,
+      "url": "changed from 62428 to 59228"
+    },
+    "call_during_the_outage": {
+      "body_length": 71,
+      "bridge_answer": "bridge_request_failed",
+      "reading": "a clean failure. Nothing was reported as succeeded, no partial result was invented, and the bridge kept its own credential rather than discarding it.",
+      "truncated": false
+    },
+    "daemon_stopped": {
+      "pid": 3256,
+      "process_alive_after": false,
+      "status": "stopped"
+    }
+  },
+  "scope": "behaviour_during_a_daemon_outage",
+  "version": "0.2.0-rc.2",
+  "why": "task.lifecycle and recovery.idempotent_reconnect both listed owner and resource facts during an outage as never inspected. The previous round only restarted the daemon between turns; this one stops it while a conversation is asking."
+}

@@ -1,0 +1,110 @@
+{
+  "scope": "the identity fix, landed and exercised through the product's own path",
+  "changes": {
+    "packages/adapter-deepseek-host/": "the host-side provider: same plugin shape, same stdio MCP server, adds _meta[<key>] = exec.agent.session.id to every tools/call",
+    "src/tsunagou/platform/host_registration.py": "deepseek_overlay_text names the provider and declares TSUNAGOU_HOST_META_KEY, but only when the caller says the provider is really installed; ensure_deepseek_provider installs it into the app profile",
+    "src/tsunagou/cli/app.py": "_register_deepseek_mcp installs first, then passes that answer into the overlay"
+  },
+  "why_the_flag_exists": "naming an absent package stops the entry mounting, and declaring the key without the provider turns every call into conversation_metadata_required. On any install failure the overlay keeps the stock client, which is the behaviour this adapter had before.",
+  "measured_on_the_product_path": {
+    "enrollment_of_a_real_session": {
+      "session_digest": "sha256:713735dd454b23d9",
+      "result": "status enrolled, host_identity already_installed, overlay carries provider and meta key"
+    },
+    "that_conversation_driven_on_the_product_written_overlay": {
+      "tool": "mcp__tsunagou__context__project_read",
+      "result": "agent ea11a9ad-2d89-4f97-b90b-5c500f7ea69f, role worker - its own identity"
+    },
+    "another_conversation_on_the_same_overlay": {
+      "result": "not_enrolled:no_ticket_or_session_file - refused"
+    },
+    "two_enrolled_conversations_hold_different_identities": {
+      "first": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+      "second": "ea11a9ad-2d89-4f97-b90b-5c500f7ea69f"
+    }
+  },
+  "shared_bridge_and_protocol": "unchanged: the required-and-digested _meta path already existed for OpenCode",
+  "not_re_run": [
+    "the fork case on the new wiring",
+    "the Codex and OpenCode adapter regressions",
+    "a full model-driven business flow on the new overlay"
+  ],
+  "known_gap_in_this_round": "one positive run used an invented conversation id that has no persisted session, so `--session-id` refused to start it; that was the executor's mistake, corrected by enrolling a real session",
+  "recorded_at": "2026-10-01T11:30:46Z",
+  "independent_review": {
+    "verdict": "not_accepted",
+    "baseline_counts": {
+      "supported": 9,
+      "failed": 1,
+      "unknown": 1
+    },
+    "provider_enabled_real_positive_and_negative_accepted": true,
+    "real_transcript_limit": "Positive tool results are truncated to 8192 characters; complete identity fields remain visible. No shell bypass was observed. The fresh provider installation, live fork and new-provider business flow were not demonstrated.",
+    "findings": [
+      {
+        "priority": "P1",
+        "code": "unsafe_registration_fallback",
+        "observed": {
+          "install_status": "install_failed",
+          "overlay_client": "@deepseek-ai/dsh-mcp-client",
+          "host_meta_key_required": false
+        },
+        "console_prepare_observed": {
+          "registration_status": "registered",
+          "overlay_client": "@deepseek-ai/dsh-mcp-client",
+          "host_meta_key_required": false
+        },
+        "method": "Existing product functions exercised with temporary profiles; console ticket/daemon operations replaced by local test fixtures. No live daemon or real credentials used. The resulting stock path is the previously confirmed R1 path."
+      },
+      {
+        "priority": "P2",
+        "code": "provider_readiness_is_manifest_only",
+        "observed": {
+          "manifest_dependency": "file:missing-package",
+          "node_modules_exists": false,
+          "ensure_result": "already_installed",
+          "install_called": false
+        }
+      },
+      {
+        "priority": "P2",
+        "code": "initialize_instructions_dropped",
+        "observed": "Fake MCP initialize returned instructions; provider registered tools without registering any host systemPrompt injection. Installed stock client preserves these instructions; current bridge uses them for coordination guidance."
+      },
+      {
+        "priority": "P2",
+        "code": "spawn_error_unhandled",
+        "observed": "Nonexistent bridge command causes an unhandled ChildProcess error and exit 1 in an isolated Node loader despite try/catch around await apply. No claim is made that the entire Desktop application necessarily exits."
+      }
+    ],
+    "checks": {
+      "adapter_vitest": {
+        "files": 3,
+        "passed": 18
+      },
+      "bridge_metadata_node_tests": {
+        "passed": 5
+      },
+      "registration_pytest": {
+        "passed": 32,
+        "failed": 1,
+        "failure": "Previously reproduced environment-dependent Codex executable lookup expectation; lookup function AST unchanged from HEAD"
+      },
+      "ruff": "pass",
+      "mypy": "pass",
+      "provider_syntax": "pass",
+      "per_call_identity_and_missing_identity": "pass",
+      "bridge_tool_count": 43
+    },
+    "product_source_modified_by_reviewer": false,
+    "model_calls_started_by_reviewer": false,
+    "source_sha256": {
+      "packages/adapter-deepseek-host/index.js": "e07ad3324cc071ef3cd3ccaefedabd1cd2010a10449c601e8f09599f7b11fe59",
+      "packages/adapter-deepseek-host/package.json": "fd7b794e6abc728e2b08b5048971ac0cf83874165c5ac2cedef72965e8954444",
+      "src/tsunagou/platform/host_registration.py": "a6dbc12fd3e189caaef194010cd8f8d96b8bfd49c20a0857d311334db508a191",
+      "src/tsunagou/cli/app.py": "714005f29fd986f5717948a3039e8d474895f967110fd28ebb5b5d5fc36c7318"
+    },
+    "next": "One small repair round for registration failure/readiness, console coverage, initialization instructions and transport errors, then focused real fork/multi-conversation/business-flow checks. Clear remains unresolved; no automatic gate promotion.",
+    "pre_review_backup": "D:/AB/Tsunagou-acceptance-backups/deepseek-provider-review-20261001T113832Z.zip"
+  }
+}

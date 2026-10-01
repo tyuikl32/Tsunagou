@@ -1,0 +1,38 @@
+{
+  "after": {
+    "constraint_differences": 19,
+    "direction": "these two drift because the protocol file overstates the contract; see protocol-vs-server.json",
+    "drifted_tools": 2,
+    "remaining": [
+      "cognition__report",
+      "task__review_accept"
+    ]
+  },
+  "before": {
+    "constraint_differences": 157,
+    "drifted_tools": 29
+  },
+  "change": "packages/bridge-server/src/server.ts now derives 29 of those 30 from the protocol schema. The one exception is cognition.report, which keeps an explicit override because the bridge declares input_revisions itself from the conversation's last project read.",
+  "host": "deepseek-harness",
+  "not_done": [
+    "the protocol file for cognition.report still overstates its required set",
+    "no decision was taken on which side wins for the remaining field-level disagreements; the executor aligned the published tool to the protocol and left the protocol alone"
+  ],
+  "remaining_difference": {
+    "commands": [
+      "cognition__report",
+      "task__review_accept"
+    ],
+    "count": null,
+    "tool": "cognition__report",
+    "why": "The protocol file declares ten required fields (assumptions, attempt_id, boundary, claims, confidence, confidence_reason, evidence_refs, input_revisions, supersedes_id, uncertainties, understanding) while the handler uses a subset and the bridge fills input_revisions. Aligning this one means correcting the protocol file to the semantics the server actually enforces - a contract decision, not a schema rewrite, and it is the next step rather than something this round decided."
+  },
+  "root_cause": "30 of the 43 published tools carried a hand-written inputSchema while the other 13 read protocol/schemas/commands/<kind>.schema.json directly. Writing the same contract twice is how the two drifted apart.",
+  "scope": "published_tool_schema_alignment",
+  "verification": {
+    "checker": "tools/conformance/deepseek/mcp_schema_check.py now compares property-level constraints, not only top-level names, required and additionalProperties",
+    "real_conversation_smoke": "host-derived-schema-smoke.jsonl: the enrolled conversation called the derived context.project_read and inbox.claim and both succeeded"
+  },
+  "version": "0.2.0-rc.2",
+  "withdrawn": "The derivation described here was REVERTED after the third review proved it regressed every host sharing the bridge: the protocol files describe an older REST payload where target ids sat in the URI, so replacing the published schema with the payload dropped task_id, attempt_id, proposal_id and participant_slot. The numbers below belong to that attempt, not to the current build. The drift is unresolved: the comparator now reports 29 tools / 159 differences (159 because array-element constraints are compared since the comparator fix)."
+}

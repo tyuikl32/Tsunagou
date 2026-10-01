@@ -1,0 +1,20 @@
+{
+  "agent_id": "beb92813-f2c6-47ef-ae5c-3f0da5d0f439",
+  "foreign_message_fetch": {
+    "code": "inbox_access_denied",
+    "http_status": 403
+  },
+  "foreign_message_refused": true,
+  "foreign_project_read": {
+    "code": "project_not_registered",
+    "http_status": 400,
+    "leaked_project_id": null
+  },
+  "foreign_project_refused": true,
+  "host": "deepseek",
+  "own_project_read": {
+    "http_status": 200,
+    "project_id": "89b4313b-a3e3-427d-a104-c0f8498d22c0"
+  },
+  "scope": "scope_negatives"
+}

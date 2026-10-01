@@ -1,0 +1,72 @@
+{
+  "scope": "compact inside one real host conversation, on a conversation whose overlay carries the new wiring",
+  "why_this_one_counts": "the earlier compact evidence came from an overlay written before the identity provider existed. This conversation was enrolled after it, so its overlay names the provider and declares TSUNAGOU_HOST_META_KEY, and the identity on both sides of the compaction is delivered per call rather than read from a fixed credential file",
+  "operated_by": "the user, in the installed web profile: the identity question, then /compact, then the question again",
+  "conversation": {
+    "host_session_digest": "sha256:16940f317edfe4bc",
+    "note": "a fork of the worker conversation, enrolled on its own as forkown"
+  },
+  "log": {
+    "bytes": 300902,
+    "events": 966,
+    "compactions_in_this_log": [
+      751,
+      940
+    ],
+    "measured_compaction_is_the_second_one": true
+  },
+  "lifecycle": [
+    {
+      "seq": 938,
+      "type": "command/run"
+    },
+    {
+      "seq": 939,
+      "type": "compaction/start"
+    },
+    {
+      "seq": 941,
+      "type": "compaction/summary",
+      "chars": 9181
+    },
+    {
+      "seq": 943,
+      "type": "compaction/end"
+    },
+    {
+      "seq": 944,
+      "type": "command/done"
+    }
+  ],
+  "identity_across_it": {
+    "before": {
+      "seq": 931,
+      "agent_id": "8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94",
+      "tsunagou_session_id": "7179dccd-9c31-44a1-b54c-8f7923cfd7ed",
+      "connection_epoch": 1
+    },
+    "after": {
+      "seq": 958,
+      "agent_id": "8850dcc2-0d5a-4cf5-8ab1-34cb4a1cab94",
+      "tsunagou_session_id": "7179dccd-9c31-44a1-b54c-8f7923cfd7ed",
+      "connection_epoch": 1
+    },
+    "verdict": {
+      "same_agent": true,
+      "same_tsunagou_session": true,
+      "epoch_unchanged": true,
+      "host_conversation_unchanged": true
+    }
+  },
+  "reading": "compaction kept the conversation's Tsunagou identity under the new wiring: agent, Tsunagou session and epoch are identical on the two sides of the newest compaction, measured inside that same conversation",
+  "this_round_items": {
+    "a_b_a_in_one_process": "measured; A its own identity, B refused not_enrolled, A its own identity again",
+    "shortest_main_worker_loop": "measured; create/ready/publish by main 5cee40b8, begin/submit by worker ea11a9ad, task.submitted delivered to main's inbox",
+    "compact_under_the_new_wiring": "measured; see above"
+  },
+  "still_open": {
+    "clear": "no entry point found in this build; the executor did not substitute `new` for it",
+    "existing_enrollments_are_not_retrofitted": "a conversation enrolled before this work keeps an overlay naming the stock client and declaring no meta key; nothing rewrites it, and the fork-on-parent-overlay measurement showed it still inherits"
+  },
+  "recorded_at": "2026-10-01T12:52:56Z"
+}

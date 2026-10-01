@@ -1,0 +1,10 @@
+{
+  "scope": "the migration question for overlays written before the identity provider existed",
+  "question": "a conversation enrolled before this work keeps an overlay naming the stock client and declaring no TSUNAGOU_HOST_META_KEY, and nothing rewrites it. Should the product migrate those?",
+  "decision": "no migration - closed as not applicable",
+  "basis": "the only old-style overlays in existence are the isolated test scene's own enrolments. The user confirmed that nobody else has ever enrolled this adapter, so there is no installed base carrying the old shape",
+  "what_remains_noted": "any overlay written from now on carries the provider and the metadata key, so the condition cannot arise again through this code path",
+  "what_this_does_not_claim": "it does not claim the old overlays became safe. The fork-on-parent-overlay measurement still shows an old overlay inherits. That measurement is kept as a record of what the old shape does, not as a current defect with users behind it",
+  "left_in_the_scene": "the isolated scene still holds overlays from before the change; they are test fixtures and should not be used as evidence about current behaviour",
+  "recorded_at": "2026-10-01T13:08:03Z"
+}
