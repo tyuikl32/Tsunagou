@@ -2876,6 +2876,47 @@
 
     /* ---- Agent 管理 ------------------------------------------------------ */
 
+    /* Agent 的“在哪台机器”标记（跨机器协作）：右上角一句「网络在线 / 网络离线」加一个网络图标。
+       规则：
+       · **本机接入的 Agent 什么都不画** —— 连那个 `<i>` 图标也不出现，所以本机接入的
+         Agent 看起来和加这个功能之前一模一样；
+       · **只有子 Agent 可能跨机器** —— 主 Agent 必须和 daemon 在同一台机器上，
+         映射那边就不给它这个标记（见 `agents:` 那一块）。
+       谁是不是网络接入由**中间层**说，两条通道都行：
+       · 随接口带 `network` / `online` 字段（适配层原样传下来）；
+       · 运行时推一条：`app.setAgentNetwork(id, online)` 或 dispatch `agent.network`
+         （推来的优先于数据里的，见 agentNetworkOf）。
+       标记的形状由人定下来（`<p class="right">文字 + <i>`），这里只是把它写进渲染，
+       样式全部在 CSS。*/
+    function agentNetworkHtml(agent) {
+        const info = agentNetworkOf(agent);
+        if (!info.network) return '';
+        return '<p class="right">' + (info.online ? '网络在线' : '网络离线') +
+            '<i class="fa-solid fa-circle-nodes"></i></p>';
+    }
+
+    /* 一个 Agent 的网络状态：{network, online}。
+       优先级：中间层推来的 > 数据里带的 > 两边都没有（= 本机接入，不画徽标）。*/
+    function agentNetworkOf(agent) {
+        const record = isPlainObject(agent) ? agent : {};
+        /* 主 Agent 必须和 daemon 同机 —— 它永远不是网络接入（中间层推了也不画）*/
+        if (record.isMain === true) return { network: false, online: false };
+        const id = toText(record.agent_id || record.id);
+        const pushed = state.get('agentNetwork', {}) || {};
+        const known = id ? pushed[id] : undefined;
+        /* 推来的布尔值就是“在不在线”；有键 = 这个 Agent 是网络接入的 */
+        if (known === true || known === false) return { network: true, online: known };
+        if (isPlainObject(known)) return { network: known.network === true, online: known.network === true && known.online === true };
+        const network = record.network === true;
+        return { network: network, online: network && record.online === true };
+    }
+
+    /* 徽标重绘：中间层刚推来网络状态时调它（卡片与 Agent 列表两处都画这个标记）。*/
+    function renderNetworkBadges() {
+        render.agents(state.get('agents', []));
+        render.agentWindow(state.get('agentsWindow', []));
+    }
+
     function agentCardHtml(agent) {
         const abilities = function (title, list) {
             if (!toArray(list).length) return '';
@@ -2884,7 +2925,7 @@
         return {
             cls: 'item',
             parts: [
-                '<div class="header">' + esc(agent.role) + '</div>',
+                '<div class="header">' + esc(agent.role) + agentNetworkHtml(agent) + '</div>',
                 listFieldHtml([{ name: agent.name, icon: agent.icon, id: agent.id }]),
                 titleHtml('当前状态'),
                 '<div class="textZ">' + tagsHtml([{ text: agent.statusText, ok: agent.statusOk }], { container: false }) + '</div>',
@@ -3927,6 +3968,16 @@
         return (tag && name !== tag) ? (name + '（' + tag + '）') : name;
     }
 
+    /* 窗口标题里那个图标（静态 HTML 里已有的 <i>）要留着，只换它后面那截文字 ——
+       直接写 textContent 会把图标一起擦掉。*/
+    function setWindowTitleText(node, text) {
+        if (!node) return;
+        for (let i = node.childNodes.length - 1; i >= 0; i--) {
+            if (node.childNodes[i].nodeType === 3) node.removeChild(node.childNodes[i]);
+        }
+        node.appendChild(document.createTextNode(toText(text)));
+    }
+
     render.agentWindow = function (agents) {
         const container = qs('#mgrAgent .inner');
         if (!container) return null;
@@ -3936,8 +3987,8 @@
         fill(container, '<div class="table">' + (list.length ? list.map(function (agent) {
             const probe = { agent_id: toText(agent.agent_id) };
             return '<div class="item" data-agent-id="' + esc(agent.id) + '">' +
-                '<div class="title"><img src="' + esc(iconOf(agentIconFor(agentVendor(probe)))) + '" />' +
-                esc(agentTitleOf(probe)) + '</div>' +
+                '<div class="title"><p class="left"><img src="' + esc(iconOf(agentIconFor(agentVendor(probe)))) + '" />' +
+                esc(agentTitleOf(probe)) + '</p>' + agentNetworkHtml(agent) + '</div>' +
                 '<div class="content">' +
                 '<div class="txtBlock"><div class="left">协作</div><div class="right">' + esc(agent.project) + '</div></div>' +
                 '<div class="txtBlock"><div class="left">任务</div><div class="right">' + esc(agent.task) + '</div></div>' +
@@ -3959,17 +4010,17 @@
         const agentId = toText(data.agent_id || data.id);
         const nickname = toText(data.nickname) || agentDisplayName({ agent_id: agentId });
         const titleNode = qs('.titleBar .title', node);
-        if (titleNode) titleNode.textContent = toText(agentTitleOf(data) || 'Agent 详细信息');
+        if (titleNode) setWindowTitleText(titleNode, agentTitleOf(data) || 'Agent 详细信息');
         /* 记下是谁：没有 agent_id 就没地方存昵称（保存时会如实拒绘）*/
         node.setAttribute('data-agent-id', agentId);
         node.setAttribute('data-nickname', nickname);
-        /* 按标签文字回填（keyOfInput 的规则：窗口号 + .item 里的 .fword），
-           这样在窗口里挪行的顺序不会把值填错地方。*/
-        form.fill(node, {
-            'mgrAgentInfo.昵称': nickname,
-            'mgrAgentInfo.项目名称': toText(data.project),
-            'mgrAgentInfo.任务名称': toText(data.task)
-        });
+        /* 这个窗口的版式是「标签 + 值」自上而下排（.title2 / .textbox2 / .dspText），
+           没有 .item、也没有 .fword，所以按位置回填而不是按标签文字：
+           唯一那个输入框是昵称，两个 .dspText 依次是项目名称、任务名称。*/
+        form.fill(node, [nickname]);
+        const shown = qsa('.dspText', node);
+        if (shown[0]) shown[0].textContent = toText(data.project);
+        if (shown[1]) shown[1].textContent = toText(data.task);
         return node;
     };
 
@@ -4395,7 +4446,9 @@
             const finishWindow = function () {
                 ui.window.close('addSubAgent');
                 ui.window.clearInputs('addSubAgent');
-                resetCsBox(qs('#addSubAgent .choosebox'));
+                resetCsBox(subAgentVendorBox());
+                resetCsBox(subAgentPlaceBox());
+                syncSubAgentPlace();
             };
             return connectAgent({
                 host: host, nickname: name, role: 'worker',
@@ -4932,6 +4985,34 @@
             return true;
         },
 
+        /* 网络接入标记（跨机器）：**中间层专用入口** —— 定一个 Agent 是从网络接进来的。
+           `online` 给 true/false（在线/离线），也可以给 {network, online} 两个都说；
+           `network:false` 等于 clearAgentNetwork。只改状态与徽标，不发任何请求。
+           本机接入的 Agent 根本不用调它（默认就不画徽标）。*/
+        setAgentNetwork: function (agentId, online) {
+            const id = toText(agentId);
+            if (!id) return false;
+            const spec = isPlainObject(online) ? online : { network: true, online: online === true };
+            if (spec.network === false) return app.clearAgentNetwork(id);
+            const table = Object.assign({}, state.get('agentNetwork', {}) || {});
+            /* 有键 = 网络接入，值 = 在不在线（取值规则见 agentNetworkOf）*/
+            table[id] = spec.online === true;
+            state.set('agentNetwork', table);
+            renderNetworkBadges();
+            return true;
+        },
+        /* 撇回本机：这个 Agent 不是网络接入的（回到“不画徽标”）*/
+        clearAgentNetwork: function (agentId) {
+            const id = toText(agentId);
+            if (!id) return false;
+            const table = Object.assign({}, state.get('agentNetwork', {}) || {});
+            if (!(id in table)) return true;
+            delete table[id];
+            state.set('agentNetwork', table);
+            renderNetworkBadges();
+            return true;
+        },
+
         /* Agent 管理卡片上的「修改」（data-tg-action="agent.edit:<id>"）：
            开的是同一个详情窗口 —— 昵称可改。*/
         editAgent: function (agentId) {
@@ -4954,7 +5035,7 @@
             if (!node) return Promise.resolve(false);
             const agentId = toText(node.getAttribute('data-agent-id'));
             const before = toText(node.getAttribute('data-nickname'));
-            const input = qs('.item .textbox input', node);
+            const input = qs('.textbox2 input', node);
             const nickname = toText(input && input.value).trim();
             if (!agentId) {
                 ui.window.close(node);
@@ -4996,13 +5077,15 @@
             const opts = options || {};
             if (opts.source) addSubAgentSource = (opts.source === 'wizard') ? 'wizard' : 'agents';
             ui.window.clearInputs(node);
-            resetCsBox(qs('#addSubAgent .choosebox'));
+            resetCsBox(subAgentVendorBox());
+            resetCsBox(subAgentPlaceBox());
+            syncSubAgentPlace();
             /* 只有真给了名字/厂商才回填，光传 source 不要清空表单 */
             if (opts.name !== undefined) {
                 ui.window.fillInputs(node, [opts.name]);
             }
             if (opts.vendor !== undefined) {
-                ui.choosebox.setValue(qs('#addSubAgent .choosebox'), opts.vendor, { silent: true });
+                ui.choosebox.setValue(subAgentVendorBox(), opts.vendor, { silent: true });
             }
             ui.window.open(node);
             return true;
@@ -5075,15 +5158,36 @@
         emit('agent:select', { id: node.getAttribute('data-agent-id') || '' });
     });
 
+    /* ---- 添加子 Agent 窗口里的"厂商 + 位置"那一对 ----------------------
+       左边是厂商（.chooseboxE.TOG1），右边是位置（本机/网络，.chooseboxE.TOG0）。
+       两个框的 class 都以 choosebox 开头，所以按修饰类点名 —— 不写"第一个 .choosebox"
+       这种看顺序的写法：顺序会变，标签不会。*/
+
+    function subAgentVendorBox() { return qs('#addSubAgent .choosebox.TOG1'); }
+    function subAgentPlaceBox() { return qs('#addSubAgent .choosebox.TOG0'); }
+
+    /* 位置选"网络"时才要那个网络地址输入框（跨机器接入用，先只做显示与取值入口）。
+       显示/隐藏只动 display：显示清成空串交回 CSS，隐藏写 none —— 不往元素上写布局样式。
+       比对的是选项文字：选择框的值本来就是选项文字（见 selectCsOption），没有 data-value。*/
+    function syncSubAgentPlace() {
+        const field = byId('addSubAgentAddr');
+        if (!field) return;
+        const network = toText(ui.choosebox.value(subAgentPlaceBox())).trim() === '网络';
+        field.style.display = network ? '' : 'none';
+    }
+
     /* ---- 静态窗口里的按钮 ------------------------------------------------ */
 
     function bindStaticWindowButtons() {
+        /* 位置选择框一变，网络地址输入框跟着显/隐 */
+        const place = subAgentPlaceBox();
+        if (place) place.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
         delegateClick(['#addSubAgent .options .buttonbox2active'], function () {
-            /* 窗口里只有一个名称输入框 + 一个厂商选择框 */
+            /* 窗口里有一个名称输入框 + 厂商/位置两个选择框（选"网络"时多一个地址输入框）*/
             const input = qs('#addSubAgent input');
             actions.addSubAgent({
                 name: toText(input && input.value).trim(),
-                vendor: ui.choosebox.value(qs('#addSubAgent .choosebox'))
+                vendor: ui.choosebox.value(subAgentVendorBox())
             });
         });
         /* 向导第 3 步子 Agent 胶囊上的「×」是 CSS 画的（.itemC::before，hover 才滑出来）：
@@ -5127,7 +5231,7 @@
         dark: {
             '--col-1': '#151517', '--col-1-a': '#1515178a', '--col-1-5': '#1a1a1a',
             '--col-2': '#1D1D1F', '--col-3': '#2C2C2E', '--col-4': '#303435',
-            '--col-4-5': '#404040', '--col-5': '#595959', '--col-6': '#999999',
+            '--col-4-5': '#3B3B3B', '--col-5': '#595959', '--col-6': '#999999',
             '--col-7': '#C9C9C9', '--col-7-5': '#E4E4E4', '--col-8': 'white'
         },
         light: {
@@ -5189,6 +5293,17 @@
         },
         'agent.window': function (payload) { state.set('agentsWindow', payload); render.agentWindow(payload); },
         'agent.info': function (payload) { render.agentInfoWindow(payload); ui.window.open('mgrAgentInfo'); },
+        /* 网络接入标记（跨机器）：中间层推一条就把徽标改掉，不用等下一次刷新。
+           payload：{agent_id, online} = 网络接入（在线/离线）；
+                    {agent_id, network:false} 或 `agent.network.clear` = 撇回本机（不画）。*/
+        'agent.network': function (payload) {
+            const data = payload || {};
+            return app.setAgentNetwork(data.agent_id || data.id, data);
+        },
+        'agent.network.clear': function (payload) {
+            const data = isPlainObject(payload) ? payload : { agent_id: payload };
+            return app.clearAgentNetwork(data.agent_id || data.id);
+        },
         'task.list': function (payload) { state.set('tasks', payload); render.tasks(payload); },
         'task.detail': function (payload) { state.set('taskDetail', payload); return payload; },
         'conflict.data': function (payload) { state.set('conflicts', payload); render.conflicts(payload); },
@@ -5958,7 +6073,11 @@
                     id: toText(item.project_id) + '/' + agentId,
                     agent_id: agentId,
                     project: toText(item.project_name) || shortId(item.project_id),
-                    task: toText(item.task)
+                    task: toText(item.task),
+                    /* 是不是从网络接进来的（本机接入不画徽标）、此刻在不在线。
+                       中间层不给这两个字段就一律当本机 —— 不编造“网络离线”。*/
+                    network: item.network === true,
+                    online: item.online === true
                 };
             });
         },
@@ -6194,6 +6313,12 @@
                     id: a.agent_id,
                     isMain: a.role === 'main',
                     role: glossText('agent_role', a.role),
+                    /* 在不在别的机器上：**主 Agent 永远不算**（它必须和 daemon 同机），
+                       子 Agent 看后端有没有说它是从网络接进来的；说了还得再给它一个
+                       `online` 才画「网络在线」，否则是「网络离线」。两边都没说
+                       就是这个 Agent 在本机 —— 那就不画徽标。*/
+                    network: a.role !== 'main' && a.network === true,
+                    online: a.online === true,
                     name: nickname || codename,
                     /* 厂商已知就换厂商的 logo；不知道是谁就摆 Tsunagou 自己的小标 ——
                        拿 DeepSeek 冒充“未知”会让人以为项目里真有个 DeepSeek 的 Agent。*/
@@ -6598,6 +6723,7 @@
         settings: { theme: '' },
         glossary: { version: 0, domains: {} },
         hosts: [],
+        agentNetwork: {},
         profile: { nickname: '', theme: '', agents: {} },
         wizard: {
             /* 第 1 步真建出来的项目、第 2 步真接上的主 Agent、第 3 步接上的子 Agent */

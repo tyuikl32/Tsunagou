@@ -261,6 +261,74 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(unnamed.querySelector(".listfieldbox .item img")!.getAttribute("src")).toMatch(/logo-little-[ld]\.png/);
   });
 
+  /* 2026-10-02：Agent 的「网络接入」标记（跨机器协作）——
+     **本机接入的 Agent 什么都不画**（连右侧那个 <i> 图标都不出现），
+     只有中间层说它是从网络接进来的才画「网络在线 / 网络离线」。
+     中间层有两条通道，这里都要认：接口带 `network`/`online` 字段（随刷新到），
+     以及运行时推送（dispatch `agent.network` / app.setAgentNetwork）。
+     主 Agent 必须在 daemon 所在机器上 —— 它永远不算网络接入。*/
+  it("网络接入标记：本机不画；接口字段与运行时推送都认，主 Agent 永远不算", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        dispatch: (type: string, payload?: unknown) => { ok: boolean };
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/projects/p-1/agents", {
+        items: [
+          { agent_id: "a-1", role: "main", status: "active" },
+          { agent_id: "a-2", role: "worker", status: "active" },
+          { agent_id: "a-3", role: "worker", status: "active", network: true, online: true },
+          { agent_id: "a-4", role: "worker", status: "active", network: true },
+        ],
+        main_agent_id: "a-1",
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["agents", "settings"]);
+
+    const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
+    const badge = (index: number) => cards()[index]!.querySelector(".header .right");
+    expect(cards()).toHaveLength(4);
+
+    // 本机接入（主 Agent、以及中间层没表态的子 Agent）：连图标都不许出现。
+    expect(badge(0)).toBeNull();
+    expect(cards()[0]!.querySelector(".header")!.textContent).toBe("main");
+    expect(badge(1)).toBeNull();
+
+    // 中间层说是网络接入：在线/离线由 online 决定，图标在文字右侧。
+    expect(badge(2)!.textContent).toBe("网络在线");
+    expect(badge(2)!.querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
+    expect(badge(3)!.textContent).toBe("网络离线");
+
+    // 运行时推送：改的是同一个徽标，不用等下一次刷新。
+    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-2", online: true }).ok).toBe(true);
+    expect(badge(1)!.textContent).toBe("网络在线");
+    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-2", online: false }).ok).toBe(true);
+    expect(badge(1)!.textContent).toBe("网络离线");
+    // 主 Agent 必须在 daemon 所在机器上：中间层推了也不画。
+    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-1", online: true }).ok).toBe(true);
+    expect(badge(0)).toBeNull();
+    // 撤回 → 回到本机（不画）。
+    expect(win.Tsunagou.dispatch("agent.network.clear", { agent_id: "a-2" }).ok).toBe(true);
+    expect(badge(1)).toBeNull();
+  });
+
   it("DAG：有节点但彼此没依赖时，不再往画布上摆一块会压住节点的 .empty", () => {
     const dag = (dom.window as unknown as {
       Tsunagou: { dag: { setData: (sources: unknown) => unknown; render: () => unknown } };

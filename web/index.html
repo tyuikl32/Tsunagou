@@ -333,46 +333,17 @@
     <section class="secWindow" id="mgrAgentInfo">
         <div class="window2">
             <div class="titleBar">
-                <div class="title"><i class="fa-solid fa-terminal"></i>DeepSeek Harness（054）详细信息</div>
+                <div class="title"><i class="fa-solid fa-terminal"></i>熊猫（1）</div>
                 <div class="button" onclick="Tsunagou.app.closeWindow('mgrAgentInfo')">×</div>
             </div>
             <div class="content">
                 <div class="uiBlock">
-                    <div class="items">
-                        <div class="item">
-                            <div class="left">
-                                <p class="fword">昵称</p>
-                                <p class="sword">你给这个 Agent 起的名字，只存在本机的用户档案里</p>
-                            </div>
-                            <div class="right">
-                                <div class="textbox">
-                                    <input class="left" />
-                                </div>
-                            </div>
-                        </div>
-                        <div class="item">
-                            <div class="left">
-                                <p class="fword">项目名称</p>
-                                <p class="sword">此 Agent 当前正在参与的协作项目</p>
-                            </div>
-                            <div class="right">
-                                <div class="textbox">
-                                    <input class="left" readonly />
-                                </div>
-                            </div>
-                        </div>
-                        <div class="item">
-                            <div class="left">
-                                <p class="fword">任务名称</p>
-                                <p class="sword">此 Agent 当前正在完成的项目</p>
-                            </div>
-                            <div class="right">
-                                <div class="textbox">
-                                    <input class="left" readonly />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="title2">昵称</div>
+                    <div class="textbox2"><input class="inner" placeholder="Agent 的昵称" /></div>
+                    <div class="title2">项目名称</div>
+                    <div class="dspText">这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目</div>
+                    <div class="title2">任务名称</div>
+                    <div class="dspText">这是一个任务</div>
                 </div>
             </div>
             <div class="options">
@@ -429,7 +400,7 @@
                         <div class="textbox2">
                             <input class="inner" placeholder="主 Agent 名称" />
                         </div>
-                        <div class="choosebox">
+                        <div class="choosebox chooseboxE">
                             <div class="left"><img src="./assets/img/agent/codex-l.png">Codex</div>
                             <div class="right"></div>
                         </div>
@@ -566,7 +537,11 @@
                     <div class="textbox2">
                         <input class="inner" placeholder="子 Agent 名称" />
                     </div>
-                        <div class="choosebox">
+                    <div class="textbox2" id="addSubAgentAddr" style="display: none;">
+                        <input class="inner" placeholder="子 Agent 的网络地址" />
+                    </div>
+                    <div class="chooseboxTOG">
+                        <div class="choosebox chooseboxE TOG1" data-target="addSubAgentVendor">
                             <div class="left"><img src="./assets/img/agent/codex-l.png">Codex</div>
                             <div class="right"></div>
                         </div>
@@ -577,6 +552,15 @@
                             <p><img src="./assets/img/agent/opencode-l.png">OpenCode</p>
                             <p><img src="./assets/img/agent/zcode-l.png">ZCode</p>
                         </div>
+                        <div class="choosebox chooseboxE TOG0" data-target="addSubAgentPlace">
+                            <div class="left">本机</div>
+                            <div class="right"></div>
+                        </div>
+                        <div class="chooseboxOpen" id="addSubAgentPlace">
+                            <p data-default="true">本机</p>
+                            <p>网络</p>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="options">
