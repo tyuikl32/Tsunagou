@@ -11,7 +11,7 @@ import pytest
 from tsunagou.console.config import ConsoleConfig
 from tsunagou.console.errors import ConsoleError
 from tsunagou.console.projects import bridge_profiles, create, discover, forget, register, stop_daemon
-from tsunagou.modules.projects import ProjectRegistry
+from tsunagou.modules.projects import PENDING_OBJECTIVE, ProjectRegistry
 from tsunagou.platform import host_registration
 from tsunagou.platform.project_index import load_index, record_project
 
@@ -69,6 +69,67 @@ def test_creating_a_project_makes_a_repository_and_registers_it(tmp_path: Path) 
     assert [item["project_id"] for item in stored] == [entry.project_id]
     assert stored[0]["sources"] == ["console"]
     assert stored[0]["objective"] == "让两个 Agent 对齐"
+
+
+def test_a_project_created_without_a_goal_holds_the_placeholder(tmp_path: Path) -> None:
+    """没有目标时写占位，不拿项目名冒充目标。
+
+    目标是用户与主 Agent 谈完、用户确认过之后才存在的事实（见
+    docs/decisions/2026-10-01-objective-from-dialogue.md）；建项目时那句
+    "objective or name" 会让人读到一个看起来像目标、其实只是名字的句子。
+    """
+
+    config = _config(tmp_path)
+    entry = create(config, name="没有目标")
+
+    assert entry.objective == PENDING_OBJECTIVE
+    assert PENDING_OBJECTIVE != "没有目标"
+    manifest = json.loads((entry.path / ".tsunagou" / "project.json").read_text(encoding="utf-8"))
+    assert manifest["objective"] == PENDING_OBJECTIVE
+    stored = json.loads(config.index_path.read_text(encoding="utf-8"))["projects"]
+    assert stored[0]["objective"] == PENDING_OBJECTIVE
+
+
+def test_a_created_project_carries_its_agent_facing_entry_files(tmp_path: Path) -> None:
+    """建完就要有 Agent 侧的入口。
+
+    控制台建的项目**马上**会被拿去请一个宿主会话接入；而那个 Agent 的第一条指令是
+    "存在就读 .tsunagou/agent-context.md 与 AGENTS.md 受管区块"。不存在它不会报错，
+    只会没有任何线索，然后照自己的说明去别处 `project init` —— 真实发生过。
+    """
+
+    config = _config(tmp_path)
+    entry = create(config, name="带入口")
+
+    assert entry.bootstrap is not None
+    assert entry.bootstrap["status"] == "bootstrapped", entry.bootstrap
+    for relative in (
+        "AGENTS.md",
+        ".tsunagou/agent-context.md",
+        ".tsunagou/project-integration.json",
+        ".agents/skills/tsunagou-project/SKILL.md",
+    ):
+        assert (entry.path / relative).is_file(), relative
+    # 本机私有目录要被受管区块挡在 Git 外面。
+    assert ".tsunagou/local/" in (entry.path / ".gitignore").read_text(encoding="utf-8")
+    # 只写 host-neutral 入口：接入时中间层会自己把 bridge 注册进宿主的配置。
+    assert not (entry.path / ".codex" / "config.toml").exists()
+    # 路由把这份报告原样交给页面（`_woken` 返回的就是 public()），所以这里断言序列化结果。
+    assert entry.public()["bootstrap"]["status"] == "bootstrapped"
+
+
+def test_registering_a_project_leaves_its_own_files_alone(tmp_path: Path) -> None:
+    """登记一个已经存在的项目不动它的文件：那些文件属于把项目放这儿的人。"""
+
+    config = _config(tmp_path)
+    root = _existing_project(tmp_path, "registered")
+
+    entry = register(config, path=root)
+
+    assert entry.bootstrap is None
+    assert "bootstrap" not in entry.public()
+    assert not (root / "AGENTS.md").exists()
+    assert not (root / ".tsunagou" / "agent-context.md").exists()
 
 
 def test_two_projects_with_the_same_name_do_not_collide(tmp_path: Path) -> None:

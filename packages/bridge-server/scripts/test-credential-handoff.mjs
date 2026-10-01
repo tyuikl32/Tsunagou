@@ -850,3 +850,30 @@ test("unconfigured metadata bridge never falls back to its bootstrap credential 
   assert.equal(f.calls.length, callsBefore);
   assert.equal(f.result(await f.call(client, ticket.conversation_id)).agent_id, credential.agent_id);
 });
+
+/* 降级会话的"下一次调用"不该由模型来发。
+   宿主第一次连上时报的基线可能缺一项（典型：这一次调用手上没有票、也还没有自己的会话文件），
+   而权威侧重新判定它的那一次，就是**再报一次基线**的那一次；会话文件在上面那次调用里已经
+   写下来了，所以这条路现在就走得通。非要当紧的原因是：主 Agent 的任命发生在"变成 ready 的
+   那一次调用"里（authority.redeem_ticket / rebind），压在模型的下一个动作上就等于让"连上之后
+   只回一段话、不再调工具"的会话永远停在 provisioning、角色永远停在 worker —— 真机上就是这样，
+   前端走到了第 3 步，名单里却只有一个子 Agent。 */
+test("a first call that lands degraded re-reports once and comes back ready", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  f.hooks.beforeEnroll = (_conversation, response) => {
+    respond(response, { ...credential, baseline_status: "degraded" });
+    return true;
+  };
+  const client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });
+
+  const read = await f.call(client, ticket.conversation_id);
+
+  assert.equal(f.result(read).agent_id, credential.agent_id);
+  const reconnects = f.calls.filter((call) => call.path.endsWith("session.reconnect"));
+  assert.equal(reconnects.length, 1, "只补一次，不许循环");
+  assert.ok(reconnects[0].body.payload.probe_payload, "重连必须带上重新报的基线");
+  assert.equal(reconnects[0].headers["tsunagou-connection-epoch"], "1");
+  const saved = loadSession(f.sessionFile);
+  assert.equal(saved.baseline_status, "ready");
+  assert.equal(saved.connection_epoch, 2);
+});

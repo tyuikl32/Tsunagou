@@ -57,6 +57,10 @@ class ProjectEntry:
     main_agent_id: str | None = None
     agents: list[dict[str, Any]] | None = None
     agents_fetched_at: str | None = None
+    # Only a freshly *created* project carries this: the report of writing its
+    # Agent-facing entry files. It stays out of the public shape when absent, so the
+    # project list (which never creates anything) is not littered with a null per row.
+    bootstrap: dict[str, Any] | None = None
 
     def public(self) -> dict[str, Any]:
         return {
@@ -74,6 +78,7 @@ class ProjectEntry:
             "main_agent_id": self.main_agent_id,
             "agents": self.agents,
             "agents_fetched_at": self.agents_fetched_at,
+            **({"bootstrap": self.bootstrap} if self.bootstrap else {}),
         }
 
 
@@ -222,9 +227,13 @@ def create(config: ConsoleConfig, *, name: str, objective: str = "") -> ProjectE
 
     The project is created by the backend's own registry, not by a second copy of
     the file format here: the console decides *where*, the backend decides *what*.
+
+    A caller that supplies no objective gets the placeholder, not the project's
+    own name: the goal is agreed between the user and the main Agent after the
+    project exists, and a name dressed up as a goal just reads as one.
     """
 
-    from tsunagou.modules.projects import ProjectRegistry
+    from tsunagou.modules.projects import PENDING_OBJECTIVE, ProjectRegistry
 
     root = _unused_directory(config.projects_root, name)
     root.mkdir(parents=True, exist_ok=True)
@@ -244,15 +253,19 @@ def create(config: ConsoleConfig, *, name: str, objective: str = "") -> ProjectE
             "git_initialization_failed", status=500,
             detail={"path": root.as_posix(), "stderr": (completed.stderr or "").strip()[:500]},
         )
-    registry = ProjectRegistry.initialize(root, name=name, objective=objective or name)
+    registry = ProjectRegistry.initialize(root, name=name, objective=objective or PENDING_OBJECTIVE)
     project = registry.project
     if project is None:  # pragma: no cover - initialize always yields a project
         raise ConsoleError("project_initialization_failed", status=500)
+    # The entry files go in before anyone is invited to join: this console's own
+    # onboarding asks a host conversation to become this project's Agent next, and
+    # what that Agent reads first is the project's own rules file.
+    bootstrap = _materialize_project_entry(root)
     entry = ProjectEntry(
         project_id=project.project_id, path=root, name=project.name, objective=project.objective,
         lifecycle=project.lifecycle, policy_revision=project.policy_revision,
         current_lineage_id=project.current_lineage_id, runtime_epoch=project.runtime_epoch,
-        sources=["console"],
+        sources=["console"], bootstrap=bootstrap,
     )
     record_project(
         project_id=entry.project_id, path=root, name=entry.name, objective=entry.objective,
@@ -409,6 +422,38 @@ def _candidate_manifests(root: Path) -> list[Path]:
             if path.is_file():
                 found.append(path)
     return found
+
+
+def _materialize_project_entry(root: Path) -> dict[str, Any]:
+    """Write the files an Agent reads to find out which project it was put into.
+
+    A project made here is used by this console's own onboarding immediately: the
+    wizard's next step asks a host conversation to join it. That Agent's first
+    instruction is to read ``.tsunagou/agent-context.md`` and the managed
+    ``AGENTS.md`` block *when present* -- so a project without them tells the Agent
+    nothing about which project it belongs to and which conversation was prepared
+    for it. It does not error out; it simply has no clue, and then follows its own
+    "install and initialize a project" guidance somewhere else. That is how a second,
+    unintended project gets created next to the one the person just made.
+
+    This is the same bootstrap the CLI runs, asked for the host-neutral entry only:
+    the console registers the bridge into the host's *own* configuration while
+    preparing an enrollment, so asking bootstrap for a host here would register the
+    same conversation twice.
+
+    Failures are reported instead of raised: the project exists and is usable either
+    way, and the caller's report should say what could not be written rather than
+    pretend it was. ``register`` deliberately does not do this -- a project that
+    already exists belongs to whoever put it there, files included.
+    """
+
+    from tsunagou.application.project_integration import ProjectIntegration, ProjectIntegrationError
+
+    try:
+        result = ProjectIntegration(root).bootstrap(hosts=["generic"])
+    except (ProjectIntegrationError, OSError, ValueError) as exc:
+        return {"status": "error", "error": str(exc)}
+    return {"status": str(result.get("status")), "files": result.get("files")}
 
 
 def _unused_directory(parent: Path, name: str) -> Path:

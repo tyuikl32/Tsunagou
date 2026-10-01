@@ -1005,7 +1005,9 @@
 
        四步各自做一件真事，不再把"完成"当成唯一的提交点：
          1) 创建一个新的协作 —— 这一下就真的建（目录 + git init + 登记 + 起 daemon），
-            建完之后输入框只读、按钮变成"下一步"（项目已经落地，再改名字只是自欺欺人）；
+            建完之后输入框只读、按钮变成"下一步"（项目已经落地，再改名字只是自欺欺人）。
+            这里只问名字：目标是用户和主 Agent 谈完、用户确认过之后才存在的东西，
+            建项目时问一句只会得到一个没人看的占位；
          2) 连接到主 Agent  —— 真的准备接入（签票 + 注册宿主）并等它连上；
          3) 连接到子 Agent  —— 同上，可以接多个，也可以一个都不接；
          4) 接入结果        —— 只是把已经发生的事列出来给人看，不再发任何请求。
@@ -1041,7 +1043,7 @@
         return null;
     }
 
-    /* 第 1 步的输入框在项目建好之后只读：那两行已经变成"这个协作的名字/描述"了 */
+    /* 第 1 步的输入框在项目建好之后只读：那一行已经变成"这个协作的名字"了 */
     function freezeWizardStepOne(frozen) {
         wizardInputs(1).forEach(function (input) { input.readOnly = !!frozen; });
     }
@@ -1054,11 +1056,17 @@
         /* 这一步确实往磁盘上写（中间层建项目目录 + 登记索引），但**不弹二次确认**
            （2026-09-29 你定的）：向导本身就是多步表单，"下一步"已经是一次明确动作，
            再叠一个确认框只会多一次点击。见 §4.6 的确认分工表。*/
-        return Promise.resolve(actions.createProject({ name: draft.name, objective: draft.objective }))
+        return Promise.resolve(actions.createProject({ name: draft.name }))
             .then(function (project) {
                 const id = toText(project && project.project_id);
                 if (!project || !id) return false;
-                state.set('wizard.project', { id: id, name: draft.name, objective: draft.objective });
+                /* 描述从后端那份项目里回读，不用草稿里的值：没有目标时它就是后端写的占位，
+                   第 4 步看到的就是磁盘上真正那句话。*/
+                state.set('wizard.project', {
+                    id: id,
+                    name: toText(project.name) || draft.name,
+                    objective: toText(project.objective)
+                });
                 freezeWizardStepOne(true);
                 /* 建完就切进这个协作：第 2/3 步的接入请求是项目作用域的，必须要"当前项目" */
                 app.openProject(id);
@@ -1088,7 +1096,7 @@
         return connectAgent({
             host: host, nickname: nickname, role: 'main',
             profile: (previous && previous.profile) || null,
-            waiting: '请打开（或重载）' + host.label + ' 窗口，让它以主 Agent 身份接入，正在等待连接'
+            waiting: openWindowHint(host, '以主 Agent 身份')
         }).then(function (outcome) {
             const reached = toText(outcome && outcome.status);
             if (reached !== 'arrived' && reached !== 'manual') {
@@ -1155,7 +1163,8 @@
             emit('ui:wizard', { step: 1, opened: true });
             return true;
         },
-        /* 收集向导里所有输入（第 1 步的两个框 + 第 2 步的名称/厂商）*/
+        /* 收集向导里所有输入（第 1 步的名字 + 第 2 步的名称/厂商）。
+           没有 objective：向导不问目标，目标是用户与主 Agent 确认之后才存在的事实。*/
         collect: function () {
             const first = wizardInputs(1);
             const mainInputs = wizardInputs(2);
@@ -1163,7 +1172,6 @@
             const detected = state.get('wizard.detectedMainAgent', null);
             return {
                 name: toText(first[0] && first[0].value).trim(),
-                objective: toText(first[1] && first[1].value).trim(),
                 mainAgent: {
                     name: toText(mainInputs[0] && mainInputs[0].value).trim(),
                     /* 厂商来自选择框（原来是"API 地址"输入框）*/
@@ -4249,7 +4257,7 @@
             '<div class="descbox">项目名称</div>' +
             '<div class="title">' + esc(toText(project.name) || data.name || '（还没创建）') + '</div>' +
             '<div class="descbox">项目描述</div>' +
-            '<div class="descbox">' + esc(toText(project.objective) || data.objective || '（没有填写）') + '</div>' +
+            '<div class="descbox">' + esc(toText(project.objective) || '（没有填写）') + '</div>' +
             '<div class="descbox">主 Agent</div>' +
             (main && toText(main.name)
                 ? listFieldHtml([{
@@ -4307,6 +4315,14 @@
             }
             return notify.track('正在创建协作', api.post('projectCreate', data)).then(function (result) {
                 const project = (result && result.project) || null;
+                /* 项目入口文件（AGENTS.md / .tsunagou/agent-context.md / 项目 skill）没写成就说一声：
+                   少了它们，接进来的 Agent 读不到"我在哪个项目、这次是为谁准备的"，只会照它自己的
+                   "安装并初始化"说明去别处新建一个项目。项目本身建好了，所以这只是提醒。*/
+                const entry = (project && project.bootstrap) || {};
+                if (toText(entry.status) && toText(entry.status) !== 'bootstrapped') {
+                    notify.info('项目的 Agent 入口文件没写成功（' + (toText(entry.error) || '未知原因') +
+                        '）：接进来的 Agent 可能读不到这个项目的规矩。');
+                }
                 notify.success({ title: '协作已创建', sub: data.name });
                 /* 列表以后端为准：重新拉一次，别自己造一张卡片 */
                 return Tsunagou.refresh(['projects']).then(function () { return project; });
@@ -4383,7 +4399,7 @@
             };
             return connectAgent({
                 host: host, nickname: name, role: 'worker',
-                waiting: '请打开（或重载）' + host.label + ' 窗口，让它作为子 Agent 接入，正在等待连接',
+                waiting: openWindowHint(host, '作为子 Agent '),
                 profile: data.profile || null
             }).then(function (outcome) {
                 const reached = toText(outcome && outcome.status);
@@ -5534,7 +5550,7 @@
        所以轮询很便宜，也不会因为网络抖一下就让人重新来一遍。*/
     const ENROLLMENT_POLL_MS = 2000;
 
-    function waitForEnrollment(enrollmentId, label) {
+    function waitForEnrollment(enrollmentId, label, onWaiting) {
         const template = pathTemplate('enrollment');
         const path = template.split('{enrollment}').join(encodeURIComponent(enrollmentId));
         return new Promise(function (resolve) {
@@ -5557,6 +5573,8 @@
                     if (status === 'arrived') return stop({ status: 'arrived', agent: answer });
                     if (status === 'expired') return stop({ status: 'expired', agent: answer });
                     if (status === 'cancelled') return stop({ status: 'cancelled', agent: answer });
+                    /* “还没就位”也算一种进展：把中间层给的缺项和"该做什么"换到遮罩上。*/
+                    if (typeof onWaiting === 'function') onWaiting(answer || {});
                     timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                 }, function () {
                     /* 一次问不到不算失败：接着等下一次。*/
@@ -5582,6 +5600,45 @@
         const command = firstCommand(registration);
         if (command) return '这个宿主要人手工把 bridge 写进它的 MCP 配置：' + command;
         return '还没能把这次接入写进 ' + (toText((host || {}).label) || '宿主') + ' 的配置';
+    }
+
+    /* 当前项目的目录：中间层知道（一个 daemon 只服务一个项目，概况出口不含文件路径），
+       所以从项目列表里按 id 取。取不到就返回空串，由调用方换一句不含路径的说法。*/
+    function currentProjectPath() {
+        const id = toText(state.get('currentProjectId'));
+        if (!id) return '';
+        const known = findById(state.get('projects', []), id) || {};
+        return toText(known.path);
+    }
+
+    /* “已经连上但还没就位”时换到遮罩上的那句话。
+       “就位”= 会话就绪（准入能力齐了）+ 角色已经落到票要求的那一个。中间层会把已经
+       连上的那个人、他的会话状态和缺哪几项能力一起交出来（`pending`，见
+       console/enrollment.py）——因为首次接入天然还不就位，而让它就位的唯一动作就是
+       “在那个窗口里再读一次项目上下文”（那就是重连 + 重报基线）。不说清楚，人只会看到
+       一个转不停、最后报”票过期“的遮罩，却不知道票早就被兑换了。*/
+    function joiningNote(answer, host) {
+        const pending = isPlainObject(answer.pending) ? answer.pending : null;
+        if (!pending) return '';
+        const label = toText((host || {}).label) || '宿主';
+        const missing = toArray(pending.missing_admission).map(toText).filter(Boolean);
+        const path = currentProjectPath();
+        return '「' + label + '」那边的会话已经连上了，但还没就位' +
+            (missing.length ? '（还缺：' + missing.join('、') + '）' : '') +
+            '。请在' + (path ? '「' + path + '」下' : '那边') +
+            '让它再读一次项目上下文，就能完成接入。正在等待连接';
+    }
+
+    /* 等待接入时的那一句人话：**先说清在哪个目录开窗口**。
+       宿主的窗口开在哪个目录，决定了那个会话里的 Agent 能不能按相对路径读到这个项目的
+       规矩文件（`.tsunagou/agent-context.md`、`AGENTS.md` 受管区块）—— 读不到它不会报错，
+       只会没有任何"我在哪个项目"的线索，然后照它自己的"安装并初始化"说明去别处新建一个
+       项目（真实发生过）。两个向导入口共用这一句，以免文案两处跑偏。*/
+    function openWindowHint(host, phrase) {
+        const label = toText((host || {}).label) || '宿主';
+        const path = currentProjectPath();
+        return '请在「' + (path || '这个项目所在的目录') + '」下打开/重载 ' + label +
+            ' 窗口，让它' + (phrase || '') + '接入 Tsunagou。正在等待连接';
     }
 
     /* ---- 接入一个 Agent：准备（签票 + 写 bridge 配置 + 注册宿主的 MCP）→ 等宿主连上 ----
@@ -5658,9 +5715,12 @@
                     profile: toText(prepared.profile), enrollment_id: toText(prepared.enrollment_id)
                 };
             }
-            notify.loading(opts.waiting || ('请打开（或重载）' + toText(host.label) + ' 窗口完成接入，正在等待连接'),
-                { cancel: cancel });
-            return waitForEnrollment(toText(prepared.enrollment_id), toText(host.label)).then(function (outcome) {
+            const waitingText = opts.waiting || openWindowHint(host);
+            notify.loading(waitingText, { cancel: cancel });
+            return waitForEnrollment(toText(prepared.enrollment_id), toText(host.label), function (answer) {
+                const note = joiningNote(answer, host);
+                if (note) notify.loading(note, { cancel: cancel });
+            }).then(function (outcome) {
                 /* 等到结果（到了/过期/取消/不等了）就把遮罩收起来，后面由调用方发声 */
                 notify.loadingEnd();
                 const merged = {
@@ -5728,6 +5788,27 @@
         const bucket = sources[name];
         if (!isPlainObject(bucket)) return [];
         return backendItems(bucket);
+    }
+
+    /* 项目目标落在哪：`user_decision.propose` 里 kind 为 project.objective 的那条决定，
+       用户确认后（status=resolved）它的 summary 就是主 Agent 与用户谈定的目标。
+       已解决的决定不能被撤回，只能再提一条，所以取最后一条 = 最新的那版理解。
+       没有这样的决定就返回空串，由调用方回落到项目记录里那句（后端写的是占位）。
+       计划（coordination.plan）的抬头**故意不算数**：那是"这一批任务要干什么"，
+       可以被下一个阶段换掉，不能冒充整个项目的目标。*/
+    const OBJECTIVE_DECISION_KIND = 'project.objective';
+
+    function confirmedObjective(decisions) {
+        const rows = toArray(decisions).filter(function (item) {
+            const payload = isPlainObject(item.payload) ? item.payload : {};
+            return toText(item.kind) === OBJECTIVE_DECISION_KIND
+                && toText(item.status) === 'resolved'
+                && (toText(item.summary) || toText(payload.summary));
+        });
+        const latest = rows[rows.length - 1];
+        if (!latest) return '';
+        const payload = isPlainObject(latest.payload) ? latest.payload : {};
+        return toText(latest.summary) || toText(payload.summary);
     }
 
     /* 一个出口没能给回答时，界面只把这一块留空 —— 但要说清楚为什么，
@@ -6013,7 +6094,7 @@
             return {
                 id: header.project_id,
                 name: header.name,
-                description: header.objective,
+                description: confirmedObjective(decisions) || header.objective,
                 /* 策略版本的原值（基本信息的「策略版本」是它的显示写法 r7）。
                    确认项目完成要拿它与后端做 CAS，所以得留着数字。*/
                 policyRevision: header.policy_revision,

@@ -284,4 +284,219 @@ describe("控制台页面（web/）结构冒烟", () => {
        （曾经那句「都是独立任务」正好压在第一个节点上）。那句话改由通知说。*/
     expect(canvas.querySelector(".empty")).toBeNull();
   });
+
+  /* 2026-10-01：项目目标不再由建项目时的向导收集。
+     它是用户与主 Agent 谈定、**用户确认过**的一条决定（kind=project.objective，
+     见 docs/decisions/2026-10-01-objective-from-dialogue.md）：主 Agent 提，用户在
+     「待用户决定」里答，答完之后界面才把它当目标显示；没确认过就显示项目记录里那句
+     （后端写的占位）。计划（coordination.plan）的抬头故意不算数 —— 那是"这一批任务
+     要干什么"，换个阶段就会变，不能冒充整个项目的目标。*/
+  it("新建协作向导第 1 步只问名字，目标不由向导收集", () => {
+    const step1 = page.querySelector("#newXz1");
+    expect(step1).not.toBeNull();
+    // 只剩"名字"一个框；那个问目标的框连它的说明文字一起撤掉了。
+    expect(step1!.querySelectorAll("input")).toHaveLength(1);
+    expect(readWeb("index.html")).not.toContain("这次协作的目标");
+
+    // 收集出来的草稿里不再有 objective 这个键：留个永远为空的字段只会又骗人一次。
+    const collected = (dom.window as unknown as {
+      Tsunagou: { ui: { wizard: { collect: () => Record<string, unknown> } } };
+    }).Tsunagou.ui.wizard.collect();
+    expect(collected).toHaveProperty("name");
+    expect(collected).not.toHaveProperty("objective");
+  });
+
+  it("主视图的目标只用「用户确认过」的那条决定，没有就回落到项目记录里那句", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const overview = (decisions: unknown[]) => ({
+      project_id: "p-1",
+      view: "overview",
+      missing: {},
+      sources: {
+        overview: {
+          project_id: "p-1", name: "示例协作", objective: "待主 Agent 与用户确认",
+          lifecycle: "active", policy_revision: 1, roots: [], repositories: [],
+        },
+        agents: { items: [] },
+        tasks: { items: [] },
+        cognition: { reports: [] },
+        checkpoints: { items: [] },
+        decisions: { items: decisions },
+      },
+    });
+    const serve = (payload: unknown) => {
+      win.fetch = () =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(payload),
+          text: () => Promise.resolve(JSON.stringify(payload)),
+        });
+    };
+    const shown = () => page.querySelector("#pane-overview .textArea")!.textContent;
+
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+
+    // ① 只是"待用户决定"，还没人答：显示项目记录里那句，不拿没确认的话冒充目标。
+    serve(overview([
+      { decision_id: "d-1", kind: "project.objective", status: "pending", summary: "还没人答的那句" },
+    ]));
+    await win.Tsunagou.refresh(["project"]);
+    expect(shown()).toBe("待主 Agent 与用户确认");
+
+    // ② 用户答过：主视图写的就是那句目标本身。
+    serve(overview([
+      { decision_id: "d-1", kind: "project.objective", status: "resolved", summary: "让两个 Agent 对齐 API" },
+    ]));
+    await win.Tsunagou.refresh(["project"]);
+    expect(shown()).toBe("让两个 Agent 对齐 API");
+
+    // ③ 确认过两次：取最后一条（最新的那版理解），不是最早那条。
+    serve(overview([
+      { decision_id: "d-1", kind: "project.objective", status: "resolved", summary: "旧的理解" },
+      { decision_id: "d-2", kind: "project.objective", status: "resolved", summary: "新的理解" },
+    ]));
+    await win.Tsunagou.refresh(["project"]);
+    expect(shown()).toBe("新的理解");
+
+    // ④ 别的 kind 不算数：重大设计决定被确认了也不等于项目目标。
+    serve(overview([
+      { decision_id: "d-3", kind: "design.change", status: "resolved", summary: "换个方案" },
+    ]));
+    await win.Tsunagou.refresh(["project"]);
+    expect(shown()).toBe("待主 Agent 与用户确认");
+  });
+
+  /* 接入一个 Agent 时，等待遮罩必须先说清"在哪个目录开窗口"。
+     宿主的窗口开在哪个目录，决定了那个会话里的 Agent 能不能读到这个项目的规矩文件
+     （`.tsunagou/agent-context.md`、`AGENTS.md` 受管区块）—— 读不到它不会报错，只会
+     没有任何"我在哪个项目"的线索，然后照自己的"安装并初始化"说明去别处新建一个项目
+     （真实发生过）。目录只有一个来源：中间层的项目列表（daemon 的出口不含文件路径）。*/
+  it("等待接入的遮罩里写着在哪个目录开窗口", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        state: { set: (path: string, value: unknown) => void };
+        ui: { wizard: { go: (n: number) => number; next: () => Promise<unknown> } };
+        notify: { loadingEnd: () => boolean };
+      };
+    };
+    const projectPath = "E:\\Tsunagou\\projects\\示例协作";
+    /* 中间层那份项目列表是目录的唯一来源（daemon 的概况出口不含文件路径）。
+       这里喂的是**适配后**的形状，和 `project.list` 路由收到的一样。*/
+    api.dispatch("project.list", [
+      { id: "p-1", name: "示例协作", path: projectPath, available: true },
+    ]);
+    win.Tsunagou.state.set("hosts", [{ adapter: "codex", label: "Codex", supported: true }]);
+    /* 第 1 步建完会刷新项目列表并把"当前项目"切过去（`openProject`），所以第 2 步
+       手里两样都有：一份带 path 的列表 + 一个 currentProjectId。*/
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    win.Tsunagou.state.set("wizard.project", { id: "p-1", name: "示例协作" });
+
+    /* 第 2 步会真的去中间层"准备接入"：这里让它走到"正在等待连接"就够。*/
+    const prepared = {
+      status: "prepared", enrollment_id: "e-1", profile: "p",
+      host_registration: { status: "registered" },
+    };
+    win.fetch = () => Promise.resolve({
+      ok: true, status: 200,
+      json: () => Promise.resolve(prepared),
+      text: () => Promise.resolve(JSON.stringify(prepared)),
+    });
+
+    win.Tsunagou.ui.wizard.go(2);
+    (page.querySelector("#newXz2 input") as HTMLInputElement).value = "熊猫";
+    const pending = win.Tsunagou.ui.wizard.next();
+
+    /* 那句话是"准备"回来之后才写的，等它出现。*/
+    let text = "";
+    for (let tick = 0; tick < 40 && text.indexOf(projectPath) < 0; tick += 1) {
+      await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+      text = page.querySelector("#loadW .textW")?.textContent ?? "";
+    }
+    expect(text).toContain(projectPath);
+    expect(text).toContain("Codex");
+
+    /* 收尾：关掉遮罩让等待循环自己停，别留一个 2 秒的定时器在跑。*/
+    win.Tsunagou.notify.loadingEnd();
+    void pending.catch(() => undefined);
+  });
+
+  /* "到了"和"就位"是两件事。名单里多出一个会话只说明它兑换了票；主 Agent 的任命是
+     daemon 在"会话就绪"那一步顺手做的，而首次接入天然还不就绪（连续性证据要前一次和
+     这一次两份摘要）。所以遮罩必须能把"已经连上，但还缺哪几项"这句话换上 —— 否则人看到
+     的只是一个转不停、最后报"票过期"的遮罩，却不知道票早就被兑换了。*/
+  it("轮询到「已连上但还没就位」时，遮罩改说还缺什么", async () => {
+    const win = dom.window as unknown as {
+      fetch: (url: string) => Promise<unknown>;
+      Tsunagou: {
+        state: { set: (path: string, value: unknown) => void };
+        ui: {
+          wizard: { go: (n: number) => number; next: () => Promise<unknown> };
+          window: { isOpen: (id: string) => boolean };
+        };
+        notify: { loadingEnd: () => boolean };
+      };
+    };
+    /* jsdom 不排版，`isShown()`（checkVisibility / getClientRects）永远是 false，
+       等待循环会据此以为"遮罩被人关掉了"而立即收摊（真实浏览器里不会）。
+       这一条测的是轮询到的文案，所以把"遮罩还开着"这件事直接告诉它。*/
+    win.Tsunagou.ui.window.isOpen = () => true;
+    const projectPath = "E:\\Tsunagou\\projects\\示例协作";
+    api.dispatch("project.list", [
+      { id: "p-1", name: "示例协作", path: projectPath, available: true },
+    ]);
+    win.Tsunagou.state.set("hosts", [{ adapter: "codex", label: "Codex", supported: true }]);
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    win.Tsunagou.state.set("wizard.project", { id: "p-1", name: "示例协作" });
+
+    const prepared = {
+      status: "prepared", enrollment_id: "e-1", profile: "p",
+      host_registration: { status: "registered" },
+    };
+    const calls: string[] = [];
+    /* 中间层对"还没就位"的回答（console/enrollment.py 的 `pending`）。*/
+    const joining = {
+      status: "waiting", enrollment_id: "e-1", agent_id: null,
+      pending: {
+        agent_id: "a-9", role: "worker", session_status: "degraded",
+        missing_admission: ["identity.continuity_evidence"],
+      },
+      note: "已经连上，但还没就位。",
+    };
+    win.fetch = (url: string) => {
+      calls.push(String(url));
+      const body = String(url).indexOf("e-1") >= 0 ? joining : prepared;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+
+    win.Tsunagou.ui.wizard.go(2);
+    (page.querySelector("#newXz2 input") as HTMLInputElement).value = "熊猫";
+    const pending = win.Tsunagou.ui.wizard.next();
+
+    /* 第一次轮询在 2 秒之后，等到那句话被换上为止。*/
+    let text = "";
+    for (let tick = 0; tick < 80 && text.indexOf("还没就位") < 0; tick += 1) {
+      await new Promise((resolve) => dom.window.setTimeout(resolve, 50));
+      text = page.querySelector("#loadW .textW")?.textContent ?? "";
+    }
+    expect(calls.join(" ")).toContain("e-1");
+    expect(text).toContain("还没就位");
+    expect(text).toContain("identity.continuity_evidence");
+    expect(text).toContain("Codex");
+    expect(text).toContain(projectPath);
+
+    win.Tsunagou.notify.loadingEnd();
+    void pending.catch(() => undefined);
+  });
 });

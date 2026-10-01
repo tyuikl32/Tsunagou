@@ -18,6 +18,18 @@ from typing import Any
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 
+# What a project's ``objective`` says until a goal has actually been agreed.
+#
+# Nobody is asked for a goal while the project is being created any more: the
+# goal comes out of the user's conversation with the main Agent, and it becomes
+# a fact only once the user confirms it (a ``user_decision.propose`` with
+# ``kind=project.objective``, see ``docs/decisions/2026-10-01-objective-from-dialogue.md``).
+# The field itself cannot be empty -- ``project.initialize`` requires it and the
+# schema has ``minLength: 1`` -- so it holds this sentence instead of pretending
+# to be a goal. Callers that do know a real goal (the CLI's ``--objective``, a
+# caller of ``/api/v1/projects``) still win; only the fallback changes.
+PENDING_OBJECTIVE = "待主 Agent 与用户确认"
+
 
 def _atomic_json(path: Path, value: Any) -> None:
     if path.is_file():
