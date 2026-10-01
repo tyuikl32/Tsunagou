@@ -155,3 +155,5 @@ node packages/bridge-server/scripts/smoke-late-ticket.mjs
 ```
 
 该 smoke 会先启动没有 ticket 的 bridge，再写入 ticket，最后只调用一次 `context__project_read`；输出 `late_ticket_recovery=true` 才表示旧进程自愈成立。
+
+同一族的第二种情形是"第一次调用就降级"：宿主第一次连上时报的基线可能缺一项，而 daemon 是在**会话变成 `ready` 的那一次调用**里顺手任命主 Agent 的。所以 bridge 会在同一次工具调用里再重报一次基线（只补一次；补不成保留第一次的结果），不再把这个动作压在模型的下一个工具调用上 —— 详见 [D187](../decisions/2026-10-01-bridge-reports-degraded-baseline-once.md)。
