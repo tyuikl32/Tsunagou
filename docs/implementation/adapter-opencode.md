@@ -17,7 +17,9 @@ OpenCode 适配器翻译官方 Sessions、plugin 事件和 MCP 工具入口到 b
 - 配置有**缓存**，改完要 `opencode reload`（或重启宿主）才生效；
 - 想查它到底读没读到，用 `opencode debug config`；`opencode mcp list` 会真的去启动每个条目探活、又没有 `--json`，不适合当判据。
 
-另外：项目配置只在 **git 仓库**里生效（在非 git 目录里读不到）。
+另外：早期记录的"项目配置只在 **git 仓库**里生效"**已按 2026-10-02 跨机器实测作废** —— 远端项目副本没有 `.git`（`Test-Path .\.git` = `False`），项目级 `opencode.json` 照常生效（`opencode mcp list` 报 `connected`、工具可调用）。见[跨机器第 0 步实测](../acceptance/cross-machine-step0-2026-10-02.md)。
+
+会话身份的另一条实测：`--session` 的值可以由接入方**自己指定**（只要求 `ses` 前缀，后缀随意），宿主会以该 id 建会话，因此 OpenCode 也能"先签票、后连接"，与 Codex 的 routing-dir 方案效果等价。
 
 旧配置刷新与重载：重新运行 `agent connect --adapter opencode --profile <name>`（或 `agent enroll --adapter opencode --output-dir <dir>`）生成含声明的 bridge 配置；把生成配置的 `env`（至少新增的 `TSUNAGOU_HOST_META_KEY`）同步进 OpenCode 项目 `mcp.<name>.environment`，再执行 `opencode reload`（或重启宿主进程）使新配置生效。未刷新前 bridge 以兼容模式运行（不启用首调用硬校验）；刷新后首次工具调用即受严格检查约束，宿主在真实轮次中无需改动调用方式。卸载删除适配器生成的 profile 引用，保留 OpenCode 原生 session 与项目持久化。
 
