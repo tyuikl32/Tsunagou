@@ -343,6 +343,10 @@ def test_assignment_needs_no_ready_and_takeover_revokes_old_owner(runtime):
     assignment = plan["assignments"][0]
     state = app.state.state_runtime
     assert assignment["message_id"]
+    # 后端自己发的通知是给人读的：正文走中文模板（以前是 "Task available" 这种英文，
+    # 控制台的「Agent 间协商」那张表原样印出来，人读不动）。
+    notice = state.messages.messages[assignment["message_id"]].summary
+    assert any("\u4e00" <= char <= "\u9fff" for char in notice), notice
     worker_context = call("context.project_read", {}, worker)
     main_context = call("context.project_read", {}, main)
     assert assignment["task_id"] in {row["task_id"] for row in worker_context["open_tasks"]}

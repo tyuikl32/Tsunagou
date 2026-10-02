@@ -2715,14 +2715,22 @@
     /* 卡片的样子。selected 由 render.list 统一判定后传进来 ——
        这里不自己算：否则条目一旦自称 selected、或 id 为空又刚好赶上"没选项目"，
        整列标题就全变成蓝色了（一列里最多只能有一张选中）。*/
+    /* 子 Agent 头像一行最多摆 3 个，多出来的收进 `+N` 那个小圆圈里，N 是**没摆出来的**数量。
+       别把总数写进去：只有 2 个子 Agent 时会画成"2 个头像 +2"，看起来像有 4 个。*/
+    const OTHERS_SHOWN = 3;
+
     function projectCardHtml(project, selected) {
         const status = PROJECT_STATUS[project.status] || PROJECT_STATUS.working;
         const agents = toArray(project.agents).map(cardAgent);
         const mainAgent = cardAgent(project.mainAgent) || { name: '', icon: TSUNAGOU_CARD_ICON };
-        const extra = project.extra === undefined ? agents.length : Number(project.extra);
-        const others = agents.slice(0, extra > 5 ? 4 : agents.length).map(function (agent) {
+        /* 名单可能比中间层报的总数短（它才是权威），所以两者取大的那个当总数。*/
+        const declared = Number(project.extra);
+        const total = Number.isFinite(declared) ? Math.max(declared, agents.length) : agents.length;
+        const shown = Math.min(OTHERS_SHOWN, agents.length);
+        const hidden = Math.max(0, total - shown);
+        const others = agents.slice(0, shown).map(function (agent) {
             return '<img src="' + esc(iconOf(agent)) + '" />';
-        }).join('') + (extra > 0 ? '<span class="plus">' + esc(extra) + '</span>' : '');
+        }).join('') + (hidden > 0 ? '<span class="plus">' + esc(hidden) + '</span>' : '');
         return '<div class="projItem' + (selected ? ' projItemSelected' : '') + '" data-project-id="' + esc(project.id) + '">' +
             '<div class="inner">' +
             /* 删除入口：与 .title / .content 平级的 .edit。
@@ -5483,6 +5491,39 @@
         return toText(table[token]) || token;
     }
 
+    /* 同一次查表，但"表里没有"返回空串 —— 调用方要靠这个区别决定要不要退回原样。
+       （glossText 兜底返回原 token，适合"查不到就直接显示"，不适合"查到了才改写"。）*/
+    function glossWord(domain, value) {
+        const token = toText(value);
+        if (!token) return '';
+        const table = state.get('glossary.domains.' + toText(domain), {}) || {};
+        return toText(table[token]);
+    }
+
+    /* 总路径的「操作」列：命令名 → 短中文。
+       被拒的写操作在账本里叫 `command.<命令>.denied`，先剥掉这层壳再查表，
+       查到就补一句「（被拒）」；查不到仍旧原样印（词表的规矩：不编）。*/
+    function actionText(action) {
+        const raw = toText(action);
+        if (!raw) return '';
+        const denied = /\.denied$/.test(raw);
+        const kind = raw.replace(/^command\./, '').replace(/\.denied$/, '');
+        return (glossWord('command_kind', kind) || kind) + (denied ? '（被拒）' : '');
+    }
+
+    /* 引用（`task/<id>`、`ticket/0`、`session/<id>`…）→「种类 + 短号」。
+       以前是整串截 8 个字符，于是 `session/<uuid>` 显示成 "session/"、谁也不是。
+       前缀认不出来才退回原来的截法。短号必须留着：人要靠它跟别的屏对上。*/
+    function refText(ref) {
+        const text = toText(ref);
+        if (!text) return '';
+        const at = text.indexOf('/');
+        const noun = glossWord('ref_kind', at < 0 ? text : text.slice(0, at));
+        if (!noun) return shortId(text);
+        const key = at < 0 ? '' : text.slice(at + 1);
+        return key ? (noun + ' ' + shortId(key)) : noun;
+    }
+
     /* 词表里的**整张域** → 一组标签 {text, ok}。
        用在"这一栏有哪几项、每项叫什么"的地方，比如 Agent 管理的基础能力（4 项）
        与运营能力（7 项）：名字与顺序都跟着词表走，页面不自己维护一份名单。
@@ -5519,17 +5560,18 @@
         return '';
     }
 
-    /* 拒绝原因码 → 中文。码可能是 `resource_conflict:file:src/x.py`：
-       冒号前那截查词表（denial_reason），后面那截（资源键/参数）原样保留；
-       查不到就把整串原样返回 —— 宁可难看，也不编一个中文出来。*/
+    /* 事件后面那句括注（审计出口的 reason_code）→ 中文。两种来源同一栏：
+       写操作被拒的原因码（denial_reason），以及事件自己那句"为什么"
+       （event_reason：用户裁决、后台作业重试用尽…）。码可能带参数
+       （`resource_conflict:file:src/x.py`），所以只查冒号前那截、后面原样保留；
+       两张表都没命中就把整串原样返回 —— 宁可难看，也不编一个中文出来。*/
     function reasonText(code) {
         const text = toText(code);
         if (!text) return '';
         const at = text.indexOf(':');
         const head = at < 0 ? text : text.slice(0, at);
         const tail = at < 0 ? '' : text.slice(at);
-        const table = state.get('glossary.domains.denial_reason', {}) || {};
-        const word = toText(table[head]);
+        const word = glossWord('denial_reason', head) || glossWord('event_reason', head);
         return word ? (word + tail) : text;
     }
 
@@ -6115,7 +6157,9 @@
        第一屏就会是一串 id 缩写。*/
     function timelineActor(actorRef) {
         const ref = toText(actorRef);
-        if (ref === 'user_control') return { ref: ref, name: '用户', user: true };
+        /* 先认"这不是 Agent"的那几个主体（用户 / 后台 / 协调中心…），词表说了算。*/
+        const known = glossWord('actor_kind', ref);
+        if (known) return { ref: ref, name: known, user: ref === 'user_control' };
         const agent = toArray(state.get('agents', [])).filter(function (item) {
             return toText(item.id) === ref;
         })[0];
@@ -6128,7 +6172,7 @@
                 mainAgent: !!(agent && agent.isMain)
             };
         }
-        return { ref: ref, name: shortId(ref), user: ref.indexOf('user') === 0 };
+        return { ref: ref, name: refText(ref), user: ref.indexOf('user') === 0 };
     }
 
     /* 行里的 actor 是**适配那一刻**算的，而 agents / 用户档案是并发拉的，谁先回来不定。
@@ -6168,7 +6212,10 @@
                         : (running ? '进行中' : '未启动'),
                     /* 卡片右下角那行小字：就说 daemon 起没起。*/
                     time: running ? 'daemon 运行中' : (daemon ? 'daemon 无响应' : 'daemon 未启动'),
-                    group: p.lifecycle === 'archived' ? 'done' : undefined,
+                    /* 分组与状态文字用同一个判据：确认完工（completed）的项目就该和已归档的
+                       一起落到「已完成的协作」那一组 —— 否则卡片写着"已完成"却留在上面那一组，
+                       而控制台里没有归档入口，它会一直混在"进行中"里。*/
+                    group: done ? 'done' : undefined,
                     selected: false,
                     /* 卡片上不用，但别的面板要：项目目录、daemon 端点 */
                     path: p.path,
@@ -6589,12 +6636,18 @@
                     };
                 }),
                 messages: sourceItems(sources, 'messages').map(function (m) {
-                    const sender = agents[toText(m.sender_agent_id)];
-                    const recipient = agents[toText(m.recipient_agent_id)];
+                    /* 收发两侧都按"这是谁"来称呼：名单里的 Agent 用昵称；用户/后台这类
+                       主体走中间层词表（`user_control` → 用户），其余退回「前缀 + 短号」。
+                       以前直接把 `user_control` 截 8 个字符，页面上就写成了 user_con。*/
+                    const chipName = function (agentId) {
+                        const ref = toText(agentId);
+                        const known = agents[ref];
+                        return known ? agentDisplayName(known) : timelineActor(ref).name;
+                    };
                     return {
                         id: m.message_id,
-                        from: sender ? agentDisplayName(sender) : shortId(m.sender_agent_id),
-                        to: recipient ? agentDisplayName(recipient) : shortId(m.recipient_agent_id),
+                        from: chipName(m.sender_agent_id),
+                        to: chipName(m.recipient_agent_id),
                         content: toText(m.summary) || toText(m.topic),
                         answered: glossText('message_status', m.status) || '未知',
                         answeredOk: toText(m.status) === 'answered',
@@ -6725,9 +6778,13 @@
                     time: formatTime(at),
                     timePrecise: formatTime(at, { precise: true }),
                     actor: timelineActor(event.actor_ref),
-                    /* 能对上当前名单就写标题（任务是任务名、项目是项目名），对不上退回 id 缩写 */
-                    task: ref ? (subjectLabel(ref) || shortId(ref)) : '',
-                    action: toText(event.action) + (reason ? ('（' + reason + '）') : '')
+                    /* 「任务」列：能对上当前名单就写名字（任务是任务名、项目是项目名）；
+                       对不上就按 ref 的前缀写成「任务 b71」「接入码 0」这种，
+                       而不是把 `task/b71…` 整串截 8 个字符。*/
+                    task: ref ? (subjectLabel(ref) || refText(ref)) : '',
+                    /* 「操作」列：命令名走词表（被拒的写操作会多一句「（被拒）」），
+                       后面再挂上原因码与那次会话的判定。*/
+                    action: actionText(event.action) + (reason ? ('（' + reason + '）') : '')
                         + (note ? ('（' + note + '）') : '')
                 });
             });

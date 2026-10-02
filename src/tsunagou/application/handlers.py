@@ -657,7 +657,7 @@ def build_handlers(
                 # The owner releases resources with task.block; main may recover explicitly.
                 messages.send(command_id=context["command_id"] + ":decision", sender_agent_id=context["principal_id"],
                               recipient_agent_id=attempt.owner_agent_id, kind="user_decision.pending",
-                              subject_ref="task/" + related_task.task_id, summary="Pause work affected by the pending decision",
+                              subject_ref="task/" + related_task.task_id, summary="有未决决定，先挂起这个任务",
                               payload={"task_id": related_task.task_id, "decision_id": decision.decision_id})
         return {"decision_id": decision.decision_id, "proposal_digest": decision.input_digest,
                 "revision": decision.expected_revision, "status": decision.status,
@@ -683,7 +683,7 @@ def build_handlers(
                 command_id=context["command_id"] + ":decision-resolved",
                 sender_agent_id=context["principal_id"], recipient_agent_id=authority.main_agent_id,
                 kind="user_decision.resolved", subject_ref="decision/" + resolved.decision_id,
-                summary="User decision resolved: " + str(resolved.decision),
+                summary="用户已裁决：" + str(resolved.decision),
                 payload={
                     "decision_id": resolved.decision_id, "kind": resolved.kind,
                     "subject_ref": resolved.subject_ref, "revision": resolved.expected_revision,
@@ -866,7 +866,7 @@ def build_handlers(
                 # The new digest travels in the summary: message views do not expose the
                 # payload, and a notice that cannot say which version is now in force is
                 # useless to the agent that has to switch to it.
-                summary=f"contract revised: {proposal.supersedes_id} -> {proposal.proposal_id} @ {proposal.digest}",
+                summary=f"契约已修订：{proposal.supersedes_id} → {proposal.proposal_id} @ {proposal.digest}",
                 payload={
                     "proposal_id": proposal.proposal_id,
                     "supersedes_id": proposal.supersedes_id,
@@ -1111,7 +1111,7 @@ def build_handlers(
             if auto_wake:
                 message = messages.send(command_id=context["command_id"] + ":" + item.assignment_id,
                                         sender_agent_id=context["principal_id"], recipient_agent_id=item.assigned_worker_id,
-                                        kind="task.assigned", subject_ref="task/" + item.task_id, summary="Task available",
+                                        kind="task.assigned", subject_ref="task/" + item.task_id, summary="有任务可领",
                                         payload={"task_id": item.task_id, "assignment_id": item.assignment_id})
                 item.message_id = message.message_id
             result.append({"assignment_id": item.assignment_id, "task_id": item.task_id,

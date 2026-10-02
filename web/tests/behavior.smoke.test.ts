@@ -146,6 +146,145 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect([...rows].map((row) => row.getAttribute("data-row-id"))).toEqual(["row-1", "row-2"]);
   });
 
+  /* 总路径的三列以前直接印机器话（`task.begin`、`session/`、`runtime`），人读不动。
+     现在原始 token 走中间层词表（GET /console/glossary）：命令名、引用前缀、操作人
+     各查一次表；表里没有的**原样印**，不许猜。*/
+  it("总路径三列走中间层词表，表里没有的原样印", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/glossary", {
+        version: 5,
+        domains: {
+          command_kind: { "task.begin": "开工", "user_decision.resolve": "用户已决定" },
+          ref_kind: { task: "任务", session: "会话", ticket: "接入码", decision: "用户决定" },
+          actor_kind: { runtime: "后台" },
+          denial_reason: { resource_conflict: "资源被占用" },
+          event_reason: { user_decision: "用户决定" },
+        },
+      }],
+      ["/history", { items: [
+        {
+          event_id: "e-1", action: "task.begin", actor_ref: "worker2",
+          subject_ref: "task/b71c0d3e-4a5f-4c6d-8e7f-000000000000",
+          occurred_at: "2026-10-02T10:16:52.000Z",
+        },
+        {
+          event_id: "e-2", action: "command.task.begin.denied", actor_ref: "runtime",
+          subject_ref: "session/", reason_code: "resource_conflict:file:src/x.py",
+          occurred_at: "2026-10-02T10:16:53.000Z",
+        },
+        {
+          event_id: "e-3", action: "some.new.thing", actor_ref: "ticket/0",
+          subject_ref: "ticket/0", occurred_at: "2026-10-02T10:16:54.000Z",
+        },
+        {
+          event_id: "e-4", action: "user_decision.resolve", actor_ref: "user_control",
+          subject_ref: "decision", reason_code: "user_decision",
+          occurred_at: "2026-10-02T10:16:55.000Z",
+        },
+      ] }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    /* 词表先到（启动时就拉了），再拉历史 —— 顺序与真页面一致。*/
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["timeline"]);
+
+    const rows = [...page.querySelectorAll("#pane-path .taskFlow > .inner > .item")];
+    expect(rows).toHaveLength(4);
+    const rowText = (index: number): string => rows[index]!.textContent ?? "";
+
+    // ① 命令名 → 中文；`task/<id>` → 「任务 + 短号」；没登记的 Agent 名字原样留着。
+    expect(rowText(0)).toContain("开工");
+    expect(rowText(0)).toContain("任务 b71c0d3e");
+    expect(rowText(0)).toContain("worker2");
+
+    // ② 账本里的被拒条目：剥掉 command./.denied 之后查表，再补原因码。
+    expect(rowText(1)).toContain("后台");
+    expect(rowText(1)).toContain("会话");
+    expect(rowText(1)).toContain("开工（被拒）");
+    expect(rowText(1)).toContain("资源被占用");
+
+    // ③ 表里没有的：原样印，并让前缀词汇把 `ticket/0` 说成人话。
+    expect(rowText(2)).toContain("some.new.thing");
+    expect(rowText(2)).toContain("接入码 0");
+
+    // ④ 括注里的 `user_decision` 不是拒绝码，走 event_reason 那张表；
+    //    任务列的 `decision` 也靠 ref_kind 说成人话。
+    expect(rowText(3)).toContain("用户已决定（用户决定）");
+    expect(rowText(3)).toContain("用户决定");
+  });
+
+  /* 「冲突与协商 → Agent 间协商」那张表的收发两侧，以前是把 id 直接截 8 个字符，
+     于是 `user_control` 在页面上写成 user_con。现在与总路径共用同一套"这是谁"：
+     名单里的 Agent 用昵称，用户/后台这类主体走中间层词表。*/
+  it("消息表的收发两侧把 user_control 说成「用户」", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/glossary", {
+        version: 5,
+        domains: { actor_kind: { user_control: "用户" }, ref_kind: { ticket: "接入码" } },
+      }],
+      ["/console/views/collaboration", { sources: {
+        agents: { items: [{ agent_id: "a-1", status: "active", role: "worker" }] },
+        messages: { items: [
+          {
+            message_id: "m-1", sender_agent_id: "user_control", recipient_agent_id: "a-1",
+            summary: "用户已裁决：确认：按此目标执行", status: "none", obligations: [],
+          },
+          {
+            message_id: "m-2", sender_agent_id: "a-1", recipient_agent_id: "user_control",
+            summary: "有结果待评审", status: "pending", obligations: [{ status: "open" }],
+          },
+        ] },
+      } }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const block = page.querySelector("#block-conflict");
+    expect(block).not.toBeNull();
+    const shown = block!.textContent ?? "";
+    expect(shown).toContain("用户");
+    expect(shown).not.toContain("user_con");
+    // 后端自己发的通知也已经是中文（模板改了源头，不是页面替换正文）。
+    expect(shown).toContain("有结果待评审");
+  });
+
   it("「验收结果」格里的多行内容套在 .colu-t 里（200px 宽的格子靠它竖排）", () => {
     api.dispatch("checkpoint.list", { latest: [], history: [] });
     const result = api.dispatch("acceptance.data", {
@@ -308,6 +447,105 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["settings"]);
     await win.Tsunagou.refresh(["projects"]);
     expect(chip()!.getAttribute("src")).toMatch(/codex-[ld]\.png/);
+  });
+
+  /* 已确认完工（lifecycle=completed）的协作必须离开"进行中的协作"那一组。
+     控制台没有归档入口，分组若只认 archived，卡片会写着"已完成"却永远混在上面那一组。*/
+  it("确认完工的协作归到「已完成的协作」组，状态文字与分组同一个判据", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/api/v1/projects", {
+        items: [
+          { project_id: "p-1", name: "还在进行", lifecycle: "active", available: true, main_agent_id: "a-1" },
+          { project_id: "p-2", name: "已经完工", lifecycle: "completed", available: true, main_agent_id: "a-1" },
+        ],
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["settings"]);
+    await win.Tsunagou.refresh(["projects"]);
+
+    const rail = page.querySelector("#projList")!;
+    const layout = [...rail.children].map((node) => node.classList.contains("wkTitle")
+      ? node.textContent!.trim()
+      : node.getAttribute("data-project-id"));
+    expect(layout).toEqual(["进行中的协作", "p-1", "已完成的协作", "p-2"]);
+    expect(rail.querySelector('.projItem[data-project-id="p-2"] .right p')!.textContent).toBe("已完成");
+  });
+
+  /* 子 Agent 头像一行最多 3 个，多出来的用 `+N` 说明——N 是**没摆出来的**数量。
+     以前 N 写的是总数：2 个成员会画成"2 个头像 +2"，看起来像有 4 个。*/
+  it("子 Agent 头像最多 3 个，`+N` 只数没摆出来的那些", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const others = (count: number): Record<string, unknown>[] =>
+      Array.from({ length: count }, (_, index) => ({
+        agent_id: "a-" + index, status: "active", role: "worker",
+      }));
+    let members: Record<string, unknown>[] = [];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const body = path.indexOf("/console/profile") >= 0
+        ? { version: 1, nickname: "", theme: "", agents: {} }
+        : path.indexOf("/api/v1/projects") >= 0
+          ? { items: [{
+              project_id: "p-1", name: "示例协作", lifecycle: "active", available: true,
+              main_agent_id: "a-main", agents: members,
+            }] }
+          : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    const cardFaces = (): { icons: number; plus: string } => {
+      const row = page.querySelector('#projList .projItem .anotherAgent')!;
+      return {
+        icons: row.querySelectorAll("img").length,
+        plus: row.querySelector(".plus")?.textContent ?? "",
+      };
+    };
+
+    members = others(6);
+    await win.Tsunagou.refresh(["settings"]);
+    await win.Tsunagou.refresh(["projects"]);
+    expect(cardFaces()).toEqual({ icons: 3, plus: "3" });
+
+    // 刚好 3 个：全摆出来，没有 `+N`。
+    members = others(3);
+    await win.Tsunagou.refresh(["projects"]);
+    expect(cardFaces()).toEqual({ icons: 3, plus: "" });
+
+    // 2 个：以前这里会写"+2"（总数），现在什么都不加。
+    members = others(2);
+    await win.Tsunagou.refresh(["projects"]);
+    expect(cardFaces()).toEqual({ icons: 2, plus: "" });
   });
 
   /* 2026-10-02：Agent 的「网络接入」标记（跨机器协作）——

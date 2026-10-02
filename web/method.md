@@ -489,8 +489,14 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 { id, name, status:'working'|'preparing'|'finished', statusText, time, group:'done'?,
   selected?, mainAgent:{name,icon}|null, agents:[{name,icon}], extra:<其他 Agent 数量> }
 ```
-> `agents` 是**其他** Agent（不含主 Agent），`extra` 也是它们的数量 —— 卡片的
-> `+N` 就是它的原写法；最多摆 4 个头像。
+> `agents` 是**其他** Agent（不含主 Agent），`extra` 也是它们的数量。卡片一行最多摆 **3** 个
+> 子 Agent 头像，其余收进 `+N` 那个小圆圈，**N 是没摆出来的数量、不是总数**：
+> 3 个（含）以下不出现 `+N`；6 个就是"3 个头像 +3"。把总数写进去会让人以为有更多成员。
+>
+> `group:'done'` 决定它落在"已完成的协作"那一组还是"进行中的协作"那一组，
+> **判据与状态文字是同一个**：`lifecycle` 是 `completed` 或 `archived` 就算完成
+> （`archived` 的项目状态文字是"已归档"）。控制台没有归档入口，所以"确认完工但没归档"
+> 的项目也必须离开上面那一组，否则会永远混在"进行中"的协作里。
 >
 > **选中态一列最多一张**（`projItemSelected` → CSS 把 `.title` 涂成品牌蓝）：由 `render.list`
 > **整列一次算清**，优先"当前项目"（`state.currentProjectId`），没有再看第一条自称 `selected` 的
@@ -572,11 +578,20 @@ POST /console/enrollments/{enrollment_id}:cancel
 
 - **怎么用**：`util.gloss(域, 值)` —— 命中给中文，**没命中原样返回**（宁可难看，不编）。
   域是*展示域*，不是字段名：`message_status` 是“消息那一栏读给人看的答复状态”，
-  不关心是哪个出口给的。当前 22 个域：`lifecycle` `agent_status` `agent_role` `session_status`
+  不关心是哪个出口给的。当前 25 个域：`lifecycle` `agent_status` `agent_role` `session_status`
   `task_status` `attempt_status` `lease_status` `workspace_status` `message_status`
   `obligation_status` `delivery_status` `contract_status` `decision_status`
   `discrepancy_status` `discrepancy_severity` `checkpoint_status` `isolation` `mode`
-  `conflict_resolution` `capability_admission` `capability_operational` `denial_reason`。
+  `conflict_resolution` `capability_admission` `capability_operational` `denial_reason`
+  `event_reason` `command_kind` `ref_kind` `actor_kind`。
+- **总路径那三列**（`command_kind` `ref_kind` `actor_kind`）：审计出口给的是机器话 ——
+  命令名（`task.begin`）、引用（`task/<id>`、`ticket/0`、`session/<id>`）、主体
+  （`runtime` / `user_control`）。这三张表把它们说成人话：动作查 `command_kind`
+  （**`command.<命令>.denied` 由页面先剥壳再查、查到就补「（被拒）」**）、引用查前缀
+  `ref_kind`（拼成「任务 b71c0d3e」这种"种类 + 短号"，短号必须留着，人要靠它跟别的屏对上）、
+  主体先查 `actor_kind`（`user_control`→用户、`runtime`→后台…），是 Agent 才按用户档案显示昵称。
+  `command_kind` 是**全覆盖**的：协议清单里的每条命令都得有词，加命令必须同时想好怎么说
+  （有单测拿 `protocol_data` 的命令清单盯着）。
 - **其中两张表不是查一个值，而是"整栏有哪几项"**：`capability_admission`（4 项准入）与
   `capability_operational`（7 项运营）就是「Agent 管理」那两栏本身 —— 后端只说缺哪几项
   （`missing_admission` / `missing_operational`），页面上每一项叫什么、按什么顺序排，全从这两张表来
@@ -585,6 +600,9 @@ POST /console/enrollments/{enrollment_id}:cancel
 - **拒绝原因码**（`denial_reason`）：总路径里 `resource.acquire.denied（资源被占用:file:src/x.py）`
   括号里那句中文。码可能带参数，所以**只查冒号前那截**（`reasonText()` 干这件事），
   查不到就把整串原样写出来 —— 宁可难看，也不编一个中文。
+  同一栏还会出现**不是拒绝**的原因（事件的 `reason_code`，例如用户裁决写
+  `user_decision`、后台作业重试用尽写 `job_attempts_exhausted`），它们查 `event_reason`：
+  `reasonText()` 先查拒绝码、再查这张，两张都没有才原样显示。
 - **两条纪律**：
   1. **只用在显示处**。判断逻辑一律拿原值（`status === 'active'`、`w.status !== 'failed'`）——
      中间层不翻译数据本身，转发出去的响应体一个字节都没改，否则页面自己就没法比了；
