@@ -2466,7 +2466,11 @@
         opencode: './assets/img/agent/opencode-l.png',
         zcode: './assets/img/agent/zcode-l.png'
     };
-    const DEFAULT_AGENT_ICON = AGENT_ICONS.deepseek;
+
+    /* 厂商未知（或压根没有 Agent）时摆的图标：Tsunagou 自己的小标（本来就是 1:1，
+       跟头像位一样高）。不拿某个厂商图标冒充 —— 那会让人以为项目里真有个那家的
+       Agent。它有 -l/-d 两版，主题切换会跟着换。*/
+    const TSUNAGOU_CARD_ICON = './assets/img/logo-little-l.png';
 
     /* 主题配图的文件名约定：-l 是白色版（深色模式用）、-d 是深色版（浅色模式用）。
        代码里引用的都是 -l 路径，这里按当前主题纠正后缀 —— 否则浅色模式下"新渲染出来"的
@@ -2481,10 +2485,12 @@
         const source = isPlainObject(agent) ? agent.icon : agent;
         const text = toText(source);
         if (/\.(png|jpe?g|svg|webp)$/i.test(text)) return themedIconPath(text);
-        return themedIconPath(AGENT_ICONS[text.toLowerCase()] || DEFAULT_AGENT_ICON);
+        return themedIconPath(AGENT_ICONS[text.toLowerCase()] || TSUNAGOU_CARD_ICON);
     }
 
-    /* 选择框里的厂商文字（"DeepSeek Harness" / "Claude Code" / "OpenCode" …）→ 图标 */
+    /* 选择框里的厂商文字（"DeepSeek Harness" / "Claude Code" / "OpenCode" …）→ 图标。
+       认不出来（空串、id 缩写、没见过的厂商）就摆 Tsunagou 小标 —— 这是全页唯一一处
+       "未知怎么画"的规则，调用点不要再各写一遍（写歪一处就会显示成某家的图标）。*/
     function agentIconFor(vendor) {
         const text = toText(vendor).toLowerCase();
         if (text.indexOf('claude') >= 0) return AGENT_ICONS.claudecode;
@@ -2492,7 +2498,7 @@
         if (text.indexOf('opencode') >= 0) return AGENT_ICONS.opencode;
         if (text.indexOf('zcode') >= 0) return AGENT_ICONS.zcode;
         if (text.indexOf('codex') >= 0) return AGENT_ICONS.codex;
-        return DEFAULT_AGENT_ICON;
+        return TSUNAGOU_CARD_ICON;
     }
 
     /* ---- 小件 ------------------------------------------------------------ */
@@ -2704,10 +2710,7 @@
         return { id: ref, name: agentDisplayName(probe), icon: agentIconFor(agentVendor(probe)) };
     }
 
-    /* 没有主 Agent 时摆的图标：Tsunagou 自己的小标（本来就是 1:1，跟头像位一样高）。
-       不拿某个厂商图标冒充 —— 那会让人以为项目里有个 DeepSeek 的 Agent。
-       它有 -l/-d 两版，主题切换会跟着换。*/
-    const TSUNAGOU_CARD_ICON = './assets/img/logo-little-l.png';
+    /* 卡片上没有主 Agent 时摆的就是 TSUNAGOU_CARD_ICON（见上面"图标"那一节）*/
 
     /* 卡片的样子。selected 由 render.list 统一判定后传进来 ——
        这里不自己算：否则条目一旦自称 selected、或 id 为空又刚好赶上"没选项目"，
@@ -5997,7 +6000,7 @@
             table[toText(attempt.attempt_id)] = {
                 id: attempt.owner_agent_id,
                 name: owner ? agentDisplayName(owner) : shortId(attempt.owner_agent_id),
-                icon: owner ? agentIconFor(agentVendor(owner)) : DEFAULT_AGENT_ICON
+                icon: owner ? agentIconFor(agentVendor(owner)) : TSUNAGOU_CARD_ICON
             };
         });
         return table;
@@ -6442,9 +6445,9 @@
                     network: a.role !== 'main' && a.network === true,
                     online: a.online === true,
                     name: nickname || codename,
-                    /* 厂商已知就换厂商的 logo；不知道是谁就摆 Tsunagou 自己的小标 ——
-                       拿 DeepSeek 冒充“未知”会让人以为项目里真有个 DeepSeek 的 Agent。*/
-                    icon: toText(vendor) ? agentIconFor(vendor) : TSUNAGOU_CARD_ICON,
+                    /* 厂商已知就给厂商的 logo，认不出来由 agentIconFor 统一摆 Tsunagou 小标
+                       （见"图标"那一节；这里不再自己写第二份规则）。*/
+                    icon: agentIconFor(vendor),
                     statusText: sessionBroken
                         ? glossText('session_status', a.session_status)
                         : glossText('agent_status', a.status),

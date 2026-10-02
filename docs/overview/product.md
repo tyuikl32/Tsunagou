@@ -40,7 +40,7 @@ Full Access 宿主中的文件和命令行为，可能只能通过自然语言�
 
 子Agent拥有独立宿主对话、身份与TaskAttempt：读取黑板、公开理解、领取任务、申请资源、参与契约并提交自己的结果。它不仅是main接收输出的临时执行器，也可以发现范围遗漏、指出认知冲突、挂起相关工作并在之后恢复。
 
-用户通过adapter把多个会话接入同一project；worker票据和独立session由系统/bridge管理，不需要把秘密粘贴给模型。ready代表可以协调，claim代表领到任务，start才代表可以在当前范围执行。用户任命main后，普通委派和协商尽量由main与子Agent自行完成。
+用户通过adapter把多个会话接入同一project；worker票据和独立session由系统/bridge管理，不需要把秘密粘贴给模型。ready代表可以协调，claim代表领到任务，start才代表可以在当前范围执行。用户任命main后，普通委派和协商尽量由main与子Agent自行完成；但**新增一个 Agent（让一个新会话加入）由用户决定**——用户明确允许之前，main不得自行邀请、签票或组织新会话加入。
 
 消息发送会先持久化到 daemon 收件箱，连接中的 Agent 在下一次 `inbox__claim`/黑板读取时可见。A2A `message/send` 还可携带标准 `taskPushNotificationConfig`，让 daemon 在提交后向宿主 adapter 的 HTTP receiver 发异步通知；这证明的是 callback 投递，不等于 generic stdio bridge 已能反向启动或唤醒休眠 Codex 对话。阶段 A 先通过 Tsunagou-managed app-server 验证真实唤醒，阶段 B 再允许用户显式提供已有 Codex thread 和公开 Unix socket 进行 attach。官方 listener 已实测能够恢复一个由 Codex Desktop 创建的既有 thread，并由 Tsunagou A2A 产生 `thread_resumed`/`turn_started`；运行中的 Desktop stdio 进程仍不提供自动 discovery，缺少显式 endpoint 时继续保持 pull-first，不丢消息。
 

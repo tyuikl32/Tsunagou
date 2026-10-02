@@ -32,7 +32,7 @@ from typing import Any
 
 from tsunagou.console.profile import load_profile, update_profile
 from tsunagou.platform import host_registration
-from tsunagou.platform.bridge_files import bridge_identities
+from tsunagou.platform.bridge_files import bridge_identities, enrollment_identities
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
@@ -224,24 +224,25 @@ class AgentDirectory:
         if not isinstance(endpoint, dict) or not endpoint.get("running"):
             return None
         current = fingerprint(root, endpoint)
+        state = state_directory(root, endpoint)
         with self._lock:
             cached = self._cache.get(project_id)
         # Only an *unreadable* fingerprint forces a fetch every time: reusing a cached
         # roster requires positive evidence that the daemon has not written since.
         if not force and not require_fresh and current is not None and cached is not None and cached[0] == current:
-            return self._reconciled(root, cached[1])
+            return self._reconciled(root, cached[1], state_dir=state)
         fresh = self._reader(root, endpoint)
         if fresh is None:
             if require_fresh:
                 return None
             # The daemon answered nothing. Keep what we have (its files are unchanged
             # or unreadable) rather than blanking names that were true a moment ago.
-            return self._reconciled(root, cached[1]) if cached is not None else None
+            return self._reconciled(root, cached[1], state_dir=state) if cached is not None else None
         with self._lock:
             self._cache[project_id] = (current, fresh)
-        return self._reconciled(root, fresh)
+        return self._reconciled(root, fresh, state_dir=state)
 
-    def _reconciled(self, root: Path, lineup: AgentRoster) -> AgentRoster:
+    def _reconciled(self, root: Path, lineup: AgentRoster, *, state_dir: Path | None = None) -> AgentRoster:
         """Fill in provable vendors before anybody reads this roster.
 
         Runs on the read path, cached or not: the evidence (a bridge folder written by
@@ -250,7 +251,7 @@ class AgentDirectory:
         """
 
         if self._profile_path is not None and lineup.agents:
-            reconcile_vendors(root, lineup.agents, profile_path=self._profile_path)
+            reconcile_vendors(root, lineup.agents, profile_path=self._profile_path, state_dir=state_dir)
         return lineup
 
 
@@ -262,20 +263,24 @@ def _host_label(adapter: str) -> str:
 
 
 def reconcile_vendors(
-    project_root: Path, agents: Any, *, profile_path: Path,
+    project_root: Path, agents: Any, *, profile_path: Path, state_dir: Path | None = None,
 ) -> int:
     """Record the vendor for Agents that were enrolled without the console.
 
     ``agent connect`` writes its bridge folder itself and never touches the user
     profile, so an Agent that joined that way has no vendor — and no vendor means no
-    logo. The proof is already on disk: ``connection.json`` names the Agent, and a
-    folder that only has ``host-identity.json`` still matches through the conversation
-    digest the daemon publishes.
+    logo. The proof is already on disk, in one of two places:
 
-    Only a *missing* vendor is filled, and only when the adapter was read out of a
-    file rather than guessed: a value the person set stays, and a conversation we
-    cannot identify is left alone (the page falls back to the Tsunagou mark).
-    Returns how many Agents were filled in.
+    * ``.tsunagou/bridges/<adapter>-<profile>/`` — every host's own ``connect``;
+    * ``<state_dir>/onboarding/<conversation digest>/`` — the same files, where the
+      Codex ``--request-file`` route (and ``agent join``) keeps its conversation.
+
+    ``connection.json`` names the Agent, and a folder that only has
+    ``host-identity.json`` still matches through the conversation digest the daemon
+    publishes. Only a *missing* vendor is filled, and only when the adapter was read
+    out of a file rather than guessed: a value the person set stays, and a
+    conversation we cannot identify is left alone (the page falls back to the
+    Tsunagou mark). Returns how many Agents were filled in.
     """
 
     known = load_profile(profile_path)["agents"]
@@ -287,12 +292,17 @@ def reconcile_vendors(
         return 0
     by_agent: dict[str, str] = {}
     by_conversation: dict[str, str] = {}
-    for bridge in bridge_identities(project_root):
+    identities = bridge_identities(project_root) + enrollment_identities(
+        Path(state_dir) if state_dir is not None else project_root / LOCAL_STATE
+    )
+    for bridge in identities:
         label = _host_label(str(bridge["adapter"]))
+        # ``setdefault``: with two folders claiming one conversation, the bridge folder
+        # (the address every host writes) is the one that decides.
         if bridge.get("agent_id"):
-            by_agent[str(bridge["agent_id"])] = label
+            by_agent.setdefault(str(bridge["agent_id"]), label)
         if bridge.get("conversation_id"):
-            by_conversation[canonical_digest({"conversation_id": bridge["conversation_id"]})] = label
+            by_conversation.setdefault(canonical_digest({"conversation_id": bridge["conversation_id"]}), label)
     patches: dict[str, dict[str, str]] = {}
     for agent in wanted:
         agent_id = str(agent.get("agent_id") or "")

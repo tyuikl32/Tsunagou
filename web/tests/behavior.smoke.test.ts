@@ -261,6 +261,55 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(unnamed.querySelector(".listfieldbox .item img")!.getAttribute("src")).toMatch(/logo-little-[ld]\.png/);
   });
 
+  /* 左栏项目卡片上那个主 Agent 胶囊走的是同一条"按 agent_id 从档案现算"的路。
+     它以前是照着 agentIconFor 的默认值画的，而那个默认值是 DeepSeek 的鲸鱼图标 ——
+     于是"厂商还不知道"在界面上长得像"这个 Agent 是 DeepSeek 的"。现在未知一律摆
+     Tsunagou 自己的小标，这条用例把两种取值都钉住。*/
+  it("左栏主 Agent 的图标：厂商已知用厂商 logo，未知摆 Tsunagou 小标", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/api/v1/projects", {
+        items: [{
+          project_id: "p-1", name: "示例协作", lifecycle: "active", available: true,
+          main_agent_id: "a-1", agents: [{ agent_id: "a-1", status: "active", role: "main" }],
+        }],
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    /* 档案先回来，再画项目卡：卡片上的厂商是渲染那一刻从档案里按 id 取的。*/
+    await win.Tsunagou.refresh(["settings"]);
+    await win.Tsunagou.refresh(["projects"]);
+    const chip = (): Element | null => page.querySelector("#projList .projItem .mainAgent img");
+    expect(chip()).not.toBeNull();
+    expect(chip()!.getAttribute("src")).toMatch(/logo-little-[ld]\.png/);
+
+    // 档案里给了厂商：同一个位置换成那家的 logo，不再是"未知"。
+    replies[0] = ["/console/profile", {
+      version: 1, nickname: "", theme: "", agents: { "a-1": { vendor: "Codex" } },
+    }];
+    await win.Tsunagou.refresh(["settings"]);
+    await win.Tsunagou.refresh(["projects"]);
+    expect(chip()!.getAttribute("src")).toMatch(/codex-[ld]\.png/);
+  });
+
   /* 2026-10-02：Agent 的「网络接入」标记（跨机器协作）——
      **本机接入的 Agent 什么都不画**（连右侧那个 <i> 图标都不出现），
      只有中间层说它是从网络接进来的才画「网络在线 / 网络离线」。
