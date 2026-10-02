@@ -89,6 +89,22 @@ HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)�
 
 控制台**照抄**中间层给的 `next` 作为等待提示，不自己编文案。技术决定见 [控制台接入](../decisions/2026-10-02-console-enroll-modes.md)。
 
+## 跨机器：主机发邀请（第四种"形态"）
+
+除了上面三种本机接入，页面还能发一张**给另一台机器**的邀请（`位置＝网络`）。这一条与前三种的区别只有一句：
+**主机这边什么都不写** —— 不写桥材料、不登记宿主，只签一张一次性票并把内容交给人转递；票、身份与桥配置
+都由远端在自己的机器上写（`tsunagou agent import`），项目仍然只有主机上那一份。
+
+- 入口：`agents:prepare` 带 `place=network`（以及 Codex/DSH 需要的 `conversation_id`），走
+  `enrollment.py::_prepare_network()`；回答 `{status:'invited', invite, enrollment_id, url, expires_in_seconds}`。
+- 身份：OpenCode 的会话名由主机起（`ses_<profile>`）；Codex / DeepSeek Harness 的会话名只有宿主自己知道，
+  必须先由远端 `agent whoami` 报号（页面为这一格只在"网络 + 这两个厂商"时显示）。
+- 等待：仍然复用 `enrollments:observe` 与那条机器级记录（角色核对也照旧），所以"到了"的判定与 `in_host`
+  完全同一套；取消邀请会撤掉记录。
+- 主 Agent 不跨机器（必须与 daemon 同机），所以 `place=network` 一律子 Agent。
+- 与既有约定的一处**有意**例外：票的明文本来"永不进页面"，而邀请必须以内容形式交给人。缓解手段是票本身的
+  限制（一次性、10 分钟、只能子 Agent）。技术决定见 [跨机器邀请](../decisions/2026-10-03-cross-machine-invite.md)。
+
 ## 已知边界
 
 - 控制台只监听本机（`host` 默认 `127.0.0.1`），不做多人或远程部署，也不替代 daemon 自己的权限边界。

@@ -119,6 +119,52 @@ tsunagou agent pending --adapter deepseek
 
 连接那条路在**工作目录推不出项目**时才读它：`--project-root`、`TSUNAGOU_PROJECT_ROOT` 与工作目录里真正的项目永远优先（三者都没有、也没有记录时，`project_root` 就是当前目录，而它没有 `project_id`）。Codex 的 `agent join` 一直是这样——它先读记录再设置解析根；OpenCode 与 DeepSeek Harness 现在同样如此。
 
+### 跨机器接入：主机发邀请，远端一条命令（1a / 1b / 1c）
+
+跨机器只有一条路：**主机发一张邀请，远端把邀请收下**（没有"远端敲门、主机点同意"那一条）。邀请是一段
+可复制的内容，里面带着那张一次性票，所以它像密码一样递过去 —— 一次性、10 分钟、只能签子 Agent。
+
+主机这边（在项目里跑，或先给 `--project-root`）：
+
+```powershell
+tsunagou agent invite --adapter opencode --nickname 小三          # OpenCode：会话名由主机起（ses_小三）
+tsunagou agent invite --adapter codex --conversation-id <远端报来的号> --nickname 小三
+```
+
+返回 `{status: invited, invite, project_id, adapter, role, conversation_id, url, expires_at, expires_in_seconds}`。
+`url` 取的是**对外可达地址**（见下）；主 Agent 不跨机器，`--role main` 直接拒绝（`main_agent_must_be_local`）。
+控制台页面同一条路：添加子 Agent 里把「位置」选成**网络**，如果厂商是 Codex / DeepSeek Harness，
+页面会多要一格「网络 Agent 编号」（这两家的会话名只有它们自己知道），确定后弹出邀请内容，确认即开始等待。
+
+远端这边（在**那台机器**上跑）：
+
+```powershell
+tsunagou agent whoami --adapter codex      # 报号：把"我这条会话在宿主眼里的编号"打出来（Codex / DSH 才需要）
+tsunagou agent import <邀请>               # 收下邀请：写自己的票/身份/桥配置，接进本机宿主，然后核对连通
+```
+
+`agent import` 可选 `--daemon-url`（走 SSH 隧道等场景，远端能连到的地址与邀请里写的不一样时用）、
+`--workdir`（这台机器的代码副本，缺省当前目录）、`--machine`（这台机器叫什么，缺省取本机主机名）、
+`--state-dir`。它**只写这台机器自己的东西**（`~/.tsunagou/remote/<adapter>-<hash>`），项目仍然只有主机上那一份。
+它能自检的是"网络通不通、项目对不对、票过没过期"；"工具在不在、身份对不对"要等本机宿主真的加载一次 MCP，
+在那条会话里调一次 `context__project_read` 才算数。DeepSeek Harness 的聊天只能通过插件动手，所以那里用
+`tsunagou_remote`（`action=whoami` / `action=import`）。
+
+`--machine` 报出来的名字会显示在名单里（「网络在线 · 工位-七」）。它是**自报**：不参与任何权限判断，
+填坏了只当没报。
+
+**地址与端口**（主机侧 `daemon start`）：端口固定 **2810**；被占用时打印一条警告并改用随机空闲端口，
+最终真正使用的端口才是写进邀请的那一个。`--host/--port` 决定"在哪些网卡上听"，`--advertised-url`
+决定"远端该拨哪个号"——绑 `0.0.0.0` 时两者必然不同，所以 `0.0.0.0` 不能当对外地址（直接拒绝）：
+
+```powershell
+tsunagou daemon start --host 0.0.0.0 --advertised-url http://10.0.0.5:2810
+```
+
+加密不自研也不自动配置：本机多 Agent 走回环（无需加密），跨机器请自己套一层现成通道
+（内网 / WireGuard / Tailscale / SSH 转发），**不要把 daemon 端口开到公网**（会话令牌是 Bearer，
+明文通道上可被嗅探冒用）。
+
 ### 显式项目与角色的手动入口
 
 没有前端申请且用户已明确指定项目和角色时，Agent 在原 Codex 对话内执行：

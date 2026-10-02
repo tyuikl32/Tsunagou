@@ -557,7 +557,22 @@ POST /console/enrollments/{enrollment_id}:cancel
 - **取消等待**：`notify.loading(text, {cancel: fn})` 使原有入口出现；点击仍用现有 `dialog.confirm` 二次确认。拒绝确认保留取消入口；确认后等待后端结果。未认领的 Codex 申请可取消，已认领/登记返回 409，页面显示原因并继续等，不报告“已取消”，也不注销共享 MCP 或已接入 Agent。准备请求未完成时点击取消，会等取到申请 ID 再发取消请求。其他宿主保留自己的撤票/注销流程。
 - **关闭遮罩与取消申请不同**：遮罩被其他操作关闭只停止本次页面轮询，不能据此声称申请已作废。未认领申请过期后需重新准备；认领后的接入不因准备期限到时自动换人。
 - **首次加载边界**：Codex 需预先安装接入 Skill；共享 MCP 第一次配置后若原聊天还没有工具，可能需要重开宿主。已经加载的共享 bridge 每次调用读当前路由，后续 Agent 不需要反复重建全部 MCP。
-- **其余宿主看 `mode`**：`mode=console` 才是"页面能办完"，可以发准备请求；`mode=in_host` 表示只能在这个宿主自己的聊天里接入（页面照实说那句 `note`，**不发准备请求**，但会开同一块等待遮罩盯着名单 —— 见下一条）；`mode=unsupported` 表示还没做（照实说、不发请求）。`registered` 表示已登记，页面**照抄后端 `next`** 作为等待提示（OpenCode 的 `next` 里带着要用的会话名），没有 `next` 才退回"打开/重载窗口"那句通用提示。`executable_missing|failed` 则按 `host_registration.note` 进入手动接入提示。`profile` 是显示/私有材料标签，不是聊天身份；重试保留它。票据仍只在服务端私有文件，页面永远拿不到 secret。
+- **跨机器那一格：位置选「网络」（2026-10-03，A 流程）**：`#addSubAgent .choosebox.TOG0` 选到「网络」
+  **且** 厂商（`.TOG1`）是 **Codex / DeepSeek Harness** 时，才显示 `#addSubAgentAddr`（文案是
+  「网络 Agent 编号」）—— 这两家的会话名只有宿主自己知道，主机签票前必须先拿到那个号；OpenCode
+  的会话名由主机起（`ses_<名字>`），所以不用问。两个选择框的 `choosebox:change` 都会重算这次显隐
+  （`syncSubAgentPlace()`，只动 `display`）。
+  点确定时 `actions.addSubAgent` 会带上 `place` 与 `number`：`place==='network'` 走
+  `connectNetworkAgent()`，否则照旧。请求仍是 `agents:prepare`，只是多了 `place:'network'` 与
+  `conversation_id`（写门 `WRITE_COMMANDS.agentPrepare` 会原样传这两个字段），中间层改用
+  `_prepare_network()`：**只签票、只给内容**（主机这边不写桥材料、不登记宿主，但要写那条机器级
+  待接入记录，等待与"角色是否相符"仍靠它）。回答是
+  `{status:'invited', invite, enrollment_id, url, expires_in_seconds, conversation_id, next, …}`。
+  页面把邀请摆进 `#netInvite`（邀请内容放在只读 `input.inner` 里等人复制，有效期写成一句人话），
+  「开始等待」= `app.confirmNetworkInvite()`、「取消」/= `app.cancelNetworkInvite()`；确认后才开
+  同一块加载遮罩，之后的等待与收场完全复用 `connectInHostAgent()` 那一套（2 秒轮询
+  `enrollments:observe`、取消会撤掉那条记录）。取消邀请（还没开始等）时也要撤记录。
+- **其余宿主看 `mode`**：`mode=console` 才是"页面能办完"，可以发准备请求；`mode=in_host` 表示只能在这个宿主自己的聊天里接入（页面照实说那句 `note`，**不发准备请求**，但会开同一块等待遮罩盯着名单 —— 见下一条）；`mode=unsupported` 表示还没做（照实说、不发请求）。`registered` 表示已登记，页面**照抄后端 `next`** 作为等待提示（OpenCode 的 `next` 里带着要用的会话名），没有 `next` 才退回"打开/重载窗口"那句通用提示。`executable_missing|failed` 则按 `host_registration.note` 进入手动接入提示。`profile` 是显示/私有材料标签，不是聊天身份；重试保留它。票据仍只在服务端私有文件，页面永远拿不到 secret（**唯一的例外**是跨机器邀请：那张邀请本身就是票的载体，必须交给人转递，所以它在 `#netInvite` 里可见 —— 一次性、10 分钟、只能子 Agent，见 `docs/decisions/2026-10-03-cross-machine-invite.md`）。
 - **宿主自己接入时的等待**（`in_host`，例如 DeepSeek Harness）：那一边的票是在宿主聊天里由 CLI **以用户身份**签的（身份来自宿主给的 `DSH_SESSION_ID`），所以页面**不签票**，但要先 `prepare` 一次 —— 那次准备**只写一条机器级待接入记录**（哪个项目、什么角色、给哪个宿主，不含凭据），因为聊天里说"请接入 Tsunagou"时它只有自己的会话 id 和工作目录，而工作目录常常不是协调仓库；没有这条记录，Agent 就只能问用户。**角色也在这条记录里，而且它就是最终角色**：CLI 没拿到 `--role` 时用记录里的，拿到冲突的角色直接拒绝（`enrollment_role_conflict`）；遮罩上那句话写明"本次以主/子 Agent 身份接入"。然后走 `connectInHostAgent()`：同一块遮罩、同一套 2 秒轮询，把中间层那句 `note`（"在目标聊天里让它接入 Tsunagou"）连同项目目录放在遮罩上，再问新出口 `GET /console/projects/{project}/enrollments:observe?adapter=<adapter>&baseline=<开等时的席位>&enrollment_id=<那条记录>`。**"到了"由中间层判**：名单里出现一个不在 `baseline` 里、能由接入材料（`.tsunagou/bridges/<adapter>-*` 或 onboarding 目录）证明属于这个 adapter、**而且角色与记录相符**的席位 —— 角色不符时中间层只说"连上了但角色不对"，**不报成功、不收记录**（真正该来的那个还能用它）。没有票，所以没有"过期"：收场只有到了 / 人不看了（确认框照旧，那一步会**撤掉那条记录**，因为聊天可能正靠它找项目）/ 盯满 15 分钟。
 
 ### 7.2 宿主表：哪个厂商能接入、跑什么命令（表在中间层）
@@ -633,9 +648,10 @@ POST /console/enrollments/{enrollment_id}:cancel
   basic: [{text, ok}], ops: [{text, ok}],
   actions: [{text, kind:'active'|'', action}] }   // action 为空则是纯占位按钮
 ```
-> **右上角那句「网络在线 / 网络离线」（跨机器协作，2026-10-02）**：只有**网络接入**的 Agent
-> 才画 （`network:true`），`online` 定在线还是离线；**本机接入的什么都不画** —— 连右边那个
-> `<i>` 图标也不出现，所以本机接入的卡片和加这个功能之前一模一样。
+> **右上角那句「网络在线 / 网络离线」（跨机器协作，2026-10-02；机器名 2026-10-03）**：只有**网络接入**
+> 的 Agent 才画 （`network:true` 或带 `machine`），`online` 定在线还是离线；**本机接入的什么都不画** ——
+> 连右边那个 `<i>` 图标也不出现，所以本机接入的卡片和加这个功能之前一模一样。
+> 远端自报的机器名跟着写在同一个 `<p class="right">` 里：「网络在线 · 工位-七」。
 > 主 Agent 永远不算网络接入（它必须与 daemon 同机）。判断值来自接口字段，或中间层随时推的
 > `app.setAgentNetwork(id, online)` / dispatch `agent.network`（推来的优先），见 §3.7。
 > `basic` / `ops` 是 `agents` 出口里那 11 项能力的现场快照（`session_status` +
@@ -812,6 +828,9 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 | `#block-conflict` / `#block-audit` | 两个区块标签组的容器 |
 | `#uSetCol1` | 设置里"颜色主题"的下拉面板（原来叫 `uSetCol`；重复 id 已拆开） |
 | `#newXz2Vendor` / `#addSubAgentVendor` | 向导第 2 步 / 添加子 Agent 的"厂商"下拉面板（**不能重复用 `uSetCol2`**，否则选择框事件会串台） |
+| `#addSubAgentPlace` | 添加子 Agent 的"位置"下拉面板（`本机` / `网络`，见 §7.1 的跨机器那一格） |
+| `#addSubAgentAddr` | 「网络 Agent 编号」输入框（只在"位置＝网络 且 厂商＝Codex/DSH"时显示） |
+| `#netInvite` | 邀请远端接入的窗口（邀请内容 + 有效期 + 「开始等待」/「取消」），见 §7.1 |
 
 > `#aside-conflict` 里有 4 段 `.content`：分歧 / 契约 / 冲突 / Agent 间协商；
 > 后三段带 `.contentNDP`（CSS 里默认隐藏），由 `ui.aside.load(slug, 段号)` 互斥切换。
@@ -820,7 +839,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 `conflict` 冲突与协商 · `audit` 意图与权限审计 · `workspace` 工作区 · `acceptance` 验收与存档点 ·
 `path` 总路径
 
-窗口 id：`setPanel` `mgrAgent` `mgrAgentInfo` `delPmt` `addProj` `addSubAgent` `loadW`（`delDat` 已删）；
+窗口 id：`setPanel` `mgrAgent` `mgrAgentInfo` `delPmt` `addProj` `addSubAgent` `netInvite` `loadW`（`delDat` 已删）；
 反馈组件 id：`AnnounceMent`(+`secApgr`) `AnnounceMent2` `rightGetWin`。
 
 **渲染器可用的类名词汇表**（都来自现有 CSS，不要再自造）：
@@ -1035,7 +1054,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 归档 / 退席 / 路径记录 | **暂不实现**（归档按钮已于 2026-09-29 从验收页撤掉）：`project.archive` / `agent.retire` 未装配；路径记录后端没这个事实
 | 存档点回退 | **不做**（2026-09-28 你定的，撤掉）：没有 restore 命令，界面也不做"假装回退"；存档点只读不漏 |
 | Agent 删除 / agent 地位变更（完整版） | **暂不实现**（不是待做项）：`agent.retire` 未装配；「撤销主 Agent / 代次上限」那一整套没人实现 —— 「设为主 Agent」本身仍然能用 |
-| 「网络在线 / 离线」徽标在真数据下还不会出现 | 页面这一侧已经就绪（`network`/`online` 字段 + `app.setAgentNetwork` 两条通道），但**中间层还没给这两个字段**，所以真项目里所有 Agent 都按"本机接入"处理 —— 不画徽标（这本来就是对的本机行为）。要让它真出现，中间层得先知道自己管的 Agent 里哪些是网络接入的（见 `跨机器协作可行性.md`） |
+| ~~「网络在线 / 离线」徽标在真数据下还不会出现~~ | **已补（2026-10-03）**：跨机器接入的 Agent 会自报一个机器名（`agent import --machine`），经 `descriptor_ref` 入席、由 agents 出口公布为 `machine`；页面据此画「网络在线 · 工位-七」。本机接入从来没有这一项，所以照旧什么都不画。`network`/`online` 两条通道仍然都在（`app.setAgentNetwork` / dispatch `agent.network`） |
 
 ### 12.4 新补的界面
 

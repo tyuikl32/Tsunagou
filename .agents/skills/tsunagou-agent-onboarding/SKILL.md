@@ -78,6 +78,45 @@ Call `tsunagou_connect` without a role to preserve an existing role or join as w
 
 An enrolled result is only preparation. This same conversation must call `mcp__tsunagou__context__project_read` and verify the expected project, its own Agent, selected role and ready session before reporting success. DeepSeek does not claim Codex's original-chat automatic wake. If service startup, provider loading or enrollment fails, report that specific stage and preserve the existing identity.
 
+## Cross-machine (this machine is the remote one)
+
+The project and its daemon live on the **host** machine; this machine only joins as a worker. The
+host issues one invitation (a single copy-pasteable line that *is* the one-time ticket, handed over
+like a password: one use, ten minutes, worker only). There is no knock/approve step and no short
+code.
+
+1. **Report this conversation's number** (Codex, DeepSeek Harness — hosts whose conversation name
+   only the host itself knows; OpenCode's name is chosen by the host, so skip this):
+   `agent whoami --adapter <adapter>` — run it **inside this conversation**, because the number
+   comes from the host's own context. It is not a credential; it is half of the identity the
+   invitation has to be bound to. Send the number to the person on the host.
+   On DeepSeek Harness the conversation cannot run arbitrary commands: use the `tsunagou_remote`
+   tool with `action=whoami` (same answer, same host-provided identity).
+2. **Import the invitation** the host sends back:
+   `agent import '<invitation>'` (add `--daemon-url <url>` when this side reaches the host through a
+   tunnel and the address differs, `--workdir <code copy>` when not in this conversation's directory,
+   `--machine <name>` to name this machine; the default is this machine's own host name).
+   This writes **only this machine's own material** (private state, ticket, bridge config, and for
+   Codex/DSH the private route) and registers the bridge with this machine's host product. The
+   project does not get a second copy here.
+   On DeepSeek Harness: `tsunagou_remote` with `action=import` and the invitation text.
+3. **Reload this window**, then call `mcp__tsunagou__context__project_read` in this conversation. The
+   import checked reachability, project and ticket; only this call proves the tools loaded and the
+   identity is right.
+
+Plain-language readings of what the import and the first calls can answer:
+
+| code | what it means | what to do |
+|---|---|---|
+| `invite_malformed` / `invite_incomplete:*` | the line was copied incompletely or edited | ask the host for the whole line again |
+| `invite_expired` | more than ten minutes passed | ask the host to issue a new invitation |
+| `invite_address_is_loopback` | the invitation points at the host's own loopback, which this machine cannot reach | start the tunnel, then re-run with `--daemon-url <address this machine can reach>` |
+| `invite_project_not_served_by_that_daemon` | something is listening there, but it is not that project's daemon | check which daemon/tunnel that address reaches |
+| `conversation_id_required_for_this_host` (host side) | Codex/DSH still owe their number | run step 1 and send the number |
+| `not_enrolled:run_agent_connect` | the bridge ran without a route for this conversation | the import did not finish, or the window was not reloaded |
+
+Never put the invitation text into commits, logs or shared documents; a ticket is a credential.
+
 ## Other adapters
 
 Use their actual host-provided conversation identity and supported bridge configuration. Do not claim another host supports shared thread metadata or original-chat wake without a working implementation. Retain the registered low-level enroll/rebind path for diagnostics, not as the normal Desktop onboarding ritual.
