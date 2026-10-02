@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"Identity, original-host readiness, shared MCP and authority boundaries"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Required checks and isolated tests"}
+{"file":".trellis/spec/adapters/index.md","reason":"Conversation routing and credentials"}
+{"file":"docs/implementation/console.md","reason":"Console and frontend boundaries"}

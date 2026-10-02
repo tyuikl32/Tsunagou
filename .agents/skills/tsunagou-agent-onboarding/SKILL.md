@@ -5,17 +5,31 @@ description: "Join or recover the current coding Agent in a local Tsunagou proje
 
 # Tsunagou Agent Onboarding
 
-Use the user's selected project and role. An instruction to install/join authorizes the ordinary setup steps; do not ask again for each command. Appointing main still requires the user's explicit choice of main. A worker cannot promote itself. Never read credentials into the conversation.
+Use the user's selected project and role. An instruction to install/join authorizes the ordinary setup steps; do not ask again for each command. The console role selection is the user's explicit choice of main or worker. Outside that flow, appointing main still requires the user's explicit choice of main. A worker cannot promote itself. Never read credentials into the conversation.
 
-## Locate and prepare
+## Console Codex join: the default for “请接入 Tsunagou”
 
-1. Read the project's `.tsunagou/agent-context.md` and managed `AGENTS.md` block when present. Find the installed source from `.tsunagou/project-integration.json` or `~/.tsunagou/installation.json`. Source remains in its installation directory, not copied into the business repository.
-2. Use the installed `tsunagou` launcher. If absent from the current shell's PATH, use the full launcher path from installation.json, or the installed `.venv` Python with `-m tsunagou`. Read `docs/overview/agent-quick-start.md` at that source when needed.
-3. If this is a new coordination project, initialize the user-selected Git repository with `project init --coordination-root <actual path>`, then `project bootstrap --coordination-root <actual path> --source-root <actual installed source> --host codex`. Preserve existing project identity and user file contents. Bootstrap writes project rules and selected-host resources; it creates no Agent.
-4. The CLI discovers a project from its root or a nested directory. Outside it, use global `--project-root <actual path>`. Do not ask users to repeatedly set project/state environment variables.
+When the user asks the current Codex Desktop conversation to join Tsunagou, or says the console has already prepared an Agent, use `tsunagou agent join` with no project or role arguments. Do this before any project initialization, cwd-based project selection, or default worker preparation. This applies to the one active console request for the same local OS user, including when the current conversation's working directory is outside the selected project.
+
+1. Locate the installed launcher from PATH or `~/.tsunagou/installation.json`. If it is absent from PATH, use the recorded full launcher path or installed Python with `-m tsunagou`. Do not read credential files. If the installation or Skill is missing, report that prerequisite; do not create a coordination project to compensate.
+2. Run `agent join` inside this actual Codex conversation. The program discovers the pending console request, reads its project/role/nickname, verifies the actual host conversation and atomically claims it. Never invent a conversation ID, override the selected role, or pass the current cwd as a replacement project.
+3. If there is no pending request, or it is cancelled/expired, report the error and ask the user to prepare an Agent in the front end. Do not fall back to project init, `prepare --role worker`, or an unrelated existing project.
+4. If this conversation has already claimed the request and joining failed, retry `agent join` in this same conversation after addressing the reported error. Do not issue a new identity. Another conversation cannot consume the same request; do not take over or share the claimant's private session files.
+5. The command's enrolled result is not completion. Call `context__project_read` from this original conversation's MCP tools. Verify the project, own Agent, selected role, ready session and registered host binding match the join result. Only then report ready_main/ready_worker. That original call supplies the console receipt; a headless helper or another Agent cannot satisfy it.
+
+The console has one active Codex request per local OS user across projects and browser windows. Cancelling an unclaimed request is separate from removing an enrolled Agent; do not unregister the global shared MCP to cancel it. First-time MCP loading may require the host reload step below. Having only one sentence to say does not remove the installation/loading prerequisites.
+
+## Explicit installation or manual project selection
+
+Use this section only when the user explicitly asks to install/initialize a new project or join a specified project without a console request. Never use it as an automatic fallback after `agent join` fails.
+
+1. Read the selected project's `.tsunagou/agent-context.md` and managed `AGENTS.md` block when present. Find the installed source from `.tsunagou/project-integration.json` or `~/.tsunagou/installation.json`. Source remains in its installation directory, not copied into the business repository.
+2. Use the installed `tsunagou` launcher. If absent from PATH, use its recorded full path or installed Python with `-m tsunagou`. Read `docs/overview/agent-quick-start.md` at that source when needed.
+3. Only for a user-requested new coordination project, initialize the selected Git repository with `project init --coordination-root <actual path>`, then `project bootstrap --coordination-root <actual path> --source-root <actual installed source> --host codex`. Preserve existing project identity and user file contents. Bootstrap creates no Agent.
+4. For explicit manual onboarding, the CLI discovers a project from its root or a nested directory. Outside it, use global `--project-root <actual path>`. Do not ask users to repeatedly set project/state environment variables.
 5. If the user selected an existing daemon for another project, use `daemon start --reuse <that project's actual root>` from the new project. Otherwise connect starts the selected project's daemon if needed.
 
-## Codex Desktop: one connection
+## Codex Desktop: explicit manual connection
 
 Run `agent prepare --adapter codex --role worker` inside the actual conversation (use main only when the user selected it). This observes the host's real conversation and local app endpoint and writes a private request file. It creates no Agent or authority. Never invent a conversation ID or use a display profile as identity.
 
@@ -50,7 +64,7 @@ Use their actual host-provided conversation identity and supported bridge config
 
 ## Recovery
 
-Inspect `daemon status`, `doctor` and `agent list --json` yourself where authorized. Keep diagnostics to statuses, IDs, timestamps and error codes. The bridge normally reuses its saved session; restart/epoch changes trigger reconnect. Re-run prepare/connect for this same conversation when the host endpoint or enrollment material needs repair. Do not issue new identities to hide a connection failure.
+Inspect `daemon status`, `doctor` and `agent list --json` yourself where authorized. Keep diagnostics to statuses, IDs, timestamps and error codes. The bridge normally reuses its saved session; restart/epoch changes trigger reconnect. For a console request, retry agent join from the same conversation; use prepare/connect only for the explicit manual workflow when the host endpoint or enrollment material needs repair. Do not issue new identities to hide a connection failure.
 
 Use the installed source's `docs/overview/cli-http-manual.md` for real command syntax. Do not copy old profile-based onboarding examples from historical documents. Never print control.token, ticket.json, session tokens, Authorization headers or raw pipe addresses.
 

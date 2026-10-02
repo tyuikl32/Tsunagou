@@ -297,7 +297,7 @@ def test_deepseek_registration_failure_is_not_reported_as_enrolled(tmp_path, mon
     monkeypatch.setattr(cli.host_registration, "register", lambda *args, **kwargs: Registration(
         adapter="deepseek", label="DeepSeek Harness", status=FAILED, name="tsunagou"))
     with pytest.raises(RuntimeError, match="deepseek_host_registration_failed"):
-        cli._register_deepseek_mcp(profile="headless", bridge_config_path=config)
+        cli._register_host_mcp(adapter="deepseek", profile="headless", bridge_config_path=config)
 
 
 def test_daemon_launch_failure_keeps_the_specific_public_error(monkeypatch, tmp_path):

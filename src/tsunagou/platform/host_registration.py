@@ -28,6 +28,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from tsunagou.platform.bridge_files import bridge_entry_path
+
 
 @dataclass(frozen=True)
 class HostCommand:
@@ -36,10 +38,16 @@ class HostCommand:
     Removing a previous entry is best-effort: hosts vary in how they answer
     "nothing to remove", and that answer never says anything about the entry we are
     about to add.
+
+    ``cwd`` is for hosts whose configuration is found relative to the project
+    directory rather than in a user-level file: ``opencode mcp add`` writes the
+    ``opencode.json`` of the *current* directory, so the command has to run in the
+    project it is enrolling into.
     """
 
     argv: tuple[str, ...]
     required: bool = True
+    cwd: str | None = None
 
 
 @dataclass(frozen=True)
@@ -295,7 +303,7 @@ def deepseek_provider_state(profile: str, *, environ: Mapping[str, str] | None =
 
 
 def ensure_deepseek_provider(profile: str, *, environ: Mapping[str, str] | None = None,
-                             run: Callable[[tuple[str, ...]], int] | None = None) -> str:
+                             run: Callable[[tuple[str, ...], str | None], int] | None = None) -> str:
     """Install the provider for the selected legacy overlay launch profile only."""
 
     ready, state = deepseek_provider_state(profile, environ=environ)
@@ -314,7 +322,7 @@ def ensure_deepseek_provider(profile: str, *, environ: Mapping[str, str] | None 
         # like a failure while the same command worked by hand.
         argv = ("cmd", "/c", "dsh", *install) if os.name == "nt" else ("dsh", *install)
         try:
-            execute(argv)
+            execute(argv, None)
         except OSError:
             # A launcher that cannot be started at all is an install that did not happen;
             # the re-check below decides, and the caller refuses rather than writing an
@@ -597,6 +605,203 @@ def remove_deepseek_overlay(profile: str, scope: Mapping[str, Any]) -> str:
     return "unchanged"
 
 
+# ---------------------------------------------------------------------------
+# OpenCode: one entry per conversation, in the project's own configuration
+# ---------------------------------------------------------------------------
+#
+# Two host facts fix this shape (measured on v2.0.21):
+#   * `opencode mcp add` exists, and re-adding the same name replaces that entry — so
+#     a retry is idempotent and nothing has to be removed first;
+#   * there is **no** `mcp remove`, so taking a cancelled enrollment back out is a file
+#     edit; and `add` writes the `opencode.json` of the *current directory* (not of the
+#     nearest repository), so the command has to run inside the project.
+# One entry per conversation rather than one per project, because an entry carries one
+# ticket and one session file: a second conversation in the same project needs its own.
+
+OPENCODE_CONFIG_NAME = "opencode.json"
+
+
+def opencode_config_path(project_root: Path) -> Path:
+    """OpenCode's project configuration — the file ``mcp add`` writes by default."""
+
+    return project_root / OPENCODE_CONFIG_NAME
+
+
+def opencode_entry_name(profile: str, project_root: Path) -> str:
+    """The entry name for one conversation; the same spelling Codex uses, for the same reason."""
+
+    return server_name("opencode", profile, project_root)
+
+
+def _is_tsunagou_entry_name(name: str) -> bool:
+    """``tsunagou-<profile>-<tag>`` — the only shape this module ever writes."""
+
+    return re.fullmatch(r"tsunagou-[A-Za-z0-9_-]+-[0-9a-f]{8}", name) is not None
+
+
+def _opencode_servers(raw: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """The ``mcp.servers`` map, or ``None`` when the file says something else there."""
+
+    mcp = raw.get("mcp")
+    if mcp is None:
+        return {}
+    if not isinstance(mcp, Mapping):
+        return None
+    servers = mcp.get("servers")
+    if servers is None:
+        return {}
+    return servers if isinstance(servers, Mapping) else None
+
+
+def _opencode_read(path: Path) -> tuple[dict[str, Any] | None, str]:
+    """Read a project file we may edit; ``(None, reason)`` says why we will not."""
+
+    if not path.exists():
+        return {}, ""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"{path} 读不出来或不是合法 JSON（{exc}），一个字都没改"
+    if not isinstance(raw, dict):
+        return None, f"{path} 不是一份 JSON 对象，一个字都没改"
+    if _opencode_servers(raw) is None:
+        return None, f"{path} 里的 mcp.servers 不是对象，一个字都没改"
+    return raw, ""
+
+
+def _opencode_entry_is_ours(entry: object) -> bool:
+    """Ours by the bridge it launches, not by its name — a name can be typed by hand."""
+
+    if not isinstance(entry, Mapping) or entry.get("type") != "local":
+        return False
+    command = entry.get("command")
+    if not isinstance(command, (list, tuple)) or len(command) < 2:
+        return False
+    wanted = _path_text(bridge_entry_path())
+    return any(_path_text(item) == wanted for item in command[1:])
+
+
+def _path_text(value: object) -> str:
+    """Compare paths without caring about separators or letter case."""
+
+    return str(value).replace("\\", "/").casefold()
+
+
+def preview_opencode_entry(profile: str, bridge: Mapping[str, Any]) -> ConfigChange:
+    """Decide, before anything runs, whether this conversation may be written in.
+
+    The project's ``opencode.json`` belongs to the person. The only refusal is a
+    same-named entry **we did not write**: replacing it would silently take over an MCP
+    server they configured by hand. A missing file, our own entry from an earlier
+    attempt, and entries under other names are all fine — those other entries are never
+    touched.
+    """
+
+    root = bridge_project_root(bridge)
+    if root is None:
+        return ConfigChange(
+            status=FAILED,
+            note=f"bridge 配置里没有 {BRIDGE_PROJECT_ENV}，无法定位项目的 {OPENCODE_CONFIG_NAME}。",
+        )
+    path = opencode_config_path(root)
+    raw, reason = _opencode_read(path)
+    if raw is None:
+        return ConfigChange(status=FAILED, files=(path,), note=reason + "。")
+    name = opencode_entry_name(profile, root)
+    entry = (_opencode_servers(raw) or {}).get(name)
+    if entry is not None and not _opencode_entry_is_ours(entry):
+        return ConfigChange(
+            status=FAILED, files=(path,),
+            note=f"{path} 里已有一条同名条目“{name}”、不是 Tsunagou 写的，未改动；请自行处理该条目。",
+        )
+    return ConfigChange(status=REGISTERED, files=(path,))
+
+
+def _opencode_commands(executable: str, name: str, bridge: Mapping[str, Any]) -> tuple[HostCommand, ...]:
+    """OpenCode: ``opencode mcp add <name> --env … -- <bridge>``, run inside the project."""
+
+    environment = bridge.get("env")
+    values = environment if isinstance(environment, Mapping) else {}
+    arguments = bridge.get("args")
+    args = [str(item) for item in arguments] if isinstance(arguments, (list, tuple)) else []
+    add = [executable, "mcp", "add", name]
+    for key, value in sorted(values.items()):
+        if value:
+            add.extend(["--env", f"{key}={value}"])
+    add.extend(["--", str(bridge.get("command") or ""), *args])
+    root = bridge_project_root(bridge)
+    # Re-adding the same name replaces the entry, so no removal runs first. The command
+    # runs in the project: `add` writes the current directory's file, not the repository
+    # root's, and a bridge enrolled into the wrong file would never be launched.
+    return (HostCommand(tuple(add), cwd=str(root) if root is not None else None),)
+
+
+def _json_indent(text: str) -> int | str:
+    """The file's own indentation, so rewriting it does not reformat it for no reason."""
+
+    match = re.search(r"(?m)^([ \t]+)\S", text)
+    if match is None:
+        return 2
+    unit = match.group(1)
+    return "\t" if unit.startswith("\t") else len(unit)
+
+
+def _opencode_write(path: Path, raw: dict[str, Any], servers: Mapping[str, Any]) -> None:
+    """Write the file back with this one entry removed, keeping its indentation."""
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    mcp = raw.setdefault("mcp", {})
+    mcp["servers"] = dict(servers)
+    path.write_text(
+        json.dumps(raw, indent=_json_indent(text), ensure_ascii=False) + "\n",
+        encoding="utf-8", newline="\n",
+    )
+
+
+def remove_opencode_entry(profile: str, scope: Mapping[str, Any]) -> str:
+    """Take an entry back out by editing the project's file — and nothing else.
+
+    OpenCode has no ``mcp remove``, so this is the edit its CLI cannot do. Only entries
+    that are named after a conversation **and launch our bridge** are touched: a
+    same-named entry the person wrote stays where it is, and a file that does not parse
+    is left alone whole.
+
+    Outcomes: ``unregistered:<path>``, ``unchanged`` (nothing of ours was there),
+    ``unchanged|unreadable:<reason>`` (refused rather than rewritten).
+    """
+
+    raw_root = scope.get("project_root")
+    if raw_root is None:
+        return "unchanged|no_project_root"
+    root = Path(raw_root).resolve()
+    path = opencode_config_path(root)
+    if not path.is_file():
+        return "unchanged"
+    raw, reason = _opencode_read(path)
+    if raw is None:
+        return f"unchanged|unreadable:{reason}"
+    servers = dict(_opencode_servers(raw) or {})
+    if scope.get("all"):
+        # Forgetting the project means every conversation's entry, which is exactly the
+        # set carrying our own derived names.
+        names = [str(name) for name in servers if _is_tsunagou_entry_name(str(name))]
+    else:
+        names = [opencode_entry_name(profile, root)]
+    dropped = [name for name in names if _opencode_entry_is_ours(servers.get(name))]
+    if not dropped:
+        # A same-named entry we did not write is the one thing worth naming: the caller's
+        # next question is why the entry is still there.
+        foreign = [name for name in names if name in servers]
+        return "unchanged|" + "|".join(f"same_name_foreign:{name}" for name in foreign) if foreign else "unchanged"
+    for name in dropped:
+        del servers[name]
+    _opencode_write(path, raw, servers)
+    return "unregistered:" + str(path)
+
+
 # One row per host product. ``adapter`` is also the bridge's own adapter name, so a
 # row is the single place where "which vendor" and "which command" meet.
 HOSTS: dict[str, Host] = {
@@ -630,7 +835,9 @@ HOSTS: dict[str, Host] = {
         label="OpenCode",
         executable_names=("opencode",),
         executable_env="OPENCODE_CLI_PATH",
-        note="OpenCode 的 MCP 注册还没实现。",
+        commands=_opencode_commands,
+        config_preview=preview_opencode_entry,
+        config_remove=remove_opencode_entry,
     ),
     "zcode": Host(
         adapter="zcode",
@@ -759,12 +966,34 @@ def make_plan(adapter: str, *, profile: str, project_root: Path, bridge: Mapping
     name = server_name(host.adapter, profile, project_root)
     if host.config_preview is not None:
         decision = host.config_preview(profile, bridge)
+        registration = Registration(
+            adapter=host.adapter, label=host.label, status=decision.status, name=name,
+            files=tuple(str(path) for path in decision.files), note=decision.note,
+        )
+        if decision.status != REGISTERED or host.commands is None:
+            # A file-only host: the preview *is* the decision, and config_write does the
+            # edit (the DeepSeek overlay works this way).
+            return Plan(registration, host=host)
+        # A host with both shapes (OpenCode): the preview only answers "may we write in
+        # here at all", and the edit itself is the host's own CLI — which also validates
+        # the file it writes.
+        executable = find_executable(host)
+        if executable is None:
+            return Plan(
+                Registration(
+                    adapter=host.adapter, label=host.label, status=EXECUTABLE_MISSING, name=name,
+                    files=registration.files,
+                    note=f"找不到 {host.label} 的命令行程序，无法把它写进宿主配置；装好后重试。",
+                ),
+                host=host,
+            )
+        steps = host.commands(executable, name, bridge)
         return Plan(
             Registration(
-                adapter=host.adapter, label=host.label, status=decision.status, name=name,
-                files=tuple(str(path) for path in decision.files), note=decision.note,
+                adapter=host.adapter, label=host.label, status=REGISTERED, name=name,
+                commands=tuple(step.argv for step in steps), files=registration.files,
             ),
-            host=host,
+            host=host, executable=executable, steps=steps,
         )
     if host.commands is None:
         return Plan(
@@ -802,7 +1031,7 @@ def plan(adapter: str, *, profile: str, project_root: Path, bridge: Mapping[str,
 
 def register(
     adapter: str, *, profile: str, project_root: Path, bridge: Mapping[str, Any],
-    run: Callable[[tuple[str, ...]], int] | None = None,
+    run: Callable[[tuple[str, ...], str | None], int] | None = None,
 ) -> Registration:
     """Put the bridge into the host's configuration, one host dialect at a time.
 
@@ -842,7 +1071,7 @@ def register(
     execute = run or _run
     failed = False
     for step in prepared.steps:
-        if execute(step.argv) != 0 and step.required:
+        if execute(step.argv, step.cwd) != 0 and step.required:
             failed = True
     if failed:
         return Registration(
@@ -854,11 +1083,11 @@ def register(
     return prepared.registration
 
 
-def _run(argv: tuple[str, ...]) -> int:
+def _run(argv: tuple[str, ...], cwd: str | None = None) -> int:
     # Host tools answer in UTF-8; decoding with the system locale raises on a non-UTF-8
     # console (a GBK Windows turns the plugin manager's output into a UnicodeDecodeError
     # inside the reader thread, which looked like a failed install).
-    result = subprocess.run(list(argv), capture_output=True, text=True,
+    result = subprocess.run(list(argv), cwd=cwd, capture_output=True, text=True,
                             encoding="utf-8", errors="replace", check=False)
     return int(result.returncode)
 
@@ -871,6 +1100,11 @@ def _removal_note(notes: str) -> str:
         parts.append("另一项目在共享 profile 里还留着一条旧条目，未改动。")
     if "left_shared_entry:" in notes:
         parts.append("共享 profile 里那条旧条目指向的会话仍依赖它，暂时保留；它会让启动该 profile 的会话拿到旧身份。")
+    if "same_name_foreign:" in notes:
+        parts.append("有一条同名条目不是 Tsunagou 写的，已保持原样。")
+    if "unreadable:" in notes:
+        # The reason is already a sentence (and already says nothing was changed).
+        parts.append(notes.split("unreadable:", 1)[1].strip())
     if "no_project_root" in notes:
         parts.append("没有项目根目录，未改动任何配置。")
     return "".join(parts)
@@ -879,7 +1113,7 @@ def _removal_note(notes: str) -> str:
 def unregister(
     adapter: str, *, profile: str, project_root: Path, bridge_dir: Path | None = None,
     all_registrations: bool = False,
-    run: Callable[[tuple[str, ...]], int] | None = None,
+    run: Callable[[tuple[str, ...], str | None], int] | None = None,
 ) -> Registration:
     """Take one conversation's bridge back out of the host's configuration.
 
@@ -925,13 +1159,14 @@ def unregister(
         if body == "not_owned":
             return Registration(
                 adapter=host.adapter, label=host.label, status=NOT_OWNED, name=name,
-                note="那条 Harness 配置属于另一个项目，未改动；请从它自己的项目里注销。",
+                note="那条配置属于另一个项目，未改动；请从它自己的项目里注销。",
             )
         return Registration(
             adapter=host.adapter, label=host.label, status=UNREGISTERED, name=name,
-            note=("没有 Tsunagou 自己写的 Harness 配置，宿主配置未改动。"
-                  if body == "unchanged" else
-                  "这个 Harness 文件不是 Tsunagou 写的，保持原样，请自行处理。")
+            note=(f"没有 Tsunagou 自己写的 {host.label} 配置，宿主配置未改动。"
+                  if body == "unchanged" and not notes else
+                  f"{host.label} 的配置未改动。" if body == "unchanged" else
+                  f"这个 {host.label} 配置文件不是 Tsunagou 写的，保持原样，请自行处理。")
                  + _removal_note(notes),
         )
     if host.remove is None:
@@ -948,7 +1183,7 @@ def unregister(
     steps = host.remove(executable, name)
     execute = run or _run
     for step in steps:
-        execute(step.argv)
+        execute(step.argv, step.cwd)
     return Registration(
         adapter=host.adapter, label=host.label, status=UNREGISTERED, name=name,
         commands=tuple(step.argv for step in steps),

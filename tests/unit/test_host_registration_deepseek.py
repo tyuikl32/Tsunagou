@@ -127,7 +127,7 @@ def test_registration_is_refused_when_the_identity_provider_is_missing(
     state.mkdir(parents=True)
 
     result = register("deepseek", profile="main", project_root=tmp_path / "project",
-                      bridge=_bridge(state), run=lambda argv: 1)
+                      bridge=_bridge(state), run=lambda argv, cwd=None: 1)
 
     assert result.status == FAILED
     assert not (state / "dsh-overlay.yml").exists(), "a refused registration writes nothing"
@@ -154,6 +154,41 @@ def test_a_declared_provider_that_is_not_installed_is_not_ready(
 
     assert ready is False, "a declaration without a resolved package is not installed"
     assert state.startswith("provider_not_installed"), state
+
+
+def test_provider_install_callback_targets_only_the_selected_profile(
+    dsh_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = dsh_home / "profiles/main/node_modules" / host_registration.DEEPSEEK_PROVIDER_PACKAGE
+    (selected / "package.json").unlink()
+    (selected / "index.js").unlink()
+    unused = dsh_home / "profiles/web"
+    unused.mkdir()
+    (unused / "package.json").write_text('{}\n', encoding="utf-8")
+    package = tmp_path / "provider-source"
+    package.mkdir()
+    (package / "package.json").write_text('{}\n', encoding="utf-8")
+    monkeypatch.setattr(host_registration, "_provider_directory", lambda: package)
+    ran: list[tuple[tuple[str, ...], str | None]] = []
+
+    def install(argv: tuple[str, ...], cwd: str | None) -> int:
+        ran.append((argv, cwd))
+        assert argv[argv.index("--profile") + 1] == "main"
+        assert argv[-1] == str(package)
+        assert cwd is None
+        (selected / "package.json").write_text('{}\n', encoding="utf-8")
+        (selected / "index.js").write_text("export default {};\n", encoding="utf-8")
+        return 0
+
+    project = tmp_path / "project"
+    state = project / ".tsunagou/bridges/deepseek-main"
+    result = register("deepseek", profile="main", project_root=project,
+                      bridge=_bridge(state, project), run=install)
+
+    assert result.status == REGISTERED
+    assert len(ran) == 1
+    assert (state / "dsh-overlay.yml").is_file()
+    assert not (unused / "node_modules").exists()
 
 
 def test_the_entry_arrives_inside_an_insert_row(tmp_path: Path) -> None:

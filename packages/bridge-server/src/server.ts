@@ -21,7 +21,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CredentialHandoff, loadSession, type PersistedSession, type SessionCredential, type TicketFile } from "./credential-handoff.js";
 import { readPrivateJson, writePrivateJson } from "./private-file.js";
@@ -448,7 +448,13 @@ type RoutedConfig = ReturnType<typeof config> & {
   conversationId?: string;
   projectId?: string;
   desktopEndpoint?: string;
+  consoleEnrollment?: { enrollment_id: string; requested_role: "main" | "worker"; receipt_file: string };
 };
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : undefined;
+}
 
 // Remember only the metadata transport mode, never a conversation credential.
 // Once a legacy fixed config proves it is a metadata host, later calls cannot
@@ -505,6 +511,19 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
   for (const key of ["project_id", "project_root", "daemon_state_dir", "ticket_file", "session_file", "state_dir"]) {
     if (typeof route[key] !== "string" || !route[key]) throw new Error("private_route_invalid");
   }
+  let consoleEnrollment: RoutedConfig["consoleEnrollment"];
+  if (codexDesktop && route.console_enrollment !== undefined) {
+    const enrollment = record(route.console_enrollment);
+    if (!enrollment || typeof enrollment.enrollment_id !== "string" || !enrollment.enrollment_id
+        || (enrollment.requested_role !== "main" && enrollment.requested_role !== "worker")
+        || typeof enrollment.receipt_file !== "string" || !isAbsolute(enrollment.receipt_file)) {
+      throw new Error("private_route_invalid");
+    }
+    consoleEnrollment = {
+      enrollment_id: enrollment.enrollment_id, requested_role: enrollment.requested_role,
+      receipt_file: enrollment.receipt_file,
+    };
+  }
   return {
     httpUrl: "", daemonStateDir: route.daemon_state_dir as string,
     ticketFile: route.ticket_file as string, sessionFile: route.session_file as string,
@@ -513,7 +532,40 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
     hostIdCandidates: [], hostMetaKey: "", desktopWake: codexDesktop,
     desktopEndpoint: codexDesktop
       ? process.env.CODEX_APP_TOOLS_PIPE_PATH || (route.endpoint as string | undefined) : undefined,
+    consoleEnrollment,
   };
+}
+
+/** Local observation of an original-host read, never a daemon admission grant. */
+async function recordConsoleArrival(cfg: RoutedConfig, result: unknown, session: PersistedSession): Promise<void> {
+  const enrollment = cfg.consoleEnrollment;
+  // Only shared Codex routing can populate this reference, after requiring actual
+  // per-call _meta.threadId. CLI bootstrap transports explicitly mark themselves.
+  if (!enrollment || !cfg.conversationId || env("TSUNAGOU_CONNECT_HELPER") === "1") return;
+  const context = record(result);
+  const observedSession = record(context?.session);
+  if (context?.project_id !== cfg.projectId || context?.role !== enrollment.requested_role
+      || typeof context?.agent_id !== "string" || !context.agent_id || context.agent_id !== session.agent_id
+      || observedSession?.status !== "ready" || observedSession.session_id !== session.session_id
+      || observedSession.connection_epoch !== session.connection_epoch) return;
+  const receipt = {
+    format_version: 1, enrollment_id: enrollment.enrollment_id, thread_id: cfg.conversationId,
+    project_id: cfg.projectId, agent_id: context.agent_id, role: context.role,
+    session_id: session.session_id, connection_epoch: session.connection_epoch,
+    observed_at: new Date().toISOString(),
+  };
+  await withPrivateFileLock(enrollment.receipt_file, () => {
+    // A context response can arrive after another call rotated the credential.
+    // Keep the newest observation, including across bridge processes/restarts.
+    const current = cfg.sessionFile ? loadSession(cfg.sessionFile) : undefined;
+    if (current?.agent_id !== session.agent_id || current.session_id !== session.session_id
+        || current.connection_epoch !== session.connection_epoch) return;
+    const prior = record(readPrivateJson(enrollment.receipt_file));
+    if (prior && (prior.enrollment_id !== receipt.enrollment_id || prior.thread_id !== receipt.thread_id
+        || prior.project_id !== receipt.project_id || prior.agent_id !== receipt.agent_id
+        || (typeof prior.connection_epoch === "number" && prior.connection_epoch > receipt.connection_epoch))) return;
+    writePrivateJson(enrollment.receipt_file, receipt);
+  });
 }
 
 async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<string, unknown>, commandId: string, restoreOnly = false): Promise<unknown> {
@@ -610,6 +662,7 @@ async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<stri
     session = await recover(true);
     result = await transport.dispatch(kind, payload, session, commandId);
   }
+  if (kind === "context.project_read") await recordConsoleArrival(cfg, result, session);
   return result;
 }
 
