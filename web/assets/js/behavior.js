@@ -1088,9 +1088,11 @@
             notify.error('中间层不认识这个厂商，无法准备接入：' + vendor);
             return Promise.resolve(false);
         }
-        /* 中间层手里没有这个宿主的注册命令时直说 —— 不假装已经排好队 */
-        if (!host.supported) {
-            notify.info(host.note || (host.label + ' 的 MCP 注册还没实现，暂时不能从网页接入'));
+        /* 中间层办不完这个厂商时直说 —— 不假装已经排好队 */
+        const blocked = hostEnrollBlocker(host);
+        if (blocked) {
+            if (blocked.mode === 'in_host') notify.info(blocked.note);
+            else notify.error(blocked.note);
             return Promise.resolve(false);
         }
         const previous = state.get('wizard.main', null);
@@ -4441,9 +4443,11 @@
                 notify.error('中间层不认识这个厂商，无法准备接入：' + vendor);
                 return Promise.resolve(false);
             }
-            /* 中间层手里没有这个宿主的注册命令时直说 —— 不假装"已排好队"。*/
-            if (!host.supported) {
-                notify.info(host.note || (host.label + ' 的 MCP 注册还没实现，无法从网页接入'));
+            /* 中间层办不完这个厂商时直说 —— 不假装"已排好队"。*/
+            const blocked = hostEnrollBlocker(host);
+            if (blocked) {
+                if (blocked.mode === 'in_host') notify.info(blocked.note);
+                else notify.error(blocked.note);
                 return Promise.resolve(false);
             }
             const finishWindow = function () {
@@ -5663,6 +5667,21 @@
         })[0] || null;
     }
 
+    /* 这个厂商点了"下一步"会怎样：页面能办完（console）就往下走；
+       "去宿主自己的聊天里接入"（in_host）是给人指路，照说；还没做的（unsupported）才算报错。
+       一句话：能接入的只有 console 这一种，其余一律不发准备请求、不假装排队。*/
+    function hostEnrollBlocker(host) {
+        const mode = toText((host || {}).mode) || 'unsupported';
+        if (mode === 'console') return null;
+        const label = toText((host || {}).label) || toText((host || {}).adapter) || '这个宿主';
+        return {
+            mode: mode,
+            note: toText((host || {}).note) || (mode === 'in_host'
+                ? (label + ' 要在它自己的聊天里接入，页面不需要先准备')
+                : (label + ' 的 MCP 注册还没实现，暂时不能从网页接入'))
+        };
+    }
+
     /* 等宿主把 Agent 连上：每 2 秒问一次中间层"到了没有"，直到到了 / 票过期 /
        人把加载遮罩关掉。中间层每次都会重读项目名单（指纹没变就复用缓存），
        所以轮询很便宜，也不会因为网络抖一下就让人重新来一遍。*/
@@ -5881,7 +5900,9 @@
                     profile: toText(prepared.profile), enrollment_id: toText(prepared.enrollment_id)
                 };
             }
-            waitingText = waitingPrefix + (toText(prepared.note) || waitingText);
+            /* 下一步由中间层说：Codex 是"去那个聊天说一句话"，OpenCode 是"用这个名字开会话"。
+               页面不自己编，也不替后端承诺。*/
+            waitingText = waitingPrefix + (toText(prepared.next) || toText(prepared.note) || waitingText);
             notify.loading(waitingText, { cancel: cancel });
             const waiting = waitForEnrollment(toText(prepared.enrollment_id), toText(host.label), function (answer) {
                 const note = joiningNote(answer, host);
@@ -6179,14 +6200,17 @@
                 };
             });
         },
-        /* 中间层 GET /console/hosts → 宿主表（哪些厂商能注册、哪个还没实现）。
-           页面只做"名字对上"，不自己维护"支不支持、跑什么命令"。*/
+        /* 中间层 GET /console/hosts → 宿主表（点下一步会发生什么）。
+           页面只做"名字对上"，不自己维护"能不能接入、跑什么命令"。
+           mode 只有三种：console = 页面能办完；in_host = 去宿主自己的聊天里接入；
+           unsupported = 还没做。只有 console 才发准备请求。*/
         hosts: function (raw) {
             return backendItems(raw).map(function (host) {
+                const mode = toText(host.mode);
                 return {
                     adapter: toText(host.adapter),
                     label: toText(host.label) || toText(host.adapter),
-                    supported: host.supported === true,
+                    mode: mode || 'unsupported',
                     note: toText(host.note)
                 };
             });

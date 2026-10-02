@@ -66,7 +66,24 @@ HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)�
 
 首次安装必须让目标 Codex 加载接入 Skill 和共享 MCP；可能需要完整退出再打开一次。已加载的共享 bridge 每次调用读取路由，因此后续新对话绑定无需重建所有 MCP。自动化测试验证程序行为；真实 Desktop 原会话的成功必须另有现场记录，不能用模拟客户端代替。
 
-非 Codex 宿主保留原有票据和宿主登记流程。技术决定见 [Codex 控制台接入](../decisions/2026-10-02-console-codex-join.md)。
+## 非 Codex 宿主：先看它是哪一种
+
+`GET /console/hosts` 每一项的 `mode` 直接回答"点下一步会发生什么"，只有三态：
+
+| mode | 含义 | 页面行为 |
+|---|---|---|
+| `console` | 页面能替这个宿主办完接入 | 发准备请求，进等待 |
+| `in_host` | 只能在这个宿主自己的聊天里接入（DeepSeek Harness） | 不发请求，照实说那一句人话 |
+| `unsupported` | 还没做（Claude Code、ZCode） | 不发请求，照实说"还没做" |
+
+只有 `console` 才签票：`prepare` 对另外两种直接拒绝（`host_enroll_not_available`），不产生票据文件——给一个兑不了的宿主签票，看起来像有进展，最后只会等到"票过期"。
+
+两种 `console` 形态：
+
+- **Codex**：只存选择，真实聊天认领后才签票（见上一节，技术决定见 [Codex 控制台接入](../decisions/2026-10-02-console-codex-join.md)）。
+- **OpenCode**：控制台发一个会话名 `ses_<profile>` 并绑进票；页面把"用这个名字开会话"说给人，人用同一个名字打开会话，身份就对得上（此前控制台编的 id 与真实会话 id 对不上，bridge 会把票丢掉）。名字记在 bridge 目录的 `host-identity.json` 里，重试沿用同一个。
+
+控制台**照抄**中间层给的 `next` 作为等待提示，不自己编文案。技术决定见 [控制台接入](../decisions/2026-10-02-console-enroll-modes.md)。
 
 ## 已知边界
 

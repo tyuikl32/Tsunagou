@@ -1,7 +1,14 @@
 """Turning "add an Agent" into a handoff a real host conversation can claim.
 
-Codex prepares only a private selection; its real chat later claims that selection
-and uses the common onboarding service. Other hosts retain the local ticket flow.
+Not every host can be enrolled the same way, and the page must not pretend
+otherwise. A host is in exactly one of three states (``enroll_mode``):
+
+* ``console`` — this console can finish the handoff. Codex stores only a private
+  selection and its real chat claims it later; OpenCode gets a ticket bound to a
+  session name the console hands out, and the person opens that named session.
+* ``in_host`` — the host enrolls from inside its own chat (DeepSeek Harness).
+  Nothing is signed or queued here: the page says where to say the one sentence.
+* ``unsupported`` — no implementation yet; the page says so instead of queueing.
 
 The daemon owns the Agent: it issues the one-time ticket, and it enrolls whoever
 redeems that ticket through ``agent.enroll``. What no daemon can do is the local
@@ -61,6 +68,37 @@ NEXT_STEP = (
     "重启或重载这个宿主窗口，让宿主读取新的 MCP 配置；"
     "该会话里的 bridge 会用票据文件自动兑换成一个 Agent（首次调用 context__project_read 即完成）。"
 )
+
+# 接入只有三种状态，页面按它说真话（见模块说明）。中间层能替宿主把票和配置备好，
+# 叫作 console；只能在宿主自己的聊天里接入，叫作 in_host；还没做，就是 unsupported。
+CONSOLE_MODE = "console"
+IN_HOST_MODE = "in_host"
+UNSUPPORTED_MODE = "unsupported"
+
+
+def enroll_mode(host: host_registration.Host) -> str:
+    """Can this console finish this host's handoff, or is it somebody else's step?
+
+    It answers the page's question — "点下一步会发生什么" — not "有没有注册命令":
+    a host whose configuration is a file we write counts just as much as one whose
+    CLI we run, and a host that enrolls inside its own chat is neither.
+    """
+
+    if host.enroll_in_host:
+        return IN_HOST_MODE
+    if host.commands is not None or host.config_write is not None:
+        return CONSOLE_MODE
+    return UNSUPPORTED_MODE
+
+
+def _enroll_note(host: host_registration.Host, mode: str) -> str:
+    """One sentence a person can act on; empty when there is nothing to explain."""
+
+    if mode == IN_HOST_MODE:
+        return host.enroll_in_host
+    if mode == UNSUPPORTED_MODE:
+        return host.note or "这个宿主的 MCP 注册还没实现，暂时不能从网页接入。"
+    return ""
 
 # 票据默认活 10 分钟（authority.issue_ticket），多留一点余量再判过期。
 ENROLLMENT_TTL_SECONDS = 900.0
@@ -276,6 +314,16 @@ def prepare(
             detail={"entry": str(entry_path), "build": BUILD_COMMAND},
         )
 
+    enrollment_mode = enroll_mode(host)
+    if enrollment_mode != CONSOLE_MODE:
+        # 给一个兑不了的宿主签票比拒绝更糟：它看起来像有进展，最后只会等成"票过期了，重来吧"。
+        raise ConsoleError(
+            "host_enroll_not_available", detail={
+                "vendor": host.adapter, "label": host.label, "enroll_mode": enrollment_mode,
+                "note": _enroll_note(host, enrollment_mode),
+            },
+        )
+
     if host.adapter == "codex":
         try:
             intent = EnrollmentStore().create(
@@ -306,7 +354,12 @@ def prepare(
     known_agents = frozenset(agent["agent_id"] for agent in before.agents) if before else frozenset()
     conversation = profile_name(profile) if profile else uuid.uuid4().hex[:12]
     destination = (entry.path / BRIDGE_DIRECTORY / f"{host.adapter}-{conversation}").resolve()
-    installation_id, conversation_id = profile_identity(destination, host.adapter, conversation)
+    # OpenCode 认的是"开会话时用的那个名字"，而这个名字可以由接入方先定：票绑它，
+    # 人再用同一个名字开会话，两边的身份就对得上了（其他宿主没有这一步，见 enroll_mode）。
+    chosen_session = f"ses_{conversation}" if host.adapter == "opencode" else None
+    installation_id, conversation_id = profile_identity(
+        destination, host.adapter, conversation, preferred_id=chosen_session,
+    )
 
     issued = _ticket(
         endpoint=endpoint, token=token, installation_id=installation_id,
@@ -338,6 +391,13 @@ def prepare(
         ticket_file=ticket_path.as_posix(), blind=before is None,
     )
     _remember(record)
+    # 名字是我们发的，所以"下一步做什么"也只能由这里说清 —— 页面照抄这句话。
+    next_step = (
+        f"在这个项目里用会话名 {conversation_id} 打开 {host.label}"
+        f"（opencode --session {conversation_id}），reload 一次让 MCP 配置生效；"
+        "该会话首次读取项目上下文即完成接入。"
+        if chosen_session else NEXT_STEP
+    )
     return {
         "status": "prepared",
         "installation_id": installation_id,
@@ -346,7 +406,7 @@ def prepare(
         "bridge_config": bridge_config.as_posix(),
         "ticket_file": ticket_path.as_posix(),
         "host_registration": registration.public(),
-        "next": NEXT_STEP,
+        "next": next_step,
         **record.public(),
     }
 
@@ -632,19 +692,21 @@ def cancel(enrollment_id: str, *, settings: ConsoleConfig) -> dict[str, Any]:
 
 
 def known_hosts() -> list[dict[str, Any]]:
-    """The host table as the page may see it: who can be registered, and who cannot.
+    """The host table as the page may see it: what happens if you pick this vendor.
 
     Sending this to the page is what keeps the two layers honest about each other —
     the page picks a vendor from what the console actually implements, instead of
-    offering a vendor and finding out from an error.
+    offering a vendor and finding out from an error. ``mode`` is the whole answer
+    (see ``enroll_mode``); ``note`` is the one sentence to show for the two modes
+    where the page is not the one finishing the job.
     """
 
     return [
         {
             "adapter": host.adapter,
             "label": host.label,
-            "supported": host.commands is not None,
-            "note": host.note,
+            "mode": enroll_mode(host),
+            "note": _enroll_note(host, enroll_mode(host)),
         }
         for host in host_registration.HOSTS.values()
     ]

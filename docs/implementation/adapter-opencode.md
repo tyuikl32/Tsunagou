@@ -10,6 +10,8 @@ OpenCode 适配器翻译官方 Sessions、plugin 事件和 MCP 工具入口到 b
 
 安装时只在用户选定 profile 写入非秘密 bridge 命令和适配器版本。token 由 bridge 私有存储注入，不出现在 prompt、tool args、静态 MCP 配置或环境变量。**2026-10-02 起，`agent connect` 与控制台的接入流程自己注册**：`opencode mcp add` 把 bridge 写进项目的 `opencode.json`（`type: "local"`、`command`、`environment`），**一条条目对一个会话**（一条条目只带一份票 + 一个会话文件，第二个会话要全新接入就得有自己的条目）。
 
+从控制台接入时，会话名由**控制台先发**：票绑 `ses_<profile>`，页面的等待提示就是"用这个名字开会话"。这不是额外机制，而是把"先签票、后连接"用在需要它的地方——bridge 只认宿主每次调用报上来的 `_meta` 会话 id，控制台编一个别的 id 写进票，票会被当成"别人的"而丢掉（详见[控制台接入形态](../decisions/2026-10-02-console-enroll-modes.md)）。名字记在 bridge 目录的 `host-identity.json` 里，重试沿用同一个，不会一次换一个会话。
+
 注册路径上实测出来的四个约束（OpenCode v2.0.21，都写进了 `platform/host_registration.py`）：
 
 - `add` 写的是**当前目录**的 `opencode.json`（不是“最近的 git 仓库”），所以命令必须在**项目根目录**下执行；

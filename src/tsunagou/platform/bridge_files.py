@@ -81,12 +81,15 @@ def write_ticket_file(
 
 def profile_identity(
     output_dir: Path, adapter: str, profile: str, *, environ: dict[str, str] | None = None,
+    preferred_id: str | None = None,
 ) -> tuple[str, str]:
     """Return a stable local fallback identity when the host hides its ID.
 
     The native host ID wins when the adapter exposes it. Otherwise the profile file
     gives one conversation a stable binding while keeping separately named subagent
-    profiles isolated.
+    profiles isolated. ``preferred_id`` is for hosts whose conversation name the
+    caller may *choose* (OpenCode): it is used only when nothing is remembered yet,
+    so a retry keeps the name the first attempt handed out.
     """
 
     environment = os.environ if environ is None else environ
@@ -104,7 +107,7 @@ def profile_identity(
     else:
         conversation_id = ""
     if not isinstance(conversation_id, str) or not conversation_id:
-        conversation_id = f"tsunagou:{adapter}:{profile}:{uuid.uuid4()}"
+        conversation_id = preferred_id or f"tsunagou:{adapter}:{profile}:{uuid.uuid4()}"
     installation_id = environment.get("TSUNAGOU_INSTALLATION_ID") or f"{adapter}:{profile}"
     identity_path.write_text(json.dumps({
         "adapter": adapter, "profile": profile,
