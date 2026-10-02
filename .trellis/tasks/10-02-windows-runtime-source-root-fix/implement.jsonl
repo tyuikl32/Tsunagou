@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend runtime and public entrypoint conventions for source-root discovery."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Focused test and validation expectations for the repair."}

@@ -33,7 +33,11 @@ def is_source_root(path: Path) -> bool:
 
 def running_source_root() -> Path | None:
     # Editable installation and the installer's non-editable .venv fallback.
-    for candidate in (Path(__file__).resolve().parents[3], Path(sys.executable).absolute().parents[2]):
+    candidates = [Path(__file__).resolve().parents[3]]
+    executable_parents = Path(sys.executable).absolute().parents
+    if len(executable_parents) > 2:
+        candidates.append(executable_parents[2])
+    for candidate in candidates:
         if is_source_root(candidate):
             return candidate
     return None

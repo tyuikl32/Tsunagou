@@ -1,0 +1,30 @@
+{
+  "id": "windows-runtime-source-root-fix",
+  "name": "windows-runtime-source-root-fix",
+  "title": "Windows Python 路径兼容修复与控制台创建项目回归",
+  "description": "记录并验证 Windows 浅层 Python 安装路径导致 Tsunagou 控制台创建项目返回 500 的修复；保留真实 HTTP 创建项目和 daemon 启动证据，明确尚未覆盖的检查与页面复验。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "Windows runtime source-root discovery and console project-create regression",
+  "package": null,
+  "priority": "P0",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-10-02",
+  "completedAt": null,
+  "branch": "elysia",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "record_type": "retrospective",
+    "implementation_status": "verified_locally",
+    "user_approved": "true"
+  }
+}

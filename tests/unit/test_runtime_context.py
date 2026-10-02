@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from tsunagou.platform import runtime_context
 from tsunagou.platform.runtime_context import resolve_runtime
 
 
@@ -27,6 +28,12 @@ def test_subdirectory_resolves_one_project_state_and_endpoint(tmp_path, monkeypa
     runtime = resolve_runtime(cwd=nested, environ={})
     assert runtime.project_root == root and runtime.state_dir == state
     assert runtime.project_id == "project-a" and runtime.daemon_url == "http://127.0.0.1:9999"
+
+
+def test_running_source_root_tolerates_shallow_system_python(monkeypatch):
+    monkeypatch.setattr(runtime_context.sys, "executable", r"D:\python\python.exe")
+
+    assert runtime_context.running_source_root() == Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize("conflict", ["root", "id", "state", "url"])
