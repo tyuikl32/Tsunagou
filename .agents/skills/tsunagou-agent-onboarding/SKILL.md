@@ -9,6 +9,29 @@ Use the user's selected project and role. An instruction to install/join authori
 
 Enrolling a **new** Agent is the user's decision, not ordinary setup: never invite, ticket or enroll another conversation on your own initiative — only when the user asked for it or allowed it. If the work needs another Agent, ask the user and let them choose the host and the role; do not grow the team yourself.
 
+## Which project and role? — ask the machine before asking the user
+
+A conversation that has just been asked to join knows only its own host-provided
+conversation id and its working directory. The coordination root is **not** derivable from
+either one: a project may coordinate several folders, and the console creates projects
+under its own root, so the working directory is often a business workspace rather than the
+project. The machine holds the answer — the person's console decision, at most one active
+request per local OS user.
+
+1. Run the installed CLI's `agent pending --adapter <this host's adapter>` (for example
+   `deepseek`). It answers with `project_root`, `project_id`, `role` and `nickname` — no
+   credentials — or `status: none` plus the next action.
+2. Join **that** project with **that** role. Do not pick a project out of a machine-wide
+   list, do not `project init` to compensate, and do not treat the current working
+   directory as the coordination root.
+3. The role on that record is the user's choice and outranks anything you ask for: a
+   connect that requests the other role is refused (`enrollment_role_conflict`) before any
+   bridge material is written. Pass the record's role when the host tool takes one; never
+   ask to be main on your own initiative.
+4. `status: none` means nobody is waiting for this host: report it and ask the user to
+   prepare the Agent in the console for the intended project. Enrolling is the user's call,
+   so never invent a project just to have something to join.
+
 ## Console Codex join: the default for “请接入 Tsunagou”
 
 When the user asks the current Codex Desktop conversation to join Tsunagou, or says the console has already prepared an Agent, use `tsunagou agent join` with no project or role arguments. Do this before any project initialization, cwd-based project selection, or default worker preparation. This applies to the one active console request for the same local OS user, including when the current conversation's working directory is outside the selected project.
@@ -48,6 +71,8 @@ If tools are missing after first configuration, use a documented host reload ope
 ## DeepSeek Harness Desktop
 
 Use the ordinary Desktop conversation opened in the selected project. When `tsunagou_connect` is available, call it directly. Otherwise run the installed CLI's `agent prepare --adapter deepseek` to register the existing provider in the actual Desktop profile; this step does not enroll an Agent or start the daemon. Let native profile reload load the tool. If necessary, fully quit/reopen Desktop once and return to the same conversation; investigate a persistent failure instead of requesting repeated restarts or an external terminal command.
+
+If that conversation's working directory is not the coordination root (common: the console creates projects under its own root, and a project may coordinate a business workspace), the project still resolves: `tsunagou_connect` invokes the installed CLI, which falls back to the pending console request for the `deepseek` adapter when the working directory names no project. Check it with `agent pending --adapter deepseek` if the join result looks unexpected, and ask the user to prepare that project's Agent in the console when it answers `status: none`.
 
 Call `tsunagou_connect` without a role to preserve an existing role or join as worker. Pass main only when the user explicitly chose main. The tool reads the real conversation and working directory inside the host and invokes the fixed installed CLI. Never supply or copy session IDs, credentials, commands or another conversation's overlay. The shared profile contains no Agent credential; each tool call chooses its own private route using host metadata.
 

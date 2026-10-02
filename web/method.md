@@ -557,7 +557,8 @@ POST /console/enrollments/{enrollment_id}:cancel
 - **取消等待**：`notify.loading(text, {cancel: fn})` 使原有入口出现；点击仍用现有 `dialog.confirm` 二次确认。拒绝确认保留取消入口；确认后等待后端结果。未认领的 Codex 申请可取消，已认领/登记返回 409，页面显示原因并继续等，不报告“已取消”，也不注销共享 MCP 或已接入 Agent。准备请求未完成时点击取消，会等取到申请 ID 再发取消请求。其他宿主保留自己的撤票/注销流程。
 - **关闭遮罩与取消申请不同**：遮罩被其他操作关闭只停止本次页面轮询，不能据此声称申请已作废。未认领申请过期后需重新准备；认领后的接入不因准备期限到时自动换人。
 - **首次加载边界**：Codex 需预先安装接入 Skill；共享 MCP 第一次配置后若原聊天还没有工具，可能需要重开宿主。已经加载的共享 bridge 每次调用读当前路由，后续 Agent 不需要反复重建全部 MCP。
-- **其余宿主看 `mode`**：`mode=console` 才是"页面能办完"，可以发准备请求；`mode=in_host` 表示只能在这个宿主自己的聊天里接入（页面照实说那句 `note`，不发请求）；`mode=unsupported` 表示还没做（同样照实说、不发请求）。`registered` 表示已登记，页面**照抄后端 `next`** 作为等待提示（OpenCode 的 `next` 里带着要用的会话名），没有 `next` 才退回"打开/重载窗口"那句通用提示。`executable_missing|failed` 则按 `host_registration.note` 进入手动接入提示。`profile` 是显示/私有材料标签，不是聊天身份；重试保留它。票据仍只在服务端私有文件，页面永远拿不到 secret。
+- **其余宿主看 `mode`**：`mode=console` 才是"页面能办完"，可以发准备请求；`mode=in_host` 表示只能在这个宿主自己的聊天里接入（页面照实说那句 `note`，**不发准备请求**，但会开同一块等待遮罩盯着名单 —— 见下一条）；`mode=unsupported` 表示还没做（照实说、不发请求）。`registered` 表示已登记，页面**照抄后端 `next`** 作为等待提示（OpenCode 的 `next` 里带着要用的会话名），没有 `next` 才退回"打开/重载窗口"那句通用提示。`executable_missing|failed` 则按 `host_registration.note` 进入手动接入提示。`profile` 是显示/私有材料标签，不是聊天身份；重试保留它。票据仍只在服务端私有文件，页面永远拿不到 secret。
+- **宿主自己接入时的等待**（`in_host`，例如 DeepSeek Harness）：那一边的票是在宿主聊天里由 CLI **以用户身份**签的（身份来自宿主给的 `DSH_SESSION_ID`），所以页面**不签票**，但要先 `prepare` 一次 —— 那次准备**只写一条机器级待接入记录**（哪个项目、什么角色、给哪个宿主，不含凭据），因为聊天里说"请接入 Tsunagou"时它只有自己的会话 id 和工作目录，而工作目录常常不是协调仓库；没有这条记录，Agent 就只能问用户。**角色也在这条记录里，而且它就是最终角色**：CLI 没拿到 `--role` 时用记录里的，拿到冲突的角色直接拒绝（`enrollment_role_conflict`）；遮罩上那句话写明"本次以主/子 Agent 身份接入"。然后走 `connectInHostAgent()`：同一块遮罩、同一套 2 秒轮询，把中间层那句 `note`（"在目标聊天里让它接入 Tsunagou"）连同项目目录放在遮罩上，再问新出口 `GET /console/projects/{project}/enrollments:observe?adapter=<adapter>&baseline=<开等时的席位>&enrollment_id=<那条记录>`。**"到了"由中间层判**：名单里出现一个不在 `baseline` 里、能由接入材料（`.tsunagou/bridges/<adapter>-*` 或 onboarding 目录）证明属于这个 adapter、**而且角色与记录相符**的席位 —— 角色不符时中间层只说"连上了但角色不对"，**不报成功、不收记录**（真正该来的那个还能用它）。没有票，所以没有"过期"：收场只有到了 / 人不看了（确认框照旧，那一步会**撤掉那条记录**，因为聊天可能正靠它找项目）/ 盯满 15 分钟。
 
 ### 7.2 宿主表：哪个厂商能接入、跑什么命令（表在中间层）
 协议里的值一旦要显示给人看，页面就得有一份词表（§7.3）。宿主也一样：
@@ -568,8 +569,11 @@ POST /console/enrollments/{enrollment_id}:cancel
   点下一步会不会发准备请求，由表里的 `mode` 决定。
 - 加一个厂商 = 加一行（写它的可执行文件探测 + 注册命令，或注明它只能在宿主里接入），前端与接口都不用改。
 - 三态：`console`（页面能办完，发请求）、`in_host`（只能在这个宿主自己的聊天里接入，照实说 `note`）、
-  `unsupported`（还没做，照实说 `note`）。后两种都由 `hostEnrollBlocker()` 在"下一步"处挡住：
-  `in_host` 给指路提示，`unsupported` 报错；两种都**不发请求、不假装排队**。
+  `unsupported`（还没做，照实说 `note`）。`unsupported` 由 `hostEnrollBlocker()` 在"下一步"处挡住并报错；
+  `in_host` 也走 `hostEnrollBlocker()`（不挡），接着由 `connectInHostAgent()` 先 `prepare` 一次
+  （**只写机器级待接入记录**：哪个项目、什么角色，见 §7.1），再把 `note` 那句话摆在**同一块等待遮罩**上，
+  靠 `enrollments:observe` 等中间层确认它出现。三种宿主现在都写这条记录 —— 它才是"我该接哪个项目"的答案
+  （Agent 侧可读的命令是 `tsunagou agent pending --adapter <adapter>`）。
 
 ### 7.3 后端参数值的中文（词表在中间层）
 协议里的值是给机器比的短英文 token（`open` / `holder_released` / `superseded`）；
@@ -942,7 +946,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 | 向导的「上一步」与子 Agent 的「×」 | **暂不实现**（2026-09-28 你定）：按钮留着，点了只弹「撤回功能当前尚未实现」。理由：上一步想做的事 = 撤回上一步的效果，而分步后撤不在本轮范围内（子 Agent 那个 `×` 是 CSS 画的 `.itemC::before`，点它就是"删掉这个 Agent"）。低层导航 `ui.wizard.prev()` 仍在，只是页面按钮不再用它。 |
 | 「添加子 Agent」的两个入口 | 已区分：两个入口都走同一条真接入（见 §7.1），只是收尾不同 —— 向导第 3 步的小加号把结果记进向导第 3 步的列表；Agent 管理页的大加号成功后重拉名单/卡片/昵称。 |
 | 向导第 2 步的"你所选的 Agent" | 厂商由选择框决定（**默认 Codex**，见 §3.4 的“表单清空时回到哪一项”）；这个预览框显示的是**你在名称输入框里填的 Agent 名字**（图标才是厂商），名字为空就留空。**不再有 `GET /agents/detect` 探测请求**（后端没有"Agent 地址"这个概念）。<br>**整块（标签 + 预览框）的显隐**：名字与厂商**两样都给了才显示**，否则一块空板子不占位置（`actions.detectMainAgent()` 里顺带定，只动 `display`）。 |
-| 向导遇到接不了的宿主 | **Codex 与 OpenCode** 能从网页接入（表在中间层：`mode=console` 才是"页面能办完"）。**DeepSeek Harness 属 `in_host`**：它只能在它自己的桌面聊天里接入，页面把这句话（后端 `note`）照实说给人，不发准备请求。**Claude Code / ZCode 是 `unsupported`**：选了点"下一步"会**报错**并停在第 2 步（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。OpenCode 注册完要在那边**用页面给的会话名开会话**（`opencode --session <名字>`）并 reload 一次，配置才生效 —— 等待提示就是后端 `next` 那句话 |
+| 向导遇到接不了的宿主 | **Codex 与 OpenCode** 能从网页接入（表在中间层：`mode=console` 才是"页面能办完"）。**DeepSeek Harness 属 `in_host`**：它只能在它自己的桌面聊天里接入 —— 页面先 `prepare` 一次写下"哪个项目、什么角色"（不签票），再把那句话（后端 `note`）摆在**等待遮罩**上，等名单里出现它（判断在中间层：`enrollments:observe`；没有票，所以没有"过期"，人点「停止等待」会撤掉那条记录）。**Claude Code / ZCode 是 `unsupported`**：选了点"下一步"会**报错**并停在第 2 步（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。OpenCode 注册完要在那边**用页面给的会话名开会话**（`opencode --session <名字>`）并 reload 一次，配置才生效 —— 等待提示就是后端 `next` 那句话 |
 | 删除协作 | 左栏卡片右上角的 `.edit`（hover 才露出来）→ `dialog.confirm` → `POST /console/projects/{id}:forget`。中间的 daemon / 宿主登记 / 票 / 索引条目 / 目录一起清；登记进来的外部项目只注销登记、保留目录 |
 | 没有“返回初始工作区”的界面入口 | `Tsunagou.app.openHome()` / `dispatch('ui.workspace.home')` 都已就绪，但**页面上没有入口——这是原设计就没做的按钮，属于你的设计范围**，需要时自己加一个（我这侧不自行添加元素）。 |
 | 错误提示的颜色 | 成功与失败用的是同一个品牌色（CSS `--brand-col`），目前只靠图标/文案区分。要有独立配色就得加 CSS。 |

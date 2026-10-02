@@ -43,10 +43,10 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from tsunagou.console.agents import AgentDirectory
+from tsunagou.console.agents import AgentDirectory, _host_label
 from tsunagou.console.config import ConsoleConfig
 from tsunagou.console.errors import ConsoleError
-from tsunagou.console.profile import update_profile
+from tsunagou.console.profile import load_profile, update_profile
 from tsunagou.console.projects import ProjectEntry, daemon_state, find
 from tsunagou.console.proxy import forward
 from tsunagou.platform import host_registration
@@ -217,6 +217,7 @@ class Enrollment:
     blind: bool = False
     cancelled: bool = False
     arrived_agent_id: str | None = None
+    store_id: str = ""
     extras: dict[str, Any] = field(default_factory=dict)
 
     def public(self) -> dict[str, Any]:
@@ -315,7 +316,7 @@ def prepare(
         )
 
     enrollment_mode = enroll_mode(host)
-    if enrollment_mode != CONSOLE_MODE:
+    if enrollment_mode == UNSUPPORTED_MODE:
         # 给一个兑不了的宿主签票比拒绝更糟：它看起来像有进展，最后只会等成"票过期了，重来吧"。
         raise ConsoleError(
             "host_enroll_not_available", detail={
@@ -323,6 +324,26 @@ def prepare(
                 "note": _enroll_note(host, enrollment_mode),
             },
         )
+
+    if enrollment_mode == IN_HOST_MODE:
+        # 这条路的票由那条聊天里的 CLI 以用户身份自己签（身份来自宿主给的会话 id），
+        # 控制台不签票、不写宿主配置。但"用户要让谁接入哪个项目"这个决定必须留在机器上：
+        # 聊天里说"请接入 Tsunagou"的那一刻，它只有自己的会话 id 和工作目录，而工作目录
+        # 常常不是协调仓库 —— 唯一能回答"接哪个项目、什么角色"的就是这条记录。
+        store_id = _record_selection(
+            entry=entry, adapter=host.adapter, role=role, nickname=nickname,
+        )
+        return {
+            "status": "prepared", "enrollment_id": store_id, "store_id": store_id,
+            "project_id": entry.project_id, "vendor": host.adapter, "label": host.label,
+            "role": role, "nickname": (nickname or "").strip(), "profile": "",
+            "mode": mode,
+            "host_registration": {
+                "adapter": host.adapter, "label": host.label, "status": "in_host",
+                "note": _enroll_note(host, enrollment_mode),
+            },
+            "next": _enroll_note(host, enrollment_mode),
+        }
 
     if host.adapter == "codex":
         try:
@@ -348,6 +369,13 @@ def prepare(
             },
             "next": "在要接入的 Codex 桌面聊天中说：请接入 Tsunagou。首次安装需先加载 Tsunagou Skill 和共享 MCP。",
         }
+
+    # 其余能由页面办完的宿主（OpenCode）：也把这次选择记进机器级记录 —— 它让"不在项目
+    # 目录里开会话"的那条聊天也查得到该接哪个项目，并且让"同一时刻只有一条"这件事在
+    # 控制台重启后依然成立（内存里的记录活不过重启）。
+    store_id = _record_selection(
+        entry=entry, adapter=host.adapter, role=role, nickname=nickname,
+    )
 
     # 名单要取**签票之前**的样子：到达判定就是"比这份多出来的那个人"。
     before = directory.roster(entry.project_id, entry.path, endpoint, force=True) if directory else None
@@ -388,7 +416,7 @@ def prepare(
         project_id=entry.project_id, adapter=host.adapter, label=host.label,
         profile=conversation, nickname=(nickname or "").strip(), role=role,
         known_agents=known_agents, expires_at=time.time() + ENROLLMENT_TTL_SECONDS,
-        ticket_file=ticket_path.as_posix(), blind=before is None,
+        ticket_file=ticket_path.as_posix(), blind=before is None, store_id=store_id,
     )
     _remember(record)
     # 名字是我们发的，所以"下一步做什么"也只能由这里说清 —— 页面照抄这句话。
@@ -442,12 +470,42 @@ def _intent_public(record: dict[str, Any]) -> dict[str, Any]:
     phase = "connecting" if record["status"] == "claimed" else record["status"]
     return {
         "enrollment_id": record["enrollment_id"], "project_id": record["project_id"],
-        "vendor": record["adapter"], "label": "Codex", "role": record["requested_role"],
+        "vendor": record["adapter"], "label": _host_label(str(record["adapter"])),
+        "role": record["requested_role"],
         "profile": record["enrollment_id"][:12], "nickname": record["nickname"],
         "agent_id": record.get("agent_id") if record["status"] == "arrived" else None,
         "expires_in_seconds": max(0, int(record["expires_at"] - time.time())),
         "phase": phase,
     }
+
+
+def _record_selection(*, entry: ProjectEntry, adapter: str, role: str, nickname: str) -> str:
+    """Write the person's decision into the machine-level slot, and return its id.
+
+    This is the record an in-chat entry point reads to answer "which coordination root,
+    which role" without asking anybody (see ``platform/enrollment_store.py``). It holds
+    no credential: the ticket either does not exist yet (Codex signs it at claim time)
+    or is signed by the chat itself (the hosts that enroll in their own chat).
+    """
+
+    store = EnrollmentStore()
+    try:
+        record = store.create(
+            project_id=entry.project_id, project_root=entry.path.resolve(),
+            role=role, nickname=nickname, adapter=adapter,
+        )
+    except RuntimeError as exc:
+        error = _intent_error(exc)
+        if str(exc) == "enrollment_already_pending":
+            active = store.active()
+            if active is not None:
+                error.detail["enrollment"] = {**_intent_public(active), "status": "waiting"}
+            error.detail["note"] = (
+                "已有其他项目或角色的接入申请，请先处理当前申请。"
+                "未认领的申请可取消；已认领的申请需在原聊天继续完成。"
+            )
+        raise error from exc
+    return str(record["enrollment_id"])
 
 
 def _intent_or_none(enrollment_id: str) -> dict[str, Any] | None:
@@ -615,6 +673,7 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
             "note": "已经连上，但还没就位。",
         }
     record.arrived_agent_id = settled[0]["agent_id"]
+    _close_selection(record, arrived_agent_id=record.arrived_agent_id)
     if record.nickname or record.label:
         # 昵称跟着 Agent 走：名字只有等这个人真的存在了才能落到它头上。
         # 没有昵称也要登记一行：厂商（label）是这台机器知道的事实，界面上"按厂商
@@ -625,6 +684,119 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
         except ValueError as exc:  # pragma: no cover - only a hand-edited profile gets here
             record.extras["nickname_error"] = str(exc)
     return {"status": "arrived", **record.public()}
+
+
+def observe(
+    *, settings: ConsoleConfig, directory: AgentDirectory, project_id: str, adapter: str,
+    baseline: set[str] | frozenset[str], enrollment_id: str = "",
+) -> dict[str, Any]:
+    """Has a host that enrolls inside its own chat shown up yet?
+
+    ``in_host`` has no ticket to ask about: the CLI running in that chat signs its own,
+    bound to the conversation identity the host handed it (``DSH_SESSION_ID``), so there
+    is nothing here to prepare, remember or void. The console can only *watch* — and it
+    watches for something it can prove: a roster seat that was not in ``baseline``
+    (what the page saw when it started waiting) whose vendor the profile learned from an
+    enrollment file (``.tsunagou/bridges/<adapter>-*``, or the onboarding folder).
+    That evidence is written by ``agent connect`` before the bridge ever enrolls, so it
+    is already there when the seat appears.
+
+    A new seat nobody can attribute is **not** an arrival: this answers ``waiting``
+    rather than hand this host somebody else's enrollment. Asking twice changes nothing,
+    so a page that lost its polling loop can ask again with the same baseline.
+
+    ``enrollment_id`` (the machine-level record the console wrote for this attempt) is
+    optional and only used to free that slot on arrival: the record says "somebody is
+    joining this project as this role", and once the Agent is here it is no longer true.
+    """
+
+    wanted = str(adapter or "").strip().lower()
+    if not wanted:
+        raise ConsoleError("adapter_required", status=400)
+    entry = find(settings, project_id)
+    endpoint = daemon_state(entry.path, probe=True)
+    if endpoint is None or not endpoint.get("running"):
+        return {"status": "waiting", "adapter": wanted,
+                "note": "这个项目的 daemon 还没起来：接入会在那条聊天里自己把它带起来，先按还没到处理。"}
+    lineup = directory.roster(project_id, entry.path, endpoint, require_fresh=True)
+    if lineup is None:
+        return {"status": "waiting", "adapter": wanted, "note": "暂时读不到这个项目的 Agent 名单。"}
+    label = _host_label(wanted)
+    known = load_profile(settings.profile_path)["agents"]
+    awaiting = _awaiting_role(enrollment_id)
+    for agent in lineup.agents:
+        agent_id = str(agent.get("agent_id") or "")
+        if not agent_id or agent_id in baseline:
+            continue
+        vendor = str((known.get(agent_id) or {}).get("vendor") or "").strip()
+        if not vendor or vendor != label:
+            continue
+        role = str(agent.get("role") or "")
+        if awaiting and role != awaiting:
+            # 连上了，但不是这次申请要的那个角色（页面选主 Agent、那边却以子 Agent 接入）。
+            # 如实说，不报成功，也不替它把记录收掉 —— 真正该来的那个还能用它。
+            return {
+                "status": "waiting", "adapter": wanted,
+                "pending": {"agent_id": agent_id, "role": role,
+                            "session_status": str(agent.get("session_status") or "")},
+                "note": (
+                    "有个席位连上了，但它的角色是"
+                    + ("子 Agent" if role == "worker" else ("主 Agent" if role == "main" else role))
+                    + "，不是这次申请的" + ("主 Agent" if awaiting == "main" else "子 Agent")
+                    + "。请在那边以正确身份重新接入。"
+                ),
+            }
+        if enrollment_id:
+            try:
+                EnrollmentStore().observe_arrival(enrollment_id, agent_id=agent_id)
+            except RuntimeError:
+                pass
+        return {
+            "status": "arrived", "adapter": wanted,
+            "agent": {"agent_id": agent_id, "role": role,
+                      "session_status": str(agent.get("session_status") or "")},
+        }
+    return {"status": "waiting", "adapter": wanted}
+
+
+def _awaiting_role(enrollment_id: str) -> str:
+    """Which role the pending record asks for ("" = unknown, e.g. no id passed)."""
+
+    if not enrollment_id:
+        return ""
+    try:
+        record = EnrollmentStore().get(enrollment_id)
+    except RuntimeError:
+        return ""
+    return str(record.get("requested_role") or "")
+
+
+def _close_selection(record: Enrollment, *, arrived_agent_id: str) -> None:
+    """Free the machine-level slot once the console has *seen* this Agent arrive.
+
+    The slot is what makes "which project" unambiguous, so it must not stay taken by an
+    enrollment that is already finished — the person may be adding the next Agent a
+    minute later. Failing here is not worth failing the answer: the record expires on
+    its own, and ``observe``/``status`` will try again on the next poll.
+    """
+
+    if not record.store_id:
+        return
+    try:
+        EnrollmentStore().observe_arrival(record.store_id, agent_id=arrived_agent_id)
+    except RuntimeError:
+        return
+
+
+def _drop_selection(record: Enrollment) -> None:
+    """The person stopped waiting: take the machine-level record back out too."""
+
+    if not record.store_id:
+        return
+    try:
+        EnrollmentStore().cancel(record.store_id)
+    except RuntimeError:
+        return
 
 
 def cancel(enrollment_id: str, *, settings: ConsoleConfig) -> dict[str, Any]:
@@ -646,8 +818,11 @@ def cancel(enrollment_id: str, *, settings: ConsoleConfig) -> dict[str, Any]:
             cancelled = EnrollmentStore().cancel(enrollment_id)
         except RuntimeError as exc:
             raise _intent_error(exc) from exc
+        adapter = str(cancelled.get("adapter") or "codex")
         return {**_intent_public(cancelled), "status": "cancelled", "ticket_removed": False,
-                "host_registration": {"adapter": "codex", "status": "unchanged", "name": "tsunagou"}}
+                # 只有 Codex 那条路会把条目写进宿主配置；其余宿主是"没有票可作废"的形态。
+                "host_registration": {"adapter": adapter, "status": "unchanged",
+                                      "name": "tsunagou" if adapter == "codex" else adapter}}
     record = pending(enrollment_id)
     if record.arrived_agent_id:
         raise ConsoleError(

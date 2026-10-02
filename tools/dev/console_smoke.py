@@ -315,6 +315,9 @@ def smoke(base: str, project_id: str) -> bool:
         _probe(base, "/api/v1/projects/" + project_id + "/reviews", project_id=project_id),
         _probe(base, "/api/v1/projects/" + project_id + "/intents", project_id=project_id),
         _probe(base, "/api/v1/projects/" + project_id + "/conflicts", project_id=project_id),
+        # 宿主自己接入那条路（`in_host`）的观察出口：没有票，只回答"名单里出现它了吗"。
+        _probe(base, "/api/v1/console/projects/" + project_id + "/enrollments:observe?adapter=deepseek",
+               project_id=project_id),
     ]
     results.extend(_view_health(base, view, project_id) for view in VIEWS)
     # A project the console knows nothing about must be refused, not relayed.

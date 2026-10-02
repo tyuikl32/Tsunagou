@@ -105,6 +105,20 @@ tsunagou agent join
 
 `GET /api/v1/console/enrollments/current` 返回唯一当前申请的公共状态，无申请时为 `status=none`。页面刷新会自动恢复它的等待/取消入口并标明原项目和角色，不改变当前项目或推进旧向导。相同项目/角色重复准备复用原申请与昵称，其他选择返回含公共申请引用和说明的 409。升级本功能前已在运行的旧 bridge 需要重载一次才能支持原聊天回执。
 
+### 接入时"我该接哪个项目"（三种宿主共用）
+
+一句"请接入 Tsunagou"到达聊天时，它只有宿主给的会话标识和工作目录。协调根推不出来：项目可以协调多个文件夹，控制台也把项目建在自己的根下。答案在机器上 —— 控制台点接入时写下的那条待接入记录，每个 OS 用户同时只有一条：
+
+```powershell
+tsunagou agent pending --adapter deepseek
+```
+
+返回 `{status: pending, state, adapter, role, nickname, project_id, project_root, expires_in_seconds}`（不含凭据）；没有申请时返回 `{status: none, note}`，提示用户去控制台准备。`state` 是记录自己的状态：`claimed`/`enrolled` 表示已经有别的聊天认领或已经接入，不要试图接手。命令只读，不改状态。
+
+**角色由记录决定。** 只要该 adapter 有一条待接入记录，`agent connect` 就用记录里的 `requested_role`：显式传的 `--role` 与它冲突时直接失败（`enrollment_role_conflict`，在写任何桥材料之前就拒绝），不会静默照做。没有记录时才回到"`--role` 优先，否则保留已有角色 / 新登记为 worker"的手动接入规则。这样"页面上选主 Agent"就等于"那条聊天只能以主 Agent 接入"；而且 daemon 本身也不可能被接入方要求角色 —— `agent.enroll` 的 payload 没有角色字段，席位角色只来自票，票里是 main 时由 daemon 在就绪那一刻自行任命。
+
+连接那条路在**工作目录推不出项目**时才读它：`--project-root`、`TSUNAGOU_PROJECT_ROOT` 与工作目录里真正的项目永远优先（三者都没有、也没有记录时，`project_root` 就是当前目录，而它没有 `project_id`）。Codex 的 `agent join` 一直是这样——它先读记录再设置解析根；OpenCode 与 DeepSeek Harness 现在同样如此。
+
 ### 显式项目与角色的手动入口
 
 没有前端申请且用户已明确指定项目和角色时，Agent 在原 Codex 对话内执行：
@@ -114,6 +128,8 @@ tsunagou agent prepare --adapter codex --role worker
 ```
 
 用户指定主 Agent 时使用 --role main。不要在控制台 `agent join` 失败时自动退回此入口。prepare 自动核对真实宿主会话并保存私有 request，返回一条已填好实际 Python/project/request 路径的 PowerShell connect 命令。已有加入授权时 Agent 执行该命令；确需用户时原样交给用户复制。不要让用户填写 conversation_id、agent_id、pipe、token 或再运行 appoint。
+
+这条入口是"没有前端申请"时的路：若此刻恰好存在该 adapter 的待接入记录，手动 `--role` 与记录里的角色**冲突会被拒绝**（`enrollment_role_conflict`，在写任何桥材料之前）—— 请先处理那条申请，或改用记录里的角色。记录里的角色是用户在控制台的选择，不能被这条入口绕过去。
 
 connect 自动兑换 ticket、登记原对话的 host binding，配置服务名 tsunagou 的共享 MCP，返回 enrolled、project_id、agent_id、role、session、host_binding、source_root、version 和 connected_at。profile 是显示标签，不决定身份；不同对话/subagent 拥有不同 Agent，同会话重复接入不增身份。注册共享 MCP 后，connect 还会移除同一项目、同一 bridge 程序且仍固定指向旧 session 的早期 Tsunagou MCP 条目；不会删除其他项目、其他程序或正在运行的 Desktop bridge。
 

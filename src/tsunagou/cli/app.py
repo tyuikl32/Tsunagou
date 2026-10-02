@@ -38,6 +38,63 @@ def _runtime_context() -> RuntimeContext:
     return resolve_runtime(_selected_project_root.get())
 
 
+def _pending_record(adapter: str) -> dict[str, Any] | None:
+    """The one pending handoff the console wrote for this host, if there is one."""
+
+    if not adapter:
+        return None
+    try:
+        from tsunagou.platform.enrollment_store import EnrollmentStore
+
+        return EnrollmentStore().active_for(adapter)
+    except RuntimeError:
+        return None
+
+
+def _role_for_connect(adapter: str, explicit: str | None) -> str | None:
+    """Which role does this join take? The record decides while it is pending.
+
+    The console wrote down what the person chose (main or worker) together with the
+    project. That decision is the answer to "what am I joining as", so it outranks a
+    role the chat happens to ask for: a request for the other role is refused
+    (``enrollment_role_conflict``) instead of quietly obeyed. Without a pending record
+    this is the explicit manual path: ``--role`` wins, and ``None`` means "keep whatever
+    this conversation already is, else the host default".
+
+    The daemon cannot be talked into a role by the enrolling side at all — ``agent.enroll``
+    carries no role field, and the seat takes the role written in the ticket.
+    """
+
+    pending = _pending_record(adapter)
+    wanted = str((pending or {}).get("requested_role") or "").strip()
+    if wanted and explicit and explicit != wanted:
+        raise RuntimeError("enrollment_role_conflict")
+    return wanted or explicit or None
+
+
+def _runtime_for_connect(adapter: str) -> RuntimeContext:
+    """接入时项目从哪来：显式指定/环境 → 那条唯一待接入记录 → 聊天的工作目录。
+
+    宿主聊天里说"请接入 Tsunagou"的那一刻，它手上只有自己的会话 id 和工作目录；而工作
+    目录经常不是协调仓库 —— 一个项目可以协调好几个文件夹，控制台也把项目建在自己的根下。
+    机器上唯一说得清"接哪个项目、什么角色"的，就是用户在控制台点接入时留下的那条记录
+    （``platform/enrollment_store.py``）。只在 cwd 推不出项目时才用它：显式路径和环境变量
+    永远优先，工作目录里真有项目时也不必绕这一圈。
+    """
+
+    runtime = _runtime_context()
+    if runtime.project_id or not adapter:
+        return runtime
+    pending = _pending_record(adapter)
+    if pending is None:
+        return runtime
+    root = Path(str(pending["project_root"])).expanduser().resolve()
+    if not (root / ".tsunagou" / "project.json").is_file():
+        return runtime
+    _selected_project_root.set(root)
+    return _runtime_context()
+
+
 try:
     import typer
 except ImportError:  # pragma: no cover
@@ -1316,10 +1373,11 @@ if typer is not None:
             raise RuntimeError("bridge_context_invalid")
         return cast(dict[str, Any], value)
 
-    def _connection_operations() -> ConnectionOperations:
+    def _connection_operations(adapter: str = "") -> ConnectionOperations:
         from tsunagou.application.agent_connection import ConnectionOperations
         return ConnectionOperations(
-            runtime=_runtime_context, ensure_daemon=_ensure_project_daemon, control_token=_control_token,
+            runtime=lambda: _runtime_for_connect(adapter), ensure_daemon=_ensure_project_daemon,
+            control_token=_control_token,
             host_conversation_id=_host_conversation_id, profile_identity=_profile_identity,
             write_bridge=lambda adapter, mode, installation, destination, ticket: _write_bridge_config(
                 adapter=adapter, mode=mode, installation_id=installation, output_dir=destination, ticket_path=ticket,
@@ -1335,6 +1393,48 @@ if typer is not None:
             launch_command=lambda profile, config: _deepseek_launch_command(profile=profile, bridge_config_path=config),
             daemon_version=lambda: str(_daemon_request("GET", "/api/v1/health")["version"]),
         )
+
+    @agent_app.command("pending")
+    def agent_pending(
+        adapter: str | None = typer.Option(None, "--adapter"),
+    ) -> None:
+        """谁在等我接入？—— 只读地看一眼机器上那条唯一的待接入记录。
+
+        给"在宿主聊天里被要求接入 Tsunagou"的 Agent 用：它手上只有自己的会话 id 和工作
+        目录，而工作目录经常不是协调仓库（项目可以协调好几个文件夹）。机器上唯一说得清
+        "接哪个项目、什么角色"的就是这条记录 —— 它是用户在控制台点接入时写下的。
+
+        没有记录时如实说没有，不要让 Agent 去猜、也不要让它自己建项目：接入是用户的决定。
+        读这个命令不改任何状态；票和凭据都不在这里（控制台那条路没有票，另一条由聊天自己签）。
+        """
+
+        from tsunagou.platform.enrollment_store import EnrollmentStore
+
+        try:
+            store = EnrollmentStore()
+            record = store.active_for(adapter) if adapter else store.active()
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}))
+            raise typer.Exit(4) from exc
+        if record is None:
+            print(json.dumps({
+                "status": "none",
+                "note": "现在没有待接入的申请。请让用户在控制台为这个项目点一次接入"
+                        "（或在控制台登记这个项目），不要在这里自己创建项目。",
+            }, ensure_ascii=False, sort_keys=True))
+            return
+        print(json.dumps({
+            "status": "pending",
+            # 记录自己的状态：claimed/enrolled 表示已经有别的聊天认领或已经接入 —— 那是别人的，
+            # 不要试图接手（Codex 的 agent join 会以 enrollment_claimed_by_another_chat 拒绝）。
+            "state": record.get("status"),
+            "adapter": record.get("adapter"),
+            "role": record.get("requested_role"),
+            "nickname": record.get("nickname"),
+            "project_id": record.get("project_id"),
+            "project_root": record.get("project_root"),
+            "expires_in_seconds": max(0, int(float(record.get("expires_at") or 0) - time.time())),
+        }, ensure_ascii=False, sort_keys=True))
 
     @agent_app.command("connect")
     def agent_connect(
@@ -1354,8 +1454,11 @@ if typer is not None:
                 raise typer.BadParameter("mode must be attach/launch; role must be worker/main")
             if not re.fullmatch(r"[A-Za-z0-9_-]+", adapter) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
                 raise typer.BadParameter("adapter/profile must contain only letters, digits, '_' or '-'")
+            # 角色先定下来：有记录就以记录为准（用户的决定），与显式 --role 冲突直接拒绝。
+            # 放在 connect_agent 之前，失败时不留下任何桥材料。
+            effective_role = _role_for_connect(adapter, role)
             connected = connect_agent(
-                _connection_operations(), adapter=adapter, role=role, profile=profile, mode=mode,
+                _connection_operations(adapter), adapter=adapter, role=effective_role, profile=profile, mode=mode,
                 output_dir=output_dir, request_file=request_file, register_host=register_host,
             )
             print(json.dumps(connected, sort_keys=True))

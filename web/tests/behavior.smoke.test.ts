@@ -747,6 +747,7 @@ describe("控制台接入等待与取消", () => {
   let enrollmentPage: Document;
   let prepareBody: Record<string, unknown>;
   let statusBody: Record<string, unknown>;
+  let observeBody: Record<string, unknown>;
   let cancelBody: Record<string, unknown>;
   let cancelStatus: number;
   let prepareStatus: number;
@@ -771,6 +772,7 @@ describe("控制台接入等待与取消", () => {
       let status = 200;
       if (url.includes("agents:prepare")) { await prepareGate; body = prepareBody; status = prepareStatus; }
       else if (url.includes(":cancel")) { await cancelGate; body = cancelBody; status = cancelStatus; }
+      else if (url.includes("enrollments:observe")) body = observeBody;
       else if (url.endsWith("/enrollments/current")) body = current;
       else if (url.includes("/enrollments/")) body = statusBody;
       else if (url.includes("/projects?agents=1")) body = { items: [
@@ -798,6 +800,7 @@ describe("控制台接入等待与取消", () => {
       host_registration: { status: "deferred" },
     };
     statusBody = { status: "waiting", phase: "pending", enrollment_id: "e-1" };
+    observeBody = { status: "waiting", adapter: "deepseek" };
     cancelBody = { status: "cancelled", note: "已取消这次待接入申请" };
     cancelStatus = 200;
     prepareStatus = 200;
@@ -882,15 +885,76 @@ describe("控制台接入等待与取消", () => {
     await pending;
   });
 
-  it("办不完的厂商点了下一步只给一句话，绝不发准备请求", async () => {
+  /* 宿主自己在聊天里接入的那一种（DeepSeek Harness）：控制台不签票，但**必须把
+     "谁要接哪个项目、什么角色"记在机器上** —— 那条聊天里说"请接入 Tsunagou"时只有自己的
+     会话 id 和工作目录，工作目录常常不是协调仓库。然后开同一块遮罩等名单里出现它，
+     判断在中间层（它拿接入材料当证据），页面不数人头。*/
+  it("宿主自己接入的厂商：先记下接哪个项目，再开等待遮罩等它出现在名单里", async () => {
     enrollmentApi.state.set("hosts", [
       { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在 DeepSeek Harness 自己的桌面聊天里接入。" },
       { adapter: "claudecode", label: "Claude Code", mode: "unsupported", note: "Claude Code 的 MCP 注册还没实现。" },
     ]);
     enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "DeepSeek Harness", { silent: true });
-    await enrollmentApi.ui.wizard.next();
+    const pending = enrollmentApi.ui.wizard.next();
     await vi.advanceTimersByTimeAsync(0);
-    expect(tip()).toContain("自己的桌面聊天里接入");
+    /* 先写记录：那条聊天靠它才查得到项目与角色（命令只能是 prepare 这条写门） */
+    const prepared = calls.filter((call) => call.url.includes("agents:prepare"));
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]!.body).toMatchObject({ vendor: "deepseek", role: "main" });
+    /* 遮罩上是中间层那句指路（页面不自己编步骤）+ 项目目录 + 这次的身份 + "正在等待" */
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(true);
+    expect(text()).toContain("自己的桌面聊天里接入");
+    expect(text()).toContain(projectPath);
+    expect(text()).toContain("正在等待它出现");
+    /* 身份必须写出来：那条聊天把它交给 tsunagou_connect 的 role */
+    expect(text()).toContain("以主 Agent 身份接入");
+    await vi.advanceTimersByTimeAsync(2000);
+    const asked = calls.filter((call) => call.url.includes("enrollments:observe"));
+    expect(asked).toHaveLength(1);
+    expect(decodeURIComponent(asked[0]!.url)).toContain("adapter=deepseek");
+    expect(decodeURIComponent(asked[0]!.url)).toContain("enrollment_id=e-1");
+    /* 中间层说"连上了但角色不对"：照它的话说，并且身份照旧带上，不报成功 */
+    observeBody = {
+      status: "waiting",
+      note: "有个席位连上了，但它的角色是子 Agent，不是这次申请的主 Agent。",
+    };
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(text()).toContain("角色是子 Agent");
+    expect(text()).toContain("以主 Agent 身份接入");
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    /* 中间层说到了：遮罩收起、主 Agent 落到第 3 步 */
+    observeBody = { status: "arrived", adapter: "deepseek", agent: { agent_id: "a-own" } };
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ agent_id: "a-own", status: "arrived" });
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+  });
+
+  it("宿主自己接入时点「取消」撤掉刚记下的那条申请，并停止等待", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在它自己的聊天里接入。" },
+    ]);
+    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "DeepSeek Harness", { silent: true });
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    enrollmentApi.dialog.confirm = async () => true;
+    expect(await enrollmentApi.notify.cancelWaiting()).toBe(true);
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    /* 没有票要作废，但记录得撤：那条聊天可能正靠它找项目 */
+    const cancelled = calls.filter((call) => call.url.includes(":cancel"));
+    expect(cancelled).toHaveLength(1);
+    expect(decodeURIComponent(cancelled[0]!.url)).toContain("e-1");
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+    expect(tip()).toContain("已撤掉");
+  });
+
+  it("还没做的厂商点了下一步只给一句话，绝不发准备请求", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在 DeepSeek Harness 自己的桌面聊天里接入。" },
+      { adapter: "claudecode", label: "Claude Code", mode: "unsupported", note: "Claude Code 的 MCP 注册还没实现。" },
+    ]);
     enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "Claude Code", { silent: true });
     await enrollmentApi.ui.wizard.next();
     await vi.advanceTimersByTimeAsync(0);

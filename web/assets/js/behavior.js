@@ -251,6 +251,10 @@
         enrollment: '/console/enrollments/{enrollment}',
         enrollmentCurrent: '/console/enrollments/current',
         enrollmentCancel: '/console/enrollments/{enrollment}:cancel',
+        /* 宿主在自己聊天里接入时（`in_host`）没有票可查，只能问"名单里出现它了吗"。
+           判断在中间层：它拿接入材料（bridges / onboarding 里的 host-identity.json）
+           当证据，页面只负责每 2 秒问一次。见 connectInHostAgent。*/
+        enrollmentObserve: '/projects/{project}/enrollments:observe',
         /* —— 一屏要读好几个出口的，走中间层的聚合视图 ——
            /console/views/* 只负责把几个出口的原样回答装进 sources，不解释；
            解释全在 §7 适配层（BACKEND_SHAPE）。view 取值：overview /
@@ -1828,6 +1832,7 @@
        这一段人可以放弃）。点一下先问一次，确认后由当前等待者自己收尾：
        作废票据 + 注销宿主登记。遮罩由收尾的一方关。*/
     let cancelWait = null;        /* 当前等待的“取消”动作（null = 这段等待不能取消）*/
+    let cancelWaitCopy = null;    /* 这段等待自己的确认框文案（没有就用下面那套等票的说法）*/
     let cancelAsking = false;     /* 「取消等待」的确认框正开着（防止重点）*/
 
     notify.loading = function (text, options) {
@@ -1838,6 +1843,7 @@
         const shown = toText(text) || '正在处理';
         if (label) label.textContent = shown;
         cancelWait = (typeof opts.cancel === 'function') ? opts.cancel : null;
+        cancelWaitCopy = (cancelWait && isPlainObject(opts.cancelDialog)) ? opts.cancelDialog : null;
         cancelAsking = false;
         /* 先摆好入口再开窗：遮罩出现时就是它最后的样子，不会闪一下。*/
         setCancelEntry(!!cancelWait);
@@ -1847,6 +1853,7 @@
 
     notify.loadingEnd = function () {
         cancelWait = null;
+        cancelWaitCopy = null;
         cancelAsking = false;
         setCancelEntry(false);
         ui.window.close(LOADING_ID);
@@ -1860,14 +1867,17 @@
         const task = cancelWait;
         if (!task || cancelAsking) return Promise.resolve(false);
         cancelAsking = true;
+        /* 这段等待自己有没有说法（等票那段是"作废票据"，等宿主自己接入那段只是"不看了"）。
+           没有就照旧用等票那套。*/
+        const copy = cancelWaitCopy || {};
         /* 确认框本来就是最上面一层（见 init() 把 #delPmt 移到 body 末尾），
            所以不用把遮罩收起来，遮罩就在背后接着转。*/
         return dialog.confirm({
-            title: '取消等待接入？',
-            text: '要停止等待这个 Agent 连接吗？',
-            description: '系统会核对这次接入是否仍可取消；已经开始接入时会说明原因，' +
-                '不会移除已接入的 Agent。',
-            okText: '取消接入'
+            title: toText(copy.title) || '取消等待接入？',
+            text: toText(copy.text) || '要停止等待这个 Agent 连接吗？',
+            description: toText(copy.description) || ('系统会核对这次接入是否仍可取消；已经开始接入时会说明原因，' +
+                '不会移除已接入的 Agent。'),
+            okText: toText(copy.okText) || '取消接入'
         }).then(function (ok) {
             cancelAsking = false;
             /* 确认框开着的时候这次等待可能已经结束了（例如那边正好连上了）*/
@@ -5712,18 +5722,20 @@
         })[0] || null;
     }
 
-    /* 这个厂商点了"下一步"会怎样：页面能办完（console）就往下走；
-       "去宿主自己的聊天里接入"（in_host）是给人指路，照说；还没做的（unsupported）才算报错。
-       一句话：能接入的只有 console 这一种，其余一律不发准备请求、不假装排队。*/
+    /* 这个厂商点了"下一步"会怎样：
+         · console —— 页面能办完：签票、写配置，然后等那条会话来兑换；
+         · in_host —— 页面办不完，但**等得起**：开同一块等待遮罩，看名单里它什么时候
+           出现（中间层拿接入材料当证据，见 connectInHostAgent）—— 所以这里不挡；
+         · unsupported —— 连宿主动作都还没有，只能红字说明。
+       能签票的只有 console 一种：别的模式一律不发准备请求、不假装排队。*/
     function hostEnrollBlocker(host) {
         const mode = toText((host || {}).mode) || 'unsupported';
-        if (mode === 'console') return null;
+        if (mode === 'console' || mode === 'in_host') return null;
         const label = toText((host || {}).label) || toText((host || {}).adapter) || '这个宿主';
         return {
             mode: mode,
-            note: toText((host || {}).note) || (mode === 'in_host'
-                ? (label + ' 要在它自己的聊天里接入，页面不需要先准备')
-                : (label + ' 的 MCP 注册还没实现，暂时不能从网页接入'))
+            note: toText((host || {}).note)
+                || (label + ' 的 MCP 注册还没实现，暂时不能从网页接入')
         };
     }
 
@@ -5859,9 +5871,80 @@
         return '项目「' + (toText(project.name) || id || '原项目') + '」的' + role + '：';
     }
 
+    /* 宿主自己接入（`in_host`）时遮罩上那句话：中间层给的那句指路（"在目标聊天里让它
+       接入 Tsunagou"）+ 这次要接的身份 + 一句"我在这儿看着"。页面不自己编步骤 ——
+       去哪条聊天、说什么，都是宿主表里写好的那一句。有项目目录就带上：那条聊天得开在
+       这个项目里才最省事（工作目录不是项目时，由机器上那条待接入记录兜底，见
+       connectInHostAgent）。身份要写出来：那条聊天把它交给 `tsunagou_connect` 的 `role`，
+       而机器上那条记录会压过任何不一致的说法（冲突直接拒绝）。*/
+    function inHostHint(host, role) {
+        const label = toText((host || {}).label) || '这个宿主';
+        const note = toText((host || {}).note)
+            || ('请在 ' + label + ' 自己的项目聊天里让它接入 Tsunagou。');
+        const path = currentProjectPath();
+        const as = toText(role) === 'main' ? '以主 Agent 身份接入' : '以子 Agent 身份接入';
+        return (path ? ('请在「' + path + '」下：') : '') + note +
+            '（本次' + as + '）正在等待它出现';
+    }
+
+    /* 等一个"在自己聊天里接入"的宿主出现：没有票可问，所以每 2 秒问一次中间层
+       "名单里出现它了吗"。三种收场和等票那套一样（到了 / 人不看了 / 等太久），
+       只是没有"票过期"——因为这里根本没有票。*/
+    const HOST_ARRIVAL_TIMEOUT_MS = 15 * 60 * 1000;
+
+    function waitForHostArrival(host, baseline, onWaiting, enrollmentId) {
+        const adapter = toText((host || {}).adapter);
+        const startedAt = Date.now();
+        return new Promise(function (resolve) {
+            let stopped = false;
+            let timer = null;
+            const stop = function (outcome) {
+                if (stopped) return;
+                stopped = true;
+                if (timer) clearTimeout(timer);
+                resolve(outcome);
+            };
+            const tick = function () {
+                if (stopped) return;
+                /* 遮罩是"正在等"的可见信号：人把它关了就是不等了（确认框开着的那一下不算）。*/
+                if (!ui.window.isOpen('loadW') && !notify.cancelPending()) return stop({ status: 'dismissed' });
+                if (Date.now() - startedAt > HOST_ARRIVAL_TIMEOUT_MS) return stop({ status: 'timeout' });
+                api.get('enrollmentObserve', {
+                    adapter: adapter, baseline: baseline.join(','), enrollment_id: toText(enrollmentId)
+                }, { silent: true })
+                    .then(function (answer) {
+                        if (toText(answer && answer.status) === 'arrived') {
+                            return stop({ status: 'arrived', agent: answer.agent });
+                        }
+                        /* "还没到"里也可能带一句有用的（daemon 没起、名单读不到）：换到遮罩上。*/
+                        if (typeof onWaiting === 'function') onWaiting(answer || {});
+                        timer = setTimeout(tick, ENROLLMENT_POLL_MS);
+                    }, function () {
+                        /* 一次问不到不算失败：接着等下一次。*/
+                        timer = setTimeout(tick, ENROLLMENT_POLL_MS);
+                    });
+            };
+            timer = setTimeout(tick, ENROLLMENT_POLL_MS);
+        });
+    }
+
+    /* 撤销一次接入申请（路径里的 {enrollment} 换成编号）。等票那条路作废票据，
+       宿主自己接入那条路撤掉机器级记录 —— 但都是同一扇门、同一个编号。*/
+    function cancelEnrollment(enrollmentId) {
+        const template = pathTemplate('enrollmentCancel');
+        const id = toText(enrollmentId);
+        const path = (template && id) ? template.split('{enrollment}').join(encodeURIComponent(id)) : '';
+        if (!path) return Promise.resolve({});
+        return api.post(path, {}, { silent: true });
+    }
+
     function connectAgent(options) {
         const opts = options || {};
         const host = opts.host || {};
+        /* 宿主自己接入的那条路（in_host，例如 DeepSeek Harness）：中间层不签票、
+           不写配置，页面也不发准备请求 —— 只开同一块等待遮罩，等中间层从接入材料 +
+           名单里确认"它到了"。能不能算到了由中间层判，页面不拿"名单多了一个人"当成功。*/
+        if (toText(host.mode) === 'in_host') return connectInHostAgent(opts);
         if (enrollmentFlowActive) {
             notify.info('已有接入正在等待，请先处理当前接入申请');
             return Promise.resolve({ status: 'failed' });
@@ -5995,6 +6078,110 @@
         });
     }
 
+    /* 宿主在自己聊天里接入（DeepSeek Harness 这一种）：控制台不签票、不写宿主配置，
+       但**要记下"谁要接哪个项目、什么角色"**—— 那条聊天里说"请接入 Tsunagou"时只有自己的
+       会话 id 和工作目录，而工作目录常常不是协调仓库，唯一说得清的就是这条机器级记录
+       （`agent pending` 读它）。所以这里先 prepare（只写记录），再开同一块等待遮罩等名单里
+       出现它。判断"到了"在中间层，页面不数人头。*/
+    function connectInHostAgent(opts) {
+        const host = (opts || {}).host || {};
+        if (enrollmentFlowActive) {
+            notify.info('已有接入正在等待，请先处理当前接入申请');
+            return Promise.resolve({ status: 'failed' });
+        }
+        enrollmentFlowActive = true;
+        const nickname = toText((opts || {}).nickname).trim();
+        const vendor = toText(host.adapter || (opts || {}).vendor);
+        /* 角色写进记录（中间层），页面上也说出来：那条聊天把它交给 tsunagou_connect 的
+           `role`；就算它不说，CLI 也会以记录里的角色签票（不一致的说法会被直接拒绝）。*/
+        const role = toText((opts || {}).role) || 'worker';
+        /* 开等之前名单里已经有谁 —— 中间层只回答"有没有出现这份名单之外的席位"，
+           这一串就是我们告诉它"我来的时候看到了谁"。*/
+        const baseline = toArray(state.get('agents', [])).map(function (agent) {
+            return toText(agent.id);
+        }).filter(Boolean);
+        let prepared = null;
+        let askedToStop = false;
+        let cancelInFlight = false;
+        const cancelDialog = {
+            title: '停止等待它出现？',
+            text: '要停止等待这个 Agent 接入吗？',
+            description: '这一步会撤掉刚记下的那条接入申请（它只写着"哪个项目、什么角色"，没有票）。' +
+                '宿主里那次接入如果已经在进行，会照常完成，之后它仍会出现在 Agent 名单里。',
+            okText: '停止等待'
+        };
+        const cancel = function () {
+            /* 没有票要作废，但有一条机器级记录要撤：那条聊天可能正靠它找项目。*/
+            askedToStop = true;
+            if (cancelInFlight) return;
+            const id = toText((prepared || {}).enrollment_id);
+            if (!id) {
+                notify.loadingEnd();
+                notify.info('已停止等待它出现');
+                return;
+            }
+            cancelInFlight = true;
+            notify.loading('正在撤销这次接入申请 …');
+            cancelEnrollment(id).then(function (answer) {
+                cancelInFlight = false;
+                notify.loadingEnd();
+                notify.info(toText((answer || {}).note) || '已停止等待：这次接入申请已撤掉，可以重新接入');
+            }, function (error) {
+                cancelInFlight = false;
+                notify.loadingEnd();
+                notify.info('已停止等待它出现（这次申请没能撤掉：' +
+                    ((error && error.message) || '原因未知') + '）');
+            });
+        };
+        notify.loading('正在准备接入 …', { cancel: cancel });
+        return api.post('agentPrepare', {
+            vendor: vendor, nickname: nickname, role: role,
+            profile: null, start_daemon: false
+        }, { silent: true }).then(function (result) {
+            prepared = result || {};
+            if (askedToStop) {
+                /* 人在准备完成前就点了停止：现在有编号了，把记录撤掉再收场。*/
+                cancel();
+                return { status: 'stopped' };
+            }
+            notify.loading(inHostHint(host, role), { cancel: cancel, cancelDialog: cancelDialog });
+            const rolePhrase = '（本次' + (toText(role) === 'main' ? '以主 Agent 身份接入' : '以子 Agent 身份接入') + '）';
+            return waitForHostArrival(
+                host, baseline,
+                function (answer) {
+                    /* 中间层的说法更具体（还没到 / 到了但角色不对）：换成它那句，身份照旧带上。*/
+                    const note = toText((answer || {}).note);
+                    if (note && !askedToStop) notify.loading(note + rolePhrase, { cancel: cancel });
+                },
+                toText(prepared.enrollment_id)
+            );
+        }, function (error) {
+            enrollmentFlowActive = false;
+            notify.loadingEnd();
+            const detail = error && error.raw && error.raw.detail;
+            if (isPlainObject(detail) && detail.code === 'enrollment_already_pending') {
+                notify.info(enrollmentSelectionNote(detail.enrollment) +
+                    (toText(detail.note) || '已有待接入申请，请先处理当前申请'));
+            } else {
+                notify.error((error && error.message) || '准备接入失败');
+            }
+            return { status: 'failed' };
+        }).then(function (outcome) {
+            enrollmentFlowActive = false;
+            notify.loadingEnd();
+            const reached = askedToStop ? 'stopped' : toText(outcome.status);
+            if (reached === 'arrived') {
+                rememberAgentProfile(
+                    toText((outcome.agent || {}).agent_id), nickname,
+                    toText(host.label) || toText(host.adapter));
+            }
+            return {
+                status: reached, agent: outcome.agent, nickname: nickname, profile: '',
+                registration: {}, enrollment_id: toText((prepared || {}).enrollment_id)
+            };
+        });
+    }
+
     /* 刷新后恢复唯一申请的等待/取消，不重建申请、不恢复未知的旧向导步骤，
        也不因申请属于另一个项目而切换当前项目。*/
     function resumeConsoleEnrollment() {
@@ -6023,6 +6210,20 @@
     /* 等待/失败时给人一句能读懂的话（两个入口共用，免得文案两处跑偏）*/
     function connectTrouble(status, host) {
         const label = toText((host || {}).label) || '宿主';
+        /* 在宿主自己聊天里接入的那条路没有票：这里不能说"票过期/票据作废"。*/
+        if (toText((host || {}).mode) === 'in_host') {
+            if (status === 'timeout') {
+                return '还没看到它出现在名单里：确认那条聊天里已经说了「接入 Tsunagou」，' +
+                    '或者让它把那边的报错说出来';
+            }
+            if (status === 'cancelled' || status === 'stopped') {
+                return '已停止等待：这次接入申请已撤掉，可以重新接入';
+            }
+            if (status === 'dismissed') {
+                return '已停止等待显示；那条申请还在，它接上时仍会作为新席位出现在名单里';
+            }
+            return '';
+        }
         if (toText((host || {}).adapter).toLowerCase() === 'codex') {
             if (status === 'expired') return '待接入申请已过期，请在前端重新准备接入';
             if (status === 'cancelled') return '已取消这次待接入申请，可以重新接入';

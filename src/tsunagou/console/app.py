@@ -284,6 +284,27 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
 
         return enrollment.status(enrollment_id, settings=settings, directory=directory)
 
+    @app.get("/api/v1/console/projects/{project_id}/enrollments:observe")
+    def observe_project_enrollment(
+        project_id: str, adapter: str = "", baseline: str = "", enrollment_id: str = "",
+    ) -> dict[str, Any]:
+        """Watch for a host that enrolls inside its own chat (``in_host``).
+
+        Nothing is signed, queued or remembered here — that is the whole point of this
+        mode: the host's own chat signs its ticket with the identity the host gave it.
+        The answer is derived from what the project can prove (a seat new to this caller
+        whose vendor came out of an enrollment file), so asking twice is harmless and a
+        page that lost its loop can ask again with the same ``baseline``.
+        ``enrollment_id`` is the machine-level record this attempt wrote; on arrival it
+        is closed, so the single slot frees up for the next Agent.
+        """
+
+        return enrollment.observe(
+            settings=settings, directory=directory, project_id=project_id, adapter=adapter,
+            baseline={item.strip() for item in baseline.split(",") if item.strip()},
+            enrollment_id=enrollment_id.strip(),
+        )
+
     @app.post("/api/v1/console/enrollments/{enrollment_id}:cancel")
     def cancel_enrollment(enrollment_id: str) -> dict[str, Any]:
         """Stop an enrollment the person decided not to finish (see console/enrollment.py).

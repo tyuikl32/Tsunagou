@@ -1,8 +1,17 @@
-"""Private, durable handoff from the local console to one real Codex chat.
+"""Private, durable handoff from the local console to a host conversation.
 
 This store carries selection and lifecycle only. Tickets, sessions and grants stay
 with the existing onboarding flow. The mutex covers local compare/write work;
 callers must never keep it across host or daemon requests.
+
+Why it is not Codex-only: a person asking an Agent to join says one sentence inside the
+host, and at that moment the chat knows only its own conversation id and working
+directory. The coordination root is *not* derivable from either one — a project may
+coordinate several folders, and the console creates projects under its own root — so the
+one thing that can answer "which project, which role" is the record the console wrote
+when the person clicked. Every host with an in-chat entry point reads this store, which
+is why ``active`` is one slot for the whole machine: at most one Agent is being enrolled
+at a time, and that is exactly what makes the answer unambiguous.
 """
 
 from __future__ import annotations
@@ -27,7 +36,7 @@ _TERMINAL = {"cancelled", "expired", "forgotten"}
 
 
 class EnrollmentStore:
-    """One uncompleted Codex handoff per OS user; retain completed records by id."""
+    """One uncompleted Agent handoff per OS user; retain completed records by id."""
 
     def __init__(self, directory: Path | None = None, *, clock: Callable[[], float] = time.time) -> None:
         configured = directory or os.environ.get("TSUNAGOU_ENROLLMENT_DIR")
@@ -104,7 +113,20 @@ class EnrollmentStore:
         nickname: str = "",
         adapter: str = "codex",
     ) -> dict[str, Any]:
-        if adapter != "codex" or role not in {"main", "worker"} or not project_id or not project_root.is_absolute():
+        """Record the person's decision: this Agent joins this project with this role.
+
+        Codex claims the record from inside its chat and the ticket is signed at claim
+        time; the other hosts keep their own handoff (a ticket written into the project,
+        or nothing at all because the chat signs its own) and only *read* this record to
+        learn where they are joining. Both shapes need the same three facts, and both
+        need the single slot: one enrollment at a time is what makes "which project"
+        unambiguous for the chat that is asking.
+        """
+
+        if (
+            not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", str(adapter or ""))
+            or role not in {"main", "worker"} or not project_id or not project_root.is_absolute()
+        ):
             raise RuntimeError("enrollment_selection_invalid")
         with self._transaction() as state:
             if state.get("active_id"):
@@ -226,6 +248,45 @@ class EnrollmentStore:
             if record["status"] != "enrolled" or not record.get("agent_id"):
                 raise RuntimeError("enrollment_not_enrolled")
             self._change(record, status="arrived")
+            if state.get("active_id") == enrollment_id:
+                state["active_id"] = None
+            return dict(record)
+
+    def active_for(self, adapter: str) -> dict[str, Any] | None:
+        """The pending slot, but only when it belongs to this host's adapter.
+
+        An in-chat entry point asks "is somebody waiting for *me*?": a Codex selection
+        must not be handed to a DeepSeek chat that happens to ask first, and vice versa.
+        Reading only — claiming is still the Codex path's job (or the console's).
+        """
+
+        wanted = str(adapter or "").strip().lower()
+        active = self.active()
+        if active is None or not wanted:
+            return None
+        return active if str(active.get("adapter") or "").lower() == wanted else None
+
+    def observe_arrival(self, enrollment_id: str, *, agent_id: str) -> dict[str, Any]:
+        """Close a record whose Agent was watched into the project by the console.
+
+        The hosts that enroll inside their own chat (or into a file the host reads)
+        never claim a record: there is no thread id to bind, and the console sees the
+        Agent appear in the roster instead. That observation is the same fact
+        ``mark_arrived`` records for Codex, so it closes the slot the same way.
+        """
+
+        if not agent_id:
+            raise RuntimeError("enrollment_agent_required")
+        with self._transaction() as state:
+            record = self._record(state, enrollment_id)
+            if record["status"] == "arrived":
+                return dict(record)
+            if record.get("thread_id"):
+                # A bound record has an owner: only that chat may finish it.
+                raise RuntimeError("enrollment_claimed_by_another_chat")
+            if record["status"] in _TERMINAL:
+                raise RuntimeError("enrollment_" + str(record["status"]))
+            self._change(record, status="arrived", agent_id=agent_id, error=None)
             if state.get("active_id") == enrollment_id:
                 state["active_id"] = None
             return dict(record)
