@@ -208,10 +208,17 @@ def build_handlers(
         baseline = payload.get("probe_payload")
         if baseline is not None and not isinstance(baseline, dict):
             raise ValueError("invalid_probe_payload")
+        # ``descriptor_ref`` 是"入席者对自己这台机器的描述"。今天只有跨机器导入的那条桥会填
+        # （远端自己报的机器名），本机接入的桥不填。它只是**显示用**：入席者说是谁，不代表
+        # 系统认得它 —— 权限、角色、范围一律仍由票和会话决定。
+        machine = payload.get("descriptor_ref")
+        if not isinstance(machine, str) or len(machine) > 64 or any(ch in machine for ch in "\r\n\t"):
+            machine = ""
         # context["principal_id"] is the one-time ticket secret carried by the T
         # bearer; redeem_ticket hashes it and enforces single-use/expiry/identity.
         receipt = authority.redeem_ticket(
-            context["principal_id"], installation_id, conversation_id, baseline=baseline
+            context["principal_id"], installation_id, conversation_id, baseline=baseline,
+            machine=machine.strip(),
         )
         return {
             "agent_id": receipt.agent_id,

@@ -92,6 +92,10 @@ class Agent:
     status: str = "active"
     role: str = "worker"
     requested_role: str = "worker"
+    # The name the enrolling machine gave itself, when it gave one (see
+    # ``descriptor_ref`` on ``agent.enroll``). Display only: it is *reported*, not
+    # proven, so nothing decides access by it — the console shows it as "远端 · <名字>".
+    machine: str = ""
 
 
 @dataclass(slots=True)
@@ -233,6 +237,7 @@ class AuthorityService:
         *,
         baseline: dict[str, Any] | None = None,
         nonce: str | None = None,
+        machine: str = "",
     ) -> EnrollmentReceipt:
         del nonce  # the ticket itself is single-use; nonce is an adapter correlation field
         with self._lock:
@@ -256,6 +261,7 @@ class AuthorityService:
                 new_id(), ticket.installation_digest, ticket.conversation_digest,
             )
             agent.requested_role = ticket.requested_role
+            agent.machine = machine
             session_id = new_id()
             token = secrets.token_urlsafe(32)
             reconnect_nonce = secrets.token_urlsafe(24)

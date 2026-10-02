@@ -141,6 +141,10 @@ def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
             # recomputes it — that is how a bridge folder can be matched to an Agent
             # that never went through the console.
             "conversation_digest": str(item.get("conversation_digest") or ""),
+            # 跨机器接入的 Agent 会自报一个机器名（`agent import --machine`，经由那张票
+            # 入席时带来）。有它就是远端 —— 本机接入的 Agent 从来没有这一项，页面因此
+            # 只给远端那一个画标记。
+            **({"machine": str(item["machine"])} if str(item.get("machine") or "") else {}),
         }
         for item in items
         if isinstance(item, dict) and item.get("agent_id")
@@ -368,6 +372,8 @@ def gather(entries: list[Any], directory: AgentDirectory) -> dict[str, Any]:
                 "project_id": entry.project_id,
                 "project_name": entry.name,
                 "task": working.get(agent["agent_id"], ""),
+                # 跨机器接入的 Agent 自报的那个机器名（本机接入没有这一项）。
+                **({"machine": agent["machine"]} if agent.get("machine") else {}),
             })
     return {
         "items": items,

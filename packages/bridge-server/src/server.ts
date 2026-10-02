@@ -314,6 +314,28 @@ function readProjectDigest(projectRoot: string): string | undefined {
   return hash(`project_root:${resolve(projectRoot)}\n${names}`);
 }
 
+/**
+ * The name this machine gave itself when an invitation was imported here.
+ *
+ * Written by ``tsunagou agent import --machine`` into the private identity file beside
+ * the ticket, and only then reported on enrolment (as ``descriptor_ref``) so the host's
+ * roster can say *which* remote a worker sits on. Absent for every local enrollment —
+ * that absence is exactly what "this Agent is not remote" means to the page.
+ */
+function readMachineName(stateDir: string): string | undefined {
+  if (!stateDir) return undefined;
+  const path = join(stateDir, "host-identity.json");
+  if (!existsSync(path)) return undefined;
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf-8")) as { machine?: unknown };
+    if (typeof raw.machine !== "string") return undefined;
+    const value = raw.machine.replace(/[\r\n\t]/g, " ").trim().slice(0, 64);
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** List the typed tools actually registered below, as admission evidence. */
 function toolEvidence(tools: readonly ToolSpec[]): string {
   return `tools:${tools.length}:${tools.map((tool) => tool.name).join(",")}`;
@@ -600,6 +622,7 @@ async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<stri
   const handoff = new CredentialHandoff({
     baseUrl, projectId: cfg.projectId, protocolVersion: PROTOCOL_VERSION, schemaBundleDigest: SCHEMA_BUNDLE_DIGEST,
     sessionFile, conversationBindingDigest, hostDigest,
+    machine: readMachineName(cfg.stateDir),
   });
   const recover = async (forceReconnect = false): Promise<PersistedSession> => {
     /* 续接证据的两个输入（票、会话文件）都在本地磁盘上，而它们**会在调用过程中变**：

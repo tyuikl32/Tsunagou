@@ -164,6 +164,13 @@ interface HandoffOptions {
   hostDigest?: string;
   fetch?: typeof fetch;
   projectId?: string;
+  /**
+   * The name this machine gave itself when it was imported from an invitation
+   * (``agent import --machine``, kept in the private ``host-identity.json``). Sent as
+   * ``descriptor_ref`` on enrolment so the host's roster can say *which* remote it is.
+   * It is a report, never a proof: nothing decides access by it.
+   */
+  machine?: string;
   /** File writer injection is only for failure-window tests. */
   writePrivate?: typeof writePrivateJson;
 }
@@ -328,6 +335,10 @@ export class CredentialHandoff {
         installation_id: ticket!.installation_id,
         conversation_evidence: { conversation_id: ticket!.conversation_id },
         probe_payload: input.baseline ?? {},
+        // Only on a first enrolment: the other two kinds have their own payload
+        // contract, and an extra key there is a typed-tool violation.
+        ...(kind === "agent.enroll" && this.options.machine
+          ? { descriptor_ref: this.options.machine } : {}),
         ...(kind === "session.rebind" ? { target_agent_id: session!.agent_id } : {}),
       };
       pending = {
