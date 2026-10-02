@@ -100,6 +100,8 @@ class ProjectDaemon:
             "state_dir": self.projects[project_id]["state_dir"], "runtime_id": self.runtime_id,
             "source_root": str(running_source_root()), "started_at": self.started_at,
             "host_wake": self.config.get("TSUNAGOU_HOST_WAKE") or "disabled",
+            # 写给远端看的地址（"别人该拨哪个号"）：监听地址可能是 0.0.0.0，那不是远方能用的值。
+            "advertised_url": self.config.get("TSUNAGOU_DAEMON_ADVERTISED_URL") or "",
             "daemon_registry": str(self.registry_path), "daemon_owner_root": self.owner["project_root"],
             "daemon_owner_state_dir": self.owner["state_dir"],
         }

@@ -164,10 +164,16 @@ def _daemon_failure(project_root: Path, launcher: subprocess.Popen[bytes]) -> st
 
 
 def _start_daemon(project_root: Path, env: dict[str, str]) -> str:
-    """Start the project's daemon (or reuse a running one) and return its url."""
+    """Start the project's daemon (or reuse a running one) and return its url.
+
+    A smoke daemon asks for **any** free port (``--port 0``): the fixed default (2810) is
+    for a real project a remote can dial, and a throwaway probe must not squat it — nor
+    collide with a daemon the person running this already has.
+    """
 
     launcher = subprocess.Popen(
-        [sys.executable, "-m", "tsunagou", "--json", "daemon", "start", "--coordination-root", str(project_root)],
+        [sys.executable, "-m", "tsunagou", "--json", "daemon", "start", "--port", "0",
+         "--coordination-root", str(project_root)],
         cwd=REPOSITORY_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         env={**os.environ, **env},
     )
@@ -297,6 +303,74 @@ def _view_health(base: str, view: str, project_id: str) -> bool:
     return not problems
 
 
+def _post_json(base: str, path: str, body: dict, *, timeout: float = 15.0) -> tuple[int, object]:
+    """One POST to the console; returns (status, decoded body) — 0 when it never answered."""
+
+    request = urllib.request.Request(
+        base + path, data=json.dumps(body).encode("utf-8"), method="POST",
+        headers={"content-type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8", "replace")
+    except (OSError, urllib.error.URLError, ValueError) as exc:
+        return 0, str(exc)
+
+
+def _network_invite_round_trip(base: str, project_id: str) -> bool:
+    """跨机器那条路：主机只签一张票、只给出一段内容，页面把它交给人转递。
+
+    这一段会**真的**写下一条机器级待接入记录（那是页面等待的依据），所以探完立刻取消 ——
+    否则会留在使用者真实的机器上，冒充一条"有人在等接入"。
+    """
+
+    import base64
+
+    status, answer = _post_json(
+        base, "/api/v1/console/projects/" + project_id + "/agents:prepare",
+        {"vendor": "opencode", "nickname": "冒烟远端", "role": "worker",
+         "start_daemon": False, "place": "network", "conversation_id": ""},
+    )
+    problems: list[str] = []
+    enrollment_id = ""
+    if status != 200 or not isinstance(answer, dict):
+        problems.append("prepare-" + str(status))
+    else:
+        enrollment_id = str(answer.get("enrollment_id") or "")
+        invite = answer.get("invite")
+        if not isinstance(invite, str) or not invite.startswith("tsunagou-invite-v1:"):
+            problems.append("no-invite")
+        else:
+            try:
+                padded = invite.split(":", 1)[1]
+                decoded = json.loads(base64.urlsafe_b64decode(padded + "=" * (-len(padded) % 4)))
+            except (ValueError, TypeError):
+                decoded = {}
+                problems.append("invite-undecodable")
+            if decoded:
+                if decoded.get("project_id") != project_id:
+                    problems.append("wrong-project")
+                if decoded.get("role") != "worker":
+                    problems.append("wrong-role")
+                if not str(decoded.get("secret") or ""):
+                    problems.append("no-ticket")
+                if "://" not in str(decoded.get("url") or ""):
+                    problems.append("no-address")
+        if not enrollment_id:
+            problems.append("no-enrollment-id")
+    if enrollment_id:
+        cancel_status, _ = _post_json(
+            base, "/api/v1/console/enrollments/" + enrollment_id + ":cancel", {}, timeout=10.0,
+        )
+        if cancel_status not in {200, 404, 409}:
+            problems.append("cancel-" + str(cancel_status))
+    print("  " + ("PASS" if not problems else "FAIL") + f"  {status:>3} network invite" +
+          (("  " + " ".join(problems)) if problems else ""))
+    return not problems
+
+
 def smoke(base: str, project_id: str) -> bool:
     print(f"probing {base}")
     results = [
@@ -318,6 +392,8 @@ def smoke(base: str, project_id: str) -> bool:
         # 宿主自己接入那条路（`in_host`）的观察出口：没有票，只回答"名单里出现它了吗"。
         _probe(base, "/api/v1/console/projects/" + project_id + "/enrollments:observe?adapter=deepseek",
                project_id=project_id),
+        # 跨机器那条路：主机签一张邀请（探完立刻取消，不在使用者机器上留记录）。
+        _network_invite_round_trip(base, project_id),
     ]
     results.extend(_view_health(base, view, project_id) for view in VIEWS)
     # A project the console knows nothing about must be refused, not relayed.

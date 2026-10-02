@@ -327,7 +327,11 @@
                     vendor: toText(body.vendor),
                     nickname: toText(body.nickname || body.name).trim(),
                     role: toText(body.role) || 'worker',
-                    start_daemon: body.start_daemon !== false
+                    start_daemon: body.start_daemon !== false,
+                    /* 跨机器那条路：place=network 请中间层签一张邀请；编号是"会话名由宿主
+                       自己生成"的那两个宿主报上来的号（OpenCode 不用）。*/
+                    place: toText(body.place) === 'network' ? 'network' : 'local',
+                    conversation_id: toText(body.conversation_id).trim()
                 };
             }
         },
@@ -1390,6 +1394,10 @@
 
     function findCsPanel(box) {
         if (!box) return null;
+        /* 有人直接递面板过来（`ui.choosebox.setValue('某个面板的 id', …)` 就是这种）：
+           那就别再去找"它的面板"了 —— 同一个容器里有第二个选择框时，找下去的答案会是
+           第一个面板，于是值写到了别的框上。*/
+        if (box.classList && box.classList.contains('chooseboxOpen')) return box;
         const targetId = box.dataset.target;
         if (targetId) {
             const panel = byId(targetId);
@@ -2917,24 +2925,34 @@
     function agentNetworkHtml(agent) {
         const info = agentNetworkOf(agent);
         if (!info.network) return '';
-        return '<p class="right">' + (info.online ? '网络在线' : '网络离线') +
+        /* 远端自己报的名字里没有，就还是原来那句「网络在线 / 网络离线」——
+           本机接入的 Agent 依旧什么都不画。*/
+        const where = info.machine ? ' · ' + info.machine : '';
+        return '<p class="right">' + (info.online ? '网络在线' : '网络离线') + where +
             '<i class="fa-solid fa-circle-nodes"></i></p>';
     }
 
-    /* 一个 Agent 的网络状态：{network, online}。
-       优先级：中间层推来的 > 数据里带的 > 两边都没有（= 本机接入，不画徽标）。*/
+    /* 一个 Agent 的网络状态：{network, online, machine}。
+       优先级：中间层推来的 > 数据里带的 > 两边都没有（= 本机接入，不画徽标）。
+       「自报的机器名」是远端的证据：本机接入那条路从来不写它（见 `agent import`）。*/
     function agentNetworkOf(agent) {
         const record = isPlainObject(agent) ? agent : {};
         /* 主 Agent 必须和 daemon 同机 —— 它永远不是网络接入（中间层推了也不画）*/
-        if (record.isMain === true) return { network: false, online: false };
+        if (record.isMain === true) return { network: false, online: false, machine: '' };
+        const machine = toText(record.machine);
         const id = toText(record.agent_id || record.id);
         const pushed = state.get('agentNetwork', {}) || {};
         const known = id ? pushed[id] : undefined;
         /* 推来的布尔值就是“在不在线”；有键 = 这个 Agent 是网络接入的 */
-        if (known === true || known === false) return { network: true, online: known };
-        if (isPlainObject(known)) return { network: known.network === true, online: known.network === true && known.online === true };
-        const network = record.network === true;
-        return { network: network, online: network && record.online === true };
+        if (known === true || known === false) return { network: true, online: known, machine: machine };
+        if (isPlainObject(known)) {
+            return {
+                network: known.network === true, machine: machine,
+                online: known.network === true && known.online === true
+            };
+        }
+        const network = record.network === true || Boolean(machine);
+        return { network: network, online: network && record.online === true, machine: machine };
     }
 
     /* 徽标重绘：中间层刚推来网络状态时调它（卡片与 Agent 列表两处都画这个标记）。*/
@@ -4478,11 +4496,17 @@
                 resetCsBox(subAgentPlaceBox());
                 syncSubAgentPlace();
             };
-            return connectAgent({
-                host: host, nickname: name, role: 'worker',
-                waiting: openWindowHint(host, '作为子 Agent '),
-                profile: data.profile || null
-            }).then(function (outcome) {
+            /* 「位置＝网络」走跨机器那条路：主机签一张邀请，人把它交给那台机器。
+               其余（本机）照旧：中间层准备、等那条会话来兑换。两条路返回同一个形状，
+               下面的收尾因此共用一份。*/
+            const connecting = (data.place === 'network')
+                ? connectNetworkAgent({ host: host, nickname: name, role: 'worker', number: toText(data.number).trim() })
+                : connectAgent({
+                    host: host, nickname: name, role: 'worker',
+                    waiting: openWindowHint(host, '作为子 Agent '),
+                    profile: data.profile || null
+                });
+            return connecting.then(function (outcome) {
                 const reached = toText(outcome && outcome.status);
                 if (reached !== 'arrived' && reached !== 'manual') {
                     const trouble = connectTrouble(reached, host);
@@ -5079,6 +5103,23 @@
             });
         },
 
+        /* 邀请窗口的两个出口：确认＝内容已转交，开始等；取消＝这次邀请作废（撤掉那条申请）。
+           窗口上的 × 与「取消」都走 cancelNetworkInvite，行为一致。*/
+        confirmNetworkInvite: function () {
+            const pending = networkInvite;
+            networkInvite = null;
+            ui.window.close('netInvite');
+            if (pending) pending.resolve(true);
+            return true;
+        },
+        cancelNetworkInvite: function () {
+            const pending = networkInvite;
+            networkInvite = null;
+            ui.window.close('netInvite');
+            if (pending) pending.resolve(false);
+            return true;
+        },
+
         /* 新建协作向导 */
         createProject: function () { ui.wizard.open(); return true; },
         /* 卡片右上角的删除块（.edit）走这里，也可以从宿主脚本调 */
@@ -5194,28 +5235,42 @@
     function subAgentVendorBox() { return qs('#addSubAgent .choosebox.TOG1'); }
     function subAgentPlaceBox() { return qs('#addSubAgent .choosebox.TOG0'); }
 
-    /* 位置选"网络"时才要那个网络地址输入框（跨机器接入用，先只做显示与取值入口）。
+    /* 需要"远端报号"的宿主：它们的会话名只有自己知道，主机签票前必须先拿到那个号。
+       OpenCode 的会话名由主机起（ses_<名字>），所以它不用这一格 —— 主机直接发邀请即可。*/
+    const NETWORK_NUMBER_VENDORS = ['Codex', 'DeepSeek Harness'];
+
+    function networkNeedsNumber(vendor) {
+        return NETWORK_NUMBER_VENDORS.indexOf(toText(vendor).trim()) >= 0;
+    }
+
+    /* 位置选"网络"**并且**厂商是"会话名自己说了算"的那两个时，才要那个号。
        显示/隐藏只动 display：显示清成空串交回 CSS，隐藏写 none —— 不往元素上写布局样式。
        比对的是选项文字：选择框的值本来就是选项文字（见 selectCsOption），没有 data-value。*/
     function syncSubAgentPlace() {
         const field = byId('addSubAgentAddr');
         if (!field) return;
         const network = toText(ui.choosebox.value(subAgentPlaceBox())).trim() === '网络';
-        field.style.display = network ? '' : 'none';
+        const vendor = ui.choosebox.value(subAgentVendorBox());
+        field.style.display = (network && networkNeedsNumber(vendor)) ? '' : 'none';
     }
 
     /* ---- 静态窗口里的按钮 ------------------------------------------------ */
 
     function bindStaticWindowButtons() {
-        /* 位置选择框一变，网络地址输入框跟着显/隐 */
+        /* 位置或厂商一变，那个"网络 Agent 编号"输入框跟着显/隐 */
         const place = subAgentPlaceBox();
         if (place) place.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
+        const vendor = subAgentVendorBox();
+        if (vendor) vendor.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
         delegateClick(['#addSubAgent .options .buttonbox2active'], function () {
-            /* 窗口里有一个名称输入框 + 厂商/位置两个选择框（选"网络"时多一个地址输入框）*/
+            /* 窗口里有一个名称输入框 + 厂商/位置两个选择框（网络+那两个厂商时多一个编号输入框）*/
             const input = qs('#addSubAgent input');
+            const number = qs('#addSubAgentAddr input', byId('addSubAgent'));
             actions.addSubAgent({
                 name: toText(input && input.value).trim(),
-                vendor: ui.choosebox.value(subAgentVendorBox())
+                vendor: ui.choosebox.value(subAgentVendorBox()),
+                place: toText(ui.choosebox.value(subAgentPlaceBox())).trim() === '网络' ? 'network' : 'local',
+                number: toText(number && number.value).trim()
             });
         });
         /* 向导第 3 步子 Agent 胶囊上的「×」是 CSS 画的（.itemC::before，hover 才滑出来）：
@@ -5929,13 +5984,38 @@
     }
 
     /* 撤销一次接入申请（路径里的 {enrollment} 换成编号）。等票那条路作废票据，
-       宿主自己接入那条路撤掉机器级记录 —— 但都是同一扇门、同一个编号。*/
+       宿主自己接入那条路撤掉机器级记录，跨机器这条路撤掉刚记下的那条申请 ——
+       都是同一扇门、同一个编号。*/
     function cancelEnrollment(enrollmentId) {
         const template = pathTemplate('enrollmentCancel');
         const id = toText(enrollmentId);
         const path = (template && id) ? template.split('{enrollment}').join(encodeURIComponent(id)) : '';
         if (!path) return Promise.resolve({});
         return api.post(path, {}, { silent: true });
+    }
+
+    /* 人不想等了：把这次申请撤掉，并收掉遮罩。撤不掉也照旧收场（人已经决定不等了），
+       但要说清"没撤掉"，不能让人以为服务器那边也干净了。*/
+    function withdrawEnrollment(enrollmentId, done) {
+        const id = toText(enrollmentId);
+        if (!id) {
+            notify.loadingEnd();
+            notify.info('已停止等待');
+            if (done) done();
+            return Promise.resolve({ status: 'dismissed' });
+        }
+        notify.loading('正在撤销这次接入申请 …');
+        return cancelEnrollment(id).then(function (answer) {
+            notify.loadingEnd();
+            notify.info(toText((answer || {}).note) || '已停止等待：这次接入申请已撤掉，可以重新接入');
+            if (done) done();
+            return answer || { status: 'cancelled' };
+        }, function (error) {
+            notify.loadingEnd();
+            notify.info('已停止等待（这次申请没能撤掉：' + ((error && error.message) || '原因未知') + '）');
+            if (done) done();
+            return { status: 'failed' };
+        });
     }
 
     function connectAgent(options) {
@@ -6083,6 +6163,104 @@
        会话 id 和工作目录，而工作目录常常不是协调仓库，唯一说得清的就是这条机器级记录
        （`agent pending` 读它）。所以这里先 prepare（只写记录），再开同一块等待遮罩等名单里
        出现它。判断"到了"在中间层，页面不数人头。*/
+    /* 跨机器接入（「位置＝网络」）：主机签一张一次性票，产出一段可复制的内容交给人；
+       那台机器上的 `agent import` 收下它就完成接入。这里做三件事 —— 请中间层签票并给内容、
+       把内容摆在窗口里让人转交、确认后等那个席位出现（判断仍在中间层，与其它等待同一套）。
+
+       为什么"确认"是必须的一步：内容得由人送过去，页面无从知道人有没有送到。*/
+    let networkInvite = null;
+
+    function networkWaitHint(host) {
+        const label = toText((host || {}).label) || '那台机器';
+        return '邀请已经生成。请把它交给 ' + label + ' 那台机器上的人，让他在那边跑一次导入命令；' +
+            '他接入后这里会自动出现。（本次以子 Agent 身份接入）';
+    }
+
+    function askForInvite(prepared, host) {
+        const node = byId('netInvite');
+        if (!node) return Promise.resolve(false);
+        const input = qs('.textbox2 input', node);
+        const shown = qsa('.dspText', node);
+        if (input) input.value = toText(prepared.invite);
+        if (shown[1]) {
+            const minutes = Math.max(1, Math.round(Number(prepared.expires_in_seconds || 0) / 60));
+            shown[1].textContent = '一次性、约 ' + minutes + ' 分钟内有效（到 ' +
+                formatTime(toText(prepared.expires_at)) + '）；过期就回来重新生成一张。';
+        }
+        return new Promise(function (resolve) {
+            networkInvite = {
+                resolve: resolve, enrollment_id: toText(prepared.enrollment_id),
+                label: toText((host || {}).label) || '远端'
+            };
+            notify.loadingEnd();
+            ui.window.open('netInvite');
+        });
+    }
+
+    function connectNetworkAgent(opts) {
+        const host = (opts || {}).host || {};
+        if (enrollmentFlowActive) {
+            notify.info('已有接入正在等待，请先处理当前接入申请');
+            return Promise.resolve({ status: 'failed' });
+        }
+        enrollmentFlowActive = true;
+        const nickname = toText((opts || {}).nickname).trim();
+        const vendor = toText(host.adapter || (opts || {}).vendor);
+        const baseline = toArray(state.get('agents', [])).map(function (agent) {
+            return toText(agent.id);
+        }).filter(Boolean);
+        notify.loading('正在生成邀请 …');
+        return api.post('agentPrepare', {
+            vendor: vendor, nickname: nickname, role: 'worker', profile: null,
+            start_daemon: true, place: 'network', conversation_id: toText((opts || {}).number)
+        }, { silent: true }).then(function (prepared) {
+            const answer = prepared || {};
+            return askForInvite(answer, host).then(function (confirmed) {
+                if (!confirmed) {
+                    return withdrawEnrollment(toText(answer.enrollment_id)).then(function () {
+                        return { status: 'cancelled', nickname: nickname };
+                    });
+                }
+                let waiting = true;
+                const cancel = function () {
+                    if (!waiting) return;
+                    waiting = false;
+                    withdrawEnrollment(toText(answer.enrollment_id));
+                };
+                notify.loading(networkWaitHint(host), { cancel: cancel });
+                return waitForHostArrival(host, baseline, function (note) {
+                    if (note && waiting) notify.loading(note + '（本次以子 Agent 身份接入）', { cancel: cancel });
+                }, toText(answer.enrollment_id)).then(function (outcome) {
+                    waiting = false;
+                    return outcome;
+                });
+            }).then(function (outcome) {
+                enrollmentFlowActive = false;
+                notify.loadingEnd();
+                const reached = toText(outcome.status);
+                if (reached === 'arrived') {
+                    rememberAgentProfile(
+                        toText((outcome.agent || {}).agent_id), nickname,
+                        toText(host.label) || vendor);
+                }
+                return {
+                    status: reached, agent: outcome.agent, nickname: nickname, profile: '',
+                    registration: {}, enrollment_id: toText(answer.enrollment_id)
+                };
+            });
+        }, function (error) {
+            enrollmentFlowActive = false;
+            notify.loadingEnd();
+            const detail = error && error.raw && error.raw.detail;
+            if (isPlainObject(detail)) {
+                notify.info(toText(detail.note) || toText(detail.code) || '这次邀请没能生成');
+            } else {
+                notify.error((error && error.message) || '生成邀请失败');
+            }
+            return { status: 'failed' };
+        });
+    }
+
     function connectInHostAgent(opts) {
         const host = (opts || {}).host || {};
         if (enrollmentFlowActive) {
@@ -6114,24 +6292,8 @@
             /* 没有票要作废，但有一条机器级记录要撤：那条聊天可能正靠它找项目。*/
             askedToStop = true;
             if (cancelInFlight) return;
-            const id = toText((prepared || {}).enrollment_id);
-            if (!id) {
-                notify.loadingEnd();
-                notify.info('已停止等待它出现');
-                return;
-            }
             cancelInFlight = true;
-            notify.loading('正在撤销这次接入申请 …');
-            cancelEnrollment(id).then(function (answer) {
-                cancelInFlight = false;
-                notify.loadingEnd();
-                notify.info(toText((answer || {}).note) || '已停止等待：这次接入申请已撤掉，可以重新接入');
-            }, function (error) {
-                cancelInFlight = false;
-                notify.loadingEnd();
-                notify.info('已停止等待它出现（这次申请没能撤掉：' +
-                    ((error && error.message) || '原因未知') + '）');
-            });
+            withdrawEnrollment(toText((prepared || {}).enrollment_id), function () { cancelInFlight = false; });
         };
         notify.loading('正在准备接入 …', { cancel: cancel });
         return api.post('agentPrepare', {
@@ -6445,9 +6607,12 @@
                     project: toText(item.project_name) || shortId(item.project_id),
                     task: toText(item.task),
                     /* 是不是从网络接进来的（本机接入不画徽标）、此刻在不在线。
-                       中间层不给这两个字段就一律当本机 —— 不编造“网络离线”。*/
-                    network: item.network === true,
-                    online: item.online === true
+                       中间层不给这两个字段就一律当本机 —— 不编造“网络离线”。
+                       远端还会自报一个机器名（`machine`）：有它就知道是哪台机器，
+                       也等于"这是远端"（本机接入那条路从来不写它）。*/
+                    network: item.network === true || Boolean(toText(item.machine)),
+                    online: item.online === true,
+                    machine: toText(item.machine)
                 };
             });
         },
@@ -6690,8 +6855,9 @@
                        子 Agent 看后端有没有说它是从网络接进来的；说了还得再给它一个
                        `online` 才画「网络在线」，否则是「网络离线」。两边都没说
                        就是这个 Agent 在本机 —— 那就不画徽标。*/
-                    network: a.role !== 'main' && a.network === true,
+                    network: a.role !== 'main' && (a.network === true || Boolean(a.machine)),
                     online: a.online === true,
+                    machine: toText(a.machine),
                     name: nickname || codename,
                     /* 厂商已知就给厂商的 logo，认不出来由 agentIconFor 统一摆 Tsunagou 小标
                        （见"图标"那一节；这里不再自己写第二份规则）。*/

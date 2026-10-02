@@ -616,6 +616,51 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(badge(1)).toBeNull();
   });
 
+  /* 2026-10-03：远端**自报**的机器名跟着一起显示 —— 名单里要能看出是哪台机器。
+     名字是"入席者说自己是谁"，不是系统认证出来的，所以它只影响这一句话。*/
+  it("远端自报的机器名写在同一个标记里，本机接入仍然什么都不画", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/projects/p-1/agents", {
+        items: [
+          { agent_id: "a-1", role: "main", status: "active" },
+          { agent_id: "a-2", role: "worker", status: "active", machine: "工位-七", online: true },
+          { agent_id: "a-3", role: "worker", status: "active", machine: "NAS" },
+        ],
+        main_agent_id: "a-1",
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["agents", "settings"]);
+
+    const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
+    const badge = (index: number) => cards()[index]!.querySelector(".header .right");
+    /* 有机器名 = 远端：在线与否照旧由 online 说，名字跟在后面。*/
+    expect(badge(1)!.textContent).toBe("网络在线 · 工位-七");
+    expect(badge(1)!.querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
+    expect(badge(2)!.textContent).toBe("网络离线 · NAS");
+    /* 本机接入没有这一项 —— 连标记都不出现。*/
+    expect(badge(0)).toBeNull();
+  });
+
   it("DAG：有节点但彼此没依赖时，不再往画布上摆一块会压住节点的 .empty", () => {
     const dag = (dom.window as unknown as {
       Tsunagou: { dag: { setData: (sources: unknown) => unknown; render: () => unknown } };
@@ -739,6 +784,8 @@ type EnrollmentApi = ConsoleApi & {
   };
   notify: { loadingEnd: () => boolean; cancelWaiting: () => Promise<boolean> };
   dialog: { confirm: () => Promise<boolean> };
+  actions: { addSubAgent: (payload: Record<string, unknown>) => Promise<unknown> };
+  app: { confirmNetworkInvite: () => boolean; cancelNetworkInvite: () => boolean };
 };
 
 describe("控制台接入等待与取消", () => {
@@ -883,6 +930,104 @@ describe("控制台接入等待与取消", () => {
     enrollmentApi.notify.loadingEnd();
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
+  });
+
+  /* 「位置＝网络」这条路：主机签一张邀请，人把它交给另一台机器；确认后才开始等席位。
+     编号那一格只在"网络 + 会话名自己说了算的厂商"（Codex / DeepSeek Harness）出现 ——
+     OpenCode 的会话名由主机起，所以不用问。*/
+  it("网络接入：要编号、给邀请、确认后等席位，OpenCode 不需要编号", async () => {
+    const field = () => enrollmentPage.querySelector<HTMLElement>("#addSubAgentAddr");
+    const place = () => enrollmentPage.querySelector<HTMLElement>("#addSubAgent .choosebox.TOG0");
+    const vendor = () => enrollmentPage.querySelector<HTMLElement>("#addSubAgent .choosebox.TOG1");
+    const shown = (node: HTMLElement | null) => Boolean(node && node.style.display !== "none");
+    /* 让"选择框变了"这件事真的发生：silent 会吞掉 choosebox:change。*/
+    const choose = (id: string, value: string) => {
+      enrollmentApi.ui.choosebox.setValue(id, value, { silent: false });
+    };
+
+    choose("addSubAgentVendor", "Codex");
+    choose("addSubAgentPlace", "网络");
+    expect(shown(field())).toBe(true);
+    expect(field()?.querySelector("input")?.getAttribute("placeholder")).toBe("网络 Agent 编号");
+    expect(shown(place())).toBe(true);
+    expect(enrollmentPage.querySelector("#addSubAgent .choosebox.TOG1")?.textContent).toContain("Codex");
+
+    /* OpenCode：名字我们起，不需要编号这一格 */
+    choose("addSubAgentVendor", "OpenCode");
+    expect(shown(field())).toBe(false);
+    /* 本机接入：更不需要 */
+    choose("addSubAgentVendor", "Codex");
+    choose("addSubAgentPlace", "本机");
+    expect(shown(field())).toBe(false);
+
+    /* 回到网络 + Codex，走一遍：确定 → 邀请窗口 → 开始等待 → 席位出现 */
+    choose("addSubAgentPlace", "网络");
+    expect(shown(field())).toBe(true);
+    prepareBody = {
+      status: "invited", invite: "tsunagou-invite-v1:AAAA", enrollment_id: "e-net",
+      expires_in_seconds: 600, expires_at: "2026-10-02T14:10:00.000Z",
+      url: "http://10.0.0.5:2810", conversation_id: "thread-abc",
+    };
+    const done = enrollmentApi.actions.addSubAgent({
+      name: "小三", vendor: "Codex", place: "network", number: "thread-abc",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const prepared = calls.filter((call) => call.url.includes("agents:prepare"));
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]!.body).toMatchObject({
+      vendor: "codex", place: "network", conversation_id: "thread-abc", role: "worker",
+    });
+    /* 邀请摆在一个窗口里，内容原样放在只读输入框里等人复制 */
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
+    const inviteInput = enrollmentPage.querySelector<HTMLInputElement>("#netInvite .textbox2 input");
+    expect(inviteInput?.value).toBe("tsunagou-invite-v1:AAAA");
+    expect(inviteInput?.hasAttribute("readonly")).toBe(true);
+
+    /* 确认（人已把内容转交）→ 加载框 → 席位出现。
+       jsdom 不跑行内 onclick，所以直接调那个动作（页面上是按钮，行为一致）。*/
+    expect(enrollmentApi.app.confirmNetworkInvite()).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(false);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(true);
+    expect(text()).toContain("交给");
+
+    /* 等待是每 2 秒问一次中间层"名单里出现它了吗"（与其它等待同一套） */
+    await vi.advanceTimersByTimeAsync(2000);
+    const asked = calls.filter((call) => call.url.includes("enrollments:observe"));
+    expect(asked.length).toBeGreaterThanOrEqual(1);
+    expect(decodeURIComponent(asked[0]!.url)).toContain("enrollment_id=e-net");
+    observeBody = { status: "arrived", adapter: "codex", agent: { agent_id: "a-net" } };
+    await vi.advanceTimersByTimeAsync(2000);
+    await done;
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+    expect(enrollmentApi.ui.window.isOpen("addSubAgent")).toBe(false);
+    expect(vendor()).not.toBeNull();
+  });
+
+  it("网络接入点「取消」：邀请作废（撤掉那条申请），不进等待", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "codex", label: "Codex", mode: "console" },
+    ]);
+    prepareBody = {
+      status: "invited", invite: "tsunagou-invite-v1:BBBB", enrollment_id: "e-cancel",
+      expires_in_seconds: 600, expires_at: "2026-10-02T14:10:00.000Z", url: "http://10.0.0.5:2810",
+    };
+    const done = enrollmentApi.actions.addSubAgent({
+      name: "小三", vendor: "Codex", place: "network", number: "thread-abc",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
+
+    enrollmentApi.app.cancelNetworkInvite();
+    await vi.advanceTimersByTimeAsync(0);
+    await done;
+
+    const cancelled = calls.filter((call) => call.url.includes(":cancel"));
+    expect(cancelled).toHaveLength(1);
+    expect(decodeURIComponent(cancelled[0]!.url)).toContain("e-cancel");
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(false);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
   });
 
   /* 宿主自己在聊天里接入的那一种（DeepSeek Harness）：控制台不签票，但**必须把

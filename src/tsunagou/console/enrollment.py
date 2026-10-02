@@ -102,6 +102,8 @@ def _enroll_note(host: host_registration.Host, mode: str) -> str:
 
 # 票据默认活 10 分钟（authority.issue_ticket），多留一点余量再判过期。
 ENROLLMENT_TTL_SECONDS = 900.0
+#: 跨机器那张邀请：从主机签票到远端导入、开窗口，全在一个"传密码"式的时间窗里完成。
+REMOTE_INVITE_TTL_SECONDS = 600
 
 
 def _registry() -> dict[str, Any]:
@@ -137,7 +139,7 @@ def profile_name(name: str) -> str:
 
 
 def _ticket(*, endpoint: dict[str, Any], token: str | None, installation_id: str,
-            conversation_id: str, role: str) -> dict[str, Any]:
+            conversation_id: str, role: str, ttl_seconds: int | None = None) -> dict[str, Any]:
     """Ask the daemon for a one-time ticket; the plaintext stays inside this process."""
 
     registry = _registry()
@@ -150,6 +152,7 @@ def _ticket(*, endpoint: dict[str, Any], token: str | None, installation_id: str
             "installation_id": installation_id,
             "role": role,
             "conversation_evidence": {"conversation_id": conversation_id},
+            **({"ttl_seconds": int(ttl_seconds)} if ttl_seconds else {}),
         },
     }).encode("utf-8")
     answer = forward(
@@ -288,6 +291,7 @@ def prepare(
     entry: ProjectEntry, endpoint: dict[str, Any], *, vendor: str, role: str,
     nickname: str = "", profile: str | None = None, mode: str = "attach",
     token: str | None = None, directory: AgentDirectory | None = None,
+    place: str = "local", conversation_id: str = "",
 ) -> dict[str, Any]:
     """Prepare one host conversation to become an Agent, and say what is left to do.
 
@@ -323,6 +327,11 @@ def prepare(
                 "vendor": host.adapter, "label": host.label, "enroll_mode": enrollment_mode,
                 "note": _enroll_note(host, enrollment_mode),
             },
+        )
+    if place == "network":
+        return _prepare_network(
+            entry, endpoint, host=host, entry_path=entry_path, role=role, nickname=nickname,
+            profile=profile, token=token, conversation_id=conversation_id,
         )
 
     if enrollment_mode == IN_HOST_MODE:
@@ -797,6 +806,79 @@ def _drop_selection(record: Enrollment) -> None:
         EnrollmentStore().cancel(record.store_id)
     except RuntimeError:
         return
+
+
+def _prepare_network(
+    entry: ProjectEntry, endpoint: dict[str, Any], *, host: host_registration.Host, entry_path: Path,
+    role: str, nickname: str, profile: str | None, token: str | None, conversation_id: str,
+) -> dict[str, Any]:
+    """打一张给远端机器的邀请（页面这条路）。
+
+    与本地接入的区别只有一个：**这台机器什么都不写**。票、身份和桥的启动配置都由远端那条
+    命令写到它自己的机器上；这里产出一段可复制的内容交给人（票在里面，像传密码那样递过去）。
+
+    身份分两种宿主：会话名由主机起的（OpenCode）这里直接起一个；只有它自己知道会话名的
+    （Codex、DeepSeek Harness）必须先报号，`conversation_id` 就是那个号。
+    """
+
+    import tsunagou.platform.remote_invite as remote_invite
+
+    if role != "worker":
+        raise ConsoleError(
+            "main_agent_must_be_local",
+            detail={"note": "主 Agent 必须和协调中心在同一台机器上：跨机器那张邀请只能是子 Agent。"},
+        )
+    if not token:
+        raise ConsoleError("control_credential_missing", detail={"note": "读不到本机控制凭据，无法签票。"})
+    url = str(endpoint.get("advertised_url") or endpoint.get("url") or "")
+    if not url:
+        raise ConsoleError("daemon_endpoint_not_configured",
+                           detail={"note": "协调中心没在跑，或还没有地址：先把它起来再发邀请。"})
+    chosen_profile = (profile or "").strip() or (nickname or "").strip() or "remote"
+    conversation = conversation_id.strip()
+    if not conversation:
+        if host.adapter != "opencode":
+            raise ConsoleError(
+                "conversation_id_required_for_this_host",
+                detail={"vendor": host.adapter, "label": host.label,
+                        "note": f"{host.label} 的会话名只有它自己知道：先在那台机器上报号，再把号填进来。"},
+            )
+        conversation = f"ses_{chosen_profile}"
+    installation_id = f"{host.adapter}:{chosen_profile}"
+    ttl = REMOTE_INVITE_TTL_SECONDS
+    issued = _ticket(
+        endpoint=endpoint, token=token, installation_id=installation_id,
+        conversation_id=conversation, role="worker", ttl_seconds=ttl,
+    )
+    expires_at = time_utc_offset(ttl)
+    invite = remote_invite.encode({
+        "project_id": entry.project_id, "url": url, "adapter": host.adapter, "profile": chosen_profile,
+        "installation_id": installation_id, "conversation_id": conversation, "role": "worker",
+        "nickname": (nickname or "").strip(), "secret": str(issued["secret"]), "expires_at": expires_at,
+    })
+    store_id = _record_selection(
+        entry=entry, adapter=host.adapter, role="worker", nickname=nickname,
+    )
+    return {
+        "status": "invited", "invite": invite, "enrollment_id": store_id, "store_id": store_id,
+        "project_id": entry.project_id, "vendor": host.adapter, "label": host.label,
+        "role": "worker", "profile": chosen_profile, "conversation_id": conversation,
+        "nickname": (nickname or "").strip(), "url": url,
+        "expires_at": expires_at, "expires_in_seconds": max(0, ttl),
+        "next": "把邀请内容发给那台机器上的人；他在那边跑一次 "
+                "tsunagou agent import <邀请> 就完成接入，页面会自己等到他出现。",
+    }
+
+
+def time_utc_offset(seconds: int) -> str:
+    """An ISO instant ``seconds`` from now, in the same shape the rest of the repo writes."""
+
+    from tsunagou.shared_kernel.time import format_timestamp, now_ms
+
+    stamp = format_timestamp(now_ms() + max(0, int(seconds)) * 1000)
+    if not stamp:  # pragma: no cover - now_ms() is never None
+        raise ConsoleError("invite_expiry_unavailable")
+    return stamp
 
 
 def cancel(enrollment_id: str, *, settings: ConsoleConfig) -> dict[str, Any]:

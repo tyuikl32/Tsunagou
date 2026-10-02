@@ -538,7 +538,7 @@
                         <input class="inner" placeholder="子 Agent 名称" />
                     </div>
                     <div class="textbox2" id="addSubAgentAddr" style="display: none;">
-                        <input class="inner" placeholder="子 Agent 的网络地址" />
+                        <input class="inner" placeholder="网络 Agent 编号" />
                     </div>
                     <div class="chooseboxTOG">
                         <div class="choosebox chooseboxE TOG1" data-target="addSubAgentVendor">
@@ -566,6 +566,30 @@
             <div class="options">
                 <div class="buttonbox2" onclick="Tsunagou.app.closeWindow('addSubAgent')">取消</div>
                 <div class="buttonbox2 buttonbox2active">确定</div>
+            </div>
+        </div>
+    </section>
+
+    <!--窗口：邀请远端接入（跨机器：把这段内容交给那台机器上的人）-->
+    <section class="secWindow" id="netInvite">
+        <div class="window2">
+            <div class="titleBar">
+                <div class="title"><i class="fa-solid fa-share-nodes"></i>邀请远端接入</div>
+                <div class="button" onclick="Tsunagou.app.cancelNetworkInvite()">×</div>
+            </div>
+            <div class="content">
+                <div class="uiBlock">
+                    <div class="title2">邀请内容</div>
+                    <div class="textbox2"><input class="inner" readonly /></div>
+                    <div class="title2">怎么用</div>
+                    <div class="dspText">把上面这段内容发给那台机器上的人。他在那边跑一次 agent import，然后在自己的 Agent 窗口里说一句「接入 Tsunagou」；这里会自动等到他出现。</div>
+                    <div class="title2">有效期</div>
+                    <div class="dspText">一次性、十分钟内有效；过期就回来重新生成一张。</div>
+                </div>
+            </div>
+            <div class="options">
+                <div class="buttonbox2" onclick="Tsunagou.app.cancelNetworkInvite()">取消</div>
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.confirmNetworkInvite()">开始等待</div>
             </div>
         </div>
     </section>

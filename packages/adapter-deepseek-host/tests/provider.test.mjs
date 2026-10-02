@@ -78,7 +78,7 @@ test("native connect uses trusted session/cwd, cleans stale host state and never
   f.config.connect = { command: process.execPath, args: ["-e", cli, "--"],
     env: { CODEX_THREAD_ID: "stale-codex", TSUNAGOU_HOST_CONVERSATION_ID: "stale-session", TSUNAGOU_CONTROL_TOKEN: "hidden-token" } };
   await apply(f.ctx, f.config);
-  assert.equal(f.tools.size, 2);
+  assert.equal(f.tools.size, 3);
   const tool = f.tools.get("tsunagou_connect");
   for (const role of [undefined, "worker", "main"]) {
     const result = await tool.execute(role ? { role } : {}, f.exec);
@@ -114,7 +114,7 @@ test("native connect remains usable when MCP cannot spawn and returns sanitized 
   f.config.connect = { command: process.execPath, args: ["-e", "console.log(JSON.stringify({status:'error',error:'daemon_launch_failed',secret_token:'hidden-token'})); process.exit(4)", "--"] };
   await apply(f.ctx, f.config);
   assert.equal(f.warnings.length, 1);
-  assert.equal(f.tools.size, 1);
+  assert.equal(f.tools.size, 2);
   const tool = f.tools.get("tsunagou_connect");
   const failed = f.value(await tool.execute({}, f.exec));
   assert.equal(failed.error, "daemon_launch_failed");
@@ -134,4 +134,75 @@ test("native connect bounds a stalled CLI without claiming enrollment", async (t
   const timedOut = f.value(await pending);
   assert.equal(timedOut.error, "tsunagou_connect_timeout");
   assert.equal(timedOut.host_ready, false);
+});
+
+test("cross-machine tool reports this conversation's number with the host identity", async (t) => {
+  const f = host(t);
+  const cli = `
+    const assert = require('node:assert/strict');
+    assert.equal(process.env.DSH_SESSION_ID, 'fixture-original');
+    assert.equal(process.env.TSUNAGOU_CONTROL_TOKEN, undefined);
+    const args = process.argv.slice(1);
+    assert.deepEqual(args, ['agent', 'whoami', '--adapter', 'deepseek']);
+    console.log(JSON.stringify({status:'ok', adapter:'deepseek', conversation_id:'fixture-original',
+      next:'send it to the host', secret_token:'hidden-token'}));
+  `;
+  f.config.connect = { command: process.execPath, args: ["-e", cli, "--"],
+    env: { TSUNAGOU_CONTROL_TOKEN: "hidden-token" } };
+  await apply(f.ctx, f.config);
+
+  const tool = f.tools.get("tsunagou_remote");
+  const result = await tool.execute({ action: "whoami" }, f.exec);
+  const value = f.value(result);
+  assert.equal(value.status, "ok");
+  assert.equal(value.conversation_id, "fixture-original");
+  assert.ok(!JSON.stringify(result).includes("hidden-token"));
+  assert.ok(!JSON.stringify(result).includes("secret_token"));
+});
+
+test("cross-machine import passes the invitation to the CLI and never echoes it back", async (t) => {
+  const f = host(t);
+  const invite = "tsunagou-invite-v1:fixture-ticket";
+  const cli = `
+    const assert = require('node:assert/strict');
+    const args = process.argv.slice(1);
+    assert.deepEqual(args, ['agent', 'import', ${JSON.stringify(invite)}, '--workdir', ${JSON.stringify(f.root)}, '--machine', 'workstation-7']);
+    console.log(JSON.stringify({status:'imported', project_id:'fixture-project', adapter:'deepseek',
+      role:'worker', url:'http://10.0.0.5:2810', workspace:process.cwd(),
+      host_registration:{status:'registered',note:'ok',receipt_file:'hidden-path'},
+      secret_token:'hidden-token', next:'reload'}));
+  `;
+  f.config.connect = { command: process.execPath, args: ["-e", cli, "--"] };
+  await apply(f.ctx, f.config);
+
+  const tool = f.tools.get("tsunagou_remote");
+  const result = await tool.execute({ action: "import", invite, machine: "workstation-7" }, f.exec);
+  const value = f.value(result);
+  assert.equal(value.status, "imported");
+  assert.equal(value.project_id, "fixture-project");
+  assert.equal(value.url, "http://10.0.0.5:2810");
+  assert.deepEqual(Object.keys(value.host_registration).sort(), ["note", "status"]);
+  const text = JSON.stringify(result);
+  assert.ok(!text.includes(invite), "邀请是机密：不能把它回显进会话");
+  assert.ok(!text.includes("hidden-token") && !text.includes("hidden-path"));
+});
+
+test("cross-machine tool refuses bad arguments and sanitizes CLI failures", async (t) => {
+  const f = host(t);
+  f.config.connect = { command: process.execPath,
+    args: ["-e", "console.log(JSON.stringify({status:'error',error:'invite_expired',secret_token:'hidden-token'})); process.exit(4)", "--"] };
+  await apply(f.ctx, f.config);
+  const tool = f.tools.get("tsunagou_remote");
+
+  for (const args of [{}, { action: "join" }, { action: "import" }, { action: "import", invite: "   " },
+    { action: "whoami", token: "hidden-token" }, { action: "import", invite: "x".repeat(9000) }, [], null]) {
+    const value = f.value(await tool.execute(args, f.exec));
+    assert.equal(value.status, "error");
+    assert.match(value.error, /^tsunagou_remote_/);
+  }
+  const failed = f.value(await tool.execute({ action: "whoami" }, f.exec));
+  assert.equal(failed.error, "invite_expired");
+  assert.equal(failed.exit_code, 4);
+  assert.ok(!JSON.stringify(failed).includes("hidden-token"));
+  assert.equal(f.value(await tool.execute({ action: "whoami" }, {})).error, "tsunagou_host_identity_unavailable");
 });

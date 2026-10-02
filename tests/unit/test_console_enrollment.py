@@ -401,6 +401,85 @@ def test_a_seat_with_the_wrong_role_does_not_finish_this_enrollment(
     assert EnrollmentStore().active() is None
 
 
+def test_a_network_invitation_is_signed_here_and_written_nowhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """跨机器那张邀请：主机只签票、只给出一段内容；票和身份都由远端写自己的机器。"""
+
+    import tsunagou.platform.remote_invite as remote_invite
+
+    entry = _entry(tmp_path)
+    daemon = Daemon()
+    monkeypatch.setattr(enrollment, "forward", daemon)
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+
+    answer = enrollment.prepare(
+        entry, {**dict(entry.daemon or {}), "url": "http://127.0.0.1:2810",
+                "advertised_url": "http://10.0.0.5:2810"},
+        vendor="opencode", role="worker", nickname="小三",
+        token="control-token", directory=Rosters(), place="network",
+    )
+
+    assert answer["status"] == "invited"
+    assert answer["url"] == "http://10.0.0.5:2810", "邀请里写的是对外可达地址"
+    assert answer["conversation_id"] == "ses_小三", "会话名由主机起"
+    decoded = remote_invite.decode(answer["invite"])
+    assert decoded["project_id"] == PROJECT_ID and decoded["role"] == "worker"
+    assert decoded["secret"] == SECRET and decoded["installation_id"] == "opencode:小三"
+    remote_invite.check(decoded)
+    assert daemon.calls == ["/api/v1/commands/agent.ticket.create.user"], "只问一次票"
+    assert not (entry.path / ".tsunagou" / "bridges").exists(), "主机这边不写桥材料"
+    assert not (entry.path / ".tsunagou" / "checkpoints").exists()
+    # 机器级记录还是要写：页面靠它等那个席位出现，并且核对角色。
+    recorded = EnrollmentStore().active_for("opencode")
+    assert recorded is not None and recorded["requested_role"] == "worker"
+    assert recorded["enrollment_id"] == answer["enrollment_id"]
+
+
+def test_a_network_invitation_needs_the_number_for_hosts_that_own_their_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Codex / DSH 的会话名只有它自己知道：没报号就不发邀请，报了号就照号签票。"""
+
+    import tsunagou.platform.remote_invite as remote_invite
+
+    entry = _entry(tmp_path)
+    monkeypatch.setattr(enrollment, "forward", Daemon())
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+    endpoint = {**dict(entry.daemon or {}), "advertised_url": "http://10.0.0.5:2810"}
+
+    with pytest.raises(ConsoleError) as refused:
+        enrollment.prepare(
+            entry, endpoint, vendor="codex", role="worker", nickname="小三",
+            token="control-token", directory=Rosters(), place="network",
+        )
+    assert refused.value.code == "conversation_id_required_for_this_host"
+    assert EnrollmentStore().active() is None, "拒绝了就不留记录"
+
+    answer = enrollment.prepare(
+        entry, endpoint, vendor="codex", role="worker", nickname="小三", token="control-token",
+        directory=Rosters(), place="network", conversation_id="thread-abc",
+    )
+    assert remote_invite.decode(answer["invite"])["conversation_id"] == "thread-abc"
+
+
+def test_a_network_invitation_is_worker_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """主 Agent 必须和协调中心同机：跨机器那张邀请只能是子 Agent。"""
+
+    entry = _entry(tmp_path)
+    monkeypatch.setattr(enrollment, "forward", Daemon())
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+
+    with pytest.raises(ConsoleError) as refused:
+        enrollment.prepare(
+            entry, {**dict(entry.daemon or {}), "advertised_url": "http://10.0.0.5:2810"},
+            vendor="opencode", role="main", token="control-token", directory=Rosters(), place="network",
+        )
+    assert refused.value.code == "main_agent_must_be_local"
+
+
 def test_opencode_gets_one_session_name_the_ticket_and_the_person_both_use(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:

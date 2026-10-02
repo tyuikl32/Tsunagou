@@ -28,6 +28,8 @@ const MAX_PUBLIC_NAME_LENGTH = 64;
 const DEFAULT_META_KEY = "tsunagou.hostSessionId";
 const CONNECT_TIMEOUT_MS = 120_000;
 const MAX_CONNECT_OUTPUT = 1024 * 1024;
+/** An invitation is one line of base64 plus a short prefix; anything longer is not one. */
+const MAX_INVITE_LENGTH = 8192;
 
 const contentOutput = {
   schema: {
@@ -49,26 +51,27 @@ function connectFailure(error, exitCode) {
     next: "Resolve this connection error before verifying context__project_read; do not report the conversation ready." };
 }
 
-/** Run only the installed CLI, with identity and cwd obtained from this tool call. */
-async function runOnboarding(config, args, exec) {
-  if (args === undefined) args = {};
-  if (!args || typeof args !== "object" || Array.isArray(args)
-      || Object.keys(args).some((key) => key !== "role")
-      || (Object.hasOwn(args, "role") && !["worker", "main"].includes(args.role))) {
-    return connectFailure("tsunagou_connect_invalid_arguments");
-  }
+/**
+ * Identity, directory and CLI launch line for this call - the trusted half of every action.
+ *
+ * Both actions (join this project, and the cross-machine pair below) must run with *this*
+ * conversation's identity and the directory the host gave it, and with none of the stale
+ * host state that may be lying around in the process environment. The model supplies none
+ * of it, so one function answers it for all of them.
+ */
+function cliContext(config, exec) {
   const identity = exec?.agent?.session?.id;
   const cwd = exec?.agent?.session?.header?.cwd;
   if (typeof identity !== "string" || !identity.trim() || identity.includes("\0")) {
-    return connectFailure("tsunagou_host_identity_unavailable");
+    return { error: connectFailure("tsunagou_host_identity_unavailable") };
   }
   if (typeof cwd !== "string" || !isAbsolute(cwd) || cwd.includes("\0")) {
-    return connectFailure("tsunagou_project_directory_unavailable");
+    return { error: connectFailure("tsunagou_project_directory_unavailable") };
   }
   const runtime = config.connect;
-  if (typeof runtime.command !== "string" || !isAbsolute(runtime.command)
+  if (typeof runtime?.command !== "string" || !isAbsolute(runtime.command)
       || !Array.isArray(runtime.args) || runtime.args.some((arg) => typeof arg !== "string")) {
-    return connectFailure("tsunagou_runtime_not_configured");
+    return { error: connectFailure("tsunagou_runtime_not_configured") };
   }
   const environment = { ...process.env, ...runtime.env };
   for (const key of Object.keys(environment)) {
@@ -77,9 +80,16 @@ async function runOnboarding(config, args, exec) {
   }
   environment.DSH_SESSION_ID = identity;
   if (config.env?.TSUNAGOU_ROUTING_DIR) environment.TSUNAGOU_ROUTING_DIR = config.env.TSUNAGOU_ROUTING_DIR;
-  const cliArgs = [...runtime.args, "agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host"];
-  if (args.role !== undefined) cliArgs.push("--role", args.role);
+  return { cwd, environment, runtime };
+}
 
+/**
+ * Run the installed CLI once and hand back its last JSON line.
+ *
+ * Resolves ``{code, result}`` on a normal exit, or ``{stopped}`` when the call was bounded
+ * out (timeout, output limit, spawn failure). Never infers a result from partial output.
+ */
+function runCli(context, cliArgs) {
   return new Promise((resolve) => {
     let child;
     let timer;
@@ -94,62 +104,153 @@ async function runOnboarding(config, args, exec) {
     };
     const stop = (error) => {
       try { child?.kill(); } catch { /* a failed spawn has no process */ }
-      finish(connectFailure(error));
+      finish({ stopped: error });
     };
     try {
-      child = spawn(runtime.command, cliArgs, { cwd, env: environment,
+      child = spawn(context.runtime.command, cliArgs, { cwd: context.cwd, env: context.environment,
         stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     } catch {
-      finish(connectFailure("tsunagou_connect_spawn_failed"));
+      finish({ stopped: "tsunagou_cli_spawn_failed" });
       return;
     }
-    timer = setTimeout(() => stop("tsunagou_connect_timeout"), CONNECT_TIMEOUT_MS);
+    timer = setTimeout(() => stop("tsunagou_cli_timeout"), CONNECT_TIMEOUT_MS);
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       bytes += Buffer.byteLength(chunk);
-      if (bytes > MAX_CONNECT_OUTPUT) stop("tsunagou_connect_output_limit");
+      if (bytes > MAX_CONNECT_OUTPUT) stop("tsunagou_cli_output_limit");
       else stdout += chunk;
     });
     // Raw CLI stderr may include paths, session IDs, or credentials. Drain it,
     // but return only the CLI's bounded, explicitly selected public fields.
     child.stderr.on("data", (chunk) => {
       bytes += chunk.length;
-      if (bytes > MAX_CONNECT_OUTPUT) stop("tsunagou_connect_output_limit");
+      if (bytes > MAX_CONNECT_OUTPUT) stop("tsunagou_cli_output_limit");
     });
-    child.on("error", () => finish(connectFailure("tsunagou_connect_spawn_failed")));
+    child.on("error", () => finish({ stopped: "tsunagou_cli_spawn_failed" }));
     child.on("close", (code) => {
       if (settled) return;
       let result;
       for (const line of stdout.trim().split(/\r?\n/).reverse()) {
         try { result = JSON.parse(line); break; } catch { /* prior status lines are not the receipt */ }
       }
-      if (code !== 0 || result?.status !== "enrolled") {
-        const error = typeof result?.error === "string" && /^[a-z][a-z0-9_]*(?::[a-z0-9_]+)*$/.test(result.error)
-          ? result.error : "tsunagou_connect_failed";
-        finish(connectFailure(error, code));
-        return;
-      }
-      if (!["project_id", "agent_id"].every((key) => typeof result[key] === "string" && result[key])
-          || !["worker", "main"].includes(result.role)) {
-        finish(connectFailure("tsunagou_connect_invalid_receipt"));
-        return;
-      }
-      const connected = { status: "enrolled", host_ready: false,
-        next: `Call ${publicName(config.serverName || "tsunagou", "context__project_read")} in this conversation and verify project, Agent and ready status.` };
-      for (const key of ["project_id", "agent_id", "role"]) {
-        if (typeof result[key] === "string") connected[key] = result[key];
-      }
-      const session = result.session;
-      if (session && typeof session === "object") {
-        connected.session = {};
-        for (const key of ["status", "baseline_status"]) {
-          if (typeof session[key] === "string") connected.session[key] = session[key];
-        }
-        if (Number.isInteger(session.connection_epoch)) connected.session.connection_epoch = session.connection_epoch;
-      }
-      finish(connected);
+      finish({ code, result });
     });
   });
+}
+
+/** The CLI's own error code, or a generic one: never a message we did not choose. */
+function publicError(result, fallback) {
+  return typeof result?.error === "string" && /^[a-z][a-z0-9_]*(?::[a-z0-9_:]*)?$/.test(result.error)
+    ? result.error : fallback;
+}
+
+/** The shared runner stops with a generic name; each tool answers in its own vocabulary. */
+function stopCode(prefix, stopped) {
+  return `${prefix}_${String(stopped).replace(/^tsunagou_cli_/, "")}`;
+}
+
+/** Run only the installed CLI, with identity and cwd obtained from this tool call. */
+async function runOnboarding(config, args, exec) {
+  if (args === undefined) args = {};
+  if (!args || typeof args !== "object" || Array.isArray(args)
+      || Object.keys(args).some((key) => key !== "role")
+      || (Object.hasOwn(args, "role") && !["worker", "main"].includes(args.role))) {
+    return connectFailure("tsunagou_connect_invalid_arguments");
+  }
+  const context = cliContext(config, exec);
+  if (context.error) return context.error;
+  const cliArgs = [...context.runtime.args, "agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host"];
+  if (args.role !== undefined) cliArgs.push("--role", args.role);
+
+  const outcome = await runCli(context, cliArgs);
+  if (outcome.stopped) return connectFailure(stopCode("tsunagou_connect", outcome.stopped));
+  const result = outcome.result;
+  if (outcome.code !== 0 || result?.status !== "enrolled") {
+    return connectFailure(publicError(result, "tsunagou_connect_failed"), outcome.code);
+  }
+  if (!["project_id", "agent_id"].every((key) => typeof result[key] === "string" && result[key])
+      || !["worker", "main"].includes(result.role)) {
+    return connectFailure("tsunagou_connect_invalid_receipt");
+  }
+  const connected = { status: "enrolled", host_ready: false,
+    next: `Call ${publicName(config.serverName || "tsunagou", "context__project_read")} in this conversation and verify project, Agent and ready status.` };
+  for (const key of ["project_id", "agent_id", "role"]) {
+    if (typeof result[key] === "string") connected[key] = result[key];
+  }
+  const session = result.session;
+  if (session && typeof session === "object") {
+    connected.session = {};
+    for (const key of ["status", "baseline_status"]) {
+      if (typeof session[key] === "string") connected.session[key] = session[key];
+    }
+    if (Number.isInteger(session.connection_epoch)) connected.session.connection_epoch = session.connection_epoch;
+  }
+  return connected;
+}
+
+/**
+ * The cross-machine pair: report this conversation's number, or import an invitation.
+ *
+ * A host cannot name a DeepSeek Harness conversation - only this conversation knows its own
+ * id - so enrolment across machines goes: this side reports the number, the host issues an
+ * invitation bound to it, and this side imports it. Both are one CLI run; nothing here
+ * writes to Tsunagou itself, and the invitation (which carries the one-time ticket) is
+ * passed through, never echoed back into the conversation.
+ */
+async function runRemote(config, args, exec) {
+  if (args === undefined) args = {};
+  const allowed = ["action", "invite", "machine"];
+  if (!args || typeof args !== "object" || Array.isArray(args)
+      || Object.keys(args).some((key) => !allowed.includes(key))
+      || !["whoami", "import"].includes(args.action)) {
+    return { status: "error", error: "tsunagou_remote_invalid_arguments", next: "Call this tool with action=whoami, or action=import plus the invitation text." };
+  }
+  const invite = typeof args.invite === "string" ? args.invite.trim() : "";
+  const machine = typeof args.machine === "string" ? args.machine.trim() : "";
+  if (args.action === "import" && (!invite || invite.length > MAX_INVITE_LENGTH || invite.includes("\0"))) {
+    return { status: "error", error: "tsunagou_remote_invite_required", next: "Pass the invitation text the host sent, exactly as it was sent." };
+  }
+  const context = cliContext(config, exec);
+  if (context.error) return context.error;
+  const cliArgs = [...context.runtime.args, "agent"];
+  if (args.action === "whoami") cliArgs.push("whoami", "--adapter", "deepseek");
+  else {
+    cliArgs.push("import", invite, "--workdir", context.cwd);
+    if (machine) cliArgs.push("--machine", machine);
+  }
+
+  const outcome = await runCli(context, cliArgs);
+  if (outcome.stopped) {
+    return { status: "error", error: stopCode("tsunagou_remote", outcome.stopped),
+      next: "Retry once the machine is responsive." };
+  }
+  const result = outcome.result;
+  if (outcome.code !== 0 || (result?.status !== "ok" && result?.status !== "imported")) {
+    return { status: "error", error: publicError(result, "tsunagou_remote_failed"),
+      ...(Number.isInteger(outcome.code) ? { exit_code: outcome.code } : {}) };
+  }
+  if (args.action === "whoami") {
+    if (typeof result.conversation_id !== "string" || !result.conversation_id) {
+      return { status: "error", error: "tsunagou_remote_invalid_receipt" };
+    }
+    return { status: "ok", conversation_id: result.conversation_id,
+      next: "Send this number to the person on the host; they will issue the invitation and send it back." };
+  }
+  if (typeof result.project_id !== "string" || !result.project_id) {
+    return { status: "error", error: "tsunagou_remote_invalid_receipt" };
+  }
+  const imported = { status: "imported", project_id: result.project_id, role: result.role,
+    next: "Reload this window, then call the project-read tool in this conversation to verify readiness." };
+  for (const key of ["adapter", "url", "workspace"]) {
+    if (typeof result[key] === "string") imported[key] = result[key];
+  }
+  if (result.host_registration && typeof result.host_registration === "object") {
+    imported.host_registration = {};
+    for (const key of ["status", "note"]) {
+      if (typeof result.host_registration[key] === "string") imported.host_registration[key] = result.host_registration[key];
+    }
+  }
+  return imported;
 }
 
 function registerConnect(ctx, config) {
@@ -159,6 +260,22 @@ function registerConnect(ctx, config) {
     parameters: { type: "object", properties: { role: { type: "string", enum: ["worker", "main"] } }, additionalProperties: false },
     output: contentOutput,
     async execute(args, exec) { return toolResult(await runOnboarding(config, args, exec)); },
+  });
+  ctx.tools.register({
+    name: "tsunagou_remote",
+    description: "Cross-machine enrolment. action=whoami reports this conversation's own number, which the person on the host needs before they can invite this machine (only this conversation knows its id). action=import takes the invitation text the host sent and joins this conversation to that host's project; afterwards reload the window and verify with the project-read tool.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["whoami", "import"] },
+        invite: { type: "string", description: "For action=import: the invitation text the host sent, exactly as sent." },
+        machine: { type: "string", description: "Optional name for this machine; defaults to the machine's own name." },
+      },
+      required: ["action"],
+      additionalProperties: false,
+    },
+    output: contentOutput,
+    async execute(args, exec) { return toolResult(await runRemote(config, args, exec)); },
   });
 }
 
