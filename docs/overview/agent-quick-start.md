@@ -33,6 +33,14 @@ profile 只作显示标签。同一 IDE 的不同对话/subagent 由真实会话
 
 低层 agent enroll/appoint 保留作诊断入口。正常 Codex 用户无需手动填 conversation_id、agent_id、pipe 或 token。接入 Skill 本身不提供机械权限，hook 仅为可选提醒；身份和执行边界由 daemon/bridge 处理。
 
+## DeepSeek Harness Desktop 接入
+
+在正常打开的 Desktop 项目聊天中要求接入即可。Agent 优先调用宿主本地工具 `tsunagou_connect`；首次尚无此工具时，使用已安装 CLI 执行 `agent prepare --adapter deepseek`，把已有身份插件注册到实际 Desktop profile。此准备步骤不创建 Agent、不启动 daemon。优先使用宿主热重载，必要时完整重启一次并回到原聊天，不要求用户另开终端执行接入命令。
+
+`tsunagou_connect` 从本次调用的宿主上下文取得真实聊天和工作目录，再调用固定的已安装 CLI；不接受模型填写的身份、凭据、任意命令或目录。不指定角色时保留已有角色，新登记默认为 worker；main 仍须用户明确指定。插件共享入口不保存某个 Agent 的凭据，每个聊天按自身身份选择私有路由。
+
+工具返回 enrolled 后，**同一聊天**再调用 `mcp__tsunagou__context__project_read`，核对项目、自己的 Agent、角色和 ready 状态。CLI/helper 成功、临时 headless 会话成功或插件文件存在都不能替代这一步。Desktop 入口的实际验证状态以[现有验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)为准；此入口不承诺 Codex 专属自动唤醒。
+
 ## 多项目和查询
 
 CLI 自动从子目录发现项目，无需每开一个终端重设环境变量。若选择让新项目复用已有项目的 daemon，在新项目目录运行：

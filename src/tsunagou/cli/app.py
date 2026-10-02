@@ -5,6 +5,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -995,13 +996,7 @@ if typer is not None:
         return f"registered:{name}"
 
     def _register_deepseek_mcp(*, profile: str, bridge_config_path: Path) -> str:
-        """Write this conversation's own Harness overlay, and nothing shared.
-
-        Harness has no `mcp add`, and a profile-wide entry would hand the enrolled
-        identity to whatever conversation boots that profile, so the entry lives in
-        this conversation's private bridge directory instead and travels on its launch
-        command. An unbound conversation then has no Tsunagou tools at all.
-        """
+        """Keep the conversation overlay used by non-Desktop launch profiles."""
 
         config = json.loads(bridge_config_path.read_text(encoding="utf-8"))
         project_root = Path(str((config.get("env") or {}).get("TSUNAGOU_PROJECT_ROOT") or _project_root()))
@@ -1013,7 +1008,44 @@ if typer is not None:
         )
         if result.status == host_registration.REGISTERED:
             return f"registered:{result.name}"
-        return f"deepseek_{result.status}"
+        raise RuntimeError(f"deepseek_host_registration_{result.status}")
+
+    def _deepseek_desktop_config() -> dict[str, Any]:
+        """Installed runtime paths only; no project or conversation credentials."""
+        from tsunagou.application.onboarding import deepseek_routing_directory
+        from tsunagou.platform.runtime_context import installation_path, read_object
+
+        source = running_source_root()
+        if source is None:
+            raise RuntimeError("installation_source_unavailable")
+        node = shutil.which("node")
+        if node is None:
+            raise RuntimeError("bridge_node_unavailable")
+        bridge_entry = source / "packages/bridge-server/dist/server.js"
+        if not bridge_entry.is_file():
+            raise RuntimeError("bridge_build_missing")
+        installation = read_object(installation_path())
+        python = Path(sys.executable).absolute()
+        if installation.get("python") and Path(str(installation.get("source_root", ""))).resolve() == source:
+            installed_python = Path(installation["python"]).expanduser().resolve()
+            if installed_python.is_file():
+                python = installed_python
+        packages = [source / ".venv/Lib/site-packages", *sorted((source / ".venv/lib").glob("python*/site-packages"))]
+        pythonpath = os.pathsep.join(str(path) for path in [source / "src", *packages] if path.is_dir())
+        return {
+            "command": str(Path(node).resolve()), "args": [str(bridge_entry)],
+            "env": {"TSUNAGOU_ROUTING_DIR": str(deepseek_routing_directory()),
+                    "TSUNAGOU_HOST_META_KEY": host_registration.DEEPSEEK_HOST_META_KEY},
+            "connect": {"command": str(python), "args": ["-m", "tsunagou"],
+                        "env": {"PYTHONPATH": pythonpath, "PYTHONNOUSERSITE": "1",
+                                "PATH": str(Path(node).resolve().parent) + os.pathsep + os.environ.get("PATH", "")}},
+        }
+
+    def _prepare_deepseek_desktop() -> host_registration.ConfigChange:
+        result = host_registration.register_deepseek_desktop(_deepseek_desktop_config())
+        if result.status != host_registration.REGISTERED:
+            raise RuntimeError(result.note)
+        return result
 
     def _deepseek_launch_command(*, profile: str, bridge_config_path: Path) -> str:
         """The one command that boots this conversation with its own overlay.
@@ -1164,21 +1196,30 @@ if typer is not None:
             raise typer.Exit(1) from exc
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
+    def _host_conversation_id(adapter: str) -> str:
+        if adapter == "deepseek":
+            conversation_id = os.environ.get("DSH_SESSION_ID")
+        else:
+            conversation_id = os.environ.get("TSUNAGOU_HOST_CONVERSATION_ID")
+            if not conversation_id and adapter == "codex":
+                conversation_id = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+        if not conversation_id or not conversation_id.strip():
+            raise RuntimeError("host_conversation_required:run_agent_prepare_inside_the_host")
+        return conversation_id
+
     def _profile_identity(output_dir: Path, adapter: str, profile: str) -> tuple[str, str]:
         """Use a host-provided identity; a display profile is never a Worker."""
         from tsunagou.platform.private_files import write_private_bytes
         from tsunagou.platform.runtime_context import read_object
 
-        conversation_id = os.environ.get("TSUNAGOU_HOST_CONVERSATION_ID")
-        if not conversation_id and adapter == "codex":
-            conversation_id = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
-        if not conversation_id:
-            raise RuntimeError("host_conversation_required:run_agent_prepare_inside_the_host")
-        installation_id = os.environ.get("TSUNAGOU_INSTALLATION_ID") or f"{adapter}:local"
+        conversation_id = _host_conversation_id(adapter)
         identity_path = output_dir / "host-identity.json"
         prior = read_object(identity_path)
-        if prior and prior.get("conversation_id") != conversation_id:
+        if prior and (prior.get("conversation_id") != conversation_id or prior.get("adapter") != adapter):
             raise RuntimeError("profile_conversation_conflict")
+        installation_id = os.environ.get("TSUNAGOU_INSTALLATION_ID") or prior.get("installation_id") or f"{adapter}:local"
+        if prior.get("installation_id") not in {None, installation_id}:
+            raise RuntimeError("profile_installation_conflict")
         value = {"adapter": adapter, "profile": profile, "installation_id": installation_id, "conversation_id": conversation_id}
         if value != prior:
             write_private_bytes(identity_path, (json.dumps(value, sort_keys=True) + "\n").encode())
@@ -1188,14 +1229,24 @@ if typer is not None:
     def agent_prepare(
         adapter: str = typer.Option(..., "--adapter"),
         role: str = typer.Option("worker", "--role"),
+        profile: str = typer.Option("desktop", "--profile"),
     ) -> None:
         """Privately observe the current host; return one fully filled user command."""
         from tsunagou.application.onboarding import powershell_quote, prepare_codex_request
         from tsunagou.hostwake.port import HostWakeError
 
-        if adapter != "codex" or role not in {"worker", "main"}:
-            raise typer.BadParameter("prepare currently supports codex and role worker/main")
+        if adapter not in {"codex", "deepseek"} or role not in {"worker", "main"}:
+            raise typer.BadParameter("prepare supports codex/deepseek and role worker/main")
         try:
+            if adapter == "deepseek":
+                if profile != "desktop":
+                    raise RuntimeError("deepseek_prepare_requires_desktop_profile")
+                result = _prepare_deepseek_desktop()
+                print(json.dumps({"status": "prepared", "adapter": adapter, "profile": profile,
+                                  "host_registration": "configured", "host_ready": False, "creates_agent": False,
+                                  "files": [str(path) for path in result.files],
+                                  "next": "call_tsunagou_connect_in_original_conversation"}, ensure_ascii=False))
+                return
             runtime = _runtime_context()
             path = prepare_codex_request(runtime)
         except (RuntimeError, OSError, HostWakeError) as exc:
@@ -1221,6 +1272,14 @@ if typer is not None:
             capture_output=True, text=True, check=False, timeout=30,
         )
         if result.returncode:
+            try:
+                failure = json.loads(result.stdout)
+            except ValueError:
+                failure = {}
+            code = failure.get("error", "") if isinstance(failure, dict) else ""
+            if isinstance(code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,100}", code):
+                detail = failure.get("os_error")
+                raise RuntimeError(code + (f":os_error_{detail}" if isinstance(detail, int) else ""))
             raise RuntimeError("daemon_start_failed")
         context = _runtime_context()
         _verify_daemon_identity(_daemon_request("GET", "/api/v1/health"), context.endpoint, context.project_id)
@@ -1229,7 +1288,8 @@ if typer is not None:
         source = running_source_root()
         if source is None:
             raise RuntimeError("installation_source_unavailable")
-        command = ["node", str(source / "packages/bridge-server/scripts/connect-context.mjs"), str(config)]
+        launch = json.loads(config.read_text(encoding="utf-8"))
+        command = [str(launch["command"]), str(source / "packages/bridge-server/scripts/connect-context.mjs"), str(config)]
         if request is not None:
             command.append(str(request))
         result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=40)
@@ -1247,7 +1307,7 @@ if typer is not None:
     @agent_app.command("connect")
     def agent_connect(
         adapter: str = typer.Option(..., "--adapter"),
-        role: str = typer.Option("worker", "--role"),
+        role: str | None = typer.Option(None, "--role"),
         profile: str = typer.Option("current", "--profile"),
         mode: str = typer.Option("attach", "--mode"),
         output_dir: Path | None = typer.Option(None, "--output-dir"),  # noqa: B008
@@ -1258,9 +1318,11 @@ if typer is not None:
         from tsunagou.application.onboarding import (
             codex_routing_directory,
             conversation_key,
+            deepseek_routing_directory,
             prepare_codex_request,
             read_codex_request,
             write_codex_route,
+            write_deepseek_route,
         )
         from tsunagou.hostwake.port import HostWakeError
         from tsunagou.platform.db.sqlite import ProjectLock
@@ -1277,11 +1339,13 @@ if typer is not None:
                     "enrolled_at": enrolled_at, "duration_ms": (time.monotonic_ns() - started_ns) // 1_000_000}
 
         try:
-            if mode not in {"attach", "launch"} or role not in {"worker", "main"}:
+            if mode not in {"attach", "launch"} or role not in {None, "worker", "main"}:
                 raise typer.BadParameter("mode must be attach/launch; role must be worker/main")
             if not re.fullmatch(r"[A-Za-z0-9_-]+", adapter) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
                 raise typer.BadParameter("adapter/profile must contain only letters, digits, '_' or '-'")
             runtime = _runtime_context()
+            requested_role = role if role is not None or adapter == "deepseek" else "worker"
+            desktop = adapter == "deepseek" and profile == "desktop"
             request = None
             if request_file is not None or (adapter == "codex" and register_host):
                 if adapter != "codex":
@@ -1293,10 +1357,7 @@ if typer is not None:
                 if output_dir and output_dir.resolve() != destination:
                     raise RuntimeError("onboarding_request_output_conflict")
             else:
-                identity = (os.environ.get("TSUNAGOU_HOST_CONVERSATION_ID") or os.environ.get("CODEX_THREAD_ID")
-                            or os.environ.get("CODEX_SESSION_ID"))
-                if not identity:
-                    raise RuntimeError("host_conversation_required:run_agent_prepare_inside_the_host")
+                identity = _host_conversation_id(adapter)
                 destination = (
                     output_dir or runtime.project_root / ".tsunagou/bridges" / f"{adapter}-{conversation_key(identity)[:16]}"
                 ).resolve()
@@ -1313,24 +1374,32 @@ if typer is not None:
             destination.mkdir(parents=True, exist_ok=True)
             ticket_file, session_file = destination / "ticket.json", destination / "bridge-session.json"
             bootstrap_request = request_file or (
-                destination / "host-identity.json" if adapter in HOST_META_KEYS else None
+                destination / "host-identity.json" if adapter in HOST_META_KEYS or desktop else None
             )
             # Connect serializes only its own conversation. CredentialHandoff
             # continues to own session rotation and ticket cleanup separately.
             with ProjectLock(destination / "connect.lock"):
-                if request is not None:
-                    write_codex_route(request, runtime, destination)
+                if request is not None or desktop:
+                    if request is not None:
+                        write_codex_route(request, runtime, destination)
+                        environment = {"TSUNAGOU_ROUTING_DIR": str(codex_routing_directory())}
+                    else:
+                        write_deepseek_route(conversation_id, runtime, destination)
+                        environment = {"TSUNAGOU_ROUTING_DIR": str(deepseek_routing_directory()),
+                                       "TSUNAGOU_HOST_META_KEY": host_registration.DEEPSEEK_HOST_META_KEY}
                     bridge_config_path = destination / "bridge-config.json"
-                    config = {"command": "node", "args": [str(source / "packages/bridge-server/dist/server.js")],
-                              "env": {"TSUNAGOU_ROUTING_DIR": str(codex_routing_directory())}, "secret_fields": []}
+                    config = {"command": shutil.which("node") or "node",
+                              "args": [str(source / "packages/bridge-server/dist/server.js")],
+                              "env": environment, "secret_fields": []}
                     write_private_bytes(bridge_config_path, (json.dumps(config, indent=2) + "\n").encode())
                 else:
                     bridge_config_path = _write_bridge_config(
                         adapter=adapter, mode=mode, installation_id=installation_id, output_dir=destination, ticket_path=ticket_file,
                     )
                 if not ticket_file.exists() and not session_file.exists():
+                    ticket_role = requested_role or "worker"
                     payload: dict[str, Any] = {
-                        "kind": role, "role": role, "installation_id": installation_id,
+                        "kind": ticket_role, "role": ticket_role, "installation_id": installation_id,
                         "conversation_evidence": {"conversation_id": conversation_id},
                     }
                     if request:
@@ -1339,16 +1408,16 @@ if typer is not None:
                             "thread_id": conversation_id, "host_generation": request["host_generation"],
                         }
                     result = _invoke_command("agent.ticket.create.user", payload, authorization=f"Bearer {token}")
-                    _write_ticket_private(installation_id, conversation_id, result["secret"], ticket_file, role,
+                    _write_ticket_private(installation_id, conversation_id, result["secret"], ticket_file, ticket_role,
                                           request["host_generation"] if request else None)
                     _ack_private_delivery(result, token)
                 context = _bridge_bootstrap(bridge_config_path, bootstrap_request)
                 if context["project_id"] != runtime.project_id:
                     raise RuntimeError("onboarding_project_mismatch")
-                if role == "main" and context["role"] != "main":
+                if requested_role == "main" and context["role"] != "main":
                     _invoke_command("authority.appoint", {"agent_id": context["agent_id"]}, authorization=f"Bearer {token}")
                     context = _bridge_bootstrap(bridge_config_path, bootstrap_request)
-                if role == "worker" and context["role"] != "worker":
+                if requested_role == "worker" and context["role"] != "worker":
                     raise RuntimeError("current_agent_is_main:explicit_revoke_required")
                 # This verifies enrollment through a helper bridge. Original-host
                 # MCP readiness remains a separate observation after connect.
@@ -1360,6 +1429,9 @@ if typer is not None:
                         bridge_config_path=bridge_config_path,
                         legacy_project_root=runtime.project_root,
                     )
+                elif register_host and desktop:
+                    _prepare_deepseek_desktop()
+                    registration = "configured:desktop"
                 elif register_host and adapter == "deepseek":
                     registration = _register_deepseek_mcp(
                         profile=profile, bridge_config_path=bridge_config_path,
@@ -1376,14 +1448,16 @@ if typer is not None:
                     value = context.get(name)
                     public_context[name] = {key: value[key] for key in fields if key in value} if isinstance(value, dict) else None
                 connected = {"status": "enrolled", **public_context, "adapter": adapter, "mode": mode,
-                             "requested_role": role, "profile": profile, "installation_id": installation_id,
+                             "requested_role": requested_role, "profile": profile, "installation_id": installation_id,
                              "bridge_config": str(bridge_config_path), "host_registration": registration,
                              "source_root": str(source),
                              "version": _daemon_request("GET", "/api/v1/health")["version"],
                              "next": "call_context__project_read_in_original_conversation"}
+                if adapter == "deepseek":
+                    connected["host_ready"] = False
                 if adapter == "deepseek" and launch_command:
-                    # The private overlay avoids adding tools to the shared profile.
-                    # Reusing it in another conversation can still reuse this identity.
+                    # Legacy launch surfaces still use an explicit overlay; Desktop
+                    # loads its credential-free provider through the ordinary profile.
                     connected["launch_command"] = launch_command
                 connection_file = destination / "connection.json"
                 previous = read_object(connection_file)

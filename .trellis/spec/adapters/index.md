@@ -1,10 +1,10 @@
 # Adapter and TypeScript guidance
 
-Status: shared bridge and diagnostic adapters are implemented. Existing Codex/OpenCode acceptance remains unchanged. DeepSeek Harness 0.2.0-rc.2 has not passed acceptance; use the [single acceptance report](../../../docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md) for evidence and outstanding checks.
+Status: shared bridge and diagnostic adapters are implemented. Existing Codex/OpenCode acceptance remains unchanged. The DeepSeek Harness 0.2.0-rc.2 ordinary Desktop onboarding repair passed live acceptance on 2026-10-02; release-gate status remains unchanged. Use the [single acceptance report](../../../docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md) for evidence and retained limitations.
 
 Host fact proven on OpenCode v2.0.18: local MCP servers receive no session env vars; the host conversation id arrives per tool call via `_meta["ai.opencode/sessionID"]`. Bridge identity for such hosts must be derived from that field, and a project-shared bridge must keep one private session file per conversation.
 
-Host fact observed on DeepSeek Harness 0.2.0-rc.2: MCP `tools/call` supplies no per-call conversation metadata, and `DSH_SESSION_ID` only reaches shell tool subprocesses. Registration therefore uses a private conversation overlay instead of a shared profile entry. This does not prove runtime caller identity: another conversation can reuse the overlay and obtain the enrolled identity. The command-line guard was withdrawn; multi-conversation surfaces remain unaccepted. Test helpers must reuse `tools/conformance/probes/common.py` and the existing host probe rather than maintain another baseline framework.
+Host fact observed on DeepSeek Harness 0.2.0-rc.2: the stock MCP client supplies no per-call conversation metadata; the existing host identity provider adds it from `exec.agent.session.id`. A private overlay alone does not prove caller identity. The 2026-10-02 authorized Desktop repair uses a credential-free shared provider entry and a separate private route for each real conversation. The local `tsunagou_connect` action takes its directory from `exec.agent.session.header.cwd`; model arguments never supply identity, commands or credentials. DeepSeek routing must not invoke Codex Desktop wake/binding recovery. Original-chat context, not helper enrollment, establishes readiness. Test helpers must reuse `tools/conformance/probes/common.py` and the existing host probe rather than maintain another baseline framework.
 
 ## Pre-Development Checklist
 

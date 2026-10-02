@@ -29,9 +29,17 @@ The shared bridge routes every call by host-provided MCP thread metadata. Separa
 
 If tools are missing after first configuration, use a documented host reload operation if available. Otherwise explain one concrete first-load action (fully quit/reopen Codex, then return to the same chat and call context). Do not promise Ctrl+R restarts MCP. If one restart does not help, investigate the recorded error and server configuration instead of asking for repeated restarts. Existing loaded shared bridges read new route/ticket/endpoint state on each call.
 
+## DeepSeek Harness Desktop
+
+Use the ordinary Desktop conversation opened in the selected project. When `tsunagou_connect` is available, call it directly. Otherwise run the installed CLI's `agent prepare --adapter deepseek` to register the existing provider in the actual Desktop profile; this step does not enroll an Agent or start the daemon. Let native profile reload load the tool. If necessary, fully quit/reopen Desktop once and return to the same conversation; investigate a persistent failure instead of requesting repeated restarts or an external terminal command.
+
+Call `tsunagou_connect` without a role to preserve an existing role or join as worker. Pass main only when the user explicitly chose main. The tool reads the real conversation and working directory inside the host and invokes the fixed installed CLI. Never supply or copy session IDs, credentials, commands or another conversation's overlay. The shared profile contains no Agent credential; each tool call chooses its own private route using host metadata.
+
+An enrolled result is only preparation. This same conversation must call `mcp__tsunagou__context__project_read` and verify the expected project, its own Agent, selected role and ready session before reporting success. DeepSeek does not claim Codex's original-chat automatic wake. If service startup, provider loading or enrollment fails, report that specific stage and preserve the existing identity.
+
 ## Other adapters
 
-Use their actual host-provided conversation identity and an isolated bridge process/config per conversation. The current automatic Desktop prepare route is Codex-specific. Do not claim another host supports shared thread metadata or original-chat wake without a working implementation. Retain the registered low-level enroll/rebind path for diagnostics, not as the normal Codex onboarding ritual.
+Use their actual host-provided conversation identity and supported bridge configuration. Do not claim another host supports shared thread metadata or original-chat wake without a working implementation. Retain the registered low-level enroll/rebind path for diagnostics, not as the normal Desktop onboarding ritual.
 
 ## After attachment
 

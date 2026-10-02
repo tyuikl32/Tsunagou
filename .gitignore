@@ -39,3 +39,12 @@ pytest-cache-files-*/
 # Local editor state
 .idea/
 .vscode/
+
+<!-- TSUNAGOU:START -->
+# Tsunagou local runtime and credentials
+.tsunagou/local/
+.tsunagou/bridges/
+.tsunagou/**/*.token
+.tsunagou/**/*.sqlite3
+.tsunagou/**/*.log
+<!-- TSUNAGOU:END -->

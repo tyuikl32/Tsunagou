@@ -489,7 +489,9 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
     }
     return { ...fixed, projectId, conversationId: identity };
   }
-  const rawIdentity = request.params._meta?.threadId;
+  const metaKey = env("TSUNAGOU_HOST_META_KEY") || "threadId";
+  const codexDesktop = metaKey === "threadId";
+  const rawIdentity = request.params._meta?.[metaKey];
   const identity = typeof rawIdentity === "string" && rawIdentity ? rawIdentity : undefined;
   // Shared MCP processes may serve many chats. Their process environment must
   // never pick an identity for a request whose host metadata is absent.
@@ -508,15 +510,18 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
     ticketFile: route.ticket_file as string, sessionFile: route.session_file as string,
     stateDir: route.state_dir as string, projectRoot: route.project_root as string,
     projectId: route.project_id as string, conversationId: identity,
-    hostIdCandidates: [], hostMetaKey: "", desktopWake: true,
-    desktopEndpoint: process.env.CODEX_APP_TOOLS_PIPE_PATH || (route.endpoint as string | undefined),
+    hostIdCandidates: [], hostMetaKey: "", desktopWake: codexDesktop,
+    desktopEndpoint: codexDesktop
+      ? process.env.CODEX_APP_TOOLS_PIPE_PATH || (route.endpoint as string | undefined) : undefined,
   };
 }
 
 async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<string, unknown>, commandId: string, restoreOnly = false): Promise<unknown> {
   let ticket = cfg.ticketFile && existsSync(cfg.ticketFile) ? readTicketFile(cfg.ticketFile) : undefined;
   const expectedBinding = cfg.conversationId ? hash("conversation_id:" + cfg.conversationId) : undefined;
-  const hostIdentity = cfg.conversationId ? { digest: expectedBinding!, envName: "_meta.threadId" } : readHostIdentity(cfg.hostIdCandidates);
+  const hostIdentity = cfg.conversationId
+    ? { digest: expectedBinding!, envName: `_meta.${cfg.hostMetaKey || env("TSUNAGOU_HOST_META_KEY") || "threadId"}` }
+    : readHostIdentity(cfg.hostIdCandidates);
   if (cfg.conversationId && ticket && ticket.conversation_id !== cfg.conversationId) {
     if (!cfg.hostMetaKey) throw new Error("host_conversation_mismatch");
     // A project-shared metadata bridge must leave another conversation's
@@ -610,6 +615,10 @@ async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<stri
 
 let restoringBindings = false;
 async function restoreDesktopBindings(): Promise<void> {
+  // Private routes are shared infrastructure; only Codex routes have its wake
+  // endpoint semantics. A parent CODEX_* environment must not enroll or rotate
+  // DeepSeek conversations before an actual call from that conversation.
+  if (env("TSUNAGOU_HOST_META_KEY") && env("TSUNAGOU_HOST_META_KEY") !== "threadId") return;
   const directory = env("TSUNAGOU_ROUTING_DIR");
   const endpoint = env("CODEX_APP_TOOLS_PIPE_PATH");
   if (!directory || !endpoint || !existsSync(directory) || restoringBindings) return;

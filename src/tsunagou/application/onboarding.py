@@ -71,16 +71,34 @@ def codex_routing_directory() -> Path:
     return Path(configured).expanduser().resolve() if configured else Path.home() / ".tsunagou/hosts/codex"
 
 
+def deepseek_routing_directory() -> Path:
+    configured = os.environ.get("TSUNAGOU_ROUTING_DIR")
+    return Path(configured).expanduser().resolve() if configured else Path.home() / ".tsunagou/hosts/deepseek"
+
+
 def write_codex_route(request: dict[str, Any], runtime: RuntimeContext, destination: Path) -> Path:
-    route = codex_routing_directory() / (conversation_key(request["conversation_id"]) + ".json")
+    return _write_host_route(request["conversation_id"], runtime, destination, codex_routing_directory(),
+                             endpoint=request["endpoint"])
+
+
+def write_deepseek_route(conversation_id: str, runtime: RuntimeContext, destination: Path) -> Path:
+    return _write_host_route(conversation_id, runtime, destination, deepseek_routing_directory(), adapter="deepseek")
+
+
+def _write_host_route(conversation_id: str, runtime: RuntimeContext, destination: Path, directory: Path,
+                      *, endpoint: str | None = None, adapter: str | None = None) -> Path:
+    route = directory / (conversation_key(conversation_id) + ".json")
     previous = read_object(route)
-    if previous and previous.get("project_id") != runtime.project_id:
+    if previous and (previous.get("project_id") != runtime.project_id
+                     or Path(str(previous.get("project_root", ""))).resolve() != runtime.project_root):
         raise RuntimeError("host_route_project_conflict")
     value = {
-        "format_version": 1, "conversation_id": request["conversation_id"], "project_id": runtime.project_id,
+        "format_version": 1, "conversation_id": conversation_id, "project_id": runtime.project_id,
         "project_root": str(runtime.project_root), "daemon_state_dir": str(runtime.state_dir),
         "state_dir": str(destination), "ticket_file": str(destination / "ticket.json"),
-        "session_file": str(destination / "bridge-session.json"), "endpoint": request["endpoint"],
+        "session_file": str(destination / "bridge-session.json"),
+        **({"endpoint": endpoint} if endpoint is not None else {}),
+        **({"adapter": adapter} if adapter is not None else {}),
     }
     if value != previous:
         write_private_bytes(route, (json.dumps(value, sort_keys=True) + "\n").encode())

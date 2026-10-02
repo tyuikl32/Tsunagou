@@ -2,11 +2,13 @@
 
 此适配器面向 DeepSeek Harness 产品，不面向 DeepSeek 模型 API。2026-09-18 的无模型诊断使用 `@deepseek-ai/dsh 0.1.5-rc.2`；2026-10-01 的实测使用桌面版 `@deepseek-ai/dsh-desktop-runtime 0.2.0-rc.2`，当前证据与待核对项见[验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)。
 
-Harness 是 profile/plugin 宿主，外部 MCP 由 `@deepseek-ai/dsh-mcp-client` 提供。实测 MCP `tools/call` 不带逐调用会话身份；`DSH_SESSION_ID` 只到达 shell 工具子进程。`agent connect` 因此把 MCP 条目写到该会话 bridge 私有目录，以 `--patch <overlay>` 携带，避免写入共享 profile；旧的 profile 级条目停用为 `[]`。
+Harness 是 profile/plugin 宿主，stock `@deepseek-ai/dsh-mcp-client` 的 `tools/call` 不带逐调用会话身份；本项目已有身份 provider 从本次执行上下文的 `exec.agent.session.id` 取得真实身份并添加 metadata。2026-10-02 的 Desktop 接入使用实际 Desktop profile 中无凭据的共享 provider，每个真实聊天分别选择自己的私有路由。
 
-**身份隔离仍有开放反例：另一会话复用 overlay 后会取得原身份。** 私有配置不等于运行时调用方证明；已撤回的命令行守卫不能作为支持依据。`dsh web` 多会话接入尚未通过验收。
+正常 Desktop 入口是已安装 CLI 的 `agent prepare --adapter deepseek`，随后由原聊天调用宿主本地 `tsunagou_connect` 和 MCP `context__project_read`。prepare 仅配置插件；connect 使用宿主内的真实会话和目录调用固定安装 CLI，不经 shell 工具的受限进程启动路径。helper 的 `host_ready:false` 表示原聊天尚待自行读取验证，**不是**唤醒状态；DeepSeek 不启用 Codex 专属 wake。首次优先热重载，必要时一次完整重启；无需每个聊天携带临时 overlay。
 
-安装由用户选择具体 Harness 版本和 profile；适配器只注册非秘密 bridge 入口。token 只由 bridge 私有内存或用户私有文件提供，不写 prompt、工具参数、静态 MCP 配置或环境。探针必须使用临时 `DSH_HOME` 与 `DSH_AGENTS_HOME`，不得读取或创建用户现有 Harness 会话。卸载撤销适配器注册并把 patch 还原成宿主可加载的空层 `[]`，保留 Harness 原生会话和项目历史。
+身份不明、私有路由缺失或不匹配时拒绝调用；不能回退到别人的凭据。旧 stock overlay 的借用反例和已撤回命令行守卫只作历史，不能证明新 Desktop 入口。低层 headless overlay 兼容路径保留。注销仅删除指定会话或项目的私有路由，保留共享 provider、其他配置、原生会话与项目历史。
+
+安装由用户选择具体 Harness 版本和 profile；静态配置只有可信程序和私有路由位置。token 只由 bridge 私有内存或用户私有文件提供，不写 prompt、工具参数、静态 MCP 配置或环境。以下无模型 Web 探针继续使用临时 `DSH_HOME` 与 `DSH_AGENTS_HOME`；用户明确授权的 Desktop 原聊天验收则核对指定聊天的新调用，不能用另起 web/headless 结果替代，也不导出原始凭据或完整聊天。
 
 官方 Web 流程是：`dsh web --no-open` 打印带 token 的本机根 URL；首次 GET 只用于交换一次 token，服务返回绑定 Host 的 HttpOnly、SameSite cookie 并重定向到无 token 的 `/`；之后对 `/api` 发送 `client-request` envelope，`method` 必须与路径末段一致，Remote 参数放在 `payload.args`。session-controller 的业务 endpoint 包括 `session/list`、`session/create`、`session/fork`、`session/page` 和 `session/follow`。探针只使用 `session/create` 与 `session/list`，不执行模型 prompt、fork 或持久用户会话操作。
 
@@ -37,6 +39,6 @@ uv run python tools/conformance/probes/deepseek/probe.py `
 
 `DeepSeekAdapter` 要求 Harness 发出的持久 conversation digest（即宿主持久会话 id）；事件重放由 bridge command_id/去重层处理，适配器不复制任务或消息状态机。
 
-当前尚未通过完整验收，发布门禁未升级。保留已有 bootstrap、注册/注销及相关回归修复；不自动开展身份插件、共享契约或黑板开发。
+2026-10-02 用户已授权并实施普通 Desktop 接入修复，真实入口、回归和剩余场景统一记录在验收报告。共享协议、发布门禁与 Codex/OpenCode 配置未改；本轮不扩展共享契约、黑板或自动唤醒功能。
 
 当前诊断入口为 `tools/conformance/probes/deepseek/probe.py`，使用既有 `common.py`。历史实测脚本已与其审查依赖一起归档，位置见[验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)。官方参考：[deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)、[browser authentication](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/connection/src/browser-auth.ts)、[session controller](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/api/session-controller/src/index.ts)。验证入口：`corepack pnpm --filter @tsunagou/adapter-deepseek run check`、`corepack pnpm exec vitest run packages/adapter-deepseek/tests`、`python tools/docs/validate_docs.py`。

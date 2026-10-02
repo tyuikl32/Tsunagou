@@ -18,6 +18,7 @@ file and is never part of a registration.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -112,7 +113,7 @@ def _codex_commands(executable: str, name: str, bridge: Mapping[str, Any]) -> tu
 
 
 # ---------------------------------------------------------------------------
-# DeepSeek Harness: a conversation-scoped overlay, never a shared profile entry
+# DeepSeek Harness: per-call identity, with private routes or legacy overlays
 # ---------------------------------------------------------------------------
 #
 # Harness is a profile/plugin host: `dsh [--profile] <name>` composes a bundle stack
@@ -120,32 +121,10 @@ def _codex_commands(executable: str, name: str, bridge: Mapping[str, Any]) -> tu
 # servers are not on by default; `@deepseek-ai/dsh-mcp-client` adds them, one entry
 # per server, and the model sees the tools as `mcp__<serverName>__<rawName>`.
 #
-# Why this row does not write into a profile
-# ------------------------------------------
-# A Harness MCP child is started once, when a profile loads, and it is told nothing
-# about the conversation that will call it. `tools/call` carries a name and arguments
-# only — no `_meta`, no session id — and the child environment is a scrubbed copy of
-# the harness process environment, which never holds a session id either:
-# 0.2.0-rc.2 composes `DSH_SESSION_ID` per *tool execution* (`dsh-shell-env`, from
-# `execution.agent.session.header.id`), so it reaches shell tool subprocesses and
-# nothing else. An entry written into a shared profile therefore cannot tell two
-# conversations apart, and a new conversation booting that profile would silently
-# receive the enrolled Agent, Session and `ready` status. That is not a tuning
-# problem; it is the wrong place to bind an identity.
-#
-# What this row does instead
-# --------------------------
-# `agent connect` writes a private overlay *inside this conversation's own bridge
-# directory* and hands back the one command that launches that conversation with
-# `--patch <overlay>`. A conversation started without its own overlay gets no
-# Tsunagou tools at all — the only refusal this host surface can express — and
-# nothing shared between conversations exists to leak.
-#
-# Residual limit, stated rather than hidden: because Harness supplies no per-call
-# session identity, an operator who deliberately launches a *different* conversation
-# with another conversation's overlay file is indistinguishable from resuming the
-# bound one. Closing that needs a plugin running inside the harness process, where
-# `execution.agent.session.header.id` is available.
+# The stock client omits session metadata. Our provider obtains it from the tool's
+# actual execution context. Desktop loads that provider once without any fixed
+# conversation credentials; each call selects a private route. Existing headless
+# launches retain their conversation overlay, using the same identity provider.
 
 DEEPSEEK_MARKER = "# TSUNAGOU:MANAGED"
 
@@ -170,6 +149,8 @@ DEEPSEEK_SERVER_NAME = "tsunagou"
 DEEPSEEK_OVERLAY_NAME = "dsh-overlay.yml"
 DEEPSEEK_DEFAULT_APP_PROFILE = "headless"
 DEEPSEEK_LEGACY_PROFILE = "tsunagou"
+DEEPSEEK_DESKTOP_BEGIN = "# TSUNAGOU:DESKTOP:START"
+DEEPSEEK_DESKTOP_END = "# TSUNAGOU:DESKTOP:END"
 BRIDGE_STATE_ENV = "TSUNAGOU_STATE_DIR"
 BRIDGE_PROJECT_ENV = "TSUNAGOU_PROJECT_ROOT"
 
@@ -288,13 +269,7 @@ def deepseek_overlay_text(bridge: Mapping[str, Any]) -> str:
 
 
 def deepseek_profiles(environ: Mapping[str, str] | None = None) -> list[str]:
-    """Every app profile this Harness home can boot.
-
-    A conversation's overlay travels on its launch command, and the app profile is chosen
-    then - the same conversation can be launched under headless, web or tui. So the
-    provider has to be loadable by all of them, not only by whichever profile a particular
-    enrolment happened to resolve.
-    """
+    """List app profiles; registration checks only the selected launch surface."""
 
     root = find_dsh_home(environ) / "profiles"
     if not root.is_dir():
@@ -304,35 +279,24 @@ def deepseek_profiles(environ: Mapping[str, str] | None = None) -> list[str]:
 
 def _provider_installed(app_profile: str, environ: Mapping[str, str] | None = None) -> bool:
     directory = find_dsh_home(environ) / "profiles" / app_profile
-    return (directory / "node_modules" / DEEPSEEK_PROVIDER_PACKAGE / "package.json").is_file()
+    package = directory / "node_modules" / DEEPSEEK_PROVIDER_PACKAGE
+    return (package / "package.json").is_file() and (package / "index.js").is_file()
 
 
 def deepseek_provider_state(profile: str, *, environ: Mapping[str, str] | None = None) -> tuple[bool, str]:
-    """Whether the identity provider can be loaded by every profile that might boot.
+    """Check the selected launch profile, without requiring unrelated app surfaces."""
 
-    A declared dependency is not an installed one: the manifest can list the package while
-    the profile's ``node_modules`` has nothing to resolve, and a profile the provider was
-    never installed into fails exactly that way. Only resolved directories count, and one
-    missing profile is enough to make the overlay unsafe to write.
-    """
-
-    profiles = deepseek_profiles(environ)
-    if not profiles:
-        return False, f"no_profile:{dsh_app_profile(profile, environ)}"
-    missing = [name for name in profiles if not _provider_installed(name, environ)]
-    if missing:
-        return False, "provider_not_installed:" + ",".join(missing)
+    app_profile = dsh_app_profile(profile, environ)
+    if not (find_dsh_home(environ) / "profiles" / app_profile / "package.json").is_file():
+        return False, f"no_profile:{app_profile}"
+    if not _provider_installed(app_profile, environ):
+        return False, f"provider_not_installed:{app_profile}"
     return True, "ready"
 
 
 def ensure_deepseek_provider(profile: str, *, environ: Mapping[str, str] | None = None,
                              run: Callable[[tuple[str, ...]], int] | None = None) -> str:
-    """Make the host-identity provider loadable by every profile that might boot.
-
-    The answer decides whether this adapter may register at all: without the provider the
-    overlay cannot prove its caller, and there is no silent fallback - a provider that
-    cannot be installed everywhere is reported, and the caller refuses the registration.
-    """
+    """Install the provider for the selected legacy overlay launch profile only."""
 
     ready, state = deepseek_provider_state(profile, environ=environ)
     if ready:
@@ -365,6 +329,63 @@ def _provider_directory() -> Path | None:
 
     candidate = Path(__file__).resolve().parents[3] / DEEPSEEK_PROVIDER_DIRECTORY
     return candidate if (candidate / "package.json").is_file() else None
+
+
+def register_deepseek_desktop(bridge: Mapping[str, Any]) -> ConfigChange:
+    """Add one credential-free provider to the real Desktop patch, preserving user YAML.
+
+    The provider is shipped beside this installation and supports a file URL directly;
+    no npm install, CLI launcher or unrelated profile is involved. Configured is not proof
+    that the running Desktop has loaded it: the original conversation verifies readiness.
+    """
+    from tsunagou.platform.db.sqlite import ProjectLock
+    from tsunagou.platform.private_files import write_private_bytes
+
+    profile = find_dsh_home() / "profiles/desktop"
+    path = profile / "cordis.patch.yml"
+    package = _provider_directory()
+    if not (profile / "package.json").is_file():
+        return ConfigChange(FAILED, note="deepseek_desktop_profile_missing")
+    if package is None or not (package / "index.js").is_file():
+        return ConfigChange(FAILED, note="deepseek_provider_package_missing")
+    environment = bridge.get("env")
+    connect = bridge.get("connect")
+    if (not isinstance(environment, Mapping) or not environment.get("TSUNAGOU_ROUTING_DIR")
+            or set(environment) != {"TSUNAGOU_ROUTING_DIR", "TSUNAGOU_HOST_META_KEY"}
+            or environment.get("TSUNAGOU_HOST_META_KEY") != DEEPSEEK_HOST_META_KEY
+            or not isinstance(connect, Mapping)):
+        return ConfigChange(FAILED, note="deepseek_desktop_config_invalid")
+    entry = {"id": DEEPSEEK_ENTRY_ID, "name": (package / "index.js").as_uri(), "config": {
+        "serverName": DEEPSEEK_SERVER_NAME, "transport": "stdio", "command": bridge["command"],
+        "args": bridge["args"], "env": dict(environment), "connect": dict(connect),
+    }}
+    block = f"{DEEPSEEK_DESKTOP_BEGIN}\n- insert: {json.dumps([entry], ensure_ascii=False)}\n{DEEPSEEK_DESKTOP_END}\n"
+    with ProjectLock(profile / ".tsunagou-registration.lock"):
+        original = path.read_text(encoding="utf-8") if path.exists() else ""
+        if DEEPSEEK_DESKTOP_BEGIN in original or DEEPSEEK_DESKTOP_END in original:
+            if original.count(DEEPSEEK_DESKTOP_BEGIN) != 1 or original.count(DEEPSEEK_DESKTOP_END) != 1:
+                return ConfigChange(FAILED, (path,), "deepseek_desktop_managed_block_invalid")
+            start, end = original.index(DEEPSEEK_DESKTOP_BEGIN), original.index(DEEPSEEK_DESKTOP_END)
+            if end < start:
+                return ConfigChange(FAILED, (path,), "deepseek_desktop_managed_block_invalid")
+            suffix = original[end + len(DEEPSEEK_DESKTOP_END):]
+            remainder = original[:start] + suffix.lstrip("\r\n")
+            if DEEPSEEK_ENTRY_ID in remainder:
+                return ConfigChange(FAILED, (path,), "deepseek_desktop_entry_conflict")
+            updated = original[:start] + block + suffix.lstrip("\r\n")
+        else:
+            if DEEPSEEK_ENTRY_ID in original:
+                return ConfigChange(FAILED, (path,), "deepseek_desktop_entry_conflict")
+            lines = original.splitlines(keepends=True)
+            active = [line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")]
+            if active == ["[]"]:
+                original = "".join(line for line in lines if line.strip() != "[]")
+            elif active and not active[0].startswith("- "):
+                return ConfigChange(FAILED, (path,), "deepseek_desktop_patch_not_a_list")
+            updated = original + ("\n" if original and not original.endswith("\n") else "") + block
+        if not path.exists() or path.read_text(encoding="utf-8") != updated:
+            write_private_bytes(path, updated.encode())
+    return ConfigChange(REGISTERED, (path,), "configured:verify_in_original_conversation")
 
 
 def _managed_bridge_state(path: Path) -> str | None:
@@ -494,6 +515,35 @@ def remove_deepseek_overlay(profile: str, scope: Mapping[str, Any]) -> str:
 
     removed: list[str] = []
     bridges = root / ".tsunagou" / "bridges"
+    route_root = Path(os.environ.get("TSUNAGOU_ROUTING_DIR") or Path.home() / ".tsunagou/hosts/deepseek")
+    routes: dict[Path, list[Path]] = {}
+    for path in sorted(route_root.glob("*.json")):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if (not isinstance(value, dict) or value.get("format_version") != 1 or value.get("adapter") != "deepseek"
+                    or not isinstance(value.get("project_root"), str) or not isinstance(value.get("state_dir"), str)
+                    or not _same_path(Path(value["project_root"]), root)):
+                continue
+            state = Path(value["state_dir"]).resolve()
+            if _inside(state, root):
+                routes.setdefault(state, []).append(path)
+        except (OSError, ValueError):
+            continue
+    if not remove_all and bridge_dir is None:
+        overlays = [path for path in bridges.glob(f"*/{DEEPSEEK_OVERLAY_NAME}")
+                    if _managed_bridge_state(path) is not None]
+        registrations = {path.parent.resolve() for path in overlays} | set(routes)
+        if len(registrations) > 1:
+            return f"ambiguous:{len(registrations)}"
+        if registrations:
+            bridge_dir = next(iter(registrations))
+    for state, paths in routes.items():
+        if remove_all or state == bridge_dir:
+            for path in paths:
+                path.unlink()
+                removed.append(str(path))
+    # The Desktop profile is installation-wide and carries no project credentials.
+    # Cancelling a registration removes its private route, never that shared provider.
     if remove_all:
         # Removing a whole project's registrations is a different request from cancelling
         # one enrollment, and it is the only one that may touch every overlay.

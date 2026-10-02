@@ -108,3 +108,50 @@ def test_one_connect_and_shared_mcp_keep_two_host_conversations_separate(tmp_pat
             assert conn.execute("SELECT COUNT(*) FROM commands WHERE command_kind='session.reconnect'").fetchone()[0] == 2
     finally:
         cli("daemon", "stop")
+
+
+def test_deepseek_native_connect_preserves_identity_and_role_without_an_overlay(tmp_path: Path):
+    """Exercise real CLI/daemon/bridge boundaries; Desktop loading is verified separately."""
+    from tsunagou.application.onboarding import conversation_key
+
+    root = tmp_path / "deepseek-project"
+    subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("TSUNAGOU_", "CODEX_", "DSH_"))}
+    if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
+        env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
+    env["TSUNAGOU_ROUTING_DIR"] = str(tmp_path / "routes")
+    # A generic or another vendor's inherited ID must not select this route.
+    env["CODEX_THREAD_ID"] = "unrelated-codex"
+    env["TSUNAGOU_HOST_CONVERSATION_ID"] = "unrelated-generic"
+
+    def cli(*args):
+        result = subprocess.run([sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
+                                cwd=root, env=env, capture_output=True, text=True, timeout=45)
+        assert result.returncode == 0, result.stderr or result.stdout
+        return json.loads(result.stdout)
+
+    cli("project", "init", "--coordination-root", str(root))
+    args = ["agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host"]
+    try:
+        connected = []
+        for name, explicit_role in (("native-dsh-a", "main"), ("native-dsh-b", None)):
+            env["DSH_SESSION_ID"] = name
+            first = cli(*args, *(["--role", explicit_role] if explicit_role else []))
+            again = cli(*args)
+            assert first["agent_id"] == again["agent_id"]
+            assert first["role"] == again["role"] == (explicit_role or "worker")
+            assert first["status"] == "enrolled" and first["host_ready"] is False
+            assert first["session"]["status"] == "ready" and "launch_command" not in first
+            config = json.loads(Path(first["bridge_config"]).read_bytes())
+            assert set(config["env"]) == {"TSUNAGOU_ROUTING_DIR", "TSUNAGOU_HOST_META_KEY"}
+            route_path = tmp_path / "routes" / (conversation_key(name) + ".json")
+            route = json.loads(route_path.read_bytes())
+            assert route["conversation_id"] == name and "endpoint" not in route
+            assert not (Path(route["state_dir"]) / "dsh-overlay.yml").exists()
+            connected.append(first)
+        assert connected[0]["agent_id"] != connected[1]["agent_id"]
+        assert not (tmp_path / "routes" / (conversation_key("unrelated-codex") + ".json")).exists()
+        with sqlite3.connect(root / ".tsunagou/local/state.sqlite3") as conn:
+            assert conn.execute("SELECT COUNT(*) FROM commands WHERE command_kind='agent.enroll'").fetchone()[0] == 2
+    finally:
+        cli("daemon", "stop")

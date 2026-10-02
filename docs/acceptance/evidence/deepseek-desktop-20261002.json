@@ -1,0 +1,2218 @@
+{
+  "observed_date": "2026-10-02",
+  "scope": "ordinary_desktop_original_conversation_onboarding",
+  "source_head": "82a47fdc8363e7c7640f269a65e2ba947d4d3f6e",
+  "source_worktree_modified": true,
+  "host": "DeepSeek Harness Desktop 0.2.0-rc.2",
+  "startup_gate": {
+    "status": "pass",
+    "host_pid": 30576,
+    "parent_pid": 8888,
+    "flags": 150995456,
+    "child_exit_code": 0,
+    "observed_at": "2026-10-02T05:13:48.905Z",
+    "native_hmr": true,
+    "desktop_restarted": false,
+    "temporary_plugin_removed": true,
+    "profile_restored_before_install": true
+  },
+  "installation": {
+    "entrypoint": "installed tsunagou launcher: agent prepare --adapter deepseek",
+    "status": "prepared",
+    "runtime_profile": "desktop",
+    "native_hmr": true,
+    "creates_agent": false,
+    "desktop_restarted": false,
+    "acl_modified": false,
+    "initial_venv_python_attempt": {
+      "status": "failed",
+      "error": "PermissionError",
+      "target": "desktop/.tsunagou-registration.lock",
+      "profile_unchanged": true
+    },
+    "correction": "Used the actual installed launcher and its configured Python/PYTHONPATH; no ACL or sandbox changes."
+  },
+  "original_chat_observations": [
+    {
+      "log_bytes": 55156,
+      "log_sha256": "fa81e7122514ea8dfe30bead55fa09e133f9bdcc645ccb2073e5c0523d2cfde1",
+      "log_event_count": 68,
+      "results": [
+        {
+          "tool": "tsunagou_connect",
+          "call_seq": 28,
+          "result_seq": 29,
+          "observed_at": "2026-10-02T05:29:59.505Z",
+          "arguments": {},
+          "is_error": false,
+          "observations": [
+            {
+              "project_id": "44cef3c0-52ae-4182-a72f-c224229d29c2",
+              "agent_id": "07ae3df2-4a42-419c-82de-bfa6ea0033c0",
+              "role": "worker",
+              "status": "enrolled",
+              "host_ready": false,
+              "session": {
+                "status": "ready",
+                "connection_epoch": 1
+              }
+            }
+          ]
+        },
+        {
+          "tool": "mcp__tsunagou__context__project_read",
+          "call_seq": 36,
+          "result_seq": 37,
+          "observed_at": "2026-10-02T05:30:01.205Z",
+          "arguments": {},
+          "is_error": false,
+          "observations": [
+            {
+              "project_id": "44cef3c0-52ae-4182-a72f-c224229d29c2",
+              "agent_id": "07ae3df2-4a42-419c-82de-bfa6ea0033c0",
+              "role": "worker",
+              "main_agent_id": null,
+              "session": {
+                "status": "ready",
+                "connection_epoch": 1,
+                "session_identity_digest": "943c8d5c6487092e35c638f8768a2e9c54a570a18f7621d71d4e1a5b3d16acc7"
+              },
+              "host_binding_present": false
+            }
+          ]
+        }
+      ],
+      "host_identity_digest": "ff6ba8c4866d2409271c01416bd574907507647317b45f3fbe225ecfbb0c8488"
+    },
+    {
+      "log_bytes": 596278,
+      "log_sha256": "a788da6efdb30808b7e71d1b42993ed853dbf34c46204a2d7b3e5b7c26894467",
+      "log_event_count": 733,
+      "results": [
+        {
+          "tool": "tsunagou_connect",
+          "call_seq": 718,
+          "result_seq": 719,
+          "observed_at": "2026-10-02T05:30:41.415Z",
+          "arguments": {},
+          "is_error": false,
+          "observations": [
+            {
+              "project_id": "44cef3c0-52ae-4182-a72f-c224229d29c2",
+              "agent_id": "cb7f6500-5a5d-41b1-a27e-0c37b421b976",
+              "role": "worker",
+              "status": "enrolled",
+              "host_ready": false,
+              "session": {
+                "status": "ready",
+                "connection_epoch": 1
+              }
+            }
+          ]
+        },
+        {
+          "tool": "mcp__tsunagou__context__project_read",
+          "call_seq": 724,
+          "result_seq": 725,
+          "observed_at": "2026-10-02T05:30:44.707Z",
+          "arguments": {},
+          "is_error": false,
+          "observations": [
+            {
+              "project_id": "44cef3c0-52ae-4182-a72f-c224229d29c2",
+              "agent_id": "cb7f6500-5a5d-41b1-a27e-0c37b421b976",
+              "role": "worker",
+              "main_agent_id": null,
+              "session": {
+                "status": "ready",
+                "connection_epoch": 1,
+                "session_identity_digest": "2368b3db62cfc997a80d1c388a6922ea3d6f9c814054d4915cf47a8fbc548b0b"
+              },
+              "host_binding_present": false
+            }
+          ]
+        }
+      ],
+      "host_identity_digest": "f86cbf22b828da6791b5594f4e503e572ed58e06860d56ea942000a0d47ac217"
+    }
+  ],
+  "checks": {
+    "two_real_desktop_conversations": true,
+    "distinct_agent_ids": true,
+    "both_ready": true,
+    "first_connect_role": "worker",
+    "host_ready_false_is_pre_verification_snapshot": true,
+    "host_binding_present": false,
+    "automatic_wake_claimed": false,
+    "same_conversation_repeat_connect": true,
+    "main_role_preserved_on_unspecified_role": true,
+    "task_begin_submit": true,
+    "worker_structured_response": true,
+    "worker_message_ack": true,
+    "task_review_complete_claimed": false,
+    "main_received_worker_results": true,
+    "daemon_restart_same_conversation_recovery": true,
+    "unregistered_desktop_fork_rejected": true,
+    "original_main_context_after_initial_failed_compact": true,
+    "new_worker_original_chat_verified": true,
+    "same_conversation_identity_after_successful_compact": true
+  },
+  "validation": {
+    "python_targeted_unit": {
+      "passed": 93,
+      "provenance": "implementation agent"
+    },
+    "python_onboarding_integration": {
+      "passed": 3,
+      "provenance": "implementation agent"
+    },
+    "provider_node": {
+      "passed": 5,
+      "provenance": "implementation and independent check agents"
+    },
+    "adapter_vitest": {
+      "passed": 18,
+      "provenance": "implementation agent",
+      "hosts": [
+        "codex",
+        "opencode",
+        "deepseek"
+      ]
+    },
+    "credential_node": {
+      "passed": 27,
+      "failed": 1,
+      "limitation": "Unchanged Python private_files.py could not create a temporary ticket file under the test's uv-selected interpreter; no assertion or ACL was relaxed."
+    },
+    "python_registration_environment_failure": {
+      "test": "tests/unit/test_host_registration.py:test_codex_finds_its_executable_the_way_the_host_hides_it",
+      "description": "A deliberately missing CODEX_CLI_PATH falls back to the installed Codex on PATH. Independent check reproduced this with HEAD implementation; not introduced by this change."
+    },
+    "ruff": "pass",
+    "mypy": "pass",
+    "bridge_build": "pass",
+    "bridge_typecheck": "pass",
+    "docs": "pass",
+    "git_diff_check": "pass",
+    "docs_details": "PASS: 48 unchanged archived sources; 394 Markdown; 1055 local links; 6 implementation tasks; 1164 context entries; acyclic dependencies; D161-D182."
+  },
+  "pending_live_checks": [],
+  "release_gate_changed": false,
+  "commit_or_push": false,
+  "evidence_note": "Selected native calls/results are paired by callId after installation and after any fork seed boundary. Raw host/session IDs and HMAC keys are not exported. Each extraction uses a fresh common.IdentityEvidence key: compare identity digests only within one extraction. Full logs may grow after the recorded size/hash. Prior setup errors and later invalid model calls remain recorded.",
+  "native_log_review": {
+    "observed_at": "2026-10-02T07:14:27.526421+00:00",
+    "since": "2026-10-02T05:25:00Z",
+    "source": "existing native Desktop session logs; no model or service started",
+    "identity_digest_method": "common.IdentityEvidence; fresh experiment key is not exported",
+    "pairing": "only events after session/end-seed in seeded logs; current-window callId paired to exactly one later tool/result; inherited and unmatched results excluded",
+    "sessions": [
+      {
+        "host_identity_hmac": "60c659ba55ff2afff6cbcb6aea9b83b4e5d3abbc0b9586f49277c66919e7d81f",
+        "parent_host_identity_hmac": null,
+        "header_matches_directory": true,
+        "log_bytes": 94944,
+        "log_sha256": "7ff5325e1ea3618300ec826f2d7a1da43d08e4bbf0bde56fc815d44beffca48d",
+        "zstd_frames": 93,
+        "event_count": 159,
+        "decode_errors": 0,
+        "malformed_lines": 0,
+        "seed_boundary": {
+          "seeded": false,
+          "end_seq": null,
+          "end_time": null,
+          "missing": false,
+          "inherited_current_window_calls_excluded": 0
+        },
+        "paired_calls": [
+          {
+            "tool": "tsunagou_connect",
+            "call_seq": 28,
+            "call_time": "2026-10-02T05:29:57.199000Z",
+            "argument_fields": [],
+            "result_seq": 29,
+            "result_time": "2026-10-02T05:29:59.505000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "status",
+                "value": "enrolled"
+              },
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 36,
+            "call_time": "2026-10-02T05:30:01.157000Z",
+            "argument_fields": [],
+            "result_seq": 37,
+            "result_time": "2026-10-02T05:30:01.205000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "a06f252fa2259480ac3b34e8f2ef3836f45d6d5622cba1638381b38fdf3d8647"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__claim",
+            "call_seq": 42,
+            "call_time": "2026-10-02T05:30:02.994000Z",
+            "argument_fields": [],
+            "result_seq": 43,
+            "result_time": "2026-10-02T05:30:03.017000Z",
+            "is_error": false,
+            "result_fields": [],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__coordination__plan",
+            "call_seq": 44,
+            "call_time": "2026-10-02T05:30:03.018000Z",
+            "argument_fields": [],
+            "result_seq": 45,
+            "result_time": "2026-10-02T05:30:03.049000Z",
+            "is_error": true,
+            "result_fields": [],
+            "error_codes": [
+              "capability_denied"
+            ],
+            "parsed_result_json_blocks": 0
+          },
+          {
+            "tool": "tsunagou_connect",
+            "call_seq": 98,
+            "call_time": "2026-10-02T05:48:12.128000Z",
+            "argument_fields": [],
+            "result_seq": 99,
+            "result_time": "2026-10-02T05:48:12.983000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "status",
+                "value": "enrolled"
+              },
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 100,
+            "call_time": "2026-10-02T05:48:12.983000Z",
+            "argument_fields": [],
+            "result_seq": 101,
+            "result_time": "2026-10-02T05:48:13.004000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "a06f252fa2259480ac3b34e8f2ef3836f45d6d5622cba1638381b38fdf3d8647"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "open_tasks[0].task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "open_tasks[0].status",
+                "value": "open"
+              },
+              {
+                "field": "open_tasks[0].revision",
+                "value": 3
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__claim",
+            "call_seq": 106,
+            "call_time": "2026-10-02T05:48:14.286000Z",
+            "argument_fields": [],
+            "result_seq": 107,
+            "result_time": "2026-10-02T05:48:14.309000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "messages[0].message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              },
+              {
+                "field": "messages[0].sender_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "messages[0].recipient_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "messages[0].response_obligations[0].obligation_id",
+                "value": "cc36f306-d5f6-437d-81f3-9d75cd6f09d1"
+              },
+              {
+                "field": "messages[0].response_obligations[0].status",
+                "value": "open"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__fetch",
+            "call_seq": 112,
+            "call_time": "2026-10-02T05:48:15.882000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              }
+            ],
+            "result_seq": 113,
+            "result_time": "2026-10-02T05:48:15.903000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              },
+              {
+                "field": "sender_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "recipient_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "payload.task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "payload.revision",
+                "value": 3
+              },
+              {
+                "field": "payload.status",
+                "value": "open"
+              },
+              {
+                "field": "response_obligations[0].obligation_id",
+                "value": "cc36f306-d5f6-437d-81f3-9d75cd6f09d1"
+              },
+              {
+                "field": "response_obligations[0].status",
+                "value": "open"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__presented",
+            "call_seq": 118,
+            "call_time": "2026-10-02T05:48:18.004000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              }
+            ],
+            "result_seq": 119,
+            "result_time": "2026-10-02T05:48:18.028000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__task__begin",
+            "call_seq": 120,
+            "call_time": "2026-10-02T05:48:18.028000Z",
+            "argument_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "expected_task_revision",
+                "value": 3
+              }
+            ],
+            "result_seq": 121,
+            "result_time": "2026-10-02T05:48:18.058000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "attempt_id",
+                "value": "7f7dac00-8a50-4b7c-ad47-7cf10f447115"
+              },
+              {
+                "field": "owner_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "status",
+                "value": "running"
+              },
+              {
+                "field": "revision",
+                "value": 5
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 126,
+            "call_time": "2026-10-02T05:48:20.206000Z",
+            "argument_fields": [],
+            "result_seq": 127,
+            "result_time": "2026-10-02T05:48:20.226000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "a06f252fa2259480ac3b34e8f2ef3836f45d6d5622cba1638381b38fdf3d8647"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "tasks[0].task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "tasks[0].status",
+                "value": "running"
+              },
+              {
+                "field": "tasks[0].revision",
+                "value": 5
+              },
+              {
+                "field": "tasks[0].owner_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "contracts.tasks[0].task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__task__submit",
+            "call_seq": 132,
+            "call_time": "2026-10-02T05:48:26.787000Z",
+            "argument_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "attempt_id",
+                "value": "7f7dac00-8a50-4b7c-ad47-7cf10f447115"
+              }
+            ],
+            "result_seq": 133,
+            "result_time": "2026-10-02T05:48:26.808000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "attempt_id",
+                "value": "7f7dac00-8a50-4b7c-ad47-7cf10f447115"
+              },
+              {
+                "field": "status",
+                "value": "submitted"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__message__send",
+            "call_seq": 134,
+            "call_time": "2026-10-02T05:48:26.809000Z",
+            "argument_fields": [
+              {
+                "field": "recipient_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "payload.task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "payload.attempt_id",
+                "value": "7f7dac00-8a50-4b7c-ad47-7cf10f447115"
+              }
+            ],
+            "result_seq": 135,
+            "result_time": "2026-10-02T05:48:26.833000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              },
+              {
+                "field": "recipient_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__message__respond",
+            "call_seq": 140,
+            "call_time": "2026-10-02T05:48:28.675000Z",
+            "argument_fields": [
+              {
+                "field": "obligation_id",
+                "value": "cc36f306-d5f6-437d-81f3-9d75cd6f09d1"
+              }
+            ],
+            "result_seq": 141,
+            "result_time": "2026-10-02T05:48:28.703000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "obligation_id",
+                "value": "cc36f306-d5f6-437d-81f3-9d75cd6f09d1"
+              },
+              {
+                "field": "status",
+                "value": "responded"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__ack",
+            "call_seq": 142,
+            "call_time": "2026-10-02T05:48:28.704000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              }
+            ],
+            "result_seq": 143,
+            "result_time": "2026-10-02T05:48:28.733000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              },
+              {
+                "field": "acked",
+                "value": true
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__claim",
+            "call_seq": 148,
+            "call_time": "2026-10-02T05:48:30.249000Z",
+            "argument_fields": [],
+            "result_seq": 149,
+            "result_time": "2026-10-02T05:48:30.275000Z",
+            "is_error": false,
+            "result_fields": [],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 150,
+            "call_time": "2026-10-02T05:48:30.275000Z",
+            "argument_fields": [],
+            "result_seq": 151,
+            "result_time": "2026-10-02T05:48:30.307000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "a06f252fa2259480ac3b34e8f2ef3836f45d6d5622cba1638381b38fdf3d8647"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "tasks[0].task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "tasks[0].status",
+                "value": "submitted"
+              },
+              {
+                "field": "tasks[0].revision",
+                "value": 6
+              },
+              {
+                "field": "tasks[0].owner_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "contracts.tasks[0].task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          }
+        ],
+        "unpaired_current_calls": [],
+        "compact_lifecycle": []
+      },
+      {
+        "host_identity_hmac": "51bd6255ccf77552756a95169b34607d44e88bc183050193a783c3a8ba735106",
+        "parent_host_identity_hmac": null,
+        "header_matches_directory": true,
+        "log_bytes": 685281,
+        "log_sha256": "64e706aaf7aa8a29c85230f9f323103e6f524326677c42135f8ba97a7452354b",
+        "zstd_frames": 607,
+        "event_count": 959,
+        "decode_errors": 0,
+        "malformed_lines": 0,
+        "seed_boundary": {
+          "seeded": false,
+          "end_seq": null,
+          "end_time": null,
+          "missing": false,
+          "inherited_current_window_calls_excluded": 0
+        },
+        "paired_calls": [
+          {
+            "tool": "tsunagou_connect",
+            "call_seq": 718,
+            "call_time": "2026-10-02T05:30:40.327000Z",
+            "argument_fields": [],
+            "result_seq": 719,
+            "result_time": "2026-10-02T05:30:41.415000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "status",
+                "value": "enrolled"
+              },
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 724,
+            "call_time": "2026-10-02T05:30:44.683000Z",
+            "argument_fields": [],
+            "result_seq": 725,
+            "result_time": "2026-10-02T05:30:44.707000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "818b9a18c15c51b6fbe3737b191331e6780c6e7dead354deda866fa7ec128164"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "tsunagou_connect",
+            "call_seq": 739,
+            "call_time": "2026-10-02T05:41:06.533000Z",
+            "argument_fields": [],
+            "result_seq": 740,
+            "result_time": "2026-10-02T05:41:07.416000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "status",
+                "value": "enrolled"
+              },
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "main"
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 745,
+            "call_time": "2026-10-02T05:41:09.877000Z",
+            "argument_fields": [],
+            "result_seq": 746,
+            "result_time": "2026-10-02T05:41:09.898000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "main"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "818b9a18c15c51b6fbe3737b191331e6780c6e7dead354deda866fa7ec128164"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__task__create",
+            "call_seq": 751,
+            "call_time": "2026-10-02T05:41:13.562000Z",
+            "argument_fields": [],
+            "result_seq": 752,
+            "result_time": "2026-10-02T05:41:13.588000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "status",
+                "value": "draft"
+              },
+              {
+                "field": "revision",
+                "value": 1
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__task__ready",
+            "call_seq": 757,
+            "call_time": "2026-10-02T05:41:17.514000Z",
+            "argument_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              }
+            ],
+            "result_seq": 758,
+            "result_time": "2026-10-02T05:41:17.532000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "status",
+                "value": "ready"
+              },
+              {
+                "field": "revision",
+                "value": 2
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__task__publish",
+            "call_seq": 763,
+            "call_time": "2026-10-02T05:41:21.247000Z",
+            "argument_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              }
+            ],
+            "result_seq": 764,
+            "result_time": "2026-10-02T05:41:21.277000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "status",
+                "value": "open"
+              },
+              {
+                "field": "revision",
+                "value": 3
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__message__send",
+            "call_seq": 769,
+            "call_time": "2026-10-02T05:41:26.300000Z",
+            "argument_fields": [
+              {
+                "field": "recipient_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "payload.task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "payload.revision",
+                "value": 3
+              },
+              {
+                "field": "payload.status",
+                "value": "open"
+              }
+            ],
+            "result_seq": 770,
+            "result_time": "2026-10-02T05:41:26.323000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              },
+              {
+                "field": "recipient_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 775,
+            "call_time": "2026-10-02T05:41:34.139000Z",
+            "argument_fields": [],
+            "result_seq": 776,
+            "result_time": "2026-10-02T05:41:34.159000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "main"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "818b9a18c15c51b6fbe3737b191331e6780c6e7dead354deda866fa7ec128164"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "open_tasks[0].task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              },
+              {
+                "field": "open_tasks[0].status",
+                "value": "open"
+              },
+              {
+                "field": "open_tasks[0].revision",
+                "value": 3
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "tsunagou_connect",
+            "call_seq": 799,
+            "call_time": "2026-10-02T06:07:08.795000Z",
+            "argument_fields": [],
+            "result_seq": 800,
+            "result_time": "2026-10-02T06:07:14.899000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "status",
+                "value": "enrolled"
+              },
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "main"
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 805,
+            "call_time": "2026-10-02T06:07:20.641000Z",
+            "argument_fields": [],
+            "result_seq": 806,
+            "result_time": "2026-10-02T06:07:20.661000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "main"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "818b9a18c15c51b6fbe3737b191331e6780c6e7dead354deda866fa7ec128164"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__claim",
+            "call_seq": 811,
+            "call_time": "2026-10-02T06:07:23.178000Z",
+            "argument_fields": [],
+            "result_seq": 812,
+            "result_time": "2026-10-02T06:07:23.201000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "messages[0].message_id",
+                "value": "a0d54673-91d1-4e6f-899d-d22acb832e81"
+              },
+              {
+                "field": "messages[0].sender_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "messages[0].recipient_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "messages[1].message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              },
+              {
+                "field": "messages[1].sender_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "messages[1].recipient_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__fetch",
+            "call_seq": 817,
+            "call_time": "2026-10-02T06:07:25.656000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "a0d54673-91d1-4e6f-899d-d22acb832e81"
+              }
+            ],
+            "result_seq": 818,
+            "result_time": "2026-10-02T06:07:25.678000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "a0d54673-91d1-4e6f-899d-d22acb832e81"
+              },
+              {
+                "field": "sender_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "recipient_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "payload.task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__fetch",
+            "call_seq": 823,
+            "call_time": "2026-10-02T06:07:28.054000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              }
+            ],
+            "result_seq": 824,
+            "result_time": "2026-10-02T06:07:28.074000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              },
+              {
+                "field": "sender_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              },
+              {
+                "field": "recipient_agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "payload.attempt_id",
+                "value": "7f7dac00-8a50-4b7c-ad47-7cf10f447115"
+              },
+              {
+                "field": "payload.task_id",
+                "value": "87394ed5-a21f-47ea-90f4-795754654adb"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__presented",
+            "call_seq": 829,
+            "call_time": "2026-10-02T06:07:30.924000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "a0d54673-91d1-4e6f-899d-d22acb832e81"
+              }
+            ],
+            "result_seq": 830,
+            "result_time": "2026-10-02T06:07:30.965000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "a0d54673-91d1-4e6f-899d-d22acb832e81"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__ack",
+            "call_seq": 835,
+            "call_time": "2026-10-02T06:07:33.047000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "a0d54673-91d1-4e6f-899d-d22acb832e81"
+              }
+            ],
+            "result_seq": 836,
+            "result_time": "2026-10-02T06:07:33.074000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "a0d54673-91d1-4e6f-899d-d22acb832e81"
+              },
+              {
+                "field": "acked",
+                "value": true
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__presented",
+            "call_seq": 841,
+            "call_time": "2026-10-02T06:07:35.360000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              }
+            ],
+            "result_seq": 842,
+            "result_time": "2026-10-02T06:07:35.381000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__ack",
+            "call_seq": 847,
+            "call_time": "2026-10-02T06:07:37.713000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              }
+            ],
+            "result_seq": 848,
+            "result_time": "2026-10-02T06:07:37.734000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              },
+              {
+                "field": "acked",
+                "value": true
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 853,
+            "call_time": "2026-10-02T06:07:39.720000Z",
+            "argument_fields": [],
+            "result_seq": 854,
+            "result_time": "2026-10-02T06:07:39.751000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "main"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "818b9a18c15c51b6fbe3737b191331e6780c6e7dead354deda866fa7ec128164"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__message__send",
+            "call_seq": 859,
+            "call_time": "2026-10-02T06:07:46.562000Z",
+            "argument_fields": [
+              {
+                "field": "payload.attempt_id",
+                "value": "7f7dac00-8a50-4b7c-ad47-7cf10f447115"
+              },
+              {
+                "field": "payload.status",
+                "value": "submitted"
+              },
+              {
+                "field": "recipient_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              }
+            ],
+            "result_seq": 860,
+            "result_time": "2026-10-02T06:07:46.586000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "message_id",
+                "value": "ec2e928a-4e5a-46bf-a49b-b54be0cf1adf"
+              },
+              {
+                "field": "recipient_agent_id",
+                "value": "07ae3df2-4a42-419c-82de-bfa6ea0033c0"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__message__respond",
+            "call_seq": 865,
+            "call_time": "2026-10-02T06:07:50.090000Z",
+            "argument_fields": [
+              {
+                "field": "obligation_id",
+                "value": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+              }
+            ],
+            "result_seq": 866,
+            "result_time": "2026-10-02T06:07:50.114000Z",
+            "is_error": true,
+            "result_fields": [],
+            "error_codes": [
+              "obligation_recipient_mismatch"
+            ],
+            "parsed_result_json_blocks": 0
+          },
+          {
+            "tool": "mcp__tsunagou__message__respond",
+            "call_seq": 871,
+            "call_time": "2026-10-02T06:07:59.004000Z",
+            "argument_fields": [
+              {
+                "field": "obligation_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              }
+            ],
+            "result_seq": 872,
+            "result_time": "2026-10-02T06:07:59.020000Z",
+            "is_error": true,
+            "result_fields": [],
+            "error_codes": [
+              "obligation_recipient_mismatch"
+            ],
+            "parsed_result_json_blocks": 0
+          },
+          {
+            "tool": "mcp__tsunagou__inbox__fetch",
+            "call_seq": 877,
+            "call_time": "2026-10-02T06:08:05.501000Z",
+            "argument_fields": [
+              {
+                "field": "message_id",
+                "value": "2fc94e1f-0322-4829-84bb-82776d52f2d8"
+              }
+            ],
+            "result_seq": 878,
+            "result_time": "2026-10-02T06:08:05.527000Z",
+            "is_error": true,
+            "result_fields": [],
+            "error_codes": [
+              "inbox_access_denied"
+            ],
+            "parsed_result_json_blocks": 0
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 946,
+            "call_time": "2026-10-02T06:33:20.594000Z",
+            "argument_fields": [],
+            "result_seq": 947,
+            "result_time": "2026-10-02T06:33:20.619000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "cb7f6500-5a5d-41b1-a27e-0c37b421b976"
+              },
+              {
+                "field": "role",
+                "value": "main"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "818b9a18c15c51b6fbe3737b191331e6780c6e7dead354deda866fa7ec128164"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          }
+        ],
+        "unpaired_current_calls": [],
+        "compact_lifecycle": [
+          {
+            "type": "compaction/start",
+            "seq": 890,
+            "time": "2026-10-02T06:22:58.414000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/end",
+            "seq": 891,
+            "time": "2026-10-02T06:23:09.001000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/start",
+            "seq": 894,
+            "time": "2026-10-02T06:23:33.948000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/end",
+            "seq": 895,
+            "time": "2026-10-02T06:23:44.562000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/start",
+            "seq": 898,
+            "time": "2026-10-02T06:23:50.681000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/end",
+            "seq": 899,
+            "time": "2026-10-02T06:24:01.262000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/start",
+            "seq": 955,
+            "time": "2026-10-02T06:41:58.565000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/end",
+            "seq": 956,
+            "time": "2026-10-02T06:42:09.180000Z",
+            "data": {}
+          }
+        ]
+      },
+      {
+        "host_identity_hmac": "4108a2ba3c72a0545b4e8665a18a89b68636c4b7e29506c1d855310399f22c77",
+        "parent_host_identity_hmac": "51bd6255ccf77552756a95169b34607d44e88bc183050193a783c3a8ba735106",
+        "header_matches_directory": true,
+        "log_bytes": 440501,
+        "log_sha256": "9b236f998812c925d4af4cce8911c677cf6f9511a254fc30b45f18209819dcea",
+        "zstd_frames": 38,
+        "event_count": 1015,
+        "decode_errors": 0,
+        "malformed_lines": 0,
+        "seed_boundary": {
+          "seeded": true,
+          "end_seq": 954,
+          "end_time": 1790922823251,
+          "missing": false,
+          "inherited_current_window_calls_excluded": 24
+        },
+        "paired_calls": [
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 973,
+            "call_time": "2026-10-02T06:36:39.699000Z",
+            "argument_fields": [],
+            "result_seq": 974,
+            "result_time": "2026-10-02T06:36:39.707000Z",
+            "is_error": true,
+            "result_fields": [],
+            "error_codes": [],
+            "parsed_result_json_blocks": 0
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 1006,
+            "call_time": "2026-10-02T06:39:47.174000Z",
+            "argument_fields": [],
+            "result_seq": 1007,
+            "result_time": "2026-10-02T06:39:47.181000Z",
+            "is_error": true,
+            "result_fields": [],
+            "error_codes": [],
+            "parsed_result_json_blocks": 0
+          }
+        ],
+        "unpaired_current_calls": [],
+        "compact_lifecycle": []
+      },
+      {
+        "host_identity_hmac": "c0490f4dcb46b6c46f7bbd92b8dfa2ad26e3a69533f3028005e21834736a76ff",
+        "parent_host_identity_hmac": null,
+        "header_matches_directory": true,
+        "log_bytes": 77566,
+        "log_sha256": "33a966a476748d0e7886f89954ca9245986f7ff9f0dcbce123f874eb34c72ecd",
+        "zstd_frames": 45,
+        "event_count": 87,
+        "decode_errors": 0,
+        "malformed_lines": 0,
+        "seed_boundary": {
+          "seeded": true,
+          "end_seq": 31,
+          "end_time": 1790924471718,
+          "missing": false,
+          "inherited_current_window_calls_excluded": 0
+        },
+        "paired_calls": [
+          {
+            "tool": "tsunagou_connect",
+            "call_seq": 40,
+            "call_time": "2026-10-02T07:04:41.740000Z",
+            "argument_fields": [],
+            "result_seq": 41,
+            "result_time": "2026-10-02T07:04:48.019000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "status",
+                "value": "enrolled"
+              },
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "429bcab8-ac76-414b-a9ab-6fb94c5038b1"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 46,
+            "call_time": "2026-10-02T07:04:49.818000Z",
+            "argument_fields": [],
+            "result_seq": 47,
+            "result_time": "2026-10-02T07:04:49.874000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "429bcab8-ac76-414b-a9ab-6fb94c5038b1"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "0ab64bbad3a451e762962e57581344de31bfc919d58a2ad3cade8a085718e8de"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          },
+          {
+            "tool": "mcp__tsunagou__context__project_read",
+            "call_seq": 78,
+            "call_time": "2026-10-02T07:14:19.773000Z",
+            "argument_fields": [],
+            "result_seq": 79,
+            "result_time": "2026-10-02T07:14:19.796000Z",
+            "is_error": false,
+            "result_fields": [
+              {
+                "field": "project_id",
+                "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+              },
+              {
+                "field": "agent_id",
+                "value": "429bcab8-ac76-414b-a9ab-6fb94c5038b1"
+              },
+              {
+                "field": "role",
+                "value": "worker"
+              },
+              {
+                "field": "session.session_id_hmac",
+                "value": "0ab64bbad3a451e762962e57581344de31bfc919d58a2ad3cade8a085718e8de"
+              },
+              {
+                "field": "session.connection_epoch",
+                "value": 1
+              },
+              {
+                "field": "session.status",
+                "value": "ready"
+              }
+            ],
+            "error_codes": [],
+            "parsed_result_json_blocks": 1
+          }
+        ],
+        "unpaired_current_calls": [],
+        "compact_lifecycle": [
+          {
+            "type": "compaction/start",
+            "seq": 61,
+            "time": "2026-10-02T07:13:52.612000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/summary",
+            "seq": 63,
+            "time": "2026-10-02T07:13:59.524000Z",
+            "data": {}
+          },
+          {
+            "type": "compaction/end",
+            "seq": 65,
+            "time": "2026-10-02T07:13:59.525000Z",
+            "data": {}
+          }
+        ]
+      }
+    ]
+  },
+  "business_flow": {
+    "project_id": "44cef3c0-52ae-4182-a72f-c224229d29c2",
+    "main_agent_id": "cb7f6500-5a5d-41b1-a27e-0c37b421b976",
+    "worker_agent_id": "07ae3df2-4a42-419c-82de-bfa6ea0033c0",
+    "main_appointment": "explicit user choice; installed CLI agent appoint; repeated original-chat tools verify role",
+    "task_id": "87394ed5-a21f-47ea-90f4-795754654adb",
+    "attempt_id": "7f7dac00-8a50-4b7c-ad47-7cf10f447115",
+    "message_id": "2fc94e1f-0322-4829-84bb-82776d52f2d8",
+    "worker_reply_message_id": "e6aadf5e-2a6e-4942-ab55-0188f97d9240",
+    "response_obligation_id": "cc36f306-d5f6-437d-81f3-9d75cd6f09d1",
+    "task_status": "submitted",
+    "task_revision": 6,
+    "execution_scope": {},
+    "main_receipt": {
+      "verified": true,
+      "submission_message_id": "a0d54673-91d1-4e6f-899d-d22acb832e81",
+      "observation_message_id": "e6aadf5e-2a6e-4942-ab55-0188f97d9240",
+      "claim_seq": [
+        811,
+        812
+      ],
+      "fetch_seq": [
+        [
+          817,
+          818
+        ],
+        [
+          823,
+          824
+        ]
+      ],
+      "presented_seq": [
+        [
+          829,
+          830
+        ],
+        [
+          841,
+          842
+        ]
+      ],
+      "ack_seq": [
+        [
+          835,
+          836
+        ],
+        [
+          847,
+          848
+        ]
+      ],
+      "response_contract_fields": "absent in both fetched messages",
+      "response_obligation_fields": "absent in both fetched messages"
+    },
+    "unexpected_calls": {
+      "main_message_respond": {
+        "seq": [
+          [
+            865,
+            866
+          ],
+          [
+            871,
+            872
+          ]
+        ],
+        "error": "obligation_recipient_mismatch",
+        "cause_observed": "Arguments used message IDs, not the obligation ID used by the worker; these errors do not show the worker response failed."
+      },
+      "main_fetch_outgoing_message": {
+        "seq": [
+          877,
+          878
+        ],
+        "error": "inbox_access_denied"
+      },
+      "note": "Errors retained. No new product work inferred from these invalid calls."
+    },
+    "worker_response": {
+      "call_seq": 140,
+      "result_seq": 141,
+      "obligation_id": "cc36f306-d5f6-437d-81f3-9d75cd6f09d1",
+      "status": "responded",
+      "provenance": "independent read of the matching native tool/result",
+      "response_message_id": "e6aadf5e-2a6e-4942-ab55-0188f97d9240"
+    }
+  },
+  "daemon_recovery": {
+    "recorded_at": "2026-10-02T06:07:06.732038+00:00",
+    "before": {
+      "pid": 35224,
+      "runtime_id": "0f46f97c-ddee-45c7-85e7-78dbb5989438",
+      "started_at": "2026-10-02T05:29:57.979Z",
+      "project_ids": [
+        "44cef3c0-52ae-4182-a72f-c224229d29c2"
+      ]
+    },
+    "stop": {
+      "entrypoint": "installed CLI daemon stop",
+      "status": "stopped",
+      "status_readback": "stopped",
+      "status_readback_exit_code": 1
+    },
+    "after": {
+      "recorded_at": "2026-10-02T06:17:34.469229+00:00",
+      "pid": 38696,
+      "runtime_id": "1d1865bd-3ff9-4fab-9161-6690fc3cfcfc",
+      "started_at": "2026-10-02T06:07:13.641Z",
+      "status": "running",
+      "project_ids": [
+        "44cef3c0-52ae-4182-a72f-c224229d29c2"
+      ],
+      "connect_seq": [
+        799,
+        800
+      ],
+      "context_seq": [
+        805,
+        806
+      ],
+      "agent_id": "cb7f6500-5a5d-41b1-a27e-0c37b421b976",
+      "role": "main",
+      "session_status": "ready",
+      "connection_epoch": 1,
+      "same_session_hmac_within_current_log_review": true
+    },
+    "desktop_restart_count": 0,
+    "last_status_readback": {
+      "recorded_at": "2026-10-02T06:31:45.696409+00:00",
+      "status": "running",
+      "pid": 38696,
+      "runtime_id": "1d1865bd-3ff9-4fab-9161-6690fc3cfcfc"
+    }
+  },
+  "compact": {
+    "status": "pass",
+    "prior_failed_round": {
+      "status": "blocked",
+      "reason": "native host model transport failed before summary generation",
+      "error": "DeepSeek Messages transport failed",
+      "summary_events": 0,
+      "attempts": [
+        {
+          "command_seq": 889,
+          "start_seq": 890,
+          "end_seq": 891,
+          "done_seq": 892,
+          "start_time": "2026-10-02T06:22:58.414000Z",
+          "end_time": "2026-10-02T06:23:09.001000Z"
+        },
+        {
+          "command_seq": 893,
+          "start_seq": 894,
+          "end_seq": 895,
+          "done_seq": 896,
+          "start_time": "2026-10-02T06:23:33.948000Z",
+          "end_time": "2026-10-02T06:23:44.562000Z"
+        },
+        {
+          "command_seq": 897,
+          "start_seq": 898,
+          "end_seq": 899,
+          "done_seq": 900,
+          "start_time": "2026-10-02T06:23:50.681000Z",
+          "end_time": "2026-10-02T06:24:01.262000Z"
+        },
+        {
+          "command_seq": 954,
+          "start_seq": 955,
+          "end_seq": 956,
+          "done_seq": 957,
+          "start_time": "2026-10-02T06:41:58.565000Z",
+          "end_time": "2026-10-02T06:42:09.180000Z",
+          "error": "DeepSeek Messages transport failed",
+          "command_result": "error"
+        }
+      ],
+      "all_attempts_same_error": true,
+      "successful_compact_claimed": false,
+      "more_specific_transport_cause": "undetermined; no network, credential or host changes made",
+      "subsequent_normal_turn": {
+        "start_seq": 902,
+        "user_message_seq": 905,
+        "retry_seqs": [
+          907,
+          910,
+          913,
+          916,
+          919
+        ],
+        "max_retries": 5,
+        "error_code": "TRANSPORT",
+        "error_message": "DeepSeek Messages transport failed",
+        "end_seq": 923,
+        "end_reason": "error",
+        "tsunagou_tool_calls": 0,
+        "meaning": "No post-failure context verification was executed; the unavailable model call also prevents the pending interactive fork probe."
+      }
+    },
+    "successful_attempt": {
+      "host_identity_hmac": "c0490f4dcb46b6c46f7bbd92b8dfa2ad26e3a69533f3028005e21834736a76ff",
+      "command_seq": 60,
+      "start_seq": 61,
+      "summary_seq": 63,
+      "end_seq": 65,
+      "done_seq": 66,
+      "command_time": "2026-10-02T07:13:52.609000Z",
+      "done_time": "2026-10-02T07:13:59.529000Z",
+      "command_kind": "success",
+      "command_and_compaction_ids_match": true,
+      "summary_present": true,
+      "error_on_end": false,
+      "before": {
+        "tool": "mcp__tsunagou__context__project_read",
+        "call_seq": 46,
+        "call_time": "2026-10-02T07:04:49.818000Z",
+        "argument_fields": [],
+        "result_seq": 47,
+        "result_time": "2026-10-02T07:04:49.874000Z",
+        "is_error": false,
+        "result_fields": [
+          {
+            "field": "project_id",
+            "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+          },
+          {
+            "field": "agent_id",
+            "value": "429bcab8-ac76-414b-a9ab-6fb94c5038b1"
+          },
+          {
+            "field": "role",
+            "value": "worker"
+          },
+          {
+            "field": "session.session_id_hmac",
+            "value": "0ab64bbad3a451e762962e57581344de31bfc919d58a2ad3cade8a085718e8de"
+          },
+          {
+            "field": "session.connection_epoch",
+            "value": 1
+          },
+          {
+            "field": "session.status",
+            "value": "ready"
+          }
+        ],
+        "error_codes": [],
+        "parsed_result_json_blocks": 1
+      },
+      "after": {
+        "tool": "mcp__tsunagou__context__project_read",
+        "call_seq": 78,
+        "call_time": "2026-10-02T07:14:19.773000Z",
+        "argument_fields": [],
+        "result_seq": 79,
+        "result_time": "2026-10-02T07:14:19.796000Z",
+        "is_error": false,
+        "result_fields": [
+          {
+            "field": "project_id",
+            "value": "44cef3c0-52ae-4182-a72f-c224229d29c2"
+          },
+          {
+            "field": "agent_id",
+            "value": "429bcab8-ac76-414b-a9ab-6fb94c5038b1"
+          },
+          {
+            "field": "role",
+            "value": "worker"
+          },
+          {
+            "field": "session.session_id_hmac",
+            "value": "0ab64bbad3a451e762962e57581344de31bfc919d58a2ad3cade8a085718e8de"
+          },
+          {
+            "field": "session.connection_epoch",
+            "value": 1
+          },
+          {
+            "field": "session.status",
+            "value": "ready"
+          }
+        ],
+        "error_codes": [],
+        "parsed_result_json_blocks": 1
+      },
+      "equal_fields": [
+        "project_id",
+        "agent_id",
+        "role",
+        "session.session_id_hmac",
+        "session.connection_epoch",
+        "session.status"
+      ],
+      "both_calls_after_seed_boundary": true,
+      "seed_end_seq": 31,
+      "reconnect_between_observations": false,
+      "independent_raw_log_identity_review": "passed; raw host and Tsunagou session IDs compared internally, not exported"
+    },
+    "successful_compact_claimed": true
+  },
+  "runtime_file_sha256": {
+    "packages/adapter-deepseek-host/index.js": "58011f0a37191091374fa31c63f7f496aaae19e1dd5033c038d2a876423ef89c",
+    "packages/bridge-server/src/server.ts": "c0c714e6e05013074f109dac9fea119c3576b3ceac419c0c170530a8c2e5f534",
+    "packages/bridge-server/dist/server.js": "6ca3a18a6fa43c90243ecc6f00c1c9e2effdbada5366e063e6b3360a9acea10e",
+    "src/tsunagou/cli/app.py": "09653dd0ac0c7948c8a32020240568cc50881694d81473bfb8eb47a74422ea40",
+    "src/tsunagou/application/onboarding.py": "4ee70318a481611805ffe8f7988654f9e6db6a4ce374f3e3173ec55bb4d957b8",
+    "src/tsunagou/platform/host_registration.py": "af319defd9ab4985e6d947dcbe27c7550fc541fa74037efbc76ab78a9e2b3f98"
+  },
+  "completion": {
+    "ordinary_desktop_connect_and_business_submit_flow": "verified",
+    "all_plan_acceptance_conditions_met": true,
+    "blocker": null,
+    "desktop_restarts": 0,
+    "acl_changes": 0,
+    "protocol_or_codex_opencode_config_changed": false,
+    "unregistered_desktop_fork_rejection": "verified",
+    "scope": "2026-10-02 approved Desktop original-chat onboarding repair and live acceptance",
+    "completed_at": "2026-10-02T07:18:02.929032+00:00",
+    "test_environment_limitations_preserved": true,
+    "release_gate_changed": false
+  },
+  "fork_isolation": {
+    "status": "pass",
+    "seed_end_seq": 954,
+    "inherited_calls_excluded": true,
+    "pairs": [
+      [
+        973,
+        974
+      ],
+      [
+        1006,
+        1007
+      ]
+    ],
+    "error": "not_enrolled:run_agent_connect",
+    "error_provenance": "independent exact read of the matching native tool/result; wrapper text is not parsed by the generic selected-fields extractor",
+    "connect_called_in_child": false,
+    "original_agent_identity_returned": false
+  },
+  "original_main_after_failed_compact": {
+    "call_seq": 946,
+    "result_seq": 947,
+    "time": "2026-10-02T06:33:20.619000Z",
+    "agent_id": "cb7f6500-5a5d-41b1-a27e-0c37b421b976",
+    "role": "main",
+    "session_status": "ready",
+    "connection_epoch": 1,
+    "scope": "after the first three failed compactions; not evidence of successful compaction"
+  },
+  "new_worker_onboarding": {
+    "status": "verified",
+    "project_id": "44cef3c0-52ae-4182-a72f-c224229d29c2",
+    "agent_id": "429bcab8-ac76-414b-a9ab-6fb94c5038b1",
+    "role": "worker",
+    "main_agent_id": "cb7f6500-5a5d-41b1-a27e-0c37b421b976",
+    "session_status": "ready",
+    "connection_epoch": 1,
+    "connect_pair": [
+      40,
+      41
+    ],
+    "context_pair": [
+      46,
+      47
+    ],
+    "host_binding": null,
+    "task_claim_capability": true,
+    "user_decision": "Keep worker; no identity change. Original conversation archived per user statement.",
+    "role_or_identity_changed_by_reviewer": false
+  }
+}

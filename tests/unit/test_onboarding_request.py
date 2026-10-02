@@ -205,3 +205,155 @@ def test_stop_does_not_kill_an_unrelated_service_at_reused_endpoint(tmp_path, mo
     result = CliRunner().invoke(cli.app, ["daemon", "stop", "--coordination-root", str(tmp_path)])
     assert result.exit_code == 4 and "daemon_identity_unverified" in result.output
     assert killed == [] and manifest.is_file()
+
+
+def test_deepseek_uses_native_identity_not_inherited_codex_or_generic_identity(tmp_path, monkeypatch):
+    cli = importlib.import_module("tsunagou.cli.app")
+    monkeypatch.setenv("CODEX_THREAD_ID", "wrong-codex")
+    monkeypatch.setenv("TSUNAGOU_HOST_CONVERSATION_ID", "wrong-generic")
+    monkeypatch.delenv("DSH_SESSION_ID", raising=False)
+    with pytest.raises(RuntimeError, match="host_conversation_required"):
+        cli._profile_identity(tmp_path, "deepseek", "desktop")
+    assert not (tmp_path / "host-identity.json").exists()
+    monkeypatch.setenv("DSH_SESSION_ID", "actual-dsh-session")
+    identity = cli._profile_identity(tmp_path, "deepseek", "headless")
+    assert identity[1] == "actual-dsh-session"
+    assert cli._profile_identity(tmp_path, "deepseek", "desktop") == identity
+    monkeypatch.setenv("DSH_SESSION_ID", "another-session")
+    with pytest.raises(RuntimeError, match="profile_conversation_conflict"):
+        cli._profile_identity(tmp_path, "deepseek", "desktop")
+
+
+def test_deepseek_private_routes_are_idempotent_and_refuse_other_projects(tmp_path, monkeypatch):
+    from tsunagou.application.onboarding import write_deepseek_route
+
+    monkeypatch.setenv("TSUNAGOU_ROUTING_DIR", str(tmp_path / "routes"))
+    runtime = RuntimeContext(tmp_path, tmp_path / ".tsunagou/local", "project-a", {}, None, None)
+    destination = tmp_path / ".tsunagou/bridges/deepseek-fixture"
+    route = write_deepseek_route("native-private-id", runtime, destination)
+    before = route.read_bytes(), route.stat().st_mtime_ns
+    assert write_deepseek_route("native-private-id", runtime, destination) == route
+    assert (route.read_bytes(), route.stat().st_mtime_ns) == before
+    value = json.loads(route.read_bytes())
+    assert value["session_file"] == str(destination / "bridge-session.json")
+    assert "endpoint" not in value and "native-private-id" not in str(route)
+    other = RuntimeContext(tmp_path / "other", tmp_path / "other/state", "project-b", {}, None, None)
+    with pytest.raises(RuntimeError, match="host_route_project_conflict"):
+        write_deepseek_route("native-private-id", other, destination)
+    assert (route.read_bytes(), route.stat().st_mtime_ns) == before
+
+
+def test_deepseek_prepare_only_configures_plugin_without_identity_or_daemon(tmp_path, monkeypatch):
+    cli = importlib.import_module("tsunagou.cli.app")
+    from tsunagou.platform.host_registration import REGISTERED, ConfigChange
+
+    monkeypatch.delenv("DSH_SESSION_ID", raising=False)
+    monkeypatch.setattr(cli, "_runtime_context", lambda: pytest.fail("prepare must not access project authority"))
+    monkeypatch.setattr(cli, "_ensure_project_daemon", lambda: pytest.fail("prepare must not start daemon"))
+    monkeypatch.setattr(cli, "_prepare_deepseek_desktop", lambda: ConfigChange(REGISTERED, (tmp_path / "cordis.patch.yml",)))
+    result = CliRunner().invoke(cli.app, ["agent", "prepare", "--adapter", "deepseek"])
+    assert result.exit_code == 0, result.output
+    value = json.loads(result.output)
+    assert value["status"] == "prepared" and value["creates_agent"] is False and value["host_ready"] is False
+    assert value["next"] == "call_tsunagou_connect_in_original_conversation"
+
+
+def test_desktop_config_uses_installed_runtime_and_keeps_node_available(tmp_path, monkeypatch):
+    import os
+
+    cli = importlib.import_module("tsunagou.cli.app")
+    source = tmp_path / "source"
+    (source / "src").mkdir(parents=True)
+    (source / ".venv/Lib/site-packages").mkdir(parents=True)
+    bridge = source / "packages/bridge-server/dist/server.js"
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text("", encoding="utf-8")
+    node = tmp_path / "node.exe"
+    python = tmp_path / "installed-python.exe"
+    node.touch()
+    python.touch()
+    install = tmp_path / "installation.json"
+    install.write_text(json.dumps({"source_root": str(source), "python": str(python)}), encoding="utf-8")
+    monkeypatch.setattr(cli, "running_source_root", lambda: source)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: str(node))
+    monkeypatch.setattr("tsunagou.platform.runtime_context.installation_path", lambda: install)
+    monkeypatch.setenv("TSUNAGOU_ROUTING_DIR", str(tmp_path / "routes"))
+    monkeypatch.setenv("TSUNAGOU_CONTROL_TOKEN", "must-not-travel")
+    config = cli._deepseek_desktop_config()
+    assert config["command"] == str(node)
+    assert config["connect"]["command"] == str(python)
+    environment = config["connect"]["env"]
+    assert environment["PATH"].split(os.pathsep)[0] == str(node.parent)
+    assert str(source / ".venv/Lib/site-packages") in environment["PYTHONPATH"].split(os.pathsep)
+    assert "must-not-travel" not in json.dumps(config)
+
+
+def test_deepseek_registration_failure_is_not_reported_as_enrolled(tmp_path, monkeypatch):
+    cli = importlib.import_module("tsunagou.cli.app")
+    from tsunagou.platform.host_registration import FAILED, Registration
+
+    config = tmp_path / "bridge.json"
+    config.write_text(json.dumps({"env": {"TSUNAGOU_PROJECT_ROOT": str(tmp_path)}}), encoding="utf-8")
+    monkeypatch.setattr(cli.host_registration, "register", lambda *args, **kwargs: Registration(
+        adapter="deepseek", label="DeepSeek Harness", status=FAILED, name="tsunagou"))
+    with pytest.raises(RuntimeError, match="deepseek_host_registration_failed"):
+        cli._register_deepseek_mcp(profile="headless", bridge_config_path=config)
+
+
+def test_daemon_launch_failure_keeps_the_specific_public_error(monkeypatch, tmp_path):
+    import subprocess
+
+    cli = importlib.import_module("tsunagou.cli.app")
+    runtime = RuntimeContext(tmp_path, tmp_path / "state", "project", {}, None, None)
+    monkeypatch.setattr(cli, "_runtime_context", lambda: runtime)
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("daemon_endpoint_not_configured")
+
+    monkeypatch.setattr(cli, "_daemon_request", unavailable)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(
+        args[0], 1, '{"status":"error","error":"daemon_launch_failed","os_error":5}', "private stderr"))
+    with pytest.raises(RuntimeError, match="^daemon_launch_failed:os_error_5$"):
+        cli._ensure_project_daemon()
+
+
+@pytest.mark.parametrize("explicit_role,expected_code", [(None, 0), ("main", 0), ("worker", 4)])
+def test_deepseek_connect_preserves_existing_main_unless_role_is_explicit(tmp_path, monkeypatch, explicit_role, expected_code):
+    cli = importlib.import_module("tsunagou.cli.app")
+    native = "native-session"
+    monkeypatch.setenv("DSH_SESSION_ID", native)
+    monkeypatch.setenv("TSUNAGOU_ROUTING_DIR", str(tmp_path / "routes"))
+    destination = tmp_path / ".tsunagou/bridges/existing"
+    destination.mkdir(parents=True)
+    (destination / "bridge-session.json").write_text("{}", encoding="utf-8")
+    (destination / "host-identity.json").write_text(json.dumps({
+        "adapter": "deepseek", "profile": "old", "installation_id": "existing-installation", "conversation_id": native,
+    }), encoding="utf-8")
+    runtime = RuntimeContext(tmp_path, tmp_path / ".tsunagou/local", "project-a", {}, None, tmp_path)
+    monkeypatch.setattr(cli, "_runtime_context", lambda: runtime)
+    monkeypatch.setattr(cli, "_ensure_project_daemon", lambda: None)
+    monkeypatch.setattr(cli, "_control_token", lambda: "private-token")
+    monkeypatch.setattr(cli, "running_source_root", lambda: tmp_path)
+    monkeypatch.setattr(cli, "_invoke_command", lambda *args, **kwargs: pytest.fail("must not reenroll or change role"))
+    monkeypatch.setattr(cli, "_daemon_request", lambda *args, **kwargs: {"version": "fixture"})
+
+    def bootstrap(config, request):
+        assert json.loads(request.read_bytes())["conversation_id"] == native
+        assert json.loads(config.read_bytes())["env"]["TSUNAGOU_HOST_META_KEY"] == "tsunagou.hostSessionId"
+        return {"project_id": "project-a", "agent_id": "existing-agent", "role": "main",
+                "session": {"status": "ready", "connection_epoch": 3}}
+
+    monkeypatch.setattr(cli, "_bridge_bootstrap", bootstrap)
+    args = ["agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
+            "--output-dir", str(destination)]
+    if explicit_role:
+        args += ["--role", explicit_role]
+    result = CliRunner().invoke(cli.app, args)
+    assert result.exit_code == expected_code, result.output
+    value = json.loads(result.output)
+    if expected_code == 0:
+        assert value["status"] == "enrolled" and value["agent_id"] == "existing-agent" and value["role"] == "main"
+        assert value["installation_id"] == "existing-installation" and value["host_ready"] is False
+        assert "launch_command" not in value and "private-token" not in result.output
+    else:
+        assert value["error"] == "current_agent_is_main:explicit_revoke_required"

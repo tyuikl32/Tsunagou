@@ -1,5 +1,33 @@
 # DeepSeek Harness 适配性验收
 
+## 当前状态：2026-10-02 Desktop 接入修复
+
+本轮在 `elysia`、HEAD `82a47fdc8363e7c7640f269a65e2ba947d4d3f6e` 的未提交工作树实施用户批准的最小修复。**普通 Desktop 原聊天接入已实际成功**：安装入口通过原生热重载加载已有 provider，宿主本地 `tsunagou_connect` 使用真实聊天/目录调用固定安装 CLI，再由同一聊天的 MCP `context__project_read` 验证自己的身份与 ready。未重启 DSH、未改 ACL、未改协议或 Codex/OpenCode 配置，未 commit/push。
+
+独立读回原聊天 2026-10-02 05:30:41Z 的 connect（seq 718/719）及 05:30:44Z 的 context（seq 724/725）：项目 `44cef3c0-52ae-4182-a72f-c224229d29c2`、Agent `cb7f6500-5a5d-41b1-a27e-0c37b421b976`、worker、ready、epoch 1。另一真实 Desktop 聊天在 05:29:59Z/05:30:01Z 得到不同 Agent `07ae3df2-4a42-419c-82de-bfa6ea0033c0`，同样 ready；这些都是安装后的新调用，不是历史结果。[本轮证据](evidence/deepseek-desktop-20261002.json)
+
+`tsunagou_connect` 的 `host_ready:false` 是 helper 返回时尚待原聊天验证的快照，**不是自动唤醒状态**。上述原聊天读取已经完成连接验证；`host_binding:null` 则如实表示没有唤醒绑定，本轮没有为 DeepSeek 增加自动唤醒。
+
+已验证：真实 Desktop 插件进程以原有全部 Windows flags 启动子进程；Python 定向单测 93、接入集成 3、provider 5、三宿主 adapter 18 项通过，Ruff/mypy/bridge 构建与类型检查、文档校验通过。credential suite 为 27/28；余项被测试所用 Python 的临时票据文件写入 PermissionError 阻断。较广注册检查另有 Codex PATH 假设失败，已用 HEAD 原实现复现；均未放宽断言或改权限掩盖。
+
+首次接入时两个会话均为 worker。用户随后明确指定原聊天为 main，已通过正式 CLI `agent appoint` 任命 `cb7f6500…`，另一个会话保持 worker。独立配对当前日志 26 次工具调用：两边重复 connect 均保持原 Agent/session/epoch；main 不指定 role 仍为 main。任务 `87394ed5…` 由 main 创建、ready、publish（revision 1→2→3），worker 以 Attempt `7f7dac00…` begin→读取上下文→submit，最终为 **submitted、revision 6**；结构化 respond 与原消息 ACK 均成功。所有步骤来自这两个真实 Desktop 聊天，**没有把 submitted 写成审查完成**。[本轮证据](evidence/deepseek-desktop-20261002.json)
+
+daemon 恢复与 main 收件也已实测：停止旧进程后，原聊天的 `tsunagou_connect` 启动新 daemon（05:29:57Z 的旧实例换为 06:07:13Z 的新实例），同聊天 context 仍为原 Agent、main、ready、epoch 1。main 已 claim/fetch/presented/ACK 两条 worker 提交和观察消息。main 随后误将 message_id 当 obligation_id 两次调用 respond，并尝试从 inbox 读取自己发出的消息，分别被 `obligation_recipient_mismatch`、`inbox_access_denied` 拒绝；错误保留，不据此认定先前 worker 的合法响应失败，也未扩展产品修复范围。
+
+worker 的合法响应（seq 140/141，义务 `cc36f306…`）已独立读回 `status: responded`；main 的错误调用不代表这项义务仍未履行。
+
+保留此前 compact 失败记录：原聊天四次 `/compact`（14:22:58–14:42:09，UTC+8）的 end 错误均为 `DeepSeek Messages transport failed`，未生成摘要。中间一次普通对话也因 `TRANSPORT` 自动重试 5 次后失败（seq 907/910/913/916/919，seq 923 以 error 结束）；随后普通模型调用恢复，14:33 的原聊天 context（seq 946/947）仍返回原 main、ready、epoch 1。以下成功补测未覆盖或删除这些失败记录。
+
+**普通 Desktop fork 隔离已通过**：子日志的 `session/end-seed` 位于 seq 954，继承历史已排除；子会话自身两次 context 调用（seq 973/974、1006/1007）均返回 `not_enrolled:run_agent_connect`，未调用 connect，也没有取得父聊天的 main 身份。
+
+用户随后归档原聊天并接入另一个聊天，明确保持 worker。2026-10-02 15:04（UTC+8）独立核对新聊天 connect（seq 40/41）和 context（seq 46/47）：项目不变，新 Agent 为 `429bcab8-ac76-414b-a9ab-6fb94c5038b1`、worker、ready、epoch 1；项目 main 仍为 `cb7f6500…`。`host_binding:null` 表示无宿主唤醒绑定，context 已授予 `task.claim` 等 worker 能力，不是执行任务前必须另做身份绑定。验收方未改变其身份或角色。
+
+**最后的 compact 连续性补测通过**：2026-10-02 15:13:52–15:13:59（UTC+8），新 worker 聊天实际发生 command/run 60 → start 61 → summary 63 → end 65 → command/done 66，命令结果为 `success`，事件关联 ID 一致且 end 无错误。压缩前 context 46/47、压缩后 78/79（15:14:19）均为 seed 边界 31 之后本聊天自身的真实调用；宿主会话和 Tsunagou session 相同，project、Agent `429bcab8…`、worker、ready、epoch 1 全部保持。中间没有重新 connect、enroll 或 rebind；独立只读复核原始日志得到相同结论。
+
+**2026-10-02 批准的 Desktop 接入修复与现场验收已完成，无剩余现场补测项。** 回归中的两处环境限制仍按上文保留，不宣称全套测试零失败；原有 clear 标记缺口和发布门禁不变。代码留在 `elysia` 未提交、未推送，现有任务暂保留 `in_progress` 供审阅未提交改动，未归档或扩大产品开发范围。
+
+## 以下为 2026-10-01 的历史验收记录
+
 日期：2026-10-01。宿主：DeepSeek Harness 0.2.0-rc.2。分支：`elysia`；HEAD：`3607f5501f1a85e6ddb81cfb994593df8f5edb4d`，包含此前待审的未提交改动。
 
 **结论（按用户判定收尾）：11 项 supported。** 四处接线缺陷已修复并验证：provider 不可用时**拒绝注册、不再退回stock overlay**，且该门控位于 `host_registration.register` 内，**CLI 与控制台走同一条受控路径**；就绪判定以profile 内**实际可解析的包**为准并覆盖该 home 下**全部 profile**；MCP 初始化提示已保留（实测 340 字符）；子进程`error` 已捕获（实测 `mcp_spawn_failed`，宿主进程存活）。**clear 标记为缺口**：本构建未注册该命令、无等价别名，未以 `new` 顶替。**本结论由用户作出**，执行者未自行上调；发布门禁输入未改，仍待 Codex 独立复核。

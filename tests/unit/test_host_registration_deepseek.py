@@ -13,6 +13,7 @@ not prove runtime caller identity: another conversation can still reuse an overl
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -69,8 +70,10 @@ def dsh_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         provider = profile / "node_modules" / "@tsunagou" / "dsh-host-identity"
         provider.mkdir(parents=True)
         (provider / "package.json").write_text('{"name": "@tsunagou/dsh-host-identity"}\n', encoding="utf-8")
+        (provider / "index.js").write_text("export default {};\n", encoding="utf-8")
         (profile / "package.json").write_text(f'{{"name": "dsh-profile-{name}", "private": true}}\n', encoding="utf-8")
     monkeypatch.setenv("DSH_HOME", str(home))
+    monkeypatch.setenv("TSUNAGOU_ROUTING_DIR", str(tmp_path / "routes"))
     return home
 
 
@@ -484,3 +487,81 @@ def test_a_profile_name_only_chooses_the_app_surface(dsh_home: Path, tmp_path: P
     assert dsh_app_profile("tui") == "tui", "a profile that really exists is used as-is"
     assert dsh_app_profile("../escape") == "headless"
     assert host_registration.HOSTS["deepseek"].config_preview is not None
+
+
+def _desktop_bridge(tmp_path: Path) -> dict[str, Any]:
+    return {
+        "command": "C:/runtime/node.exe", "args": ["C:/install/bridge/server.js"],
+        "env": {"TSUNAGOU_ROUTING_DIR": str(tmp_path / "routes"),
+                "TSUNAGOU_HOST_META_KEY": host_registration.DEEPSEEK_HOST_META_KEY},
+        "connect": {"command": "C:/runtime/python.exe", "args": ["-m", "tsunagou"],
+                    "env": {"PYTHONPATH": "C:/install/src"}},
+    }
+
+
+@pytest.mark.parametrize("original", ["# Keep my comment\n[]\n", "# Keep my comment\n- id: unrelated\n  disabled: true\n"])
+def test_desktop_prepare_preserves_user_patch_and_is_idempotent(dsh_home, tmp_path, original):
+    profile = dsh_home / "profiles/desktop"
+    profile.mkdir()
+    (profile / "package.json").write_text('{"name":"desktop"}', encoding="utf-8")
+    patch = profile / "cordis.patch.yml"
+    patch.write_text(original, encoding="utf-8")
+
+    first = host_registration.register_deepseek_desktop(_desktop_bridge(tmp_path))
+    text, stamp = patch.read_text(encoding="utf-8"), patch.stat().st_mtime_ns
+    second = host_registration.register_deepseek_desktop(_desktop_bridge(tmp_path))
+
+    assert first.status == second.status == REGISTERED
+    assert patch.read_text(encoding="utf-8") == text and patch.stat().st_mtime_ns == stamp
+    assert text.startswith(original.replace("[]\n", ""))
+    row = next(line.removeprefix("- insert: ") for line in text.splitlines() if line.startswith("- insert:"))
+    entry = json.loads(row)[0]
+    assert entry["name"].startswith("file:") and entry["name"].endswith("/index.js")
+    assert set(entry["config"]["env"]) == {"TSUNAGOU_ROUTING_DIR", "TSUNAGOU_HOST_META_KEY"}
+    assert "TSUNAGOU_SESSION_FILE" not in text and "TSUNAGOU_TICKET_FILE" not in text
+    assert not (dsh_home / "profiles/headless/cordis.patch.yml").exists()
+
+
+def test_desktop_prepare_refuses_an_unowned_tsunagou_entry(dsh_home, tmp_path):
+    profile = dsh_home / "profiles/desktop"
+    profile.mkdir()
+    (profile / "package.json").write_text("{}", encoding="utf-8")
+    patch = profile / "cordis.patch.yml"
+    original = "- insert:\n    - id: mcp-tsunagou\n      name: custom-provider\n"
+    patch.write_text(original, encoding="utf-8")
+    result = host_registration.register_deepseek_desktop(_desktop_bridge(tmp_path))
+    assert result.status == FAILED and result.note == "deepseek_desktop_entry_conflict"
+    assert patch.read_text(encoding="utf-8") == original
+
+
+def test_missing_unused_profile_package_does_not_block_selected_overlay(dsh_home):
+    missing = dsh_home / "profiles/web"
+    missing.mkdir()
+    (missing / "package.json").write_text("{}", encoding="utf-8")
+    assert deepseek_provider_state("main") == (True, "ready")
+
+
+def test_desktop_unregister_removes_only_selected_private_route(dsh_home, tmp_path):
+    root, other = tmp_path / "project", tmp_path / "other"
+    routes = tmp_path / "routes"
+    routes.mkdir()
+    for name, project in (("mine", root), ("sibling", root), ("foreign", other)):
+        state = project / ".tsunagou/bridges" / name
+        (routes / f"{name}.json").write_text(json.dumps({
+            "format_version": 1, "adapter": "deepseek", "project_root": str(project), "state_dir": str(state),
+        }), encoding="utf-8")
+    (routes / "codex.json").write_text(json.dumps({
+        "format_version": 1, "project_root": str(root), "state_dir": str(root / ".tsunagou/bridges/mine"),
+    }), encoding="utf-8")
+    shared = dsh_home / "profiles/desktop"
+    shared.mkdir()
+    patch = shared / "cordis.patch.yml"
+    patch.write_text("# installation-wide provider\n[]\n", encoding="utf-8")
+
+    ambiguous = unregister("deepseek", profile="desktop", project_root=root)
+    assert ambiguous.status == NOT_OWNED and (routes / "mine.json").exists()
+    result = unregister("deepseek", profile="desktop", project_root=root, bridge_dir=root / ".tsunagou/bridges/mine")
+    assert result.status == UNREGISTERED and not (routes / "mine.json").exists()
+    assert (routes / "sibling.json").exists() and (routes / "foreign.json").exists()
+    assert (routes / "codex.json").exists()
+    assert patch.read_text(encoding="utf-8") == "# installation-wide provider\n[]\n"

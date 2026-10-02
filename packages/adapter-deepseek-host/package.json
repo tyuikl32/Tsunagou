@@ -8,6 +8,7 @@
     ".": "./index.js"
   },
   "scripts": {
-    "check": "node --check index.js"
+    "check": "node --check index.js",
+    "test": "node --test tests/provider.test.mjs"
   }
 }

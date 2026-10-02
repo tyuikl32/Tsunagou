@@ -748,6 +748,53 @@ test("MCP metadata preserves explicit bootstrap credentials across A/B/A and res
   assert.equal(f.calls.filter((call) => call.path.endsWith("session.reconnect")).length, 0);
 });
 
+test("DeepSeek private routes isolate A/B/A and never restore Codex bindings", { timeout: 30000 }, async (t) => {
+  const f = await metadataBridgeFixture(t);
+  const routes = join(f.root, "routes");
+  const daemonState = join(f.root, "daemon");
+  const routePath = (identity) => join(routes, createHash("sha256").update(identity).digest("hex") + ".json");
+  writePrivateJson(join(daemonState, "endpoint.json"), { url: f.options.baseUrl });
+  for (const [identity, saved] of [[ticket.conversation_id, credential], [f.secondTicket.conversation_id, f.secondCredential]]) {
+    const sessionFile = f.sessionPath(identity);
+    writePrivateJson(sessionFile, { ...saved, conversation_binding_digest: f.digest(identity),
+      host_conversation_id_digest: f.digest(identity), host_binding_generation: "old-codex-generation" });
+    writePrivateJson(routePath(identity), { format_version: 1, conversation_id: identity,
+      project_id: "fixture-project", project_root: f.root, daemon_state_dir: daemonState,
+      state_dir: join(f.root, "state"), ticket_file: join(f.root, "absent-ticket.json"), session_file: sessionFile,
+      endpoint: "stale-codex-endpoint" });
+  }
+  const client = await f.connect({ TSUNAGOU_ROUTING_DIR: routes, TSUNAGOU_HOST_META_KEY: "tsunagou.hostSessionId",
+    CODEX_APP_TOOLS_PIPE_PATH: "unrelated-codex-parent", TSUNAGOU_DESKTOP_WAKE: "1" });
+  const call = (meta) => client.callTool({ name: "context__project_read", arguments: {}, ...(meta ? { _meta: meta } : {}) });
+  const identityMeta = (identity) => ({ "tsunagou.hostSessionId": identity });
+  for (const identity of [ticket.conversation_id, f.secondTicket.conversation_id, ticket.conversation_id]) {
+    const context = f.result(await call(identityMeta(identity)));
+    assert.equal(context.agent_id, identity === ticket.conversation_id ? credential.agent_id : f.secondCredential.agent_id);
+    assert.equal(context.connection_epoch, 1);
+  }
+  const before = f.calls.length;
+  for (const meta of [undefined, {}, { threadId: ticket.conversation_id }, identityMeta(""), identityMeta(42), identityMeta("new-fork")]) {
+    const denied = await call(meta);
+    assert.equal(denied.isError, true);
+    assert.match(denied.content[0].text, /host_request_identity_required|not_enrolled:run_agent_connect/);
+  }
+  writePrivateJson(routePath("tampered-route"), { ...JSON.parse(readFileSync(routePath(ticket.conversation_id), "utf8")) });
+  assert.match((await call(identityMeta("tampered-route"))).content[0].text, /host_route_identity_mismatch/);
+  assert.equal(f.calls.length, before, "denied identities cannot contact the daemon or restore another host's binding");
+  assert.equal(f.calls.filter((item) => item.path.endsWith("session.reconnect")).length, 0);
+  assert.equal(JSON.parse(readFileSync(routePath(ticket.conversation_id), "utf8")).endpoint, "stale-codex-endpoint");
+
+  // Route lookup is per call. Replacing A's route with B's file must fail the
+  // private credential binding instead of reusing a cached A credential.
+  const original = JSON.parse(readFileSync(routePath(ticket.conversation_id), "utf8"));
+  writePrivateJson(routePath(ticket.conversation_id), { ...original, session_file: f.sessionPath(f.secondTicket.conversation_id) });
+  const wrongCredential = await call(identityMeta(ticket.conversation_id));
+  assert.equal(wrongCredential.isError, true);
+  assert.equal(f.calls.length, before);
+  writePrivateJson(routePath(ticket.conversation_id), original);
+  assert.equal(f.result(await call(identityMeta(ticket.conversation_id))).agent_id, credential.agent_id);
+});
+
 test("concurrent MCP conversations retain their identity through recovery and auth retry", { timeout: 30000 }, async (t) => {
   const f = await metadataBridgeFixture(t);
   const client = await f.connect({ TSUNAGOU_HOST_META_KEY: "ai.opencode/sessionID" });

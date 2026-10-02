@@ -2,7 +2,7 @@
   "id": "deepseek-harness-11-baseline",
   "name": "deepseek-harness-11-baseline",
   "title": "DeepSeek Harness 11 项适配性验收",
-  "description": "DeepSeek Harness 0.2.0-rc.2 适配性验收。测试收尾，整体未通过；仅维护证据与结论，产品源码冻结，修复另行授权。",
+  "description": "DeepSeek Harness 0.2.0-rc.2 适配性验收与 2026-10-02 用户授权的 Desktop 原聊天接入修复；先验证宿主进程启动能力，再实施最小接入改动。",
   "status": "in_progress",
   "dev_type": null,
   "scope": "DeepSeek Harness 0.2.0-rc.2 host onboarding + 11-capability live baseline",
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "唯一验收入口：docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md；现有证据已独立复核，整体未通过。重复工具与历史审查产物已归档，未授权继续产品开发。",
+  "notes": "唯一验收入口：docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md；2026-10-02 用户明确批准 Desktop 接入修复计划。沿用现有任务与骨架，不 commit/push，不新增服务/平行测试框架。",
   "meta": {}
 }
