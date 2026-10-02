@@ -249,6 +249,7 @@
         hosts: '/console/hosts',
         /* 一次“添加 Agent”的准备进度：prepared 之后票就等宿主来兑。*/
         enrollment: '/console/enrollments/{enrollment}',
+        enrollmentCurrent: '/console/enrollments/current',
         enrollmentCancel: '/console/enrollments/{enrollment}:cancel',
         /* —— 一屏要读好几个出口的，走中间层的聚合视图 ——
            /console/views/* 只负责把几个出口的原样回答装进 sources，不解释；
@@ -278,8 +279,8 @@
 
        这里**故意没有**"创建 Agent / 创建子 Agent"这类键：后端没有"创建 Agent"这个概念。
        接入一个 Agent = 用户给某个宿主对话签一张一次性票据（agent.ticket.create.user），由那个对话的
-       bridge 自己兑换；中间要写本机私有票据文件、生成 bridge 配置、把 bridge 注册进宿主 ——
-       只有本机 CLI（tsunagou agent connect / enroll）能做，网页侧发不了，所以前端不发这类请求。
+       bridge 自己兑换。网页通过中间层准备：Codex 保存待真实聊天认领的申请，随后 agent join
+       复用 connect；其他宿主仍由中间层签票、写私有文件并登记 MCP。
        见 actions.addSubAgent。*/
     const WRITE_COMMANDS = {
         /* —— 中间层掌管的写入口（不是 daemon 命令）—— */
@@ -310,7 +311,7 @@
                 };
             }
         },
-        /* 准备一个 Agent 接入（中间层掌管：签票 + 写本机私有文件 + 按厂商注册进宿主）。
+        /* 准备一个 Agent 接入（Codex 保存待认领申请；其他宿主签票并登记）。
            票据密钥只落在服务端写的私有文件里，答应里回的是路径与状态。
            nickname 是人写的名字（存在用户档案里），profile 由中间层生成 —— 名字改了不会挪目录。
            start_daemon：签票要 daemon 活着，而这是用户明确的一次动作，允许它顺手把项目起起来。*/
@@ -1008,11 +1009,11 @@
             建完之后输入框只读、按钮变成"下一步"（项目已经落地，再改名字只是自欺欺人）。
             这里只问名字：目标是用户和主 Agent 谈完、用户确认过之后才存在的东西，
             建项目时问一句只会得到一个没人看的占位；
-         2) 连接到主 Agent  —— 真的准备接入（签票 + 注册宿主）并等它连上；
+         2) 连接到主 Agent  —— 真的准备接入申请并等原会话就绪；
          3) 连接到子 Agent  —— 同上，可以接多个，也可以一个都不接；
          4) 接入结果        —— 只是把已经发生的事列出来给人看，不再发任何请求。
        第 2/3 步要人打开或重载宿主的窗口（宿主只在自己启动时读配置），
-       遮罩上给了「取消等待」：确认后票作废、宿主登记注销，这一次接入就停在那里。*/
+       遮罩上给了「取消等待」：确认后请求中间层取消，已认领时按服务端拒绝继续等。*/
 
     /* 结构约定：#newXz1..4 是每步的正文，#xz1..4 是每步的按钮组。*/
     const WIZARD_STEPS = 4;
@@ -1105,13 +1106,13 @@
                 return false;
             }
             state.set('wizard.main', {
-                name: nickname, vendor: vendor, icon: icon,
+                name: typeof outcome.nickname === 'string' ? outcome.nickname : nickname, vendor: vendor, icon: icon,
                 agent_id: toText((outcome.agent || {}).agent_id),
                 profile: toText(outcome.profile),
                 status: reached
             });
             if (reached === 'manual') notify.info(manualNote(outcome.registration, host));
-            else notify.success({ title: '主 Agent 已接入', sub: nickname });
+            else notify.success({ title: '主 Agent 已接入', sub: typeof outcome.nickname === 'string' ? outcome.nickname : nickname });
             ui.wizard.go(3);
             return true;
         });
@@ -1862,16 +1863,18 @@
         return dialog.confirm({
             title: '取消等待接入？',
             text: '要停止等待这个 Agent 连接吗？',
-            description: '这次准备的票据会被作废，宿主配置里刚加的那条登记也会一并注销；' +
-                '之后就算那边连上来，也不会再加入这个协作。',
+            description: '系统会核对这次接入是否仍可取消；已经开始接入时会说明原因，' +
+                '不会移除已接入的 Agent。',
             okText: '取消接入'
         }).then(function (ok) {
             cancelAsking = false;
             /* 确认框开着的时候这次等待可能已经结束了（例如那边正好连上了）*/
             const stillWaiting = (cancelWait === task);
-            cancelWait = null;
-            setCancelEntry(false);
-            if (ok && stillWaiting) task();
+            if (ok && stillWaiting) {
+                cancelWait = null;
+                setCancelEntry(false);
+                task();
+            }
             return ok;
         });
     };
@@ -4419,8 +4422,8 @@
 
         /* 添加子 Agent（窗口 #addSubAgent 的"确定"）。
            后端**没有**"创建 Agent"这个能力：Agent 是在宿主那边连上来的。
-           所以这里的动作是"让中间层准备接入"：签票 + 写本机私有文件 + 按厂商注册进宿主的
-           MCP 配置，然后等人打开/重载宿主的窗口，名单里多出这个 Agent 才算成功。
+           所以这里的动作是"让中间层准备接入"：Codex 由真实聊天认领申请，其他宿主签票并登记。
+           只有本次接入的身份就绪、通过中间层完成核验才算成功。
              agents —— Agent 管理页的入口：成功后刷新名单；
              wizard —— 向导第 3 步的入口：成功后进向导的结果列表。*/
         addSubAgent: function (payload) {
@@ -4463,7 +4466,7 @@
                 }
                 const manual = (reached === 'manual');
                 const agent = {
-                    name: name, vendor: vendor, icon: data.icon || agentIconFor(vendor),
+                    name: typeof outcome.nickname === 'string' ? outcome.nickname : name, vendor: vendor, icon: data.icon || agentIconFor(vendor),
                     agent_id: toText((outcome.agent || {}).agent_id),
                     profile: toText(outcome.profile),
                     status: reached
@@ -4479,7 +4482,7 @@
                 if (manual) {
                     notify.info(manualNote(outcome.registration, host));
                 } else {
-                    notify.success({ title: '接入成功', sub: name + ' 已加入这个协作' });
+                    notify.success({ title: '接入成功', sub: agent.name + ' 已加入这个协作' });
                 }
                 if (source === 'wizard') return true;
                 /* 名单、卡片上的胶囊、昵称显示都要跟着变 */
@@ -5726,13 +5729,11 @@
         return toText(known.path);
     }
 
-    /* “已经连上但还没就位”时换到遮罩上的那句话。
-       “就位”= 会话就绪（准入能力齐了）+ 角色已经落到票要求的那一个。中间层会把已经
-       连上的那个人、他的会话状态和缺哪几项能力一起交出来（`pending`，见
-       console/enrollment.py）——因为首次接入天然还不就位，而让它就位的唯一动作就是
-       “在那个窗口里再读一次项目上下文”（那就是重连 + 重报基线）。不说清楚，人只会看到
-       一个转不停、最后报”票过期“的遮罩，却不知道票早就被兑换了。*/
+    /* 进度和下一步由中间层判断：已认领、登记、工具加载与原会话回执是不同阶段。
+       尤其不能把“再读一次上下文”描述成所有失败都能修好的保证。*/
     function joiningNote(answer, host) {
+        const note = toText(answer.note);
+        if (note) return note;
         const pending = isPlainObject(answer.pending) ? answer.pending : null;
         if (!pending) return '';
         const label = toText((host || {}).label) || '宿主';
@@ -5741,28 +5742,26 @@
         return '「' + label + '」那边的会话已经连上了，但还没就位' +
             (missing.length ? '（还缺：' + missing.join('、') + '）' : '') +
             '。请在' + (path ? '「' + path + '」下' : '那边') +
-            '让它再读一次项目上下文，就能完成接入。正在等待连接';
+            '让它检查接入状态，并确认原会话能读取项目上下文。正在等待连接';
     }
 
-    /* 等待接入时的那一句人话：**先说清在哪个目录开窗口**。
-       宿主的窗口开在哪个目录，决定了那个会话里的 Agent 能不能按相对路径读到这个项目的
-       规矩文件（`.tsunagou/agent-context.md`、`AGENTS.md` 受管区块）—— 读不到它不会报错，
-       只会没有任何"我在哪个项目"的线索，然后照它自己的"安装并初始化"说明去别处新建一个
-       项目（真实发生过）。两个向导入口共用这一句，以免文案两处跑偏。*/
+    /* 两个向导共用入口：Codex 项目和角色取自申请，只需在目标聊天说一句话；
+       其他宿主仍需要目录与加载提示来读取对应项目的规则。*/
     function openWindowHint(host, phrase) {
         const label = toText((host || {}).label) || '宿主';
+        if (toText((host || {}).adapter).toLowerCase() === 'codex') {
+            return '请在要接入的 Codex 当前对话中说「请接入 Tsunagou」。正在等待连接';
+        }
         const path = currentProjectPath();
         return '请在「' + (path || '这个项目所在的目录') + '」下打开/重载 ' + label +
             ' 窗口，让它' + (phrase || '') + '接入 Tsunagou。正在等待连接';
     }
 
-    /* ---- 接入一个 Agent：准备（签票 + 写 bridge 配置 + 注册宿主的 MCP）→ 等宿主连上 ----
+    /* ---- 接入一个 Agent：准备 → 等原宿主会话就绪 ----
 
-       中间层只做到"票备好了、宿主那边登记写好了"；Agent 真的存在与否，要看项目名单里
-       多没多出一个人 —— 所以遮罩从准备一直挂到"到了"为止。
-
-       宿主那边要人打开或重载窗口（宿主只在自己启动时读配置），这段等待人可以放弃：
-       点「取消等待」并确认后，票作废、宿主登记注销，从此不再接入。
+       Codex 准备的是唯一待认领申请（deferred），其余宿主保留签票/登记流程。
+       成功由中间层核验本次身份与原会话回执，页面不通过名单新增来猜测。
+       取消是否成功也以中间层回答为准，409 仍继续等，不移除共享 MCP。
        回调得到的 status：
          arrived    —— 连上了（中间层已经把昵称写进档案）
          manual     —— 宿主没法自动注册（没装 CLI / 还没实现），票与配置已备好，要人手工接
@@ -5787,59 +5786,119 @@
             }, function () { return false; });
     }
 
+    let enrollmentFlowActive = false;
+
+    function enrollmentSelectionNote(enrollment) {
+        const id = toText((enrollment || {}).project_id);
+        const project = findById(state.get('projects', []), id) || {};
+        const role = toText((enrollment || {}).role) === 'main' ? '主 Agent' : '子 Agent';
+        return '项目「' + (toText(project.name) || id || '原项目') + '」的' + role + '：';
+    }
+
     function connectAgent(options) {
         const opts = options || {};
         const host = opts.host || {};
-        const nickname = toText(opts.nickname).trim();
+        if (enrollmentFlowActive) {
+            notify.info('已有接入正在等待，请先处理当前接入申请');
+            return Promise.resolve({ status: 'failed' });
+        }
+        enrollmentFlowActive = true;
+        let nickname = toText(opts.nickname).trim();
         let prepared = null;
         let cancelled = false;
+        let finished = false;
+        let cancelRequested = false;
+        let cancelInFlight = false;
+        let waitingText = opts.waiting || openWindowHint(host);
+        const waitingPrefix = toText(opts.waitingPrefix);
         const cancel = function () {
-            cancelled = true;
+            cancelRequested = true;
+            if (!prepared) {
+                notify.loading('正在等待准备完成后取消 …');
+                return;
+            }
+            if (cancelInFlight) return;
             const template = pathTemplate('enrollmentCancel');
             const id = toText((prepared || {}).enrollment_id);
             const path = (template && id) ? template.split('{enrollment}').join(encodeURIComponent(id)) : '';
-            notify.loadingEnd();
-            if (!path) return;
-            /* 作废要中间层动手（删票 + 注销宿主登记），确认过了就不再回头问人 */
+            if (!path) {
+                cancelRequested = false;
+                notify.loading('没有取得接入编号，无法确认取消结果。' + waitingText, { cancel: cancel });
+                return;
+            }
+            cancelInFlight = true;
+            notify.loading('正在取消这次接入 …');
             api.post(path, {}, { silent: true }).then(function (answer) {
+                cancelInFlight = false;
+                if (finished) return;
+                if (toText((answer || {}).status) !== 'cancelled') {
+                    cancelRequested = false;
+                    notify.loading(toText((answer || {}).note) || waitingText, { cancel: cancel });
+                    return;
+                }
+                cancelled = true;
+                notify.loadingEnd();
                 const registration = (answer || {}).host_registration || {};
                 const registrationState = toText(registration.status);
-                if (registrationState && registrationState !== 'unregistered') {
+                if (toText(host.adapter).toLowerCase() === 'codex') {
+                    notify.info(toText(answer.note) || '已取消这次待接入申请');
+                } else if (registrationState && registrationState !== 'unregistered') {
                     notify.info(toText(registration.note) || '这次准备的票据已作废，但宿主配置里可能还留着一条登记');
                 } else {
                     notify.info('已取消等待：这次准备的票据已作废');
                 }
-            }, function () { notify.info('已取消等待：这次准备的票据已作废'); });
+            }, function (error) {
+                cancelInFlight = false;
+                if (finished) return;
+                cancelRequested = false;
+                const detail = error && error.raw && error.raw.detail;
+                const note = isPlainObject(detail) ? toText(detail.message || detail.note) : '';
+                notify.loading(note || ((error && error.status === 409)
+                    ? '这个 Agent 已经开始接入，当前申请不能取消。正在继续等待'
+                    : ((error && error.message) || '未能取消这次接入，正在继续等待')), { cancel: cancel });
+            });
         };
         notify.loading('正在准备接入 …', { cancel: cancel });
-        return api.post('agentPrepare', {
+        const preparation = opts.prepared ? Promise.resolve(opts.prepared) : api.post('agentPrepare', {
             vendor: toText(host.adapter || opts.vendor),
             nickname: nickname,
             role: opts.role || 'worker',
             profile: opts.profile || null,
             start_daemon: true
-        }).then(function (result) {
+        }, { silent: true });
+        return preparation.then(function (result) {
             prepared = result || {};
+            if (typeof prepared.nickname === 'string') nickname = prepared.nickname.trim();
             const registration = prepared.host_registration || {};
             const registrationState = toText(registration.status);
-            if (registrationState && registrationState !== 'registered') {
+            if (registrationState && registrationState !== 'registered' && registrationState !== 'deferred') {
                 /* 票和 bridge 配置都备好了，只是这个宿主要人手工补一条命令 —— 不假装在等 */
+                finished = true;
+                enrollmentFlowActive = false;
                 notify.loadingEnd();
                 return {
-                    status: 'manual', registration: registration,
+                    status: 'manual', registration: registration, nickname: nickname,
                     profile: toText(prepared.profile), enrollment_id: toText(prepared.enrollment_id)
                 };
             }
-            const waitingText = opts.waiting || openWindowHint(host);
+            waitingText = waitingPrefix + (toText(prepared.note) || waitingText);
             notify.loading(waitingText, { cancel: cancel });
-            return waitForEnrollment(toText(prepared.enrollment_id), toText(host.label), function (answer) {
+            const waiting = waitForEnrollment(toText(prepared.enrollment_id), toText(host.label), function (answer) {
                 const note = joiningNote(answer, host);
-                if (note) notify.loading(note, { cancel: cancel });
-            }).then(function (outcome) {
+                if (note && !cancelInFlight) {
+                    waitingText = waitingPrefix + note;
+                    notify.loading(waitingText, { cancel: cancel });
+                }
+            });
+            if (cancelRequested) cancel();
+            return waiting.then(function (outcome) {
                 /* 等到结果（到了/过期/取消/不等了）就把遮罩收起来，后面由调用方发声 */
+                finished = true;
+                enrollmentFlowActive = false;
                 notify.loadingEnd();
                 const merged = {
                     registration: registration,
+                    nickname: nickname,
                     profile: toText(prepared.profile),
                     enrollment_id: toText(prepared.enrollment_id),
                     agent: outcome.agent
@@ -5854,16 +5913,55 @@
                 }
                 return merged;
             });
-        }, function () {
-            /* 请求失败：提示已经弹过，这里只表态"没接上"。项目已经建好了，不会白费。*/
+        }, function (error) {
+            /* 申请冲突不能接着等另一项目或角色；说明原选择，当前向导保持原地。*/
+            finished = true;
+            enrollmentFlowActive = false;
             notify.loadingEnd();
+            const detail = error && error.raw && error.raw.detail;
+            if (isPlainObject(detail) && detail.code === 'enrollment_already_pending') {
+                notify.info(enrollmentSelectionNote(detail.enrollment) +
+                    (toText(detail.note) || '已有待接入申请，请先在原聊天继续；尚未认领时可取消后重新准备'));
+            } else {
+                notify.error((error && error.message) || '准备接入失败');
+            }
             return { status: 'failed' };
         });
+    }
+
+    /* 刷新后恢复唯一申请的等待/取消，不重建申请、不恢复未知的旧向导步骤，
+       也不因申请属于另一个项目而切换当前项目。*/
+    function resumeConsoleEnrollment() {
+        if (enrollmentFlowActive) return Promise.resolve(false);
+        return api.get('enrollmentCurrent', null, { silent: true }).then(function (current) {
+            if (enrollmentFlowActive || !current || current.status !== 'waiting' || !current.enrollment_id) return false;
+            const projectId = toText(current.project_id);
+            return connectAgent({
+                host: { adapter: 'codex', label: 'Codex' }, role: current.role,
+                nickname: current.nickname, prepared: current,
+                waitingPrefix: enrollmentSelectionNote(current)
+            }).then(function (outcome) {
+                if (outcome.status === 'arrived') {
+                    notify.success({ title: '接入成功', sub: enrollmentSelectionNote(current) + toText(outcome.nickname) });
+                    const keys = ['projects', 'agentsWindow', 'settings'];
+                    if (toText(state.get('currentProjectId')) === projectId) keys.push('agents', 'project');
+                    return Tsunagou.refresh(keys);
+                }
+                const trouble = connectTrouble(outcome.status, { adapter: 'codex', label: 'Codex' });
+                if (trouble) notify.info(trouble);
+                return false;
+            });
+        }, function () { return false; });
     }
 
     /* 等待/失败时给人一句能读懂的话（两个入口共用，免得文案两处跑偏）*/
     function connectTrouble(status, host) {
         const label = toText((host || {}).label) || '宿主';
+        if (toText((host || {}).adapter).toLowerCase() === 'codex') {
+            if (status === 'expired') return '待接入申请已过期，请在前端重新准备接入';
+            if (status === 'cancelled') return '已取消这次待接入申请，可以重新接入';
+            if (status === 'dismissed') return '已停止等待显示，接入申请的实际状态以控制台查询结果为准';
+        }
         if (status === 'expired') return '票据已过期，这一次接入作废了，可以再试一次';
         if (status === 'cancelled') return '已取消等待：这次准备的票据已作废，可以重新接入';
         if (status === 'dismissed') return '已停止等待接入；票还有效，稍后打开 ' + label + ' 连接上仍会加入';
@@ -6807,8 +6905,9 @@
             const known = toArray(state.get('projects', [])).filter(function (item) {
                 return toText(item.id) === remembered;
             });
-            if (known.length) app.openProject(remembered);
-        });
+            if (known.length) return app.openProject(remembered);
+            return true;
+        }).then(resumeConsoleEnrollment);
 
         /* 3) 初始界面状态 */
         ui.workspace.home();

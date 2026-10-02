@@ -45,6 +45,29 @@ corepack pnpm exec vitest run web/tests            # 前端结构冒烟（不需
 
 HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)；前端侧逐字段对照在 `web/method.md` §6/§7。
 
+## Codex 一句话接入
+
+在控制台选好项目、昵称和主/子 Agent 后，在目标 Codex Desktop 对话中说 **“请接入 Tsunagou”**。已安装的接入 Skill 执行 `tsunagou agent join`；不要求用户重复输入目录、角色或会话 ID。
+
+这一流程限定同一台机器、同一 OS 用户。控制台把接入申请存入用户私有的 `~/.tsunagou/console-enrollments`，跨控制台、跨项目最多只有一个有效申请。CLI 从该记录取得项目和角色，从实际 Codex 对话核验宿主身份，再复用 connect 完成签票、绑定和共享 MCP 登记。当前工作目录不会替代控制台的项目选择；无申请时明确报错，不初始化项目，也不默认为 worker。
+
+| 阶段 | 后端回答与页面行为 |
+|---|---|
+| 准备 | `prepared`，`host_registration.status=deferred`；尚未签票或登记 MCP，页面继续等待 |
+| 等待认领 | `waiting / pending`；提示在目标对话说“请接入 Tsunagou” |
+| 正在接入 | `waiting / connecting`；实际对话已认领，其他对话不能领取 |
+| 已登记 | `waiting / enrolled`；仍需原对话加载工具并调用 `context__project_read` |
+| 接入失败 | `waiting / failed`；保留原认领，原对话可重试 `agent join`，页面显示后端 `note` |
+| 完成 | `arrived`；本次绑定的 Agent、会话和角色已就绪，并有原宿主上下文读取回执 |
+
+辅助进程的成功查询不产生原会话回执；别的 Agent 就绪也不能完成这次等待。同一对话重试复用原身份，重启控制台后仍可按 `enrollment_id` 查询旧申请。未认领申请可以取消或过期；已认领或已登记时取消返回 409，页面继续等待并说明原因，不注销全局共享 MCP，也不移除已经加入的 Agent。
+
+页面启动时通过 `GET /console/enrollments/current` 找回公共申请状态并恢复等待/取消。遮罩标明原项目与角色；完成只刷新该项目相关数据，不推进丢失的旧向导或切换当前项目。prepare 对相同项目/角色幂等，保留原昵称；不同选择返回带公共申请引用和说明的 409。准备新申请前会先收取已完成回执，释放原申请占位。
+
+首次安装必须让目标 Codex 加载接入 Skill 和共享 MCP；可能需要完整退出再打开一次。已加载的共享 bridge 每次调用读取路由，因此后续新对话绑定无需重建所有 MCP。自动化测试验证程序行为；真实 Desktop 原会话的成功必须另有现场记录，不能用模拟客户端代替。
+
+非 Codex 宿主保留原有票据和宿主登记流程。技术决定见 [Codex 控制台接入](../decisions/2026-10-02-console-codex-join.md)。
+
 ## 已知边界
 
 - 控制台只监听本机（`host` 默认 `127.0.0.1`），不做多人或远程部署，也不替代 daemon 自己的权限边界。

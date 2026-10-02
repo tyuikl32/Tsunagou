@@ -133,6 +133,7 @@ def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
             # 以及谁真的就绪了（下面两项）。中断校验要用后者：一个还在 degraded 的会话
             # 也在名单里，但它既不持有角色、也干不了活。
             "session_status": str(item.get("session_status") or ""),
+            **({"connection_epoch": item["connection_epoch"]} if type(item.get("connection_epoch")) is int else {}),
             "missing_admission": [
                 str(name) for name in (item.get("missing_admission") or []) if str(name)
             ],
@@ -211,7 +212,7 @@ class AgentDirectory:
             self._cache.pop(project_id, None)
 
     def roster(
-        self, project_id: str, root: Path, endpoint: dict[str, Any] | None, *, force: bool = False,
+        self, project_id: str, root: Path, endpoint: dict[str, Any] | None, *, force: bool = False, require_fresh: bool = False,
     ) -> AgentRoster | None:
         """The roster for one project, or ``None`` when there is nothing to show.
 
@@ -227,10 +228,12 @@ class AgentDirectory:
             cached = self._cache.get(project_id)
         # Only an *unreadable* fingerprint forces a fetch every time: reusing a cached
         # roster requires positive evidence that the daemon has not written since.
-        if not force and current is not None and cached is not None and cached[0] == current:
+        if not force and not require_fresh and current is not None and cached is not None and cached[0] == current:
             return self._reconciled(root, cached[1])
         fresh = self._reader(root, endpoint)
         if fresh is None:
+            if require_fresh:
+                return None
             # The daemon answered nothing. Keep what we have (its files are unchanged
             # or unreadable) rather than blanking names that were true a moment ago.
             return self._reconciled(root, cached[1]) if cached is not None else None

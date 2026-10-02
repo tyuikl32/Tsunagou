@@ -26,6 +26,7 @@ from tsunagou.console.profile import load_profile
 from tsunagou.console.projects import ProjectEntry
 from tsunagou.console.proxy import ForwardResponse
 from tsunagou.platform import host_registration
+from tsunagou.platform.enrollment_store import EnrollmentStore
 from tsunagou.platform.host_registration import REGISTERED, UNSUPPORTED
 
 PROJECT_ID = "0192c7f1-8a4e-7c31-9d2b-6f0a5e7c1b44"
@@ -33,7 +34,8 @@ SECRET = "s3cret-ticket-value"
 
 
 @pytest.fixture(autouse=True)
-def _no_leftover_enrollments() -> Any:
+def _no_leftover_enrollments(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
+    monkeypatch.setenv("TSUNAGOU_ENROLLMENT_DIR", str(tmp_path / "private-enrollments"))
     enrollment.forget_all()
     yield
     enrollment.forget_all()
@@ -91,13 +93,15 @@ class Rosters:
         self.role = role
         self.missing = missing
 
-    def roster(self, project_id: str, root: Path, endpoint: dict[str, Any] | None, *, force: bool = False) -> AgentRoster | None:
+    def roster(
+        self, project_id: str, root: Path, endpoint: dict[str, Any] | None, *, force: bool = False, require_fresh: bool = False,
+    ) -> AgentRoster | None:
         return AgentRoster(
             project_id=project_id, main_agent_id=self.agent_ids[0] if self.agent_ids else None,
             agents=tuple(
                 {
                     "agent_id": agent_id, "status": "active", "role": self.role,
-                    "session_status": self.session_status, "missing_admission": list(self.missing),
+                    "session_status": self.session_status, "missing_admission": list(self.missing), "connection_epoch": 1,
                 }
                 for agent_id in self.agent_ids
             ),
@@ -147,7 +151,7 @@ def test_the_secret_never_reaches_the_answer(monkeypatch: pytest.MonkeyPatch, tm
     recorded = _registered(monkeypatch)
 
     report = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role="worker", nickname="熊猫",
+        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="熊猫",
         directory=Rosters(),
     )
 
@@ -161,8 +165,8 @@ def test_the_secret_never_reaches_the_answer(monkeypatch: pytest.MonkeyPatch, tm
     assert report["profile"].isalnum() and len(str(report["profile"])) == 12, (
         "profile is the machine's unique slot name, not the nickname"
     )
-    assert report["installation_id"] == "codex:" + str(report["profile"])
-    assert recorded and recorded[0]["adapter"] == "codex"
+    assert report["installation_id"] == "opencode:" + str(report["profile"])
+    assert recorded and recorded[0]["adapter"] == "opencode"
     assert recorded[0]["bridge"]["env"]["TSUNAGOU_TICKET_FILE"] == str(ticket)
     assert daemon.calls[1] == "/api/v1/credential-deliveries/ref-1/ack", "the delivery is acknowledged"
 
@@ -172,8 +176,8 @@ def test_two_enrollments_never_share_one_local_slot(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(enrollment, "forward", Daemon())
     _registered(monkeypatch)
 
-    first = enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role="worker", nickname="agent", directory=Rosters())
-    second = enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role="worker", nickname="agent", directory=Rosters())
+    first = enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="agent", directory=Rosters())
+    second = enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="agent", directory=Rosters())
 
     assert first["profile"] != second["profile"], "the same nickname twice is still two conversations"
     assert first["bridge_dir"] != second["bridge_dir"]
@@ -185,17 +189,17 @@ def test_the_launch_description_points_at_the_ticket_and_the_daemon(monkeypatch:
     _registered(monkeypatch)
 
     report = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role="worker", nickname="main",
+        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="main",
         profile="main", directory=Rosters(),
     )
 
     config = json.loads(Path(str(report["bridge_config"])).read_text(encoding="utf-8"))
-    assert config["adapter"] == "codex"
+    assert config["adapter"] == "opencode"
     assert config["env"]["TSUNAGOU_HTTP_URL"] == "http://127.0.0.1:59999"
     # 路径按平台比：配置里是原生写法（Node 要读它），报告里是 posix 写法（给人看）。
     assert Path(str(config["env"]["TSUNAGOU_TICKET_FILE"])) == Path(str(report["ticket_file"]))
     assert Path(str(config["env"]["TSUNAGOU_PROJECT_ROOT"])) == entry.path
-    assert Path(str(report["bridge_dir"])) == entry.path / ".tsunagou" / "bridges" / "codex-main"
+    assert Path(str(report["bridge_dir"])) == entry.path / ".tsunagou" / "bridges" / "opencode-main"
 
 
 def test_an_unknown_vendor_is_refused_before_a_ticket_is_issued(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -216,7 +220,7 @@ def test_a_bad_role_is_refused_before_a_ticket_is_issued(monkeypatch: pytest.Mon
     monkeypatch.setattr(enrollment, "forward", daemon)
 
     with pytest.raises(ConsoleError) as refusal:
-        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role="boss")
+        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="boss")
 
     assert refusal.value.code == "invalid_requested_role"
     assert daemon.calls == []
@@ -231,7 +235,7 @@ def test_an_unbuilt_bridge_is_refused_before_a_ticket_is_issued(
     monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: tmp_path / "not-built" / "server.js")
 
     with pytest.raises(ConsoleError) as refusal:
-        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role="worker")
+        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker")
 
     assert refusal.value.code == "bridge_not_built"
     assert refusal.value.detail["build"] == enrollment.BUILD_COMMAND
@@ -243,7 +247,7 @@ def test_a_daemon_refusal_travels_back_with_its_own_code(monkeypatch: pytest.Mon
     monkeypatch.setattr(enrollment, "forward", Daemon(status=400))
 
     with pytest.raises(ConsoleError) as refusal:
-        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role="worker")
+        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker")
 
     assert refusal.value.code == "unknown_payload_field"
     assert refusal.value.status == 400
@@ -254,7 +258,7 @@ def test_a_ticket_without_a_secret_is_not_treated_as_success(monkeypatch: pytest
     monkeypatch.setattr(enrollment, "forward", Daemon(result={"delivery_ref": "ref-1"}))
 
     with pytest.raises(ConsoleError) as refusal:
-        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role="worker")
+        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker")
 
     assert refusal.value.code == "ticket_unavailable"
 
@@ -312,7 +316,7 @@ def test_a_waiting_enrollment_turns_into_an_arrival_and_the_nickname_lands(
     rosters = Rosters(("agent-old",))
 
     prepared = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role="worker", nickname="熊猫", directory=rosters,
+        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="熊猫", directory=rosters,
     )
     config = _config(tmp_path)
     enrollment_id = str(prepared["enrollment_id"])
@@ -327,7 +331,7 @@ def test_a_waiting_enrollment_turns_into_an_arrival_and_the_nickname_lands(
     assert arrived["status"] == "arrived"
     assert arrived["agent_id"] == "agent-new", "the one that was not there when the ticket was issued"
     profile = load_profile(config.profile_path)
-    assert profile["agents"]["agent-new"] == {"nickname": "熊猫", "vendor": "Codex"}
+    assert profile["agents"]["agent-new"] == {"nickname": "熊猫", "vendor": "OpenCode"}
     assert enrollment.status(enrollment_id, settings=config, directory=rosters)["status"] == "arrived", (
         "asking again must not change the answer"
     )
@@ -343,7 +347,7 @@ def _prepared(
     _registered(monkeypatch)
     monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
     prepared = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role=role, nickname="熊猫", directory=rosters,
+        entry, dict(entry.daemon or {}), vendor="opencode", role=role, nickname="熊猫", directory=rosters,
     )
     return prepared, _config(tmp_path), str(prepared["enrollment_id"])
 
@@ -432,7 +436,7 @@ def test_a_project_that_cannot_be_read_keeps_waiting_instead_of_failing(
             return None
 
     prepared = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role="worker", nickname="x", directory=Silent(),
+        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="x", directory=Silent(),
     )
     answer = enrollment.status(str(prepared["enrollment_id"]), settings=_config(tmp_path), directory=Silent())
 
@@ -445,7 +449,7 @@ def test_an_expired_enrollment_says_so(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.setattr(enrollment, "forward", Daemon())
     _registered(monkeypatch)
     prepared = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role="worker", directory=Rosters(),
+        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", directory=Rosters(),
     )
     record = enrollment.pending(str(prepared["enrollment_id"]))
     record.expires_at = 0.0
@@ -502,7 +506,7 @@ def test_cancelling_removes_the_ticket_and_takes_the_host_entry_back(
     config = _config(tmp_path)
     rosters = Rosters(("agent-old",))
     prepared = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role="worker", nickname="熊猫", directory=rosters,
+        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="熊猫", directory=rosters,
     )
     ticket = Path(str(prepared["ticket_file"]))
     assert ticket.is_file()
@@ -527,7 +531,7 @@ def test_cancelling_an_arrived_enrollment_is_refused(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
     rosters = Rosters()
     prepared = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="codex", role="worker", directory=rosters,
+        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", directory=rosters,
     )
     rosters.agent_ids = ("agent-new",)
     enrollment.status(str(prepared["enrollment_id"]), settings=_config(tmp_path), directory=rosters)
@@ -589,3 +593,265 @@ def test_forgetting_a_project_drops_its_pending_enrollments_and_their_tickets(tm
 
     assert "/api/v1/console/enrollments/{enrollment_id}:cancel" in routes
     assert "/api/v1/console/enrollments/{enrollment_id}" in routes
+
+
+
+def _codex_intent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, role: str = "main") -> dict[str, Any]:
+    monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
+    entry = _entry(tmp_path)
+    return enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role=role, nickname="熊猫")
+
+
+def _codex_enrolled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, role: str = "main") -> dict[str, Any]:
+    prepared = _codex_intent(monkeypatch, tmp_path, role=role)
+    store = EnrollmentStore()
+    record = store.get(prepared["enrollment_id"])
+    store.claim(record["enrollment_id"], "real-private-thread", expected_revision=record["revision"])
+    return store.mark_enrolled(record["enrollment_id"], "real-private-thread", agent_id="bound-agent")
+
+
+def _host_receipt(record: dict[str, Any], **updates: Any) -> None:
+    receipt = {
+        "format_version": 1, "enrollment_id": record["enrollment_id"], "thread_id": record["thread_id"],
+        "project_id": record["project_id"], "agent_id": record["agent_id"], "role": record["requested_role"],
+        "session_id": "session-real", "connection_epoch": 1, "observed_at": "2026-10-02T00:00:00.000Z",
+        **updates,
+    }
+    Path(record["receipt_file"]).write_text(json.dumps(receipt), encoding="utf-8")
+
+
+def test_codex_prepare_saves_selection_without_ticket_identity_or_registration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Codex preparation must not issue tickets or touch host registrations")
+
+    monkeypatch.setattr(enrollment, "forward", forbidden)
+    monkeypatch.setattr(enrollment, "profile_identity", forbidden)
+    monkeypatch.setattr(host_registration, "register", forbidden)
+    prepared = _codex_intent(monkeypatch, tmp_path)
+    record = EnrollmentStore().current()
+    assert record["project_root"] == str((tmp_path / "project").resolve())
+    assert record["requested_role"] == "main"
+    assert "thread_id" not in record
+    assert prepared["host_registration"]["status"] == "deferred"
+    assert prepared["status"] == "prepared"
+    assert prepared["phase"] == "pending"
+    assert "请接入 Tsunagou" in prepared["next"]
+    for private in ("thread_id", "receipt_file", "ticket_file", "installation_id", "bridge_config", "project_root"):
+        assert private not in prepared
+    assert not ((tmp_path / "project") / ".tsunagou" / "bridges").exists()
+
+
+def test_codex_prepare_refuses_a_second_pending_slot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    first = _codex_intent(monkeypatch, tmp_path)
+    with pytest.raises(ConsoleError, match="enrollment_already_pending") as refused:
+        _codex_intent(monkeypatch, tmp_path, role="worker")
+    assert refused.value.status == 409
+    assert EnrollmentStore().current()["enrollment_id"] == first["enrollment_id"]
+
+
+@pytest.mark.parametrize("role", ["main", "worker"])
+def test_codex_arrival_requires_original_chat_receipt_and_survives_console_restart(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str,
+) -> None:
+    record = _codex_enrolled(monkeypatch, tmp_path, role=role)
+    enrollment.forget_all()
+    rosters = Rosters(("unrelated-agent", "bound-agent"), role=role)
+    settings = _config(tmp_path)
+    waiting = enrollment.status(record["enrollment_id"], settings=settings, directory=rosters)
+    assert waiting["status"] == "waiting"
+    assert waiting["phase"] == "enrolled"
+    _host_receipt(record)
+    arrived = enrollment.status(record["enrollment_id"], settings=settings, directory=rosters)
+    assert arrived["status"] == "arrived"
+    assert arrived["agent_id"] == "bound-agent"
+    assert load_profile(settings.profile_path)["agents"]["bound-agent"] == {"nickname": "熊猫", "vendor": "Codex"}
+    assert "real-private-thread" not in json.dumps(arrived)
+    assert "receipt_file" not in arrived
+    with pytest.raises(ConsoleError, match="enrollment_already_arrived"):
+        enrollment.cancel(record["enrollment_id"], settings=settings)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("format_version", 2), ("enrollment_id", "other"), ("thread_id", "other"),
+    ("project_id", "other"), ("agent_id", "other"), ("role", "worker"),
+    ("connection_epoch", 2), ("connection_epoch", True), ("session_id", ""), ("observed_at", ""),
+])
+def test_codex_rejects_receipt_mismatches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str, value: Any) -> None:
+    record = _codex_enrolled(monkeypatch, tmp_path)
+    _host_receipt(record, **{field: value})
+    answer = enrollment.status(record["enrollment_id"], settings=_config(tmp_path), directory=Rosters(("bound-agent",), role="main"))
+    assert answer["status"] == "waiting"
+
+
+@pytest.mark.parametrize("agent_ids,role,session_status", [
+    (("unrelated-agent",), "main", "ready"), (("bound-agent",), "worker", "ready"),
+    (("bound-agent",), "main", "degraded"),
+])
+def test_codex_cannot_arrive_through_an_unrelated_or_unready_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, agent_ids: tuple[str, ...], role: str, session_status: str,
+) -> None:
+    record = _codex_enrolled(monkeypatch, tmp_path)
+    _host_receipt(record)
+    answer = enrollment.status(record["enrollment_id"], settings=_config(tmp_path),
+                               directory=Rosters(agent_ids, role=role, session_status=session_status))
+    assert answer["status"] == "waiting"
+    assert load_profile(_config(tmp_path).profile_path)["agents"] == {}
+
+
+def test_codex_cancel_does_not_unregister_shared_mcp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Cancelling an intent cannot touch global shared MCP")
+
+    monkeypatch.setattr(host_registration, "unregister", forbidden)
+    prepared = _codex_intent(monkeypatch, tmp_path)
+    result = enrollment.cancel(prepared["enrollment_id"], settings=_config(tmp_path))
+    assert result["status"] == "cancelled"
+    assert result["ticket_removed"] is False
+    assert EnrollmentStore().get(prepared["enrollment_id"])["status"] == "cancelled"
+
+
+def test_codex_claimed_cancel_is_refused_and_failure_stays_with_original_chat(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    prepared = _codex_intent(monkeypatch, tmp_path)
+    record = EnrollmentStore().claim(prepared["enrollment_id"], "real-private-thread", expected_revision=1)
+    EnrollmentStore().fail(record["enrollment_id"], "real-private-thread", "host_not_ready")
+    with pytest.raises(ConsoleError, match="enrollment_already_claimed") as refused:
+        enrollment.cancel(record["enrollment_id"], settings=_config(tmp_path))
+    assert refused.value.status == 409
+    answer = enrollment.status(record["enrollment_id"], settings=_config(tmp_path), directory=Rosters())
+    assert answer["status"] == "waiting" and answer["phase"] == "failed"
+    assert answer["error"] == "host_not_ready"
+    assert "real-private-thread" not in json.dumps(answer)
+
+
+def test_forget_project_invalidates_persistent_intent_without_unregistering(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    prepared = _codex_intent(monkeypatch, tmp_path)
+    assert enrollment.forget_project(PROJECT_ID) == [prepared["enrollment_id"]]
+    answer = enrollment.status(prepared["enrollment_id"], settings=_config(tmp_path), directory=Rosters())
+    assert answer["status"] == "cancelled"
+    with pytest.raises(RuntimeError, match="enrollment_not_pending"):
+        EnrollmentStore().current()
+
+
+
+def test_codex_http_prepare_does_not_require_live_daemon(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from tsunagou.console.app import AgentPrepareRequest, create_console_app
+
+    _entry(tmp_path)
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Preparing Codex selection must not start a daemon or load its control token")
+
+    monkeypatch.setattr("tsunagou.console.app.ensure_daemon", forbidden)
+    monkeypatch.setattr("tsunagou.console.app.project_token", forbidden)
+    routes = {getattr(route, "path", ""): getattr(route, "endpoint", None) for route in create_console_app(_config(tmp_path)).routes}
+    prepared = routes["/api/v1/console/projects/{project_id}/agents:prepare"](
+        PROJECT_ID, AgentPrepareRequest(vendor="codex", role="main"),
+    )
+    assert prepared["status"] == "prepared"
+    assert EnrollmentStore().get(prepared["enrollment_id"])["status"] == "pending"
+
+
+def test_codex_expired_intent_remains_queryable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    prepared = _codex_intent(monkeypatch, tmp_path)
+    store = EnrollmentStore()
+    future = store.get(prepared["enrollment_id"])["expires_at"] + 1
+    monkeypatch.setattr(enrollment, "EnrollmentStore", lambda: EnrollmentStore(store.directory, clock=lambda: future))
+    answer = enrollment.status(prepared["enrollment_id"], settings=_config(tmp_path), directory=Rosters())
+    assert answer["status"] == "expired"
+    assert answer["note"]
+
+
+def test_codex_receipt_cannot_use_cached_roster_when_daemon_stops_answering(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from tsunagou.console.agents import AgentDirectory
+
+    record = _codex_enrolled(monkeypatch, tmp_path)
+    _host_receipt(record)
+    roster = Rosters(("bound-agent",), role="main").roster(PROJECT_ID, tmp_path, {})
+    replies = [roster, None]
+    directory = AgentDirectory(reader=lambda *_: replies.pop(0))
+    entry = _entry(tmp_path)
+    assert directory.roster(PROJECT_ID, entry.path, entry.daemon) is not None
+    answer = enrollment.status(record["enrollment_id"], settings=_config(tmp_path), directory=directory)
+    assert answer["status"] == "waiting"
+
+
+def test_daemon_epoch_survives_console_roster_projection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from tsunagou.console.agents import AgentDirectory
+
+    entry = _entry(tmp_path)
+    monkeypatch.setattr("tsunagou.console.agents._get_json", lambda *_: {"items": [{
+        "agent_id": "bound-agent", "role": "main", "session_status": "ready", "connection_epoch": 7,
+    }]})
+    roster = AgentDirectory().roster(PROJECT_ID, entry.path, entry.daemon, require_fresh=True)
+    assert roster is not None and roster.agents[0]["connection_epoch"] == 7
+
+
+
+def test_codex_reprepare_reuses_matching_selection_and_keeps_original_nickname(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    first = _codex_intent(monkeypatch, tmp_path)
+    entry = _entry(tmp_path)
+    again = enrollment.prepare(entry, {}, vendor="codex", role="main", nickname="replacement")
+    assert again["enrollment_id"] == first["enrollment_id"]
+    assert again["nickname"] == "熊猫"
+    assert EnrollmentStore().active()["revision"] == 1
+
+
+def test_codex_conflict_identifies_public_active_enrollment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    first = _codex_intent(monkeypatch, tmp_path)
+    active = EnrollmentStore().claim(first["enrollment_id"], "real-private-thread", expected_revision=1)
+    other = ProjectEntry(project_id="another-project", path=tmp_path / "another-project", name="other")
+    with pytest.raises(ConsoleError, match="enrollment_already_pending") as refused:
+        enrollment.prepare(other, {}, vendor="codex", role="worker")
+    assert refused.value.status == 409
+    public = refused.value.detail["enrollment"]
+    assert public["enrollment_id"] == first["enrollment_id"]
+    assert public["project_id"] == PROJECT_ID and public["role"] == "main"
+    assert public["phase"] == "connecting"
+    assert refused.value.detail["note"]
+    encoded = json.dumps(refused.value.body())
+    assert active["thread_id"] not in encoded
+    assert "receipt_file" not in encoded and "project_root" not in encoded
+
+
+def test_current_endpoint_recovers_wait_and_precedes_parameterized_route(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from tsunagou.console.app import create_console_app
+
+    application = create_console_app(_config(tmp_path))
+    paths = [getattr(route, "path", "") for route in application.routes]
+    endpoints = {getattr(route, "path", ""): getattr(route, "endpoint", None) for route in application.routes}
+    current = endpoints["/api/v1/console/enrollments/current"]
+    assert paths.index("/api/v1/console/enrollments/current") < paths.index("/api/v1/console/enrollments/{enrollment_id}")
+    assert current() == {"status": "none"}
+    first = _codex_intent(monkeypatch, tmp_path)
+    enrollment.forget_all()
+    recovered = current()
+    assert recovered["enrollment_id"] == first["enrollment_id"]
+    assert recovered["status"] == "waiting" and recovered["phase"] == "pending"
+    assert "thread_id" not in recovered and "project_root" not in recovered
+
+
+def test_reprepare_after_refresh_reconciles_completed_receipt_and_frees_slot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from tsunagou.console.app import AgentPrepareRequest, create_console_app
+
+    first = _codex_enrolled(monkeypatch, tmp_path)
+    _host_receipt(first)
+    monkeypatch.setattr("tsunagou.console.app.AgentDirectory", lambda **_: Rosters(("bound-agent",), role="main"))
+    endpoints = {getattr(route, "path", ""): getattr(route, "endpoint", None)
+                 for route in create_console_app(_config(tmp_path)).routes}
+    prepared = endpoints["/api/v1/console/projects/{project_id}/agents:prepare"](
+        PROJECT_ID, AgentPrepareRequest(vendor="codex", role="worker"),
+    )
+    assert prepared["enrollment_id"] != first["enrollment_id"]
+    assert prepared["role"] == "worker"
+    assert EnrollmentStore().get(first["enrollment_id"])["status"] == "arrived"
+    assert EnrollmentStore().active()["enrollment_id"] == prepared["enrollment_id"]
+
+
+def test_late_failure_cannot_block_receipt_reconciliation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    record = _codex_enrolled(monkeypatch, tmp_path)
+    _host_receipt(record)
+    EnrollmentStore().fail(record["enrollment_id"], record["thread_id"], "host_timeout")
+    answer = enrollment.current_status(settings=_config(tmp_path), directory=Rosters(("bound-agent",), role="main"))
+    assert answer["status"] == "arrived"
+    assert EnrollmentStore().active() is None
+    assert enrollment.current_status(settings=_config(tmp_path), directory=Rosters()) == {"status": "none"}

@@ -89,13 +89,31 @@ tsunagou daemon start --reuse 'D:\Work\ExistingProject'
 
 ## 4. 接入主 Agent 和子 Agent
 
-Agent 在原 Codex 对话内执行：
+### 控制台已准备接入
+
+在目标 Codex Desktop 对话中说“请接入 Tsunagou”，接入 Skill 在原对话执行：
+
+```powershell
+tsunagou agent join
+```
+
+该命令从同一机器、同一 OS 用户的唯一控制台待接入申请读取项目、角色和昵称，核验当前真实聊天身份后完成绑定。不需要 `--project-root` 或 `--role`，也不按当前目录猜项目。没有待接入申请就报错，不新建项目；接入失败只允许原聊天重试，沿用原身份，其他聊天不能抢领。同一用户在不同控制台和项目也只有一个有效申请。
+
+命令完成登记后，原对话调用 `context__project_read`，核验项目、Agent、角色、ready session 和宿主绑定，控制台取得该次申请的原宿主回执后才显示成功。辅助进程查询与名单中出现其他就绪 Agent 都不能代替它。已加载共享 MCP 可读取新路由；首次安装后工具尚未加载时，可能需要完整退出并重开 Codex 一次。
+
+控制台的准备接口返回 `host_registration.status=deferred`，表示申请已保存、签票与注册等待真实聊天认领。查询保持 `waiting`，`phase` 分别为 `pending`、`connecting`、`enrolled` 或可由原聊天重试的 `failed`，`note` 给出下一步。只有未认领申请可取消；取消已认领申请返回 409，不注销共享 MCP 或已接入 Agent。
+
+`GET /api/v1/console/enrollments/current` 返回唯一当前申请的公共状态，无申请时为 `status=none`。页面刷新会自动恢复它的等待/取消入口并标明原项目和角色，不改变当前项目或推进旧向导。相同项目/角色重复准备复用原申请与昵称，其他选择返回含公共申请引用和说明的 409。升级本功能前已在运行的旧 bridge 需要重载一次才能支持原聊天回执。
+
+### 显式项目与角色的手动入口
+
+没有前端申请且用户已明确指定项目和角色时，Agent 在原 Codex 对话内执行：
 
 ```powershell
 tsunagou agent prepare --adapter codex --role worker
 ```
 
-用户指定主 Agent 时使用 --role main。prepare 自动核对真实宿主会话并保存私有 request，返回一条已填好实际 Python/project/request 路径的 PowerShell connect 命令。已有加入授权时 Agent 执行该命令；确需用户时原样交给用户复制。不要让用户填写 conversation_id、agent_id、pipe、token 或再运行 appoint。
+用户指定主 Agent 时使用 --role main。不要在控制台 `agent join` 失败时自动退回此入口。prepare 自动核对真实宿主会话并保存私有 request，返回一条已填好实际 Python/project/request 路径的 PowerShell connect 命令。已有加入授权时 Agent 执行该命令；确需用户时原样交给用户复制。不要让用户填写 conversation_id、agent_id、pipe、token 或再运行 appoint。
 
 connect 自动兑换 ticket、登记原对话的 host binding，配置服务名 tsunagou 的共享 MCP，返回 enrolled、project_id、agent_id、role、session、host_binding、source_root、version 和 connected_at。profile 是显示标签，不决定身份；不同对话/subagent 拥有不同 Agent，同会话重复接入不增身份。注册共享 MCP 后，connect 还会移除同一项目、同一 bridge 程序且仍固定指向旧 session 的早期 Tsunagou MCP 条目；不会删除其他项目、其他程序或正在运行的 Desktop bridge。
 

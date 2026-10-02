@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from tsunagou.hostwake.codex_desktop import NativeAppToolsClient
+from tsunagou.platform.private_file_lock import private_file_lock
 from tsunagou.platform.private_files import write_private_bytes
 from tsunagou.platform.runtime_context import RuntimeContext, is_source_root, read_object, running_source_root
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
@@ -71,20 +72,50 @@ def codex_routing_directory() -> Path:
     return Path(configured).expanduser().resolve() if configured else Path.home() / ".tsunagou/hosts/codex"
 
 
+def validate_codex_route(request: dict[str, Any], runtime: RuntimeContext) -> None:
+    """Reject a chat already routed elsewhere before it consumes a console claim."""
+    route = codex_routing_directory() / (conversation_key(request["conversation_id"]) + ".json")
+    with private_file_lock(route):
+        previous = read_object(route)
+        if previous and (previous.get("project_id") != runtime.project_id
+                         or Path(str(previous.get("project_root", ""))).resolve() != runtime.project_root):
+            raise RuntimeError("host_route_project_conflict")
+
+
 def write_codex_route(request: dict[str, Any], runtime: RuntimeContext, destination: Path) -> Path:
     route = codex_routing_directory() / (conversation_key(request["conversation_id"]) + ".json")
-    previous = read_object(route)
-    if previous and previous.get("project_id") != runtime.project_id:
-        raise RuntimeError("host_route_project_conflict")
-    value = {
-        "format_version": 1, "conversation_id": request["conversation_id"], "project_id": runtime.project_id,
-        "project_root": str(runtime.project_root), "daemon_state_dir": str(runtime.state_dir),
-        "state_dir": str(destination), "ticket_file": str(destination / "ticket.json"),
-        "session_file": str(destination / "bridge-session.json"), "endpoint": request["endpoint"],
-    }
-    if value != previous:
-        write_private_bytes(route, (json.dumps(value, sort_keys=True) + "\n").encode())
+    with private_file_lock(route):
+        previous = read_object(route)
+        if previous and previous.get("project_id") != runtime.project_id:
+            raise RuntimeError("host_route_project_conflict")
+        value = {
+            "format_version": 1, "conversation_id": request["conversation_id"], "project_id": runtime.project_id,
+            "project_root": str(runtime.project_root), "daemon_state_dir": str(runtime.state_dir),
+            "state_dir": str(destination), "ticket_file": str(destination / "ticket.json"),
+            "session_file": str(destination / "bridge-session.json"), "endpoint": request["endpoint"],
+        }
+        if "console_enrollment" in previous:
+            value["console_enrollment"] = previous["console_enrollment"]
+        if value != previous:
+            write_private_bytes(route, (json.dumps(value, sort_keys=True) + "\n").encode())
     return route
+
+
+def bind_console_enrollment(request: dict[str, Any], intent: dict[str, Any]) -> None:
+    """Attach only this claim's receipt destination to its existing private route."""
+    route = codex_routing_directory() / (conversation_key(request["conversation_id"]) + ".json")
+    with private_file_lock(route):
+        value = read_object(route)
+        if (value.get("conversation_id") != request["conversation_id"]
+                or value.get("project_id") != intent["project_id"]
+                or Path(str(value.get("project_root", ""))).resolve() != Path(intent["project_root"]).resolve()):
+            raise RuntimeError("onboarding_route_mismatch")
+        value["console_enrollment"] = {
+            "enrollment_id": intent["enrollment_id"],
+            "requested_role": intent["requested_role"],
+            "receipt_file": intent["receipt_file"],
+        }
+        write_private_bytes(route, (json.dumps(value, sort_keys=True) + "\n").encode())
 
 
 def powershell_quote(value: str | Path) -> str:

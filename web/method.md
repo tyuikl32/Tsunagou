@@ -123,7 +123,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | `ui.wizard.open()` / `.go(n)` / `.next()` / `.prev()` / `.reset()` / `.current()` / `.collect()` / `.finish()` | 新建协作四步向导。`.next()` 在第 1/2 步会真的建项目 / 接入主 Agent（返回 Promise，成功才翻页），第 3 步只是翻页；`.finish()` 只收窗复位。`.collect()` 返回 `{name, mainAgent:{name,vendor,icon}, subAgents:[]}` —— **没有 `objective`**：目标是用户与主 Agent 确认过之后才存在的事实，不作为建项目时的输入（见 §12 的 2026-10-01 两条） |
 | `ui.aside.show(slug, section?)` / `.load(slug, section, title?)` / `.fill(...)` / `.hide(slug)` / `.hideAll()` / `.clearAll()` / `.isOpen(slug)` | 右侧侧栏（**默认全隐藏**，见 4.3；启动时会 `clearAll()` 清掉 index.html 里的占位内容） |
 | `ui.choosebox.open/close/toggle/closeAll/setValue/value/isOpen` | 下拉选择框。`setValue(box, 值, {silent:true})` 只改显示值、不派发事件（**代码回填必须加 silent**）。展开的面板由 JS 定位：**与选择框等宽、对齐其右边缘、贴框正下方**，窗口缩放/滚动容器滚动时会跟随；收起时清掉行内 `width/left/top` |
-| 表单“清空”时回到哪一项 | `resetCsBox(box)`（窗口/向导每次打开都会调）：面板里带 `data-default` 的那一项，没标记才退回第一项。两个厂商面板（`#newXz2Vendor` / `#addSubAgentVendor`）的默认都标在 **Codex** 上（它是目前唯一有注册命令的宿主），所以向导第 2 步与添加子 Agent 窗口打开时选的都是 Codex |
+| 表单“清空”时回到哪一项 | `resetCsBox(box)`（窗口/向导每次打开都会调）：面板里带 `data-default` 的那一项，没标记才退回第一项。两个厂商面板（`#newXz2Vendor` / `#addSubAgentVendor`）的默认都标在 **Codex** 上（它有注册命令，也是最早接入的宿主），所以向导第 2 步与添加子 Agent 窗口打开时选的都是 Codex |
 
 ### 3.5 `Tsunagou.notify` / `Tsunagou.dialog` —— 反馈组件
 这四个组件就是原来"设置 → DEBUG 选项"里那四个弹窗，现在参数化了：
@@ -183,7 +183,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 > 已接入列表；`'agents'` → Agent 列表并重拉）。页面上点加号会自动带上它，手动调用不传则沿用上一次的来源。
 
 > `cancelWaiting()` 是加载遮罩上「取消等待」入口的落点（`#loadWCancel`）：只在**可以取消的等待**
-> （接入 Agent）里露面，点击后先弹一次确认，确认才去作废票据、注销宿主登记。见 §7.1。
+> （接入 Agent）里露面，点击后先弹一次确认，再请求中间层取消；结果由服务端判断，409 时继续等。见 §7.1。
 
 > `deleteProject(id)` 是左栏卡片右上角那个 `.edit`（CSS 里 hover 才露出来）的落点，也可以从宿主脚本调：
 > 先 `dialog.confirm`（`danger` 样式），确认后 `POST /console/projects/{id}:forget` → 停 daemon →
@@ -440,10 +440,9 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > **四个都接通了**（payload 与命令名都按 handler 的真实读法写过，实测有回应）。
 > `agentRemove`（退席）、`acceptanceArchive`（归档）、`pathRecord` 后端根本没有。
 
-> **没有"创建 / 接入 Agent"的写接口**：后端没有"创建 Agent"这个概念。接入一个 Agent 是"用户给某个宿主对话签一张
-> 一次性票据（`agent.ticket.create.user`），由那个对话的 bridge 自己兑换"；中间要写本机私有票据文件、生成 bridge
-> 配置、把 bridge 注册进宿主 —— 只能由本机 CLI（`tsunagou agent connect` / `agent enroll`）完成。
-> 因此前端不发这类请求（见 §3.8 的 `addSubAgent`）。
+> **没有通用的"创建 Agent"领域命令**：页面通过中间层的 `agents:prepare` 准备接入（§7.1）。
+> Codex 保存待真实聊天认领的申请，由 `agent join` 复用 connect；其他宿主沿用中间层签票/登记。
+> 最终身份都由真实宿主 bridge 兑换票据取得，前端不直接创建或伪造 Agent。
 
 ---
 
@@ -523,52 +522,30 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > 名单读不到的项目会列在 `unreadable` 里（daemon 起着但没答）；
 > 没启服务的项目压根没端点，不在名单里 —— 那是“未启动”，不是“读不到”。
 
-### 7.1 添加一个 Agent（中间层做本机那半，页面负责等）
-「添加子 Agent」窗口的**名称就是昵称**，`确定` 之后不再只是提示，而是走一整条：
+### 7.1 添加一个 Agent（中间层准备申请，页面负责等）
+「添加子 Agent」窗口的名称是昵称。前端提交的项目、角色、昵称是本次接入的选择，不从 Agent 当前目录或提示词重新推断。
 
-```
+```text
 POST /console/projects/{project}/agents:prepare   {vendor, nickname, role, profile?, start_daemon}
-   → {status:'prepared', enrollment_id, profile, nickname, ticket_file, bridge_config,
-      host_registration:{status,label,name,commands,note}, next, …}     ← 没有任何 secret
+   → {status:'prepared', enrollment_id, profile, nickname,
+      host_registration:{status,label,name,commands,note}, next, …}
 GET  /console/enrollments/{enrollment_id}
-   → {status:'waiting'|'arrived'|'expired'|'cancelled', agent_id?, nickname, profile, note?, …}
-POST /console/enrollments/{enrollment_id}:cancel                     ← 「取消等待」确认后发这一条
-   → {status:'cancelled', ticket_removed, host_registration:{status,…}, …}
+   → {status:'waiting'|'arrived'|'expired'|'cancelled', phase?, agent_id?, note?, …}
+GET  /console/enrollments/current
+   → 当前申请的公共状态，或 {status:'none'}
+POST /console/enrollments/{enrollment_id}:cancel
+   → {status:'cancelled', …}，或 409（已开始接入，不能取消）
 ```
 
-- **名字与号码分开**：`nickname` 是人写的名字（票备好后才由中间层写进用户档案，因为 `agent_id`
-  要等兑换之后才有），`profile` 是中间层生成的**唯一号码**（12 位十六进制；也接受调用方指定）——
-  改用名换名不会挪本机目录。向导第 2 步重试时**沿用上一次的 profile**，宿主那边的登记名跟着它走，
-  不会每点一次「下一步」就在宿主配置里多堆一条。
-- **票准备好了 ≠ Agent 存在**：真正加入要宿主把 bridge 拉起来、由 bridge 兑换票。所以窗口按
-  `确定` 之后：遮罩就在原地转，页面每 2 秒问一次 `enrollments/{id}`，**到了才收遮罩并报成功**。
-  这句话**必须带上项目目录**：文案是「请在「`<项目目录>`」下打开（或重载）Codex 窗口完成接入，正在等待连接」（`openWindowHint()`，两个向导入口共用）。
-  原因是宿主的窗口开在哪个目录，决定了那个会话里的 Agent 能不能按相对路径读到这个项目的规矩文件
-  （`.tsunagou/agent-context.md`、`AGENTS.md` 受管区块）—— 读不到它不会报错，只会没有任何"我在哪个项目"
-  的线索，然后照自己的"安装并初始化"说明去别处新建一个项目（真实发生过）。目录从项目列表里取（`path`），
-  取不到就换成不含路径的说法。
-- **"到了"和"就位"是两件事**：名单里多出一个会话只说明它兑换了票。这一份等待要的是"就位"——
-  会话就绪（准入能力都证明过）**而且**角色已经落到票要求的那个（主 Agent 的任命是 daemon 在就绪那一步
-  顺手做的，而首次接入天然还不就绪）。中间层因此在 `waiting` 里多给一个 `pending`
-  （`{agent_id, role, session_status, missing_admission}`，见 `console/enrollment.py`）；页面拿到它就把
-  遮罩上的话换成 `joiningNote()`：「「Codex」那边的会话已经连上了，但还没就位（还缺：…）。请在
-  「`<项目目录>`」下让它再读一次项目上下文，就能完成接入。正在等待连接」。不换这句话，人只会看到一个
-  转不停、最后报"票过期"的遮罩，却不知道票早就被兑换了、该做的是让那边再读一次上下文。
-- **取消等待**（人可以放弃这段等待）：遮罩上多了「取消等待」入口，**只在能取消的等待里出现**
-  （`notify.loading(text, {cancel: fn})` 传了回调才显示）。点击 → 二次确认（`dialog.confirm`，
-  遮罩在背后接着转）→ 确认后：`POST …/{id}:cancel` 让中间层**删掉那张票、把宿主配置里刚加的那条登记注销**，
-  再收起遮罩。等待循环靠"遮罩关了"收尾，所以这一路会得到一个 `cancelled` 结果，页面说
-  「已取消等待：这次准备的票据已作废」，可以重新接入。确认框里选「取消」就什么都没发生，接着等。
-  取消后就算那边后来连上来也不会加入 —— 票没了，bridge 兑换不了。
-  实现上有一处值得记住：`#delPmt` 在 `index.html` 里**声明得比向导 / 添加子 Agent / 加载遮罩都早**，
-  同样的 z-index 下后声明的会画在上面 —— 于是 `init()` 启动时把它**挪到 body 末尾**
-  （位置 `fixed`，挪动不影响它怎么显示；不动 CSS、不加元素），确认框从此永远在最上面一层。
-- 遮罩被关掉（点背景）= 不等了（票还有效，宿主稍后连上仍会加入）；票过期 = 这次作废，要重新添加。
-- `host_registration.status` 取 `registered` / `executable_missing` / `unsupported` / `failed`：
-  只有 `registered` 才是"已经写进宿主配置"，页面才挂遮罩等；其它三种**照实说**
-  （提示一句人话，带宿主表里的 `note`），票与 bridge 配置已备好，但页面不假装在等。
-- 密钥只在服务端：`ticket_file` 写在 `<project>/.tsunagou/bridges/<adapter>-<profile>/ticket.json`
-  （0600/ACL），应答里只有路径。**页面上永远拿不到票据明文。**
+- **Codex 先准备申请**：`host_registration.status=deferred` 是正常等待，不是注册失败。中间层此时不签票、不生成虚拟聊天、不写独立 MCP。用户在目标 Codex 当前对话中只说 **“请接入 Tsunagou”**，Skill 执行 `tsunagou agent join`，由程序读取申请中的项目/角色并核验真实聊天身份。遮罩不再要求输入目录、声明主/子身份或在指定目录重开窗口。
+- **唯一申请与同会话重试**：同机、同 OS 用户在所有项目和控制台间只有一个有效 Codex 申请。记录保存在私有的 `~/.tsunagou/console-enrollments`，按 `enrollment_id` 独立查询并跨重启保存。并发认领只有一个聊天成功；认领后的失败保留归属，由原聊天重试，不自动变成新 Agent。没有申请就报错，不新建项目。
+- **等待进度**：每 2 秒查询一次。Codex 的 `waiting` 带 `phase=pending|connecting|enrolled|failed`，分别表示等待认领、认领后接入中、已登记但未取得原会话确认、可由原聊天重试的失败。`joiningNote()` 优先显示后端 `note`；旧宿主的 `pending.missing_admission` 仅作兼容提示，不再承诺“再读一次上下文就能完成”。
+- **严格完成**：页面只在后端返回 `arrived` 后报成功。Codex 中间层须同时核对本次绑定的 Agent/会话、项目、角色与就绪状态，以及原聊天成功调用 `context__project_read` 的回执。名单里多出一个人、辅助进程查询成功或另一个 Agent 就绪都不能完成这次等待。
+- **刷新恢复**：启动全局数据与上次所选项目恢复后，查询 `enrollmentCurrent`，使用原 `enrollment_id` 重接等待和取消，绝不再次 prepare。遮罩一直标明原项目与角色；即使当前选了别的项目也不自动切换。完成只刷新全局名单和匹配的当前项目数据，不推进已经丢失的旧向导。同项目/角色重复 prepare 复用原记录和昵称；其他选择的 409 显示 `detail.enrollment` 的项目/角色与 `detail.note`，停在原步骤。仅允许一个页面等待流程，避免初始化查询与用户点击并发重复轮询。
+- **取消等待**：`notify.loading(text, {cancel: fn})` 使原有入口出现；点击仍用现有 `dialog.confirm` 二次确认。拒绝确认保留取消入口；确认后等待后端结果。未认领的 Codex 申请可取消，已认领/登记返回 409，页面显示原因并继续等，不报告“已取消”，也不注销共享 MCP 或已接入 Agent。准备请求未完成时点击取消，会等取到申请 ID 再发取消请求。其他宿主保留自己的撤票/注销流程。
+- **关闭遮罩与取消申请不同**：遮罩被其他操作关闭只停止本次页面轮询，不能据此声称申请已作废。未认领申请过期后需重新准备；认领后的接入不因准备期限到时自动换人。
+- **首次加载边界**：Codex 需预先安装接入 Skill；共享 MCP 第一次配置后若原聊天还没有工具，可能需要重开宿主。已经加载的共享 bridge 每次调用读当前路由，后续 Agent 不需要反复重建全部 MCP。
+- **其余宿主兼容**：`registered` 表示已登记，沿用包含项目目录的打开/重载提示。`executable_missing|unsupported|failed` 则按 `host_registration.note` 进入手动接入提示。`profile` 是显示/私有材料标签，不是聊天身份；重试保留它。票据仍只在服务端私有文件，页面永远拿不到 secret。
 
 ### 7.2 宿主表：哪个厂商能接入、跑什么命令（表在中间层）
 协议里的值一旦要显示给人看，页面就得有一份词表（§7.3）。宿主也一样：
@@ -939,7 +916,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 | 向导的「上一步」与子 Agent 的「×」 | **暂不实现**（2026-09-28 你定）：按钮留着，点了只弹「撤回功能当前尚未实现」。理由：上一步想做的事 = 撤回上一步的效果，而分步后撤不在本轮范围内（子 Agent 那个 `×` 是 CSS 画的 `.itemC::before`，点它就是"删掉这个 Agent"）。低层导航 `ui.wizard.prev()` 仍在，只是页面按钮不再用它。 |
 | 「添加子 Agent」的两个入口 | 已区分：两个入口都走同一条真接入（见 §7.1），只是收尾不同 —— 向导第 3 步的小加号把结果记进向导第 3 步的列表；Agent 管理页的大加号成功后重拉名单/卡片/昵称。 |
 | 向导第 2 步的"你所选的 Agent" | 厂商由选择框决定（**默认 Codex**，见 §3.4 的“表单清空时回到哪一项”）；这个预览框显示的是**你在名称输入框里填的 Agent 名字**（图标才是厂商），名字为空就留空。**不再有 `GET /agents/detect` 探测请求**（后端没有"Agent 地址"这个概念）。<br>**整块（标签 + 预览框）的显隐**：名字与厂商**两样都给了才显示**，否则一块空板子不占位置（`actions.detectMainAgent()` 里顺带定，只动 `display`）。 |
-| 向导遇到接不了的宿主 | Codex 是现在唯一有注册命令的厂商（表在中间层）。选别的厂商：页面照实说"还没实现"，**停在第 2 步**（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。 |
+| 向导遇到接不了的宿主 | **Codex 与 OpenCode** 能从网页接入（表在中间层：`supported` 由那一行有没有注册路径决定，2026-10-02 起 OpenCode 也置为可用）。选其它厂商：页面照实说"还没实现"，**停在第 2 步**（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。OpenCode 注册完还要在那边**重载宿主**（`opencode reload` 或重启窗口）配置才生效 —— 页面的等待提示本来就是让它去开/重载窗口 |
 | 删除协作 | 左栏卡片右上角的 `.edit`（hover 才露出来）→ `dialog.confirm` → `POST /console/projects/{id}:forget`。中间的 daemon / 宿主登记 / 票 / 索引条目 / 目录一起清；登记进来的外部项目只注销登记、保留目录 |
 | 没有“返回初始工作区”的界面入口 | `Tsunagou.app.openHome()` / `dispatch('ui.workspace.home')` 都已就绪，但**页面上没有入口——这是原设计就没做的按钮，属于你的设计范围**，需要时自己加一个（我这侧不自行添加元素）。 |
 | 错误提示的颜色 | 成功与失败用的是同一个品牌色（CSS `--brand-col`），目前只靠图标/文案区分。要有独立配色就得加 CSS。 |
@@ -954,6 +931,8 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 ---
 
 ## 12. 中间层接线（2026-09-28）
+
+2026-10-02 更新：Codex 改为前端保存唯一待认领申请，原聊天一句“请接入 Tsunagou”执行 `agent join`。`deferred` 正常等待；遮罩优先显示后端 `note`，只认精确身份和原会话回执的 `arrived`。取消请求被 409 拒绝时继续等待，不注销共享 MCP。以下 2026-10-01 的目录提示、提前签票/注册描述是历史记录，Codex 当前契约以 §7.1 为准；OpenCode 保持原流程。HTML/CSS 未改。
 
 > 2026-09-29 注：本节及其子节里提到的“演示数据 / `mock-backend.js`”是当时的做法，
 > 那个文件与 `--demo` 开关都已删除（见 §6.1）；`Tsunagou 前端/` 也已并入 `web/`。
@@ -1099,7 +1078,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
   完整的取舍写在 `docs/decisions/2026-10-01-objective-from-dialogue.md`。
 - **「添加 Agent」接通**（2026-09-28，见 §7.1）：`POST /console/projects/{id}/agents:prepare` 由中间层做
   「本机那半」——签一张一次性票据、写私有票据文件、写 bridge 启动说明、**按厂商注册进宿主**
-  （表在 `platform/host_registration.py`，现在只有 Codex 有命令，其它厂商照实说"还没实现"）；
+  （表在 `platform/host_registration.py`，现在 Codex 与 OpenCode 有注册路径，其它厂商照实说"还没实现"）；
   `GET /console/enrollments/{id}` 回答"到了没有"，页面据此把加载遮罩一直挂着，**等宿主真连上才报成功**。
   同时 CLI 那边不再自己实现这套：`agent connect` / `agent enroll` 也改用同一份
   `platform/bridge_files.py` + `platform/host_registration.py`（一份实现，两个调用者）。

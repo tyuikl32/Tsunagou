@@ -1,6 +1,6 @@
 # Agent 快速接入 Tsunagou
 
-用户可以直接告诉当前 Agent：“在本项目安装 Tsunagou，并作为主 Agent 加入”，或在另一个对话中说“作为 worker 加入本项目”。已有授权下，Agent 处理普通安装与接入步骤；需要用户执行时，只提供一条已填写实际路径的命令。
+控制台已准备接入时，在目标 Codex Desktop 对话中说 **“请接入 Tsunagou”** 即可。项目、昵称和主/子 Agent 身份取自前端的选择，不需要重复输入。已有授权下，Agent 处理普通接入步骤；需要用户执行时，只提供一条可直接运行的命令。
 
 以下 Codex 自动接入代码已通过真实 daemon/MCP 进程测试；原 Desktop 会话的完整协作验收仍由 FX3/FX6 收口。测试客户端返回成功不等于该原会话已经 ready。
 
@@ -19,7 +19,22 @@
 
 配置文件只有在 Codex 信任项目时加载；全局 MCP 登记和项目配置使用同一个服务名 tsunagou。[Codex 配置说明](https://learn.chatgpt.com/docs/config-file/config-basic)、[MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。
 
-## 当前会话如何加入
+## 从控制台接入当前 Codex 对话
+
+1. 在前端选择项目和主/子 Agent，点击准备接入。目标 Codex 与前端应位于同一机器、同一 OS 用户；该用户跨项目只有一个有效的 Codex 待接入申请。
+2. 在要接入的原对话中说“请接入 Tsunagou”。接入 Skill 使用已安装的 launcher 执行 `tsunagou agent join`，无需项目参数或角色参数，也不依赖对话的当前工作目录。
+3. CLI 读取前端申请、核验真实聊天身份、认领并完成接入。同一聊天重试复用身份；另一个聊天不能领取同一申请。没有申请、申请已取消或已过期时明确失败，Agent 不另建项目或退回 worker。
+4. **原对话自己调用** MCP `context__project_read`，核对返回的项目、Agent、角色、ready session 和 host binding。控制台核对本次绑定和原会话回执后才显示成功；CLI 辅助进程的查询不能完成这一步。
+
+接入失败后由同一聊天重试 `agent join`。尚未认领的申请可在前端取消；已经开始接入时取消会被拒绝，并保留当前绑定。若首次安装后尚未加载 Skill/MCP，按下文加载说明处理；“一句话接入”不代表安装前置条件可以省略。
+
+刷新前端会自动找回当前申请的等待和取消入口，并标明原项目及角色；不会推进已经丢失的旧向导，也不会切换当前项目。同项目和角色重复准备沿用原申请与昵称；不同选择会说明已有申请，需先处理它。
+
+从旧版本升级本功能时，已经运行的旧 bridge 进程也需要重载一次，才能生成原聊天回执。此后同版本共享 bridge 接收新会话路由无需再次重启。
+
+## 手动指定项目和角色的接入
+
+没有使用前端接入申请、且用户明确指定项目和角色时，保留以下入口。不要在控制台 `join` 失败后自动改走这条流程。
 
 1. Agent 从当前项目或其子目录调用已安装 CLI；在目录外时加全局 `--project-root`。
 2. **Agent 在自己的 Codex 会话中**执行 `tsunagou agent prepare --adapter codex --role worker`。用户指定主 Agent 时用 main。此步核对真实会话、保存私有接入请求，不创建 Agent。

@@ -14,12 +14,15 @@ import urllib.parse
 import urllib.request
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from tsunagou.modules.projects import PENDING_OBJECTIVE
 from tsunagou.platform import host_registration
-from tsunagou.platform.bridge_files import HOST_META_KEYS, write_bridge_config, write_ticket_file
+from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
 from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
+
+if TYPE_CHECKING:
+    from tsunagou.application.agent_connection import ConnectionOperations
 
 _selected_project_root: ContextVar[Path | None] = ContextVar("cli_project_root", default=None)
 
@@ -994,26 +997,23 @@ if typer is not None:
                 _remove_legacy_codex_servers(codex, project_root=legacy_project_root, bridge=config)
         return f"registered:{name}"
 
-    def _register_deepseek_mcp(*, profile: str, bridge_config_path: Path) -> str:
-        """Write this conversation's own Harness overlay, and nothing shared.
+    def _register_host_mcp(*, adapter: str, profile: str, bridge_config_path: Path) -> str:
+        """Put the bridge into the host's own configuration, through the shared table.
 
-        Harness has no `mcp add`, and a profile-wide entry would hand the enrolled
-        identity to whatever conversation boots that profile, so the entry lives in
-        this conversation's private bridge directory instead and travels on its launch
-        command. An unbound conversation then has no Tsunagou tools at all.
+        The CLI and the console take this same path, so neither can write a registration
+        the other would not recognise. The host table is the single place that knows how
+        each dialect works: DeepSeek writes its own conversation-scoped overlay, OpenCode
+        runs its own `mcp add` inside the project.
         """
 
         config = json.loads(bridge_config_path.read_text(encoding="utf-8"))
         project_root = Path(str((config.get("env") or {}).get("TSUNAGOU_PROJECT_ROOT") or _project_root()))
-        # The identity provider is installed and required inside `register` itself, so the
-        # CLI and the console take the same path and neither can write an overlay that
-        # cannot prove its caller.
         result = host_registration.register(
-            "deepseek", profile=profile, project_root=project_root, bridge=config,
+            adapter, profile=profile, project_root=project_root, bridge=config,
         )
         if result.status == host_registration.REGISTERED:
             return f"registered:{result.name}"
-        return f"deepseek_{result.status}"
+        return f"{adapter}_{result.status}"
 
     def _deepseek_launch_command(*, profile: str, bridge_config_path: Path) -> str:
         """The one command that boots this conversation with its own overlay.
@@ -1244,6 +1244,26 @@ if typer is not None:
             raise RuntimeError("bridge_context_invalid")
         return cast(dict[str, Any], value)
 
+    def _connection_operations() -> ConnectionOperations:
+        from tsunagou.application.agent_connection import ConnectionOperations
+        return ConnectionOperations(
+            runtime=_runtime_context, ensure_daemon=_ensure_project_daemon, control_token=_control_token,
+            profile_identity=_profile_identity,
+            write_bridge=lambda adapter, mode, installation, destination, ticket: _write_bridge_config(
+                adapter=adapter, mode=mode, installation_id=installation, output_dir=destination, ticket_path=ticket,
+            ),
+            invoke=lambda kind, payload, token: _invoke_command(kind, payload, authorization=f"Bearer {token}"),
+            ack_delivery=_ack_private_delivery, bootstrap=_bridge_bootstrap,
+            register_codex=lambda profile, config, root: _register_codex_mcp(
+                profile=profile, bridge_config_path=config, legacy_project_root=root,
+            ),
+            register_host=lambda adapter, profile, config: _register_host_mcp(
+                adapter=adapter, profile=profile, bridge_config_path=config,
+            ),
+            launch_command=lambda profile, config: _deepseek_launch_command(profile=profile, bridge_config_path=config),
+            daemon_version=lambda: str(_daemon_request("GET", "/api/v1/health")["version"]),
+        )
+
     @agent_app.command("connect")
     def agent_connect(
         adapter: str = typer.Option(..., "--adapter"),
@@ -1255,149 +1275,90 @@ if typer is not None:
         register_host: bool = typer.Option(True, "--register-host/--no-register-host"),
     ) -> None:
         """Enroll the actual conversation and register its route in one user action."""
-        from tsunagou.application.onboarding import (
-            codex_routing_directory,
-            conversation_key,
-            prepare_codex_request,
-            read_codex_request,
-            write_codex_route,
-        )
+        from tsunagou.application.agent_connection import ConnectionFailure, connect_agent
         from tsunagou.hostwake.port import HostWakeError
-        from tsunagou.platform.db.sqlite import ProjectLock
-        from tsunagou.platform.private_files import write_private_bytes
-        from tsunagou.platform.runtime_context import read_object
-        from tsunagou.shared_kernel.time import format_timestamp, now_ms
-
-        started_ns = time.monotonic_ns()
-        connect_started_at = format_timestamp(now_ms())
-        enrolled_at = None
-
-        def timing() -> dict[str, Any]:
-            return {"connect_started_at": connect_started_at, "connect_finished_at": format_timestamp(now_ms()),
-                    "enrolled_at": enrolled_at, "duration_ms": (time.monotonic_ns() - started_ns) // 1_000_000}
-
         try:
             if mode not in {"attach", "launch"} or role not in {"worker", "main"}:
                 raise typer.BadParameter("mode must be attach/launch; role must be worker/main")
             if not re.fullmatch(r"[A-Za-z0-9_-]+", adapter) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
                 raise typer.BadParameter("adapter/profile must contain only letters, digits, '_' or '-'")
-            runtime = _runtime_context()
-            request = None
-            if request_file is not None or (adapter == "codex" and register_host):
-                if adapter != "codex":
-                    raise RuntimeError("onboarding_request_adapter_mismatch")
-                request_file = request_file or prepare_codex_request(runtime)
-                request = read_codex_request(request_file, runtime)
-                installation_id, conversation_id = request["installation_id"], request["conversation_id"]
-                destination = request_file.parent.resolve()
-                if output_dir and output_dir.resolve() != destination:
-                    raise RuntimeError("onboarding_request_output_conflict")
-            else:
-                identity = (os.environ.get("TSUNAGOU_HOST_CONVERSATION_ID") or os.environ.get("CODEX_THREAD_ID")
-                            or os.environ.get("CODEX_SESSION_ID"))
-                if not identity:
-                    raise RuntimeError("host_conversation_required:run_agent_prepare_inside_the_host")
-                destination = (
-                    output_dir or runtime.project_root / ".tsunagou/bridges" / f"{adapter}-{conversation_key(identity)[:16]}"
-                ).resolve()
-                installation_id, conversation_id = _profile_identity(destination, adapter, profile)
-            _ensure_project_daemon()
-            token = _control_token()
-            if not token:
-                raise RuntimeError("control_credential_missing")
-            source = running_source_root()
-            if source is None:
-                raise RuntimeError("installation_source_unavailable")
-            if request is not None and Path(request["source_root"]).resolve() != source:
-                raise RuntimeError("onboarding_source_mismatch")
-            destination.mkdir(parents=True, exist_ok=True)
-            ticket_file, session_file = destination / "ticket.json", destination / "bridge-session.json"
-            bootstrap_request = request_file or (
-                destination / "host-identity.json" if adapter in HOST_META_KEYS else None
+            connected = connect_agent(
+                _connection_operations(), adapter=adapter, role=role, profile=profile, mode=mode,
+                output_dir=output_dir, request_file=request_file, register_host=register_host,
             )
-            # Connect serializes only its own conversation. CredentialHandoff
-            # continues to own session rotation and ticket cleanup separately.
-            with ProjectLock(destination / "connect.lock"):
-                if request is not None:
-                    write_codex_route(request, runtime, destination)
-                    bridge_config_path = destination / "bridge-config.json"
-                    config = {"command": "node", "args": [str(source / "packages/bridge-server/dist/server.js")],
-                              "env": {"TSUNAGOU_ROUTING_DIR": str(codex_routing_directory())}, "secret_fields": []}
-                    write_private_bytes(bridge_config_path, (json.dumps(config, indent=2) + "\n").encode())
-                else:
-                    bridge_config_path = _write_bridge_config(
-                        adapter=adapter, mode=mode, installation_id=installation_id, output_dir=destination, ticket_path=ticket_file,
-                    )
-                if not ticket_file.exists() and not session_file.exists():
-                    payload: dict[str, Any] = {
-                        "kind": role, "role": role, "installation_id": installation_id,
-                        "conversation_evidence": {"conversation_id": conversation_id},
-                    }
-                    if request:
-                        payload["host_binding"] = {
-                            "provider": "codex_desktop_app", "endpoint": request["endpoint"],
-                            "thread_id": conversation_id, "host_generation": request["host_generation"],
-                        }
-                    result = _invoke_command("agent.ticket.create.user", payload, authorization=f"Bearer {token}")
-                    _write_ticket_private(installation_id, conversation_id, result["secret"], ticket_file, role,
-                                          request["host_generation"] if request else None)
-                    _ack_private_delivery(result, token)
-                context = _bridge_bootstrap(bridge_config_path, bootstrap_request)
-                if context["project_id"] != runtime.project_id:
-                    raise RuntimeError("onboarding_project_mismatch")
-                if role == "main" and context["role"] != "main":
-                    _invoke_command("authority.appoint", {"agent_id": context["agent_id"]}, authorization=f"Bearer {token}")
-                    context = _bridge_bootstrap(bridge_config_path, bootstrap_request)
-                if role == "worker" and context["role"] != "worker":
-                    raise RuntimeError("current_agent_is_main:explicit_revoke_required")
-                # This verifies enrollment through a helper bridge. Original-host
-                # MCP readiness remains a separate observation after connect.
-                enrolled_at = format_timestamp(now_ms())
-                launch_command = ""
-                if register_host and adapter == "codex":
-                    registration = _register_codex_mcp(
-                        profile=profile,
-                        bridge_config_path=bridge_config_path,
-                        legacy_project_root=runtime.project_root,
-                    )
-                elif register_host and adapter == "deepseek":
-                    registration = _register_deepseek_mcp(
-                        profile=profile, bridge_config_path=bridge_config_path,
-                    )
-                    launch_command = _deepseek_launch_command(
-                        profile=profile, bridge_config_path=bridge_config_path,
-                    )
-                else:
-                    registration = "not_requested"
-
-                public_context = {key: context[key] for key in ("project_id", "agent_id", "role")}
-                for name, fields in (("session", ("status", "connection_epoch", "baseline_status")),
-                                     ("host_binding", ("provider", "status", "binding_revision", "connection_epoch"))):
-                    value = context.get(name)
-                    public_context[name] = {key: value[key] for key in fields if key in value} if isinstance(value, dict) else None
-                connected = {"status": "enrolled", **public_context, "adapter": adapter, "mode": mode,
-                             "requested_role": role, "profile": profile, "installation_id": installation_id,
-                             "bridge_config": str(bridge_config_path), "host_registration": registration,
-                             "source_root": str(source),
-                             "version": _daemon_request("GET", "/api/v1/health")["version"],
-                             "next": "call_context__project_read_in_original_conversation"}
-                if adapter == "deepseek" and launch_command:
-                    # The private overlay avoids adding tools to the shared profile.
-                    # Reusing it in another conversation can still reuse this identity.
-                    connected["launch_command"] = launch_command
-                connection_file = destination / "connection.json"
-                previous = read_object(connection_file)
-                connected["connected_at"] = previous.get("connected_at") if connection_file.exists() else enrolled_at
-                connected.update(timing())
-                write_private_bytes(connection_file, (json.dumps(connected, sort_keys=True) + "\n").encode())
-                print(json.dumps(connected, sort_keys=True))
+            print(json.dumps(connected, sort_keys=True))
         except typer.BadParameter as exc:
-            print(json.dumps({"status": "error", "error": str(exc), **timing()}))
+            print(json.dumps({"status": "error", "error": str(exc)}))
             raise typer.Exit(2) from exc
         except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired, HostWakeError) as exc:
             code = exc.code if isinstance(exc, HostWakeError) else str(exc) if isinstance(exc, RuntimeError) else "onboarding_failed"
-            print(json.dumps({"status": "error", "error": code, **timing()}))
+            print(json.dumps({"status": "error", "error": code,
+                              **(exc.observations if isinstance(exc, ConnectionFailure) else {})}))
             raise typer.Exit(4) from exc
+
+    @agent_app.command("join")
+    def agent_join() -> None:
+        """Join the console's pending Agent as this real Codex Desktop conversation."""
+        from tsunagou.application.agent_connection import connect_agent
+        from tsunagou.application.onboarding import (
+            bind_console_enrollment,
+            prepare_codex_request,
+            read_codex_request,
+            validate_codex_route,
+        )
+        from tsunagou.hostwake.port import HostWakeError
+        from tsunagou.platform.enrollment_store import EnrollmentStore
+        from tsunagou.platform.runtime_context import read_object
+
+        store = EnrollmentStore()
+        claimed: dict[str, Any] | None = None
+        selection = None
+        thread_id = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+        try:
+            if not thread_id:
+                raise RuntimeError("desktop_context_missing:run_agent_join_inside_the_codex_conversation")
+            intent = store.current(thread_id)
+            root = Path(intent["project_root"]).resolve()
+            previous_root = _selected_project_root.get()
+            if previous_root is not None and previous_root.resolve() != root:
+                raise RuntimeError("onboarding_project_mismatch")
+            selection = _selected_project_root.set(root)
+            runtime = _runtime_context()
+            manifest = read_object(root / ".tsunagou/project.json")
+            if runtime.project_id != intent["project_id"] or manifest.get("project_id") != intent["project_id"]:
+                raise RuntimeError("onboarding_project_mismatch")
+            request_file = prepare_codex_request(runtime)
+            request = read_codex_request(request_file, runtime)
+            if request["conversation_id"] != thread_id:
+                raise RuntimeError("desktop_conversation_mismatch")
+            validate_codex_route(request, runtime)
+            claimed = store.claim(intent["enrollment_id"], thread_id, expected_revision=int(intent["revision"]))
+            connected = connect_agent(
+                _connection_operations(), adapter="codex", role=claimed["requested_role"],
+                profile="current", request_file=request_file,
+            )
+            if (connected.get("project_id") != intent["project_id"]
+                    or connected.get("role") != intent["requested_role"]):
+                raise RuntimeError("onboarding_result_mismatch")
+            registration = str(connected.get("host_registration") or "")
+            if not registration.startswith(("registered:", "unchanged:")):
+                raise RuntimeError("codex_mcp_registration_incomplete")
+            bind_console_enrollment(request, claimed)
+            store.mark_enrolled(claimed["enrollment_id"], thread_id, agent_id=connected["agent_id"])
+            print(json.dumps({**connected, "enrollment_id": claimed["enrollment_id"],
+                              "project_root": str(root)}, ensure_ascii=False, sort_keys=True))
+        except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired, HostWakeError) as exc:
+            code = exc.code if isinstance(exc, HostWakeError) else str(exc) if isinstance(exc, RuntimeError) else "onboarding_failed"
+            if claimed is not None and thread_id:
+                try:
+                    store.fail(claimed["enrollment_id"], thread_id, code)
+                except (RuntimeError, OSError, ValueError):
+                    pass  # Preserve the actual enrollment error.
+            print(json.dumps({"status": "error", "error": code}, ensure_ascii=False))
+            raise typer.Exit(4) from exc
+        finally:
+            if selection is not None:
+                _selected_project_root.reset(selection)
 
     @agent_app.command("enroll")
     def agent_enroll(
