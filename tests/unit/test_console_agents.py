@@ -230,6 +230,47 @@ def test_vendor_of_a_cli_enrolled_agent_is_filled_from_its_bridge_folder(tmp_pat
         "only the vendor is recorded — a nickname keeps falling back to the Agent code"
 
 
+def test_a_codex_cli_agent_is_filled_from_its_onboarding_folder(tmp_path: Path) -> None:
+    """`agent prepare` + `connect --request-file` keeps its state under local/onboarding.
+
+    It is the same ``connection.json`` the other hosts write, just at a different
+    address — and it is the address every Codex enrolment (including ``agent join``)
+    actually uses, so missing it meant "no vendor" for all of them.
+    """
+
+    root, _ = _project(tmp_path)
+    folder = root / ".tsunagou" / "local" / "onboarding" / ("b" * 64)
+    folder.mkdir(parents=True)
+    (folder / "connection.json").write_text(
+        json.dumps({"adapter": "codex", "profile": "current", "agent_id": "agent-main"}), encoding="utf-8",
+    )
+    profile_path = tmp_path / "console-profile.json"
+
+    filled = reconcile_vendors(root, ({"agent_id": "agent-main"},), profile_path=profile_path)
+
+    assert filled == 1
+    assert load_profile(profile_path)["agents"] == {"agent-main": {"vendor": "Codex"}}
+
+
+def test_the_onboarding_folder_is_looked_for_under_the_projects_own_state_dir(tmp_path: Path) -> None:
+    """A project may keep its runtime somewhere else; the scan has to follow it."""
+
+    root, endpoint = _project(tmp_path, with_storage=False)
+    elsewhere = tmp_path / "runtime"
+    folder = elsewhere / "onboarding" / ("c" * 64)
+    folder.mkdir(parents=True)
+    (folder / "connection.json").write_text(
+        json.dumps({"adapter": "opencode", "agent_id": "agent-worker"}), encoding="utf-8",
+    )
+    profile_path = tmp_path / "console-profile.json"
+    directory = AgentDirectory(reader=Reader(_roster()), profile_path=profile_path)
+    endpoint = {**endpoint, "state_dir": str(elsewhere)}
+
+    assert directory.roster(PROJECT_ID, root, endpoint) is not None
+
+    assert load_profile(profile_path)["agents"] == {"agent-worker": {"vendor": "OpenCode"}}
+
+
 def test_a_bridge_without_a_connection_is_matched_by_its_conversation_digest(tmp_path: Path) -> None:
     root, _ = _project(tmp_path)
     conversation = "tsunagou:deepseek:main:0f0f0f"

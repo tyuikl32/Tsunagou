@@ -7,6 +7,8 @@ description: "Join or recover the current coding Agent in a local Tsunagou proje
 
 Use the user's selected project and role. An instruction to install/join authorizes the ordinary setup steps; do not ask again for each command. The console role selection is the user's explicit choice of main or worker. Outside that flow, appointing main still requires the user's explicit choice of main. A worker cannot promote itself. Never read credentials into the conversation.
 
+Enrolling a **new** Agent is the user's decision, not ordinary setup: never invite, ticket or enroll another conversation on your own initiative — only when the user asked for it or allowed it. If the work needs another Agent, ask the user and let them choose the host and the role; do not grow the team yourself.
+
 ## Console Codex join: the default for “请接入 Tsunagou”
 
 When the user asks the current Codex Desktop conversation to join Tsunagou, or says the console has already prepared an Agent, use `tsunagou agent join` with no project or role arguments. Do this before any project initialization, cwd-based project selection, or default worker preparation. This applies to the one active console request for the same local OS user, including when the current conversation's working directory is outside the selected project.

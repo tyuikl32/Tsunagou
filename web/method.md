@@ -475,6 +475,12 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > 图标按 `vendor` 文字映射（`agentIconFor()`）。**默认项是 `Codex`** ——
 > 面板里 Codex 那项带 `data-default`，`resetCsBox()` 认这个标记（见 §3.4）。
 > 凡是多行的文本字段（如"改动的文件"）直接用 `\n` 分隔即可。
+>
+> **厂商未知时摆 Tsunagou 自己的小标**（`TSUNAGOU_CARD_ICON` = `logo-little-l.png`），
+> 不拿任何厂商图标冒充 —— 否则"还不知道是谁"会长得像"这个 Agent 是那家的"。
+> 这条规则只有 `agentIconFor()` 一处实现（`iconOf()` 同样遵守）；调用点不要再各写一遍。
+> Agent 的厂商来自用户档案（`GET /console/profile` 的 `agents[<agent_id>].vendor`），
+> 由中间层在读名单时从 bridge 目录与 onboarding 目录里补写；档案没到之前渲染出来的就是小标。
 
 | `render.navbar(project)` | 项目页顶部导航条（名称 + 状态胶囊）。输出标记与原 index.html 的静态写法**完全一致**，只是改成由数据驱动；**由 `render.overview` 顺带调用**，所以 `project.current` / `refresh` 会一并更新它 |
 

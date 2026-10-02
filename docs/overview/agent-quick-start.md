@@ -88,6 +88,7 @@ tsunagou agent list --json
 4. task__submit 自动采集结果、释放占用、撤执行权并通知 main；main 审查并控制 Git 整合。
 5. 静默、断线和同库重启不转移 owner。原 owner 新 begin 恢复原 Attempt；main 可明确 recover/takeover，旧 Attempt 此后不能提交。
 6. 项目完成、重大设计与越过用户固定边界仍由用户决定。
+7. **新增 Agent 是用户决定的事，不是普通调度。** 用户明确允许之前，主 Agent 不得自行邀请、签票或组织新会话加入本项目，也不要替用户挑宿主；需要人手时向用户说明理由并请求允许。已在项目的 Agent 之间的普通委派照旧不需要再问。
 
 ### 消息与唤醒
 

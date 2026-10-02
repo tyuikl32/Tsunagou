@@ -118,6 +118,39 @@ def profile_identity(
 
 # The files in a bridge folder that name an identity, in the order their fields win.
 _IDENTITY_FILES = ("connection.json", "host-identity.json")
+# Where `agent connect --request-file` keeps a conversation's state, relative to the
+# project's private state directory (see ``enrollment_identities``).
+ONBOARDING_DIRECTORY = Path("onboarding")
+
+
+def _identity_from(files: list[Path]) -> dict[str, str]:
+    """The identity fields these files agree on; the first file to name one wins."""
+
+    merged: dict[str, str] = {}
+    for candidate in files:
+        try:
+            raw = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        for key in ("adapter", "profile", "installation_id", "conversation_id", "agent_id"):
+            value = raw.get(key)
+            if key not in merged and isinstance(value, str) and value:
+                merged[key] = value
+    return merged
+
+
+def _identity_row(merged: dict[str, str], profile: str) -> dict[str, Any]:
+    """One identity row, with the adapter already proven to be there."""
+
+    return {
+        "adapter": merged["adapter"],
+        "profile": profile,
+        "installation_id": merged.get("installation_id"),
+        "conversation_id": merged.get("conversation_id"),
+        "agent_id": merged.get("agent_id"),
+    }
 
 
 def bridge_identities(root: Path) -> list[dict[str, Any]]:
@@ -140,30 +173,41 @@ def bridge_identities(root: Path) -> list[dict[str, Any]]:
     for child in sorted(bridges.iterdir()):
         if not child.is_dir():
             continue
-        merged: dict[str, str] = {}
-        for candidate in _identity_files(child):
-            try:
-                raw = json.loads(candidate.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if not isinstance(raw, dict):
-                continue
-            for key in ("adapter", "profile", "installation_id", "conversation_id", "agent_id"):
-                value = raw.get(key)
-                if key not in merged and isinstance(value, str) and value:
-                    merged[key] = value
+        merged = _identity_from(_identity_files(child))
         adapter = merged.get("adapter", "")
         if not adapter or not child.name.startswith(adapter + "-"):
             # Without the adapter in a file there is no way to tell where the adapter
             # name ends, so this folder is reported as unreadable rather than guessed.
             continue
-        found.append({
-            "adapter": adapter,
-            "profile": child.name[len(adapter) + 1:],
-            "installation_id": merged.get("installation_id"),
-            "conversation_id": merged.get("conversation_id"),
-            "agent_id": merged.get("agent_id"),
-        })
+        found.append(_identity_row(merged, child.name[len(adapter) + 1:]))
+    return found
+
+
+def enrollment_identities(state_dir: Path) -> list[dict[str, Any]]:
+    """The bridge folders that live in the private onboarding area.
+
+    ``agent connect --request-file`` — the Codex route, including ``agent join`` —
+    keeps its conversation's files next to the request, under
+    ``<state_dir>/onboarding/<conversation digest>/``, rather than under
+    ``.tsunagou/bridges``. Same identity files, different address: without reading this
+    one, an Agent enrolled from the command line could not be told which host product
+    it runs on, and would stay vendor-less in the console.
+
+    Only the two identity files are read here; the rest of an onboarding folder is
+    tickets, sessions and request material that nothing needs to open.
+    """
+
+    onboarding = state_dir / ONBOARDING_DIRECTORY
+    if not onboarding.is_dir():
+        return []
+    found: list[dict[str, Any]] = []
+    for child in sorted(onboarding.iterdir()):
+        if not child.is_dir():
+            continue
+        merged = _identity_from([child / name for name in _IDENTITY_FILES if (child / name).is_file()])
+        if not merged.get("adapter"):
+            continue
+        found.append(_identity_row(merged, child.name))
     return found
 
 
