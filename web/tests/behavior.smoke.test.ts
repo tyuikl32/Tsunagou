@@ -468,6 +468,8 @@ describe("控制台接入等待与取消", () => {
   let calls: Array<{ url: string; body: Record<string, unknown> }>;
   const projectPath = "E:/Tsunagou/projects/示例协作";
   const text = () => enrollmentPage.querySelector("#loadW .textW")?.textContent ?? "";
+  /* 顶部那一句话提示（notify.info / notify.error 都写这里） */
+  const tip = () => enrollmentPage.querySelector("#AnnounceMent2 .aText")?.textContent ?? "";
 
   async function loadPage(current: Record<string, unknown> = { status: "none" }, remembered = "") {
     enrollmentDom = new JSDOM(readWeb("index.html"), {
@@ -520,8 +522,8 @@ describe("控制台接入等待与取消", () => {
       { id: "p-1", name: "示例协作", path: projectPath, available: true },
     ]);
     enrollmentApi.state.set("hosts", [
-      { adapter: "codex", label: "Codex", supported: true },
-      { adapter: "opencode", label: "OpenCode", supported: true },
+      { adapter: "codex", label: "Codex", mode: "console" },
+      { adapter: "opencode", label: "OpenCode", mode: "console" },
     ]);
     enrollmentApi.state.set("currentProjectId", "p-1");
     enrollmentApi.state.set("wizard.project", { id: "p-1", name: "示例协作" });
@@ -578,6 +580,36 @@ describe("控制台接入等待与取消", () => {
     enrollmentApi.notify.loadingEnd();
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
+  });
+
+  it("OpenCode 等待时照抄中间层给的会话名，页面不自己编", async () => {
+    prepareBody.host_registration = { status: "registered" };
+    prepareBody.next = "在这个项目里用会话名 ses_p 打开 OpenCode（opencode --session ses_p），reload 一次。";
+    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "OpenCode", { silent: true });
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(text()).toContain("ses_p");
+    expect(text()).not.toContain("打开/重载");
+    enrollmentApi.notify.loadingEnd();
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+  });
+
+  it("办不完的厂商点了下一步只给一句话，绝不发准备请求", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在 DeepSeek Harness 自己的桌面聊天里接入。" },
+      { adapter: "claudecode", label: "Claude Code", mode: "unsupported", note: "Claude Code 的 MCP 注册还没实现。" },
+    ]);
+    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "DeepSeek Harness", { silent: true });
+    await enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tip()).toContain("自己的桌面聊天里接入");
+    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "Claude Code", { silent: true });
+    await enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tip()).toContain("还没实现");
+    expect(calls.filter((call) => call.url.includes("agents:prepare"))).toHaveLength(0);
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
   });
 
   it("拒绝确认保留取消入口，确认后以服务端 cancelled 为准", async () => {

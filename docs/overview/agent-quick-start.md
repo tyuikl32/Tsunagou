@@ -56,6 +56,16 @@ profile 只作显示标签。同一 IDE 的不同对话/subagent 由真实会话
 
 工具返回 enrolled 后，**同一聊天**再调用 `mcp__tsunagou__context__project_read`，核对项目、自己的 Agent、角色和 ready 状态。CLI/helper 成功、临时 headless 会话成功或插件文件存在都不能替代这一步。Desktop 入口的实际验证状态以[现有验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)为准；此入口不承诺 Codex 专属自动唤醒。
 
+## OpenCode 接入（从控制台）
+
+前端选 OpenCode 准备接入后，等待提示会给出一个**会话名**（形如 `ses_<profile>`）：票绑的就是这个名字，所以人要用同一个名字开会话，两边的身份才对得上。
+
+1. 在这个项目的目录里用该名字打开（或继续）会话：`opencode --session ses_<profile>`。
+2. 在那边重载一次（`opencode reload` 或重启窗口），让项目里的 MCP 配置生效。
+3. 该会话首次调用 `context__project_read` 即完成接入，控制台随即显示已接入。
+
+同一次等待重试沿用同一个名字（记在该会话的私有 bridge 目录里）；换名字就是另一次接入——项目里一条 MCP 条目只对一个会话。别的会话调用同一个 bridge 会被明确拒绝（`not_enrolled`），不会顶替这次接入。
+
 ## 多项目和查询
 
 CLI 自动从子目录发现项目，无需每开一个终端重设环境变量。若选择让新项目复用已有项目的 daemon，在新项目目录运行：

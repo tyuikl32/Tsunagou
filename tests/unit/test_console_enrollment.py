@@ -27,7 +27,7 @@ from tsunagou.console.projects import ProjectEntry
 from tsunagou.console.proxy import ForwardResponse
 from tsunagou.platform import host_registration
 from tsunagou.platform.enrollment_store import EnrollmentStore
-from tsunagou.platform.host_registration import REGISTERED, UNSUPPORTED
+from tsunagou.platform.host_registration import REGISTERED
 
 PROJECT_ID = "0192c7f1-8a4e-7c31-9d2b-6f0a5e7c1b44"
 SECRET = "s3cret-ticket-value"
@@ -276,13 +276,87 @@ def test_a_name_that_is_not_a_path_still_gets_one_profile_per_conversation() -> 
     assert enrollment.profile_name("") == "current", "no name is one conversation, not none"
 
 
-def test_the_page_can_ask_which_hosts_this_console_can_register() -> None:
+def test_the_page_can_ask_what_happens_if_it_picks_this_vendor() -> None:
+    """The page's one question is "点下一步会发生什么"; one field answers it."""
+
     hosts = {host["adapter"]: host for host in enrollment.known_hosts()}
 
-    assert hosts["codex"]["supported"] is True
-    assert hosts["claudecode"]["supported"] is False
+    assert hosts["codex"]["mode"] == enrollment.CONSOLE_MODE
+    assert hosts["opencode"]["mode"] == enrollment.CONSOLE_MODE
+    assert hosts["codex"]["note"] == "", "a host the console can finish needs no excuse"
+    # DeepSeek is not "not implemented": it enrolls inside its own chat, so the page
+    # points at that sentence instead of queueing a ticket nobody will redeem.
+    assert hosts["deepseek"]["mode"] == enrollment.IN_HOST_MODE
+    assert "DeepSeek Harness" in hosts["deepseek"]["note"]
+    assert hosts["claudecode"]["mode"] == enrollment.UNSUPPORTED_MODE
     assert hosts["claudecode"]["note"], "an unsupported host says so, in words a person can read"
+    assert hosts["zcode"]["mode"] == enrollment.UNSUPPORTED_MODE
     assert {host["adapter"] for host in enrollment.known_hosts()} == set(host_registration.HOSTS)
+
+
+@pytest.mark.parametrize(
+    ("vendor", "mode"),
+    [("deepseek", enrollment.IN_HOST_MODE), ("claudecode", enrollment.UNSUPPORTED_MODE)],
+)
+def test_a_host_this_console_cannot_finish_is_refused_before_a_ticket_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, vendor: str, mode: str,
+) -> None:
+    """A ticket only a person could redeem looks like progress and ends in "票过期了"."""
+
+    entry = _entry(tmp_path)
+    daemon = Daemon()
+    monkeypatch.setattr(enrollment, "forward", daemon)
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+
+    with pytest.raises(ConsoleError) as refusal:
+        enrollment.prepare(
+            entry, dict(entry.daemon or {}), vendor=vendor, role="worker", directory=Rosters(),
+        )
+
+    assert refusal.value.code == "host_enroll_not_available"
+    assert refusal.value.detail["enroll_mode"] == mode
+    assert refusal.value.detail["note"], "the refusal has to say where to go instead"
+    assert daemon.calls == [], "no ticket is asked for a host we cannot finish"
+    assert not (entry.path / ".tsunagou" / "bridges").exists(), "a refusal leaves nothing behind"
+
+
+def test_opencode_gets_one_session_name_the_ticket_and_the_person_both_use(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """OpenCode names its conversation when it is opened, so we name it first.
+
+    The bridge drops a ticket bound to another conversation (``server.ts``), which is
+    why the console's OpenCode flow could only ever wait for an expiry. Handing out
+    the name the person will actually open is the whole fix, and a retry has to keep
+    the same name.
+    """
+
+    entry = _entry(tmp_path)
+    monkeypatch.setattr(enrollment, "forward", Daemon())
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+    recorded = _registered(monkeypatch)
+
+    def prepared() -> dict[str, Any]:
+        return enrollment.prepare(
+            entry, dict(entry.daemon or {}), vendor="opencode", role="worker",
+            nickname="熊猫", profile="worker-a", directory=Rosters(),
+        )
+
+    first = prepared()
+    ticket = json.loads(Path(str(first["ticket_file"])).read_text(encoding="utf-8"))
+
+    assert ticket["conversation_id"] == "ses_" + str(first["profile"])
+    assert str(ticket["conversation_id"]) in str(first["next"]), "页面照抄这句话就能开会话"
+    assert recorded and recorded[0]["adapter"] == "opencode"
+    assert prepared()["profile"] == first["profile"], "重试给的是同一个名字，不是新会话"
+
+
+def _built_bridge(tmp_path: Path) -> Path:
+    """A stand-in entry file: these tests are about the ticket, not about a build."""
+
+    entry = tmp_path / "built-server.js"
+    entry.write_text("// stand-in for packages/bridge-server/dist/server.js\n", encoding="utf-8")
+    return entry
 
 
 def test_the_console_serves_the_prepare_route(tmp_path: Path) -> None:
@@ -466,23 +540,6 @@ def test_an_unknown_enrollment_is_not_guessed_at(tmp_path: Path) -> None:
 
     assert refusal.value.code == "enrollment_not_found"
     assert refusal.value.status == 404
-
-
-def test_an_unsupported_host_is_reported_not_faked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The ticket and the launch description are still prepared; only the host step is missing."""
-
-    entry = _entry(tmp_path)
-    monkeypatch.setattr(enrollment, "forward", Daemon())
-
-    report = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="claudecode", role="worker", nickname="cc",
-        directory=Rosters(),
-    )
-
-    assert report["host_registration"]["status"] == UNSUPPORTED
-    assert report["host_registration"]["note"]
-    assert Path(str(report["ticket_file"])).is_file(), "the person can still register the host by hand"
-    assert report["next"]
 
 
 def test_cancelling_removes_the_ticket_and_takes_the_host_entry_back(

@@ -92,6 +92,9 @@ class Host:
     config_write: Callable[[str, Mapping[str, Any]], str] | None = None
     config_remove: Callable[[str, Mapping[str, Any]], str] | None = None
     note: str = ""
+    # 这个宿主只在它自己的聊天里接入：页面替它签的票，它认不出是自己的。
+    # 非空就表示"去宿主里说这句话能办成"，页面据此照实说，不再假装排队等它来连。
+    enroll_in_host: str = ""
 
 
 def _codex_removal(executable: str, name: str) -> tuple[HostCommand, ...]:
@@ -829,6 +832,10 @@ HOSTS: dict[str, Host] = {
         config_write=write_deepseek_overlay,
         config_remove=remove_deepseek_overlay,
         note="写不进 DeepSeek Harness 的会话覆盖层；请检查项目的 .tsunagou/bridges 是否可写。",
+        enroll_in_host=(
+            "DeepSeek Harness 在自己的桌面聊天里接入：在目标聊天里让它接入 Tsunagou"
+            "（宿主里已有这个动作），页面不需要先准备。"
+        ),
     ),
     "opencode": Host(
         adapter="opencode",
