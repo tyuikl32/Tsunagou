@@ -86,3 +86,52 @@ Wrong: expose task publish in user CLI by reading current main's token. Correct:
 Wrong: `P/events:stream` is treated as MCP transport. Correct: business SSE is a high-watermark hint; MCP Streamable HTTP has its own protocol/session semantics at P/mcp.
 
 Wrong: `dispatcher.dispatch(..., principal_kind=request.header("X-Principal-Kind"), principal_id=request.header("X-Principal-Id"))`. Correct: `principal = authenticator.authenticate(policy["principal"], bearer, session_id=session_id, connection_epoch=epoch)` then `dispatcher.dispatch(..., principal=principal)`; missing trusted authentication rejects the command.
+
+
+## Scenario: console-selected Codex join (2026-10-02)
+
+### 1. Scope / Trigger
+
+The local console selects a project and main/worker role before the real Codex chat is known. Do not sign a ticket for a display profile or derive the target project from that chat's cwd. See [console join decision](../../../docs/decisions/2026-10-02-console-codex-join.md).
+
+### 2. Signatures
+
+- `tsunagou agent join`: no project/role arguments; validates the actual Desktop conversation and claims the console selection.
+- `GET /api/v1/console/enrollments/current`: recover the current public wait or `{ "status": "none" }`.
+- Existing project `agents:prepare`, enrollment status and cancel routes remain; Codex prepare returns `host_registration.status=deferred` without a ticket or MCP registration.
+- `EnrollmentStore.create/active/current/claim/mark_enrolled/fail/mark_arrived/cancel/forget_project` own local handoff state, not daemon Agent authority.
+
+### 3. Contracts
+
+Private store defaults to `~/.tsunagou/console-enrollments`; `TSUNAGOU_ENROLLMENT_DIR` isolates tests. A record contains enrollment_id, absolute project_root, project_id, requested_role, nickname, revision, lifecycle times and receipt_file; claim adds the verified thread_id, enrollment adds exact agent_id. One active request per OS user spans projects and consoles. The 900-second timeout applies only while pending; claimed work remains owned by its chat. Matching project/root/role preparation reuses the record and original nickname. A same-chat retry finds its prior binding before any newer pending request. Late failure must not downgrade enrolled/arrived.
+
+Use CODEX_THREAD_ID (or CODEX_SESSION_ID) plus the existing app-tools read_thread verification. Before claim, require the selected project's real manifest and reject a conflicting existing Codex route. Connect and join share `application.agent_connection.connect_agent`; never mutate process-wide environment to switch roots. Store/route locks cover only local compare/write operations, never host or daemon calls.
+
+The private shared route optionally carries `console_enrollment={enrollment_id,requested_role,receipt_file}`. Only a successful original `context.project_read` with ready session and matching identity/role writes a receipt: format_version=1, enrollment_id, thread_id, project_id, agent_id, role, session_id, connection_epoch, observed_at (RFC3339). The CLI helper sets `TSUNAGOU_CONNECT_HELPER=1` after config env merge; it and startup restoration produce no arrival receipt. Receipts may not overwrite another binding or a newer epoch.
+
+Console completion requires that receipt plus a fresh daemon roster with matching exact Agent, ready status, role and epoch. HTTP projects only an allowlist; raw thread, pipe, receipt path and credentials stay private. Current-status and prepare reconcile completed receipts so a refreshed page cannot occupy the global slot forever. The frontend restores waiting by ID without advancing an unrelated project wizard. Cancellation never unregisters the shared MCP.
+
+### 4. Validation & Error Matrix
+
+| Condition | Outcome |
+|---|---|
+| No pending request / missing real Desktop context | enrollment_not_pending / desktop_context_missing; no project initialization |
+| Manifest or explicit root conflicts with selection | onboarding_project_mismatch (or project_context_conflict); no claim |
+| Existing chat route names another project/root | host_route_project_conflict before claim; connecting retains its own route check |
+| Another chat owns request | enrollment_claimed_by_another_chat |
+| Different selection while a request is active | HTTP 409 enrollment_already_pending with public detail.enrollment and actionable note |
+| Claim versus pending cancel/expiry race | one locked state transition wins; no reassignment |
+| Cancel after claim | HTTP 409 enrollment_already_claimed; continue polling |
+| Missing/stale receipt, wrong role/Agent/epoch, unavailable fresh roster | waiting, never arrived |
+
+### 5. Good/Base/Bad Cases
+
+Good: a chat running in another directory joins the console-selected main and repeats with the same Agent identity. Base: first installation or upgrading an already-running older bridge requires one host reload before original MCP verification. Bad: missing request falls back to initializing cwd, default worker, or a fabricated conversation profile.
+
+### 6. Tests Required
+
+`test_enrollment_store.py` covers concurrent claims, retries, persistence and lifecycle fencing. `test_console_enrollment.py` covers deferred preparation, public projections, exact receipt/epoch, stale roster, refresh recovery and cancel conflict. `test_console_join.py` verifies unrelated cwd, main/worker, no implicit initialization, real-host validation and preclaim route checks. `test_console_join_flow.py` exercises a real daemon/bridge with a fixture Desktop client; helper enrollment stays waiting until original-client context. Bridge credential tests fence receipts; frontend smoke tests cover deferred/failed phases, cancel races and restored waits. Fixtures do not establish real Desktop acceptance.
+
+### 7. Wrong vs Correct
+
+Wrong: `prepare --role worker` after a console join error, or report success because any new Agent appeared. Correct: `agent join`, retry only in the owning chat, then call the original conversation's MCP context; the console checks the bound Agent and its receipt.

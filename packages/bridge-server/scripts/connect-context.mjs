@@ -7,7 +7,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const config = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const request = process.argv[3] ? JSON.parse(readFileSync(process.argv[3], "utf8")) : undefined;
 const transport = new StdioClientTransport({
-  command: config.command, args: config.args, env: { ...process.env, ...config.env }, stderr: "pipe",
+  command: config.command, args: config.args,
+  env: { ...process.env, ...config.env, TSUNAGOU_CONNECT_HELPER: "1" }, stderr: "pipe",
 });
 const client = new Client({ name: "tsunagou-connect", version: "0.1.0" }, { capabilities: {} });
 try {

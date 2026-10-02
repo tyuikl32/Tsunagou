@@ -267,6 +267,11 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
 
         return {"items": enrollment.known_hosts()}
 
+    @app.get("/api/v1/console/enrollments/current")
+    def read_current_enrollment() -> dict[str, Any]:
+        """Recover the active Codex wait without exposing its private chat identity."""
+        return enrollment.current_status(settings=settings, directory=directory)
+
     @app.get("/api/v1/console/enrollments/{enrollment_id}")
     def read_enrollment(enrollment_id: str) -> dict[str, Any]:
         """Is that Agent here yet? — the question the waiting overlay keeps asking.
@@ -293,7 +298,8 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
     def prepare_project_agent(project_id: str, payload: AgentPrepareRequest) -> dict[str, Any]:
         """Prepare one host conversation to become an Agent (see console/enrollment.py).
 
-        Needs a live daemon — the ticket is the daemon's to issue — so an explicit
+        Codex stores selection only; its target chat starts the daemon and signs
+        a ticket after claiming. Other hosts need a live daemon, so an explicit
         ``start_daemon`` may wake the project the same way a person would; without it
         the configured ``daemon_autostart`` decides, as everywhere else. The ticket's
         secret stays in this process and inside its private file: the answer carries
@@ -301,6 +307,14 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         """
 
         entry = find(settings, project_id)
+        if payload.vendor.strip().lower() == "codex":
+            # A refreshed page may have stopped polling after the chat completed.
+            # Verify that receipt before reusing the slot or starting another one.
+            enrollment.current_status(settings=settings, directory=directory)
+            return enrollment.prepare(
+                entry, dict(entry.daemon or {}), vendor=payload.vendor, role=payload.role,
+                nickname=payload.nickname, profile=payload.profile, mode=payload.mode, directory=directory,
+            )
         endpoint = ensure_daemon(entry, autostart=settings.daemon_autostart or payload.start_daemon)
         ensure_matching_project(endpoint, project_id)
         return enrollment.prepare(

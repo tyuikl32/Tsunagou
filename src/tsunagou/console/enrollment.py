@@ -1,4 +1,7 @@
-"""Turning "add an Agent" into the local documents a host can pick up.
+"""Turning "add an Agent" into a handoff a real host conversation can claim.
+
+Codex prepares only a private selection; its real chat later claims that selection
+and uses the common onboarding service. Other hosts retain the local ticket flow.
 
 The daemon owns the Agent: it issues the one-time ticket, and it enrolls whoever
 redeems that ticket through ``agent.enroll``. What no daemon can do is the local
@@ -48,6 +51,7 @@ from tsunagou.platform.bridge_files import (
     write_bridge_config,
     write_ticket_file,
 )
+from tsunagou.platform.enrollment_store import EnrollmentStore
 
 TICKET_COMMAND = "agent.ticket.create.user"
 DELIVERY_ACK = "/api/v1/credential-deliveries/{reference}/ack"
@@ -228,7 +232,9 @@ def forget_project(project_id: str) -> list[str]:
             Path(record.ticket_file).unlink(missing_ok=True)
         except OSError:  # pragma: no cover - a locked ticket file is not worth failing the delete
             continue
-    return [record.enrollment_id for record in dropped]
+    durable = EnrollmentStore()
+    persisted = durable.forget_project(wanted) if durable.path.exists() else []
+    return [record.enrollment_id for record in dropped] + persisted
 
 
 def pending(enrollment_id: str) -> Enrollment:
@@ -269,6 +275,31 @@ def prepare(
             "bridge_not_built", status=503,
             detail={"entry": str(entry_path), "build": BUILD_COMMAND},
         )
+
+    if host.adapter == "codex":
+        try:
+            intent = EnrollmentStore().create(
+                project_id=entry.project_id, project_root=entry.path.resolve(), role=role, nickname=nickname,
+            )
+        except RuntimeError as exc:
+            error = _intent_error(exc)
+            if str(exc) == "enrollment_already_pending":
+                active = EnrollmentStore().active()
+                if active is not None:
+                    error.detail["enrollment"] = {**_intent_public(active), "status": "waiting"}
+                error.detail["note"] = (
+                    "已有其他项目或角色的接入申请，请先处理当前申请。"
+                    "未认领的申请可取消；已认领的申请需在原 Codex 聊天继续完成。"
+                )
+            raise error from exc
+        return {
+            **_intent_public(intent), "status": "prepared", "mode": mode,
+            "host_registration": {
+                "adapter": "codex", "label": host.label, "status": "deferred", "name": "tsunagou",
+                "note": "等待目标 Codex 聊天认领；项目和角色已保存，认领时才签票并绑定真实聊天。",
+            },
+            "next": "在要接入的 Codex 桌面聊天中说：请接入 Tsunagou。首次安装需先加载 Tsunagou Skill 和共享 MCP。",
+        }
 
     # 名单要取**签票之前**的样子：到达判定就是"比这份多出来的那个人"。
     before = directory.roster(entry.project_id, entry.path, endpoint, force=True) if directory else None
@@ -341,6 +372,120 @@ def _requested_role_landed(agent: dict[str, Any], requested_role: str) -> bool:
     )
 
 
+def _intent_error(error: RuntimeError) -> ConsoleError:
+    code = str(error).split(":", 1)[0]
+    return ConsoleError(code, status=404 if code == "enrollment_not_found" else 409)
+
+
+def _intent_public(record: dict[str, Any]) -> dict[str, Any]:
+    """Allowlist page fields: raw thread, receipt paths and credentials stay private."""
+    phase = "connecting" if record["status"] == "claimed" else record["status"]
+    return {
+        "enrollment_id": record["enrollment_id"], "project_id": record["project_id"],
+        "vendor": record["adapter"], "label": "Codex", "role": record["requested_role"],
+        "profile": record["enrollment_id"][:12], "nickname": record["nickname"],
+        "agent_id": record.get("agent_id") if record["status"] == "arrived" else None,
+        "expires_in_seconds": max(0, int(record["expires_at"] - time.time())),
+        "phase": phase,
+    }
+
+
+def _intent_or_none(enrollment_id: str) -> dict[str, Any] | None:
+    store = EnrollmentStore()
+    if not store.path.exists():
+        return None
+    try:
+        return store.get(enrollment_id)
+    except RuntimeError as exc:
+        if str(exc) == "enrollment_not_found":
+            return None
+        raise _intent_error(exc) from exc
+
+
+def _receipt_matches(record: dict[str, Any], agent: dict[str, Any]) -> bool:
+    try:
+        path = Path(record["receipt_file"])
+        if path.is_symlink():
+            return False
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(receipt, dict) or receipt.get("format_version") != 1:
+        return False
+    expected = {
+        "enrollment_id": record["enrollment_id"], "thread_id": record.get("thread_id"),
+        "project_id": record["project_id"], "agent_id": record.get("agent_id"),
+        "role": record["requested_role"],
+    }
+    epoch = receipt.get("connection_epoch")
+    return (
+        all(value and receipt.get(key) == value for key, value in expected.items())
+        and isinstance(receipt.get("session_id"), str) and bool(receipt["session_id"])
+        and isinstance(receipt.get("observed_at"), str) and bool(receipt["observed_at"])
+        and type(epoch) is int and epoch > 0
+        and type(agent.get("connection_epoch")) is int and epoch == agent["connection_epoch"]
+        and agent.get("agent_id") == record.get("agent_id")
+        and _requested_role_landed(agent, record["requested_role"])
+    )
+
+
+def _intent_status(record: dict[str, Any], *, settings: ConsoleConfig, directory: AgentDirectory) -> dict[str, Any]:
+    public = _intent_public(record)
+    phase = record["status"]
+    if phase in {"arrived", "cancelled", "expired"}:
+        result = {**public, "status": phase}
+        if phase == "expired":
+            result["note"] = "接入申请已过期，请在前端重新准备。"
+        return result
+    if phase == "forgotten":
+        return {**public, "status": "cancelled", "note": "项目已从控制台移除，这次接入申请已失效。"}
+    waiting = {**public, "status": "waiting"}
+    if phase == "failed":
+        return {**waiting, "error": record.get("error"), "note": "接入遇到问题，请在刚才的 Codex 聊天重试；申请仍绑定该聊天。"}
+    if phase == "pending":
+        return {**waiting, "note": "等待 Codex 聊天认领：请接入 Tsunagou。"}
+    if phase == "claimed":
+        return {**waiting, "note": "目标 Codex 聊天已认领，正在完成接入。"}
+    try:
+        entry = find(settings, record["project_id"])
+    except ConsoleError:
+        return {**waiting, "note": "暂时找不到这个项目，等它回来了再看。"}
+    if entry.path.resolve() != Path(record["project_root"]).resolve():
+        return {**waiting, "note": "项目目录与接入申请不一致，请恢复原项目目录。"}
+    endpoint = daemon_state(entry.path, probe=True)
+    lineup = (
+        directory.roster(record["project_id"], entry.path, endpoint, require_fresh=True)
+        if endpoint and endpoint.get("running") else None
+    )
+    if lineup is None:
+        return {**waiting, "note": "暂时读不到这个项目的 Agent 名单。"}
+    candidate = next((a for a in lineup.agents if a.get("agent_id") == record.get("agent_id")), None)
+    if candidate is None or not _receipt_matches(record, candidate):
+        return {**waiting, "note": "已登记，等待原 Codex 聊天调用项目上下文并确认角色和就绪状态。"}
+    try:
+        arrived = EnrollmentStore().mark_arrived(record["enrollment_id"])
+    except RuntimeError as exc:
+        raise _intent_error(exc) from exc
+    try:
+        update_profile(settings.profile_path, {"agents": {
+            arrived["agent_id"]: {"nickname": arrived["nickname"], "vendor": "Codex"},
+        }})
+    except ValueError:
+        pass
+    return {**_intent_public(arrived), "status": "arrived"}
+
+
+def current_status(*, settings: ConsoleConfig, directory: AgentDirectory) -> dict[str, Any]:
+    """Recover the active wait after refresh, reconciling a completed host receipt."""
+    try:
+        active = EnrollmentStore().active()
+    except RuntimeError as exc:
+        raise _intent_error(exc) from exc
+    if active is None:
+        return {"status": "none"}
+    return _intent_status(active, settings=settings, directory=directory)
+
+
 def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirectory) -> dict[str, Any]:
     """Has that Agent arrived yet? — the question the waiting overlay keeps asking.
 
@@ -349,6 +494,9 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
     rather than declare a failure it cannot see.
     """
 
+    intent = _intent_or_none(enrollment_id)
+    if intent is not None:
+        return _intent_status(intent, settings=settings, directory=directory)
     record = pending(enrollment_id)
     if record.arrived_agent_id:
         return {"status": "arrived", **record.public()}
@@ -432,6 +580,14 @@ def cancel(enrollment_id: str, *, settings: ConsoleConfig) -> dict[str, Any]:
     knows their host config still names a bridge that will never enroll.
     """
 
+    intent = _intent_or_none(enrollment_id)
+    if intent is not None:
+        try:
+            cancelled = EnrollmentStore().cancel(enrollment_id)
+        except RuntimeError as exc:
+            raise _intent_error(exc) from exc
+        return {**_intent_public(cancelled), "status": "cancelled", "ticket_removed": False,
+                "host_registration": {"adapter": "codex", "status": "unchanged", "name": "tsunagou"}}
     record = pending(enrollment_id)
     if record.arrived_agent_id:
         raise ConsoleError(

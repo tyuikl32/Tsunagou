@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { JSDOM } from "jsdom";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const WEB_ROOT = new URL("../", import.meta.url);
 
@@ -441,130 +441,273 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(shown()).toBe("待主 Agent 与用户确认");
   });
 
-  /* 接入一个 Agent 时，等待遮罩必须先说清"在哪个目录开窗口"。
-     宿主的窗口开在哪个目录，决定了那个会话里的 Agent 能不能读到这个项目的规矩文件
-     （`.tsunagou/agent-context.md`、`AGENTS.md` 受管区块）—— 读不到它不会报错，只会
-     没有任何"我在哪个项目"的线索，然后照自己的"安装并初始化"说明去别处新建一个项目
-     （真实发生过）。目录只有一个来源：中间层的项目列表（daemon 的出口不含文件路径）。*/
-  it("等待接入的遮罩里写着在哪个目录开窗口", async () => {
-    const win = dom.window as unknown as {
-      fetch: unknown;
-      Tsunagou: {
-        state: { set: (path: string, value: unknown) => void };
-        ui: { wizard: { go: (n: number) => number; next: () => Promise<unknown> } };
-        notify: { loadingEnd: () => boolean };
-      };
+});
+
+type EnrollmentApi = ConsoleApi & {
+  state: { set: (path: string, value: unknown) => void; get: (path: string) => unknown };
+  ui: {
+    wizard: { go: (n: number) => number; next: () => Promise<unknown>; current: () => number };
+    window: { isOpen: (id: string) => boolean };
+    choosebox: { setValue: (id: string, value: string, options: { silent: boolean }) => void };
+  };
+  notify: { loadingEnd: () => boolean; cancelWaiting: () => Promise<boolean> };
+  dialog: { confirm: () => Promise<boolean> };
+};
+
+describe("控制台接入等待与取消", () => {
+  let enrollmentDom: JSDOM;
+  let enrollmentApi: EnrollmentApi;
+  let enrollmentPage: Document;
+  let prepareBody: Record<string, unknown>;
+  let statusBody: Record<string, unknown>;
+  let cancelBody: Record<string, unknown>;
+  let cancelStatus: number;
+  let prepareStatus: number;
+  let prepareGate: Promise<void> | undefined;
+  let cancelGate: Promise<void> | undefined;
+  let calls: Array<{ url: string; body: Record<string, unknown> }>;
+  const projectPath = "E:/Tsunagou/projects/示例协作";
+  const text = () => enrollmentPage.querySelector("#loadW .textW")?.textContent ?? "";
+
+  async function loadPage(current: Record<string, unknown> = { status: "none" }, remembered = "") {
+    enrollmentDom = new JSDOM(readWeb("index.html"), {
+      url: "http://127.0.0.1:55862/?poll_ms=0", runScripts: "outside-only", pretendToBeVisual: true,
+    });
+    const win = enrollmentDom.window;
+    if (remembered) win.localStorage.setItem("tsunagou.console.lastProject", remembered);
+    win.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown> });
+      let body: unknown = {};
+      let status = 200;
+      if (url.includes("agents:prepare")) { await prepareGate; body = prepareBody; status = prepareStatus; }
+      else if (url.includes(":cancel")) { await cancelGate; body = cancelBody; status = cancelStatus; }
+      else if (url.endsWith("/enrollments/current")) body = current;
+      else if (url.includes("/enrollments/")) body = statusBody;
+      else if (url.includes("/projects?agents=1")) body = { items: [
+        { project_id: "p-1", name: "示例协作", path: projectPath, available: true },
+        { project_id: "p-2", name: "另一个协作", path: "E:/Other", available: true },
+      ] };
+      return { ok: status < 400, status, text: async () => JSON.stringify(body) } as Response;
+    }) as typeof fetch;
+    win.eval(readWeb("console.config.js"));
+    win.eval(readWeb("assets/js/behavior.js"));
+    enrollmentPage = win.document;
+    enrollmentApi = (win as unknown as { Tsunagou: EnrollmentApi }).Tsunagou;
+    /* jsdom 不排版；只替换可见性判断，真实窗口开关仍由页面代码执行。*/
+    enrollmentApi.ui.window.isOpen = (id) => {
+      const node = enrollmentPage.getElementById(id);
+      return Boolean(node && node.style.display && node.style.display !== "none");
     };
-    const projectPath = "E:\\Tsunagou\\projects\\示例协作";
-    /* 中间层那份项目列表是目录的唯一来源（daemon 的概况出口不含文件路径）。
-       这里喂的是**适配后**的形状，和 `project.list` 路由收到的一样。*/
-    api.dispatch("project.list", [
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    prepareBody = {
+      status: "prepared", enrollment_id: "e-1", profile: "p",
+      host_registration: { status: "deferred" },
+    };
+    statusBody = { status: "waiting", phase: "pending", enrollment_id: "e-1" };
+    cancelBody = { status: "cancelled", note: "已取消这次待接入申请" };
+    cancelStatus = 200;
+    prepareStatus = 200;
+    prepareGate = undefined;
+    cancelGate = undefined;
+    calls = [];
+    await loadPage();
+    enrollmentApi.dispatch("project.list", [
       { id: "p-1", name: "示例协作", path: projectPath, available: true },
     ]);
-    win.Tsunagou.state.set("hosts", [{ adapter: "codex", label: "Codex", supported: true }]);
-    /* 第 1 步建完会刷新项目列表并把"当前项目"切过去（`openProject`），所以第 2 步
-       手里两样都有：一份带 path 的列表 + 一个 currentProjectId。*/
-    win.Tsunagou.state.set("currentProjectId", "p-1");
-    win.Tsunagou.state.set("wizard.project", { id: "p-1", name: "示例协作" });
-
-    /* 第 2 步会真的去中间层"准备接入"：这里让它走到"正在等待连接"就够。*/
-    const prepared = {
-      status: "prepared", enrollment_id: "e-1", profile: "p",
-      host_registration: { status: "registered" },
-    };
-    win.fetch = () => Promise.resolve({
-      ok: true, status: 200,
-      json: () => Promise.resolve(prepared),
-      text: () => Promise.resolve(JSON.stringify(prepared)),
-    });
-
-    win.Tsunagou.ui.wizard.go(2);
-    (page.querySelector("#newXz2 input") as HTMLInputElement).value = "熊猫";
-    const pending = win.Tsunagou.ui.wizard.next();
-
-    /* 那句话是"准备"回来之后才写的，等它出现。*/
-    let text = "";
-    for (let tick = 0; tick < 40 && text.indexOf(projectPath) < 0; tick += 1) {
-      await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
-      text = page.querySelector("#loadW .textW")?.textContent ?? "";
-    }
-    expect(text).toContain(projectPath);
-    expect(text).toContain("Codex");
-
-    /* 收尾：关掉遮罩让等待循环自己停，别留一个 2 秒的定时器在跑。*/
-    win.Tsunagou.notify.loadingEnd();
-    void pending.catch(() => undefined);
+    enrollmentApi.state.set("hosts", [
+      { adapter: "codex", label: "Codex", supported: true },
+      { adapter: "opencode", label: "OpenCode", supported: true },
+    ]);
+    enrollmentApi.state.set("currentProjectId", "p-1");
+    enrollmentApi.state.set("wizard.project", { id: "p-1", name: "示例协作" });
+    enrollmentApi.ui.wizard.go(2);
+    (enrollmentPage.querySelector("#newXz2 input") as HTMLInputElement).value = "熊猫";
   });
 
-  /* "到了"和"就位"是两件事。名单里多出一个会话只说明它兑换了票；主 Agent 的任命是
-     daemon 在"会话就绪"那一步顺手做的，而首次接入天然还不就绪（连续性证据要前一次和
-     这一次两份摘要）。所以遮罩必须能把"已经连上，但还缺哪几项"这句话换上 —— 否则人看到
-     的只是一个转不停、最后报"票过期"的遮罩，却不知道票早就被兑换了。*/
-  it("轮询到「已连上但还没就位」时，遮罩改说还缺什么", async () => {
-    const win = dom.window as unknown as {
-      fetch: (url: string) => Promise<unknown>;
-      Tsunagou: {
-        state: { set: (path: string, value: unknown) => void };
-        ui: {
-          wizard: { go: (n: number) => number; next: () => Promise<unknown> };
-          window: { isOpen: (id: string) => boolean };
-        };
-        notify: { loadingEnd: () => boolean };
-      };
-    };
-    /* jsdom 不排版，`isShown()`（checkVisibility / getClientRects）永远是 false，
-       等待循环会据此以为"遮罩被人关掉了"而立即收摊（真实浏览器里不会）。
-       这一条测的是轮询到的文案，所以把"遮罩还开着"这件事直接告诉它。*/
-    win.Tsunagou.ui.window.isOpen = () => true;
-    const projectPath = "E:\\Tsunagou\\projects\\示例协作";
-    api.dispatch("project.list", [
-      { id: "p-1", name: "示例协作", path: projectPath, available: true },
-    ]);
-    win.Tsunagou.state.set("hosts", [{ adapter: "codex", label: "Codex", supported: true }]);
-    win.Tsunagou.state.set("currentProjectId", "p-1");
-    win.Tsunagou.state.set("wizard.project", { id: "p-1", name: "示例协作" });
+  afterEach(() => {
+    enrollmentApi.stopPolling?.();
+    enrollmentDom.window.close();
+    vi.useRealTimers();
+  });
 
-    const prepared = {
-      status: "prepared", enrollment_id: "e-1", profile: "p",
-      host_registration: { status: "registered" },
-    };
-    const calls: string[] = [];
-    /* 中间层对"还没就位"的回答（console/enrollment.py 的 `pending`）。*/
-    const joining = {
-      status: "waiting", enrollment_id: "e-1", agent_id: null,
-      pending: {
-        agent_id: "a-9", role: "worker", session_status: "degraded",
-        missing_admission: ["identity.continuity_evidence"],
-      },
-      note: "已经连上，但还没就位。",
-    };
-    win.fetch = (url: string) => {
-      calls.push(String(url));
-      const body = String(url).indexOf("e-1") >= 0 ? joining : prepared;
-      return Promise.resolve({
-        ok: true, status: 200,
-        json: () => Promise.resolve(body),
-        text: () => Promise.resolve(JSON.stringify(body)),
-      });
-    };
+  it("Codex deferred 等待一句话接入，只有 arrived 才完成主 Agent 向导", async () => {
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(text()).toContain("请接入 Tsunagou");
+    expect(text()).not.toContain(projectPath);
+    expect(text()).not.toContain("主 Agent 身份");
+    expect(calls.find((call) => call.url.includes("agents:prepare"))?.body.role).toBe("main");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.state.get("wizard.main")).toBeNull();
+    statusBody = { status: "arrived", enrollment_id: "e-1", agent_id: "a-own", role: "main" };
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ agent_id: "a-own", status: "arrived" });
+  });
 
-    win.Tsunagou.ui.wizard.go(2);
-    (page.querySelector("#newXz2 input") as HTMLInputElement).value = "熊猫";
-    const pending = win.Tsunagou.ui.wizard.next();
+  it.each(["pending", "connecting", "enrolled", "failed"])("%s 阶段使用后端说明，不自行承诺就绪", async (phase) => {
+    const note = "本次阶段：" + phase + "；请在原对话按接入结果继续。";
+    statusBody = {
+      status: "waiting", phase, enrollment_id: "e-1", note,
+      pending: { agent_id: "a-own", role: "worker", session_status: "degraded" },
+    };
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(text()).toBe(note);
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    enrollmentApi.notify.loadingEnd();
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+  });
 
-    /* 第一次轮询在 2 秒之后，等到那句话被换上为止。*/
-    let text = "";
-    for (let tick = 0; tick < 80 && text.indexOf("还没就位") < 0; tick += 1) {
-      await new Promise((resolve) => dom.window.setTimeout(resolve, 50));
-      text = page.querySelector("#loadW .textW")?.textContent ?? "";
-    }
-    expect(calls.join(" ")).toContain("e-1");
-    expect(text).toContain("还没就位");
-    expect(text).toContain("identity.continuity_evidence");
-    expect(text).toContain("Codex");
-    expect(text).toContain(projectPath);
+  it("OpenCode 保留项目目录和宿主加载提示", async () => {
+    prepareBody.host_registration = { status: "registered" };
+    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "OpenCode", { silent: true });
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(text()).toContain(projectPath);
+    expect(text()).toContain("OpenCode");
+    expect(text()).toContain("打开/重载");
+    enrollmentApi.notify.loadingEnd();
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+  });
 
-    win.Tsunagou.notify.loadingEnd();
-    void pending.catch(() => undefined);
+  it("拒绝确认保留取消入口，确认后以服务端 cancelled 为准", async () => {
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    enrollmentApi.dialog.confirm = async () => false;
+    expect(await enrollmentApi.notify.cancelWaiting()).toBe(false);
+    expect(calls.filter((call) => call.url.includes(":cancel"))).toHaveLength(0);
+    enrollmentApi.dialog.confirm = async () => true;
+    expect(await enrollmentApi.notify.cancelWaiting()).toBe(true);
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(calls.filter((call) => call.url.includes(":cancel"))).toHaveLength(1);
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+  });
+
+  it("取消被 409 拒绝时继续等待，不把已认领申请报成已取消", async () => {
+    cancelStatus = 409;
+    cancelBody = { detail: { code: "enrollment_already_claimed", message: "原会话已经开始接入，不能取消" } };
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    enrollmentApi.dialog.confirm = async () => true;
+    await enrollmentApi.notify.cancelWaiting();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(true);
+    expect(text()).not.toContain("已取消");
+    expect(text()).toContain("已经开始接入");
+    statusBody = { status: "arrived", enrollment_id: "e-1", agent_id: "a-own", role: "main" };
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ status: "arrived" });
+  });
+
+  it("准备尚未返回时取消，取得申请编号后真正向后端取消", async () => {
+    let releasePrepare!: () => void;
+    prepareGate = new Promise<void>((resolve) => { releasePrepare = resolve; });
+    const pending = enrollmentApi.ui.wizard.next();
+    enrollmentApi.dialog.confirm = async () => true;
+    await enrollmentApi.notify.cancelWaiting();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls.filter((call) => call.url.includes(":cancel"))).toHaveLength(0);
+    releasePrepare();
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(calls.filter((call) => call.url.includes("e-1:cancel"))).toHaveLength(1);
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+  });
+
+  it("到达后才返回的取消拒绝不重新打开等待遮罩", async () => {
+    let releaseCancel!: () => void;
+    cancelGate = new Promise<void>((resolve) => { releaseCancel = resolve; });
+    cancelStatus = 409;
+    cancelBody = { detail: { code: "enrollment_already_arrived" } };
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    enrollmentApi.dialog.confirm = async () => true;
+    await enrollmentApi.notify.cancelWaiting();
+    statusBody = { status: "arrived", enrollment_id: "e-1", agent_id: "a-own", role: "main" };
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    releaseCancel();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+  });
+
+  it.each(["原来的名字", ""])("重复准备保留原昵称 %j，不用重试表单覆盖", async (nickname) => {
+    prepareBody.nickname = nickname;
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    statusBody = { status: "arrived", enrollment_id: "e-1", agent_id: "a-own", role: "main" };
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ name: nickname });
+    const profileSave = calls.find((call) => call.url.endsWith("/console/profile") && call.body.agents);
+    expect(profileSave?.body.agents).toMatchObject({ "a-own": { nickname } });
+  });
+
+  it("其他项目或角色的申请冲突说明原选择，不完成当前向导", async () => {
+    prepareStatus = 409;
+    prepareBody = { detail: {
+      code: "enrollment_already_pending", enrollment: { project_id: "p-2", role: "worker", enrollment_id: "e-other" },
+      note: "请先处理原申请，已认领时在原聊天继续完成。",
+    } };
+    await enrollmentApi.ui.wizard.next();
+    expect(enrollmentPage.querySelector("#AnnounceMent2 .aText")?.textContent).toContain("p-2");
+    expect(enrollmentPage.querySelector("#AnnounceMent2 .aText")?.textContent).toContain("子 Agent");
+    expect(enrollmentPage.querySelector("#AnnounceMent2 .aText")?.textContent).toContain("原聊天继续");
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(calls.some((call) => call.url.includes("e-other"))).toBe(false);
+  });
+
+  it.each(["p-1", "p-2"])("刷新恢复待接入申请，保留当前选择 %s 且不推进旧向导", async (remembered) => {
+    enrollmentDom.window.close();
+    calls = [];
+    await loadPage({
+      status: "waiting", enrollment_id: "e-1", project_id: "p-1", role: "main", nickname: "熊猫", phase: "pending",
+      note: "请接入 Tsunagou。",
+    }, remembered);
+    expect(calls.some((call) => call.url.endsWith("/enrollments/current"))).toBe(true);
+    expect(calls.some((call) => call.url.includes("agents:prepare"))).toBe(false);
+    expect(text()).toContain("示例协作");
+    expect(text()).toContain("主 Agent");
+    expect(enrollmentApi.state.get("currentProjectId")).toBe(remembered);
+    expect(enrollmentApi.ui.wizard.current()).toBe(1);
+    calls = [];
+    statusBody = { status: "arrived", enrollment_id: "e-1", project_id: "p-1", agent_id: "a-own", role: "main" };
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(enrollmentApi.state.get("currentProjectId")).toBe(remembered);
+    expect(enrollmentApi.ui.wizard.current()).toBe(1);
+    expect(enrollmentApi.state.get("wizard.main")).toBeNull();
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+    expect(calls.some((call) => call.url.includes("/projects/" + remembered + "/agents"))).toBe(remembered === "p-1");
+  });
+
+  it("刷新恢复后可以取消未认领申请，无需重新准备或重新打开向导", async () => {
+    enrollmentDom.window.close();
+    calls = [];
+    await loadPage({
+      status: "waiting", enrollment_id: "e-1", project_id: "p-1", role: "main", nickname: "熊猫", phase: "pending",
+    }, "p-1");
+    enrollmentApi.dialog.confirm = async () => true;
+    await enrollmentApi.notify.cancelWaiting();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls.filter((call) => call.url.includes("e-1:cancel"))).toHaveLength(1);
+    expect(calls.some((call) => call.url.includes("agents:prepare"))).toBe(false);
+    expect(enrollmentApi.ui.wizard.current()).toBe(1);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
   });
 });
