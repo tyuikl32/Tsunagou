@@ -994,26 +994,23 @@ if typer is not None:
                 _remove_legacy_codex_servers(codex, project_root=legacy_project_root, bridge=config)
         return f"registered:{name}"
 
-    def _register_deepseek_mcp(*, profile: str, bridge_config_path: Path) -> str:
-        """Write this conversation's own Harness overlay, and nothing shared.
+    def _register_host_mcp(*, adapter: str, profile: str, bridge_config_path: Path) -> str:
+        """Put the bridge into the host's own configuration, through the shared table.
 
-        Harness has no `mcp add`, and a profile-wide entry would hand the enrolled
-        identity to whatever conversation boots that profile, so the entry lives in
-        this conversation's private bridge directory instead and travels on its launch
-        command. An unbound conversation then has no Tsunagou tools at all.
+        The CLI and the console take this same path, so neither can write a registration
+        the other would not recognise. The host table is the single place that knows how
+        each dialect works: DeepSeek writes its own conversation-scoped overlay, OpenCode
+        runs its own `mcp add` inside the project.
         """
 
         config = json.loads(bridge_config_path.read_text(encoding="utf-8"))
         project_root = Path(str((config.get("env") or {}).get("TSUNAGOU_PROJECT_ROOT") or _project_root()))
-        # The identity provider is installed and required inside `register` itself, so the
-        # CLI and the console take the same path and neither can write an overlay that
-        # cannot prove its caller.
         result = host_registration.register(
-            "deepseek", profile=profile, project_root=project_root, bridge=config,
+            adapter, profile=profile, project_root=project_root, bridge=config,
         )
         if result.status == host_registration.REGISTERED:
             return f"registered:{result.name}"
-        return f"deepseek_{result.status}"
+        return f"{adapter}_{result.status}"
 
     def _deepseek_launch_command(*, profile: str, bridge_config_path: Path) -> str:
         """The one command that boots this conversation with its own overlay.
@@ -1360,13 +1357,17 @@ if typer is not None:
                         bridge_config_path=bridge_config_path,
                         legacy_project_root=runtime.project_root,
                     )
-                elif register_host and adapter == "deepseek":
-                    registration = _register_deepseek_mcp(
-                        profile=profile, bridge_config_path=bridge_config_path,
+                elif register_host and adapter in {"deepseek", "opencode"}:
+                    # DeepSeek also needs its launch command (the overlay only works when
+                    # the conversation is booted with it); OpenCode reads its project
+                    # config on reload, so it needs no command of our own.
+                    registration = _register_host_mcp(
+                        adapter=adapter, profile=profile, bridge_config_path=bridge_config_path,
                     )
-                    launch_command = _deepseek_launch_command(
-                        profile=profile, bridge_config_path=bridge_config_path,
-                    )
+                    if adapter == "deepseek":
+                        launch_command = _deepseek_launch_command(
+                            profile=profile, bridge_config_path=bridge_config_path,
+                        )
                 else:
                     registration = "not_requested"
 

@@ -102,7 +102,7 @@ def test_only_planned_commands_are_run_and_a_required_failure_is_reported(
     _with_codex_at(monkeypatch, "codex")
     ran: list[tuple[str, ...]] = []
 
-    def failing(argv: tuple[str, ...]) -> int:
+    def failing(argv: tuple[str, ...], cwd: str | None = None) -> int:
         ran.append(argv)
         return 1
 
@@ -118,7 +118,7 @@ def test_a_best_effort_command_may_fail_without_failing_the_registration(
 ) -> None:
     _with_codex_at(monkeypatch, "codex")
 
-    def only_remove_fails(argv: tuple[str, ...]) -> int:
+    def only_remove_fails(argv: tuple[str, ...], cwd: str | None = None) -> int:
         return 1 if "remove" in argv else 0
 
     result = register("codex", profile="main", project_root=tmp_path, bridge=BRIDGE, run=only_remove_fails)
@@ -152,7 +152,8 @@ def test_taking_an_entry_back_out_uses_the_same_generated_name(monkeypatch: pyte
     ran: list[tuple[str, ...]] = []
 
     result = host_registration.unregister(
-        "codex", profile="main", project_root=tmp_path, run=lambda argv: ran.append(argv) or 0,
+        "codex", profile="main", project_root=tmp_path,
+        run=lambda argv, cwd=None: ran.append(argv) or 0,
     )
 
     assert result.status == host_registration.UNREGISTERED
@@ -172,7 +173,8 @@ def test_removing_an_entry_without_the_host_cli_changes_nothing(monkeypatch: pyt
     ran: list[tuple[str, ...]] = []
 
     result = host_registration.unregister(
-        "codex", profile="main", project_root=tmp_path, run=lambda argv: ran.append(argv) or 0,
+        "codex", profile="main", project_root=tmp_path,
+        run=lambda argv, cwd=None: ran.append(argv) or 0,
     )
 
     assert result.status == EXECUTABLE_MISSING

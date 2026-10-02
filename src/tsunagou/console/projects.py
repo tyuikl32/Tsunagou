@@ -350,7 +350,7 @@ def bridge_profiles(root: Path) -> list[tuple[str, str]]:
 
 def forget(
     config: ConsoleConfig, project_id: str, *, delete_files: bool = False,
-    run: Callable[[tuple[str, ...]], int] | None = None,
+    run: Callable[[tuple[str, ...], str | None], int] | None = None,
 ) -> dict[str, Any]:
     """Delete one whole project: its daemon, its host registrations, its line, its files.
 

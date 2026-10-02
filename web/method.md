@@ -123,7 +123,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | `ui.wizard.open()` / `.go(n)` / `.next()` / `.prev()` / `.reset()` / `.current()` / `.collect()` / `.finish()` | 新建协作四步向导。`.next()` 在第 1/2 步会真的建项目 / 接入主 Agent（返回 Promise，成功才翻页），第 3 步只是翻页；`.finish()` 只收窗复位。`.collect()` 返回 `{name, mainAgent:{name,vendor,icon}, subAgents:[]}` —— **没有 `objective`**：目标是用户与主 Agent 确认过之后才存在的事实，不作为建项目时的输入（见 §12 的 2026-10-01 两条） |
 | `ui.aside.show(slug, section?)` / `.load(slug, section, title?)` / `.fill(...)` / `.hide(slug)` / `.hideAll()` / `.clearAll()` / `.isOpen(slug)` | 右侧侧栏（**默认全隐藏**，见 4.3；启动时会 `clearAll()` 清掉 index.html 里的占位内容） |
 | `ui.choosebox.open/close/toggle/closeAll/setValue/value/isOpen` | 下拉选择框。`setValue(box, 值, {silent:true})` 只改显示值、不派发事件（**代码回填必须加 silent**）。展开的面板由 JS 定位：**与选择框等宽、对齐其右边缘、贴框正下方**，窗口缩放/滚动容器滚动时会跟随；收起时清掉行内 `width/left/top` |
-| 表单“清空”时回到哪一项 | `resetCsBox(box)`（窗口/向导每次打开都会调）：面板里带 `data-default` 的那一项，没标记才退回第一项。两个厂商面板（`#newXz2Vendor` / `#addSubAgentVendor`）的默认都标在 **Codex** 上（它是目前唯一有注册命令的宿主），所以向导第 2 步与添加子 Agent 窗口打开时选的都是 Codex |
+| 表单“清空”时回到哪一项 | `resetCsBox(box)`（窗口/向导每次打开都会调）：面板里带 `data-default` 的那一项，没标记才退回第一项。两个厂商面板（`#newXz2Vendor` / `#addSubAgentVendor`）的默认都标在 **Codex** 上（它有注册命令，也是最早接入的宿主），所以向导第 2 步与添加子 Agent 窗口打开时选的都是 Codex |
 
 ### 3.5 `Tsunagou.notify` / `Tsunagou.dialog` —— 反馈组件
 这四个组件就是原来"设置 → DEBUG 选项"里那四个弹窗，现在参数化了：
@@ -939,7 +939,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 | 向导的「上一步」与子 Agent 的「×」 | **暂不实现**（2026-09-28 你定）：按钮留着，点了只弹「撤回功能当前尚未实现」。理由：上一步想做的事 = 撤回上一步的效果，而分步后撤不在本轮范围内（子 Agent 那个 `×` 是 CSS 画的 `.itemC::before`，点它就是"删掉这个 Agent"）。低层导航 `ui.wizard.prev()` 仍在，只是页面按钮不再用它。 |
 | 「添加子 Agent」的两个入口 | 已区分：两个入口都走同一条真接入（见 §7.1），只是收尾不同 —— 向导第 3 步的小加号把结果记进向导第 3 步的列表；Agent 管理页的大加号成功后重拉名单/卡片/昵称。 |
 | 向导第 2 步的"你所选的 Agent" | 厂商由选择框决定（**默认 Codex**，见 §3.4 的“表单清空时回到哪一项”）；这个预览框显示的是**你在名称输入框里填的 Agent 名字**（图标才是厂商），名字为空就留空。**不再有 `GET /agents/detect` 探测请求**（后端没有"Agent 地址"这个概念）。<br>**整块（标签 + 预览框）的显隐**：名字与厂商**两样都给了才显示**，否则一块空板子不占位置（`actions.detectMainAgent()` 里顺带定，只动 `display`）。 |
-| 向导遇到接不了的宿主 | Codex 是现在唯一有注册命令的厂商（表在中间层）。选别的厂商：页面照实说"还没实现"，**停在第 2 步**（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。 |
+| 向导遇到接不了的宿主 | **Codex 与 OpenCode** 能从网页接入（表在中间层：`supported` 由那一行有没有注册路径决定，2026-10-02 起 OpenCode 也置为可用）。选其它厂商：页面照实说"还没实现"，**停在第 2 步**（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。OpenCode 注册完还要在那边**重载宿主**（`opencode reload` 或重启窗口）配置才生效 —— 页面的等待提示本来就是让它去开/重载窗口 |
 | 删除协作 | 左栏卡片右上角的 `.edit`（hover 才露出来）→ `dialog.confirm` → `POST /console/projects/{id}:forget`。中间的 daemon / 宿主登记 / 票 / 索引条目 / 目录一起清；登记进来的外部项目只注销登记、保留目录 |
 | 没有“返回初始工作区”的界面入口 | `Tsunagou.app.openHome()` / `dispatch('ui.workspace.home')` 都已就绪，但**页面上没有入口——这是原设计就没做的按钮，属于你的设计范围**，需要时自己加一个（我这侧不自行添加元素）。 |
 | 错误提示的颜色 | 成功与失败用的是同一个品牌色（CSS `--brand-col`），目前只靠图标/文案区分。要有独立配色就得加 CSS。 |
@@ -1099,7 +1099,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
   完整的取舍写在 `docs/decisions/2026-10-01-objective-from-dialogue.md`。
 - **「添加 Agent」接通**（2026-09-28，见 §7.1）：`POST /console/projects/{id}/agents:prepare` 由中间层做
   「本机那半」——签一张一次性票据、写私有票据文件、写 bridge 启动说明、**按厂商注册进宿主**
-  （表在 `platform/host_registration.py`，现在只有 Codex 有命令，其它厂商照实说"还没实现"）；
+  （表在 `platform/host_registration.py`，现在 Codex 与 OpenCode 有注册路径，其它厂商照实说"还没实现"）；
   `GET /console/enrollments/{id}` 回答"到了没有"，页面据此把加载遮罩一直挂着，**等宿主真连上才报成功**。
   同时 CLI 那边不再自己实现这套：`agent connect` / `agent enroll` 也改用同一份
   `platform/bridge_files.py` + `platform/host_registration.py`（一份实现，两个调用者）。

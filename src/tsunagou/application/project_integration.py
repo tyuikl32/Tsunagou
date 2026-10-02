@@ -205,6 +205,8 @@ def _render_gitignore_block() -> str:
 .tsunagou/**/*.token
 .tsunagou/**/*.sqlite3
 .tsunagou/**/*.log
+# The MCP entry OpenCode is configured with lands at the project root.
+/opencode.json
 {END_MARKER}"""
 
 

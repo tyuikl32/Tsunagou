@@ -7,7 +7,7 @@
 | 宿主 | 本机状态 | 目标接入面 | 结论 |
 |---|---|---|---|
 | Codex CLI/App Server | codex 0.155.0-alpha.9.2 可执行 | app-server --stdio、thread lifecycle、MCP | 单宿主能力基线按组合证据口径 11/11 supported；严格的真实 bridge 在途断线场景仍未直接观察，见下文 |
-| OpenCode | `opencode-ai 1.18.31` 可通过 npm 临时运行 | headless server REST、Session、fork、MCP/OpenAPI | 已完成无模型轮次真实 probe；完整共同基线仍 unknown |
+| OpenCode | 本机 v2.0.21（npm 全局；早期探针用 `opencode-ai 1.18.31`） | headless server REST、Session、fork、MCP/OpenAPI，以及 `opencode mcp add`（项目级 MCP 配置） | 无模型 probe 只作历史部分证据；**2026-09-28 已在真实 v2.0.18 上完成 11 项共同基线**（见 [adapter-opencode](../implementation/adapter-opencode.md)）；2026-10-02 补测 v2.0.21 的注册路径（`add`/无 `remove`/需要 reload） |
 | ZCode Agent | 未安装；公开 npm/GitHub 结果只有非官方客户端或社区桥接 | z.ai 原生 session/hook/MCP | unknown；没有可锁定的官方 CLI/API 版本，hook 资料要求变更后新会话，不能假设热生效 |
 | DeepSeek Harness | 桌面版 `@deepseek-ai/dsh-desktop-runtime 0.2.0-rc.2` | profile patch、stdio MCP、session controller | 尚未通过完整验收；身份隔离有反例，其余最新自报结果待独立复核 |
 

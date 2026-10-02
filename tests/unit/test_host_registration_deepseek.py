@@ -124,7 +124,7 @@ def test_registration_is_refused_when_the_identity_provider_is_missing(
     state.mkdir(parents=True)
 
     result = register("deepseek", profile="main", project_root=tmp_path / "project",
-                      bridge=_bridge(state), run=lambda argv: 1)
+                      bridge=_bridge(state), run=lambda argv, cwd=None: 1)
 
     assert result.status == FAILED
     assert not (state / "dsh-overlay.yml").exists(), "a refused registration writes nothing"
