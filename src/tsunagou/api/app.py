@@ -15,7 +15,13 @@ from tsunagou.generated.protocol.audit import AuditEventModel, AuditPageModel
 from tsunagou.generated.protocol.delivery import CredentialDeliveryModel
 from tsunagou.interfaces.runtime import CommandDispatcher
 from tsunagou.platform.telemetry import Telemetry
-from tsunagou.shared_kernel.errors import IdempotencyConflict, LockUnavailable, ResourceConflict, RevisionConflict
+from tsunagou.shared_kernel.errors import (
+    CommandRefused,
+    IdempotencyConflict,
+    LockUnavailable,
+    ResourceConflict,
+    RevisionConflict,
+)
 from tsunagou.shared_kernel.ids import new_id
 from tsunagou.shared_kernel.query_models import (
     AuditExportModel,
@@ -314,6 +320,10 @@ def create_app(
             # reads (``command.<kind>.denied``) sees it too.
             _record_denial(command_kind, {"code": exc.code, **exc.detail})
             raise HTTPException(status_code=409, detail={"code": exc.code, "blockers": exc.blockers}) from exc
+        except CommandRefused as exc:
+            # 拒绝，但把事实一起给出（例如"他手上还有这些任务"）：页面照着列，不用自己编话。
+            _record_denial(command_kind, {"code": exc.code, **exc.detail})
+            raise HTTPException(status_code=409, detail={"code": exc.code, **exc.detail}) from exc
         except LockUnavailable as exc:
             raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
         except RuntimeError as exc:

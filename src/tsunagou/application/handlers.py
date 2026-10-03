@@ -37,6 +37,7 @@ from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore
 from tsunagou.shared_kernel.baseline import missing_admission_capabilities
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import CommandRefused
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
@@ -419,6 +420,27 @@ def build_handlers(
     def revoke_main(_payload: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
         authority.revoke_main(actor_kind="user_control")
         return {"main_agent_id": None, "authority_epoch": authority.authority_epoch}
+
+    def retire_agent(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        """用户让一个 Agent 退役：他从此不能再动，但他做过的事一个字都不改。
+
+        两道拒绝：当前主 Agent 不能退（项目永远得有一个主 Agent），手上还压着活的不能退
+        （先把清单摆出来，别把活悄悄搁下）。清单用 ``blockers`` 一起返回，页面照着列。
+        """
+        if context["kind"] != "U":
+            raise PermissionError("user_only")
+        agent_id = _required_str(payload, "agent_id")
+        held = tasks.open_work_for(agent_id)
+        if held:
+            raise CommandRefused("agent_has_open_work", {"tasks": held})
+        summary = authority.retire_agent(actor_kind="user_control", agent_id=agent_id)
+        return {
+            **summary, "reason": str(payload.get("reason") or "user_requested"),
+            "authority_epoch": authority.authority_epoch,
+            # 远端 Agent：这台机器上停掉的是他在这里的席位；他那台机器上的登记与配置
+            # 我们碰不到，页面要据此提示"去那台机器上清掉"。
+            "remote_registration_hint": bool(summary.get("machine")),
+        }
 
     def project_configure(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -1330,6 +1352,7 @@ def build_handlers(
         "user_decision.resolve": user_decision_resolve,
         "project.completion.propose.main": completion_propose,
         "project.completion.confirm": completion_confirm,
+        "agent.retire.user": retire_agent,
         "checkpoint.create.user": checkpoint_create_user,
         "checkpoint.create": checkpoint_create_main,
         "durability.reconcile": durability_reconcile,

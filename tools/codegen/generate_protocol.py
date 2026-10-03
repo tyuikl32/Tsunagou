@@ -130,6 +130,13 @@ def main() -> None:
         write_schema(name, entry)
     for directory in ("registry", "schemas", "fixtures"):
         shutil.copytree(ROOT / "protocol" / directory, ROOT / "src/tsunagou/protocol_data" / directory, dirs_exist_ok=True)
+    # 桥只读它自己那份 registry（命令策略与 schema bundle 摘要都在里面）：摘要不一致会让每次
+    # 调用都 `schema_bundle_digest_mismatch`，所以这一份也必须跟着生成 —— 但只同步这一份，
+    # 别把 schemas/fixtures 也倒进桥的目录（它不读，多出来只是噪音）。
+    shutil.copytree(
+        ROOT / "protocol" / "registry", ROOT / "packages/bridge-server/protocol" / "registry",
+        dirs_exist_ok=True,
+    )
     generated_py = ROOT / "src/tsunagou/generated/protocol/models.py"
     generated_py.parent.mkdir(parents=True, exist_ok=True)
     generated_py.write_text(

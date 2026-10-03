@@ -409,6 +409,11 @@ class AuthorityService:
             agent = self.agents.get(agent_id)
             if agent is None:
                 raise KeyError(agent_id)
+            if agent.machine:
+                # 主 Agent 必须和协调中心在同一台机器上。跨机器入席的人会自报机器名
+                # （``descriptor_ref`` → ``machine``），他只能当子 Agent —— 与发邀请那条路
+                # 同一个判据（``console/enrollment.py`` 的 ``main_agent_must_be_local``）。
+                raise PermissionError("main_agent_must_be_local")
             if agent.status != "active" or not any(
                 session.agent_id == agent_id and session.active and session.status == "ready"
                 for session in self.sessions.values()
@@ -433,6 +438,55 @@ class AuthorityService:
             self.grants[grant.grant_id] = grant
             self._save()
             return grant
+
+    def retire_agent(self, *, actor_kind: str, agent_id: str) -> dict[str, Any]:
+        """让一个 Agent 退役：他从此不能再动，但他做过的事一个字都不改。
+
+        退役不是"抹掉"：Agent 记录留着（名单里显示"已退役"），任务归属、消息作者、契约
+        接受者全都照旧写着他的名字 —— 历史不能被改写，否则审计就碎了。这里做的是**让他
+        不能再动**：会话结束、凭据作废、授权全部收回，代次递增让"权威变了"这件事对所有人
+        可见。已经退役的再退一次是幂等的（返回同样的结果）。
+
+        当前主 Agent 不能退役（项目永远得有一个主 Agent）：要换人就先设别人当主。
+        """
+        if actor_kind != "user_control":
+            raise PermissionError("user_only")
+        with self._lock:
+            agent = self.agents.get(agent_id)
+            if agent is None:
+                raise KeyError(agent_id)
+            if self.main_agent_id == agent_id:
+                raise PermissionError("main_agent_cannot_retire")
+            if agent.status == "retired":
+                return self._retired_summary(agent, sessions=0, grants=0)
+            agent.status = "retired"
+            agent.role = "worker"
+            agent.requested_role = "worker"
+            sessions = 0
+            for session in self.sessions.values():
+                if session.agent_id == agent_id and session.active:
+                    session.active = False
+                    session.status = "ended"
+                    sessions += 1
+            grants = 0
+            for key, grant in list(self.grants.items()):
+                if grant.principal_id == agent_id and grant.status == "active":
+                    self.grants[key] = Grant(
+                        **{**asdict(grant), "capabilities": grant.capabilities, "status": "revoked"},
+                    )
+                    grants += 1
+            self.authority_epoch += 1
+            self._save()
+            return self._retired_summary(agent, sessions=sessions, grants=grants)
+
+    def _retired_summary(self, agent: Agent, *, sessions: int, grants: int) -> dict[str, Any]:
+        return {
+            "agent_id": agent.agent_id, "status": agent.status,
+            # 远端 Agent：这台机器上停掉的是他在这里的席位，他那台机器上的登记与配置
+            # 我们碰不到 —— 调用方要据此告诉人"去那台机器上清掉"。
+            "machine": agent.machine,
+            "stopped_sessions": sessions, "revoked_grants": grants,
+        }
 
     def revoke_main(self, *, actor_kind: str) -> None:
         if actor_kind != "user_control":
@@ -482,6 +536,11 @@ class AuthorityService:
     ) -> Grant:
         session = self.sessions.get(session_id)
         grant = self.grants.get(grant_id)
+        # 退役的人先于"会话/授权已失效"说清楚：他下次调用得到的应该是"你已退役"，
+        # 而不是一句含糊的"凭据不对"。
+        principal = self.agents.get(agent_id)
+        if principal is not None and principal.status == "retired":
+            raise PermissionError("agent_retired")
         if session is None or grant is None or not session.active or grant.status != "active":
             raise PermissionError("invalid_session_or_grant")
         if session.status != "ready":

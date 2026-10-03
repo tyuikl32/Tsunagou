@@ -12,6 +12,23 @@ def open_task(service: TaskService):
     return task
 
 
+def test_open_work_for_lists_what_an_agent_still_holds() -> None:
+    """退役前要能把"他手上还压着哪些活"摆出来：占着 Attempt 的任务，收尾了就不再算。"""
+
+    service = TaskService()
+    task = open_task(service)
+    attempt = service.claim(task.task_id, "worker-a")
+
+    held = service.open_work_for("worker-a")
+    assert [item["task_id"] for item in held] == [task.task_id]
+    assert held[0]["attempt_id"] == attempt.attempt_id and held[0]["attempt_status"] == attempt.status
+    assert held[0]["title"] == "task"
+    assert service.open_work_for("worker-b") == [], "别人的活不算在他头上"
+
+    service.orphan(task.task_id, "lease_expired")
+    assert service.open_work_for("worker-a") == [], "Attempt 收尾了就不再挡着退役"
+
+
 def test_concurrent_claim_has_one_owner() -> None:
     service = TaskService()
     task = open_task(service)

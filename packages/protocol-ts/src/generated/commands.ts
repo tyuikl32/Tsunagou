@@ -2,6 +2,7 @@
 export type CommandKind =
   | "agent.enroll"
   | "agent.retire"
+  | "agent.retire.user"
   | "agent.succession"
   | "agent.ticket.create"
   | "agent.ticket.create.user"

@@ -108,6 +108,84 @@ def test_baseline_downgrade_freezes_existing_grants(tmp_path: Path) -> None:
         )
 
 
+def test_retiring_an_agent_takes_away_everything_that_lets_it_act(tmp_path: Path) -> None:
+    """退役 = 他从此不能再动：会话结束、凭据作废、授权收回、代次递增；记录留着。"""
+
+    service = AuthorityService(tmp_path / "identity.json")
+    main = enroll(service, "install-main", "conversation-main")
+    worker = enroll(service, "install-worker", "conversation-worker")
+    service.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+    epoch = service.authority_epoch
+
+    summary = service.retire_agent(actor_kind="user_control", agent_id=worker.agent_id)
+
+    assert summary["agent_id"] == worker.agent_id and summary["status"] == "retired"
+    assert summary["stopped_sessions"] == 1 and summary["revoked_grants"] >= 1
+    assert service.agents[worker.agent_id].status == "retired"
+    assert not service.verify_token(worker.session_id, worker.secret_token), "凭据立即失效"
+    assert service.sessions[worker.session_id].status == "ended"
+    assert not [g for g in service.grants.values()
+                if g.principal_id == worker.agent_id and g.status == "active"], "授权全部收回"
+    assert service.authority_epoch == epoch + 1, "权威变了，这件事对所有人可见"
+    assert service.main_agent_id == main.agent_id, "主 Agent 不受影响"
+    assert service.retire_agent(actor_kind="user_control", agent_id=worker.agent_id)["status"] == "retired"
+
+
+def test_a_retired_agent_is_told_it_was_retired(tmp_path: Path) -> None:
+    service = AuthorityService(tmp_path / "identity.json")
+    main = enroll(service, "install-main", "conversation-main")
+    worker = enroll(service, "install-worker", "conversation-worker")
+    service.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+    grant = service.find_grant(agent_id=worker.agent_id, capability="coordination.read", session_id=worker.session_id)
+    assert grant is not None
+    service.retire_agent(actor_kind="user_control", agent_id=worker.agent_id)
+
+    with pytest.raises(PermissionError, match="agent_retired"):
+        service.authorize(
+            agent_id=worker.agent_id, session_id=worker.session_id, grant_id=grant.grant_id,
+            capability="coordination.read",
+        )
+
+
+def test_the_current_main_agent_cannot_be_retired(tmp_path: Path) -> None:
+    service = AuthorityService(tmp_path / "identity.json")
+    main = enroll(service, "install-main", "conversation-main")
+    service.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+
+    with pytest.raises(PermissionError, match="main_agent_cannot_retire"):
+        service.retire_agent(actor_kind="user_control", agent_id=main.agent_id)
+
+    assert service.agents[main.agent_id].status == "active", "拒绝就是什么都没发生"
+    assert service.main_agent_id == main.agent_id
+
+
+def test_only_the_user_can_retire(tmp_path: Path) -> None:
+    service = AuthorityService(tmp_path / "identity.json")
+    main = enroll(service, "install-main", "conversation-main")
+    worker = enroll(service, "install-worker", "conversation-worker")
+    service.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+    with pytest.raises(PermissionError, match="user_only"):
+        service.retire_agent(actor_kind="agent", agent_id=worker.agent_id)
+    assert service.agents[worker.agent_id].status == "active"
+
+
+def test_a_remote_agent_cannot_be_appointed_main(tmp_path: Path) -> None:
+    """主 Agent 得和协调中心同一台机器：远端入席时自报了机器名，只能当子 Agent。"""
+
+    service = AuthorityService(tmp_path / "identity.json")
+    local = enroll(service, "install-local", "conversation-local")
+    remote = enroll(service, "install-remote", "conversation-remote")
+    service.agents[remote.agent_id].machine = "工位-九"
+
+    service.appoint_main(actor_kind="user_control", agent_id=local.agent_id)
+    with pytest.raises(PermissionError, match="main_agent_must_be_local"):
+        service.appoint_main(actor_kind="user_control", agent_id=remote.agent_id)
+
+    assert service.main_agent_id == local.agent_id, "拒绝之后原来的主 Agent 不许动"
+    assert service.agents[local.agent_id].role == "main"
+    assert service.agents[remote.agent_id].role == "worker"
+
+
 def test_user_only_main_and_exact_attempt_grant(tmp_path: Path) -> None:
     service = AuthorityService(tmp_path / "identity.json")
     main = enroll(service, "install-main", "conversation-main")
