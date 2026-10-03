@@ -14,6 +14,8 @@ Read the [subagent onboarding guide](../../../docs/overview/subagent-guide.md) a
 
 ## Implementation rules
 
+DeepSeek's CLI subprocess environment must set `PYTHONIOENCODING=utf-8` after merging inherited and configured environment values, because the provider decodes stdout as UTF-8. On Windows, CP936 JSON output otherwise corrupts non-ASCII pending project paths before they enter the connect arguments. Keep project/role/route validation strict; switching path transport does not repair already-corrupted JSON. Regression tests must exercise real Python stdout with a CP936 input environment and Chinese/space-containing paths, not only Node CLI doubles. This is an automated encoding contract, not evidence of original Desktop readiness.
+
 DeepSeek native connect must query the installed CLI's `agent pending --adapter deepseek` before connecting. A matching request supplies `--project-root` and the hidden `--pending-enrollment-id` to `agent connect`; only no request permits cwd fallback. Keep identity/cwd host-derived and all project paths model-inaccessible. Python revalidates the request and private conversation route before creating bridge material. See [project-selection contract](../backend/entrypoint-contracts.md#scenario-deepseek-console-project-selection).
 
 Use strict TypeScript, ESM/NodeNext and workspace:* dependencies. bridge-sdk owns auth injection, command IDs/retry/dedup, typed clients, inbox, epoch recovery and prompt rendering. Host adapters translate official lifecycle/tool surfaces; no duplicate task state machines or private DTO forks.

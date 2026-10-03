@@ -79,6 +79,9 @@ function cliContext(config, exec) {
         || /^(?:DSH_SESSION_ID|OPENCODE_SESSION_ID|ZCODE_SESSION_ID)$/i.test(key)) delete environment[key];
   }
   environment.DSH_SESSION_ID = identity;
+  // runCli decodes stdout as UTF-8. Windows Python pipes otherwise inherit an
+  // ANSI encoding and corrupt non-ASCII project paths before the connect call.
+  environment.PYTHONIOENCODING = "utf-8";
   if (config.env?.TSUNAGOU_ROUTING_DIR) environment.TSUNAGOU_ROUTING_DIR = config.env.TSUNAGOU_ROUTING_DIR;
   return { cwd, environment, runtime };
 }

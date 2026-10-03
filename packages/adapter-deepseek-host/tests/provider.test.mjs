@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -119,6 +120,42 @@ test("native connect carries the CLI's pending project across an unrelated chat 
   const result = f.value(await f.tools.get("tsunagou_connect").execute({}, f.exec));
   assert.equal(result.project_id, "selected-project");
   assert.equal(result.status, "enrolled");
+});
+
+test("native connect preserves Unicode paths through real Python CLI pipes under CP936", async (t) => {
+  const probe = spawnSync("python", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" });
+  assert.equal(probe.status, 0, "Python is required for the CLI encoding regression");
+  const python = probe.stdout.trim();
+  for (const dirname of ["selected-project", "中文项目", "中文 project with spaces"]) {
+    await t.test(dirname, async (t) => {
+      const f = host(t);
+      const selected = join(f.root, dirname);
+      const literal = JSON.stringify(selected).replace(/[^\x00-\x7f]/g,
+        (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+      const cli = `
+import json, sys
+selected = ${literal}
+args = sys.argv[1:]
+if args == ['agent', 'pending', '--adapter', 'deepseek']:
+    result = dict(status='pending', state='pending', adapter='deepseek',
+                  project_id='selected-project', project_root=selected, enrollment_id='a' * 32)
+elif args == ['--project-root', selected, 'agent', 'connect', '--adapter', 'deepseek',
+              '--profile', 'desktop', '--no-register-host', '--pending-enrollment-id', 'a' * 32]:
+    result = dict(status='enrolled', project_id='selected-project', agent_id='fixture-agent', role='worker')
+else:
+    print(json.dumps(dict(status='error', error='onboarding_project_mismatch')))
+    sys.exit(4)
+print(json.dumps(result, ensure_ascii=False))
+`;
+      f.config.connect = { command: python, args: ["-c", cli],
+        env: { PYTHONIOENCODING: "cp936", PYTHONUTF8: "0" } };
+      await apply(f.ctx, f.config);
+      const result = f.value(await f.tools.get("tsunagou_connect").execute({}, f.exec));
+      assert.equal(result.status, "enrolled", JSON.stringify(result));
+      assert.equal(result.project_id, "selected-project");
+      assert.equal(result.host_ready, false);
+    });
+  }
 });
 
 test("native connect fails closed for malformed pending selection and mismatched receipts", async (t) => {
