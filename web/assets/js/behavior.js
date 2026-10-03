@@ -253,8 +253,10 @@
         enrollmentCancel: '/console/enrollments/{enrollment}:cancel',
         /* 宿主在自己聊天里接入时（`in_host`）没有票可查，只能问"名单里出现它了吗"。
            判断在中间层：它拿接入材料（bridges / onboarding 里的 host-identity.json）
-           当证据，页面只负责每 2 秒问一次。见 connectInHostAgent。*/
-        enrollmentObserve: '/projects/{project}/enrollments:observe',
+           当证据，页面只负责每 2 秒问一次。见 connectInHostAgent。
+           这条路由挂在中间层的 /console 下（注册见 console/app.py）：漏掉那一段就是 404，
+           而轮询把一次失败当成"还没到"接着问，等待框会永远不翻绿。*/
+        enrollmentObserve: '/console/projects/{project}/enrollments:observe',
         /* —— 一屏要读好几个出口的，走中间层的聚合视图 ——
            /console/views/* 只负责把几个出口的原样回答装进 sources，不解释；
            解释全在 §7 适配层（BACKEND_SHAPE）。view 取值：overview /
