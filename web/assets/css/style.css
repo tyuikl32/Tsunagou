@@ -1703,7 +1703,13 @@ body {
         color: var(--col-8);
         font-size: 20px;
         text-align: justify;
-        word-break: break-all;
+    }
+
+    >.dspText2 {
+        color: var(--col-8);
+        font-size: 16px;
+        text-align: justify;
+        /* word-break: break-all; */
     }
     
     .items {

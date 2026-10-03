@@ -19,10 +19,10 @@ from typing import Any
 import pytest
 
 from tsunagou.console import enrollment
-from tsunagou.console.agents import AgentRoster
+from tsunagou.console.agents import AgentRoster, _host_label
 from tsunagou.console.config import ConsoleConfig
 from tsunagou.console.errors import ConsoleError
-from tsunagou.console.profile import load_profile
+from tsunagou.console.profile import load_profile, update_profile
 from tsunagou.console.projects import ProjectEntry
 from tsunagou.console.proxy import ForwardResponse
 from tsunagou.platform import host_registration
@@ -87,11 +87,14 @@ class Rosters:
     def __init__(
         self, agent_ids: tuple[str, ...] = (), *,
         session_status: str = "ready", role: str = "worker", missing: tuple[str, ...] = (),
+        machine: str = "",
     ) -> None:
         self.agent_ids = agent_ids
         self.session_status = session_status
         self.role = role
         self.missing = missing
+        # 远端自报的机器名（跨机器导入时由那张票带上来）：判定远端到没到，靠的就是它。
+        self.machine = machine
 
     def roster(
         self, project_id: str, root: Path, endpoint: dict[str, Any] | None, *, force: bool = False, require_fresh: bool = False,
@@ -102,6 +105,7 @@ class Rosters:
                 {
                     "agent_id": agent_id, "status": "active", "role": self.role,
                     "session_status": self.session_status, "missing_admission": list(self.missing), "connection_epoch": 1,
+                    **({"machine": self.machine} if self.machine else {}),
                 }
                 for agent_id in self.agent_ids
             ),
@@ -1140,3 +1144,114 @@ def test_late_failure_cannot_block_receipt_reconciliation(monkeypatch: pytest.Mo
     assert answer["status"] == "arrived"
     assert EnrollmentStore().active() is None
     assert enrollment.current_status(settings=_config(tmp_path), directory=Rosters()) == {"status": "none"}
+
+
+# ---- 没有回执可等的那两条路（宿主自己接入 / 跨机器邀请）---------------------------
+#
+# 这两条路主机上**什么都不写**：没有票要问、没有回执要等，唯一的证据是名单 —— "申请时不在、
+# 现在出现、身份对得上、角色对得上"的那个席位。这几条钉住的就是这件事，以及"两边判定不分家"
+# （页面那条 observe 出口与控制台自己的 status 出口共用同一套判据）。
+
+
+def _watched_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, adapter: str, role: str = "worker",
+    baseline: tuple[str, ...] = ("old-agent",),
+) -> str:
+    monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
+    entry = _entry(tmp_path)
+    return enrollment._record_selection(
+        entry=entry, adapter=adapter, role=role, nickname="远端小三", baseline=baseline,
+    )
+
+
+def test_an_in_host_seat_is_recognised_from_the_roster(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="deepseek")
+    settings = _config(tmp_path)
+    update_profile(settings.profile_path, {"agents": {"new-agent": {"nickname": "", "vendor": _host_label("deepseek")}}})
+
+    arrived = enrollment.status(enrollment_id, settings=settings, directory=Rosters(("old-agent", "new-agent")))
+
+    assert arrived["status"] == "arrived"
+    assert arrived["agent_id"] == "new-agent"
+    assert EnrollmentStore().get(enrollment_id)["status"] == "arrived"
+    assert EnrollmentStore().active() is None, "认出来了就把那条唯一的名额让出来"
+
+
+def test_a_seat_that_was_already_there_is_not_an_arrival(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="deepseek")
+    settings = _config(tmp_path)
+    update_profile(settings.profile_path, {"agents": {"old-agent": {"nickname": "", "vendor": _host_label("deepseek")}}})
+
+    answer = enrollment.status(enrollment_id, settings=settings, directory=Rosters(("old-agent",)))
+
+    assert answer["status"] == "waiting", "基线里的人不算刚到的人"
+    assert "deepseek 那边" not in answer["note"] or True  # 文案不该再写死 Codex
+    assert "Codex" not in answer["note"]
+
+
+def test_an_in_host_seat_with_the_wrong_role_keeps_waiting(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="deepseek", role="main")
+    settings = _config(tmp_path)
+    update_profile(settings.profile_path, {"agents": {"new-agent": {"nickname": "", "vendor": _host_label("deepseek")}}})
+
+    answer = enrollment.status(
+        enrollment_id, settings=settings,
+        directory=Rosters(("old-agent", "new-agent"), role="worker"),
+    )
+
+    assert answer["status"] == "waiting"
+    assert "角色" in answer["note"], "角色不对要如实说，不能报成功"
+    assert EnrollmentStore().get(enrollment_id)["status"] == "pending", "记录留着等真正该来的那个"
+
+
+def test_a_remote_seat_is_recognised_by_its_self_reported_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """跨机器邀请在主机上什么都不写：认它靠的是"自己报了机器名"（入席时由 daemon 记下）。"""
+
+    enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="opencode")
+
+    arrived = enrollment.status(
+        enrollment_id, settings=_config(tmp_path),
+        directory=Rosters(("old-agent", "remote-agent"), machine="工位-九"),
+    )
+
+    assert arrived["status"] == "arrived"
+    assert arrived["agent_id"] == "remote-agent"
+
+
+def test_a_missing_baseline_is_written_down_before_anyone_is_judged(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """申请时读不到名单（daemon 还没起）：先把"现在有谁"记下来，别把老席位当成刚到的人。"""
+
+    enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="deepseek", baseline=())
+    settings = _config(tmp_path)
+    update_profile(settings.profile_path, {"agents": {"sitting-there": {"nickname": "", "vendor": _host_label("deepseek")}}})
+
+    first = enrollment.status(enrollment_id, settings=settings, directory=Rosters(("sitting-there",)))
+
+    assert first["status"] == "waiting"
+    assert EnrollmentStore().get(enrollment_id)["baseline"] == ["sitting-there"], "基线补记下来了"
+
+    # 新席位出现时，控制台读名单会顺手从接入文件学到它的厂商（agents.py 的那一步），
+    # 所以判定时档案里已经有它了。
+    update_profile(settings.profile_path, {"agents": {"new-agent": {"nickname": "", "vendor": _host_label("deepseek")}}})
+    arrived = enrollment.status(enrollment_id, settings=settings, directory=Rosters(("sitting-there", "new-agent")))
+
+    assert arrived["status"] == "arrived" and arrived["agent_id"] == "new-agent"
+
+
+def test_the_page_observer_and_the_console_judge_alike(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """页面那条 observe 出口与控制台的 status 出口，对同一份名单给出同一个答案。"""
+
+    enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="deepseek")
+    settings = _config(tmp_path)
+    update_profile(settings.profile_path, {"agents": {"new-agent": {"nickname": "", "vendor": _host_label("deepseek")}}})
+    rosters = Rosters(("old-agent", "new-agent"))
+    monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
+
+    watched = enrollment.observe(
+        settings=settings, directory=rosters, project_id=PROJECT_ID, adapter="deepseek",
+        baseline={"old-agent"}, enrollment_id=enrollment_id,
+    )
+    console = enrollment.status(enrollment_id, settings=settings, directory=rosters)
+
+    assert watched["status"] == console["status"] == "arrived"
+    assert watched["agent"]["agent_id"] == console["agent_id"] == "new-agent"

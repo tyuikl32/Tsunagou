@@ -38,6 +38,7 @@ import re
 import threading
 import time
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
@@ -331,7 +332,7 @@ def prepare(
     if place == "network":
         return _prepare_network(
             entry, endpoint, host=host, entry_path=entry_path, role=role, nickname=nickname,
-            profile=profile, token=token, conversation_id=conversation_id,
+            profile=profile, token=token, conversation_id=conversation_id, directory=directory,
         )
 
     if enrollment_mode == IN_HOST_MODE:
@@ -339,8 +340,12 @@ def prepare(
         # 控制台不签票、不写宿主配置。但"用户要让谁接入哪个项目"这个决定必须留在机器上：
         # 聊天里说"请接入 Tsunagou"的那一刻，它只有自己的会话 id 和工作目录，而工作目录
         # 常常不是协调仓库 —— 唯一能回答"接哪个项目、什么角色"的就是这条记录。
+        #
+        # 顺带把"现在名单上有谁"记下来：这条路没有票也没有回执可等，等到了没有，只能靠
+        # "比这份多出来的那个席位"来认（页面刷新过、控制台重启过也一样认得出）。
         store_id = _record_selection(
             entry=entry, adapter=host.adapter, role=role, nickname=nickname,
+            baseline=_roster_ids(directory, entry, endpoint),
         )
         return {
             "status": "prepared", "enrollment_id": store_id, "store_id": store_id,
@@ -379,16 +384,18 @@ def prepare(
             "next": "在要接入的 Codex 桌面聊天中说：请接入 Tsunagou。首次安装需先加载 Tsunagou Skill 和共享 MCP。",
         }
 
+    # 名单要在**记下这次选择之前**取：这些记录没有票、没有回执，等到没到只能靠"比这份多
+    # 出来的那个席位"来认，而这份基线必须和记录一起落盘（页面刷新、控制台重启都得还在）。
+    before = directory.roster(entry.project_id, entry.path, endpoint, force=True) if directory else None
+    known_agents = frozenset(agent["agent_id"] for agent in before.agents) if before else frozenset()
+
     # 其余能由页面办完的宿主（OpenCode）：也把这次选择记进机器级记录 —— 它让"不在项目
     # 目录里开会话"的那条聊天也查得到该接哪个项目，并且让"同一时刻只有一条"这件事在
     # 控制台重启后依然成立（内存里的记录活不过重启）。
     store_id = _record_selection(
         entry=entry, adapter=host.adapter, role=role, nickname=nickname,
+        baseline=tuple(sorted(known_agents)),
     )
-
-    # 名单要取**签票之前**的样子：到达判定就是"比这份多出来的那个人"。
-    before = directory.roster(entry.project_id, entry.path, endpoint, force=True) if directory else None
-    known_agents = frozenset(agent["agent_id"] for agent in before.agents) if before else frozenset()
     conversation = profile_name(profile) if profile else uuid.uuid4().hex[:12]
     destination = (entry.path / BRIDGE_DIRECTORY / f"{host.adapter}-{conversation}").resolve()
     # OpenCode 认的是"开会话时用的那个名字"，而这个名字可以由接入方先定：票绑它，
@@ -488,20 +495,45 @@ def _intent_public(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _record_selection(*, entry: ProjectEntry, adapter: str, role: str, nickname: str) -> str:
+def _roster_ids(
+    directory: AgentDirectory | None, entry: ProjectEntry, endpoint: dict[str, Any] | None,
+) -> tuple[str, ...]:
+    """Who sits in this project right now (empty when that cannot be answered).
+
+    Empty means "unknown", not "nobody": the console writes no baseline then, and the
+    waiting judgement adopts one from the first roster it can read (see ``_watch_roster``)
+    rather than risk calling a seat that was there all along a new arrival.
+    """
+
+    if directory is None or not isinstance(endpoint, dict) or not endpoint.get("running"):
+        return ()
+    lineup = directory.roster(entry.project_id, entry.path, endpoint, force=True)
+    if lineup is None:
+        return ()
+    return tuple(sorted(str(agent.get("agent_id") or "") for agent in lineup.agents if agent.get("agent_id")))
+
+
+def _record_selection(
+    *, entry: ProjectEntry, adapter: str, role: str, nickname: str,
+    baseline: tuple[str, ...] = (),
+) -> str:
     """Write the person's decision into the machine-level slot, and return its id.
 
     This is the record an in-chat entry point reads to answer "which coordination root,
     which role" without asking anybody (see ``platform/enrollment_store.py``). It holds
     no credential: the ticket either does not exist yet (Codex signs it at claim time)
     or is signed by the chat itself (the hosts that enroll in their own chat).
+
+    ``baseline`` is who already sat in this project when the request was made: these
+    records have no receipt to wait for, so "who is new" is the only arrival evidence
+    there will ever be — and it has to survive a console restart or a page reload.
     """
 
     store = EnrollmentStore()
     try:
         record = store.create(
             project_id=entry.project_id, project_root=entry.path.resolve(),
-            role=role, nickname=nickname, adapter=adapter,
+            role=role, nickname=nickname, adapter=adapter, baseline=baseline,
         )
     except RuntimeError as exc:
         error = _intent_error(exc)
@@ -556,6 +588,59 @@ def _receipt_matches(record: dict[str, Any], agent: dict[str, Any]) -> bool:
     )
 
 
+def _waiting_note(record: dict[str, Any]) -> str:
+    """What this wait is waiting for, in the words of the host it belongs to."""
+
+    label = _host_label(str(record.get("adapter") or ""))
+    if str(record.get("adapter") or "") == "codex":
+        return "已登记，等待原 Codex 聊天调用项目上下文并确认角色和就绪状态。"
+    return f"已登记，等待 {label} 那边完成接入：它一出现在名单里且角色正确，这里就会显示已接入。"
+
+
+def _watch_roster(
+    record: dict[str, Any], *, lineup: Any, settings: ConsoleConfig, waiting: dict[str, Any],
+) -> dict[str, Any]:
+    """Judge a record that has no receipt to wait for.
+
+    Three outcomes: arrived (the console closes the record and says so), wrong role (the
+    seat showed up with the other role — say it plainly and leave the record for whoever
+    it is really for), or waiting (including "the baseline is unknown", which gets written
+    down here and judged from the next poll on).
+    """
+
+    adapter = str(record.get("adapter") or "")
+    enrollment_id = str(record["enrollment_id"])
+    store = EnrollmentStore()
+    try:
+        known = load_profile(settings.profile_path)["agents"]
+        if record.get("baseline") is None:
+            # 申请时读不到名单（daemon 还没起）：把"现在"当作基线写下来，免得把已经在那儿的人
+            # 当成刚到的人。下一次轮询起才作数 —— 没记下来之前，一律按还没到处理。
+            store.note_baseline(enrollment_id, agent_ids=[str(a.get("agent_id") or "") for a in lineup.agents])
+            return {**waiting, "note": "已经记下这个项目现在有谁；那边一出现就会认出来。"}
+        seat = _attributed_seat(
+            lineup, adapter=adapter, baseline=record["baseline"], known=known,
+            awaiting=str(record.get("requested_role") or ""),
+        )
+        if seat["state"] == "arrived":
+            arrived = store.observe_arrival(enrollment_id, agent_id=seat["agent_id"])
+            return {
+                **_intent_public(arrived), "status": "arrived",
+                "agent": {"agent_id": seat["agent_id"], "role": seat["role"],
+                          "session_status": seat["session_status"]},
+            }
+        if seat["state"] == "wrong_role":
+            return {
+                **waiting,
+                "pending": {"agent_id": seat["agent_id"], "role": seat["role"],
+                            "session_status": seat["session_status"]},
+                "note": seat["note"],
+            }
+    except RuntimeError as exc:
+        raise _intent_error(exc) from exc
+    return {**waiting, "note": _waiting_note(record)}
+
+
 def _intent_status(record: dict[str, Any], *, settings: ConsoleConfig, directory: AgentDirectory) -> dict[str, Any]:
     public = _intent_public(record)
     phase = record["status"]
@@ -567,9 +652,18 @@ def _intent_status(record: dict[str, Any], *, settings: ConsoleConfig, directory
     if phase == "forgotten":
         return {**public, "status": "cancelled", "note": "项目已从控制台移除，这次接入申请已失效。"}
     waiting = {**public, "status": "waiting"}
+    # 有没有回执可等，决定这条申请的"到了"由什么判定：
+    #   · Codex 的申请：那个聊天认领（claimed/enrolled）后由桥写回执，主机核对回执；
+    #   · 宿主自己接入（in_host）与跨机器邀请：主机这边**什么都不写**，没有票可问、没有回执
+    #     可等 —— 唯一的证据是名单里那个"申请时不在、现在出现、身份与角色都对得上"的席位。
+    # 判据是记录里有没有**基线**（那两条路申请时会写下"当时名单上有谁"），加上宿主本身是否
+    # 走回执（只有 codex 走）。两者共用 _attributed_seat，页面那条 observe 出口不会各说各话。
+    watched = "baseline" in record or str(record.get("adapter") or "") != "codex"
     if phase == "failed":
-        return {**waiting, "error": record.get("error"), "note": "接入遇到问题，请在刚才的 Codex 聊天重试；申请仍绑定该聊天。"}
-    if phase == "pending":
+        return {**waiting, "error": record.get("error"),
+                "note": (f"接入遇到问题，请在刚才的 {_host_label(str(record.get('adapter') or ''))} 聊天重试；"
+                         "申请仍绑定那个聊天。")}
+    if phase == "pending" and not watched:
         return {**waiting, "note": "等待 Codex 聊天认领：请接入 Tsunagou。"}
     if phase == "claimed":
         return {**waiting, "note": "目标 Codex 聊天已认领，正在完成接入。"}
@@ -586,16 +680,21 @@ def _intent_status(record: dict[str, Any], *, settings: ConsoleConfig, directory
     )
     if lineup is None:
         return {**waiting, "note": "暂时读不到这个项目的 Agent 名单。"}
+    if watched:
+        return _watch_roster(record, lineup=lineup, settings=settings, waiting=waiting)
     candidate = next((a for a in lineup.agents if a.get("agent_id") == record.get("agent_id")), None)
     if candidate is None or not _receipt_matches(record, candidate):
-        return {**waiting, "note": "已登记，等待原 Codex 聊天调用项目上下文并确认角色和就绪状态。"}
+        return {**waiting, "note": _waiting_note(record)}
     try:
         arrived = EnrollmentStore().mark_arrived(record["enrollment_id"])
     except RuntimeError as exc:
         raise _intent_error(exc) from exc
     try:
+        # 厂商按这条申请自己的宿主写，不写死 Codex：写错了会让这个 Agent 以后一直显示成
+        # 另一家的图标（页面就是按档案里的厂商取 logo 的）。
         update_profile(settings.profile_path, {"agents": {
-            arrived["agent_id"]: {"nickname": arrived["nickname"], "vendor": "Codex"},
+            arrived["agent_id"]: {"nickname": arrived["nickname"],
+                                  "vendor": _host_label(str(record.get("adapter") or ""))},
         }})
     except ValueError:
         pass
@@ -695,6 +794,58 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
     return {"status": "arrived", **record.public()}
 
 
+def _attributed_seat(
+    lineup: Any, *, adapter: str, baseline: Iterable[str], known: Mapping[str, Any], awaiting: str,
+) -> dict[str, Any]:
+    """Which seat this request was waiting for — one rule, two callers.
+
+    A seat counts only when all three hold: it was **not** in ``baseline`` (who was there
+    when the request was made), the profile knows it came from *this* host product
+    (``agent connect`` writes that beside the bridge folder, before the bridge ever
+    enrolls), and its role is the one the request asked for. Anything else is not an
+    arrival: handing one host somebody else's enrollment is worse than waiting.
+
+    One exception, and only one: a seat that **self-reports a machine** arrived through
+    an invitation. A cross-machine invitation leaves *nothing* on this machine by design,
+    so there is no enrollment file here to learn a vendor from — the machine name the
+    daemon recorded at redeem time is the only attribution that exists. A vendor the
+    profile *does* know still has to match, so this never overrides real evidence.
+
+    ``observe`` (the page watching an in-chat enrollment) and ``_intent_status`` (the
+    console answering the same question for the same record) both judge with this, so the
+    page and the console can never disagree about whether somebody arrived.
+    """
+
+    label = _host_label(adapter)
+    for agent in lineup.agents:
+        agent_id = str(agent.get("agent_id") or "")
+        if not agent_id or agent_id in baseline:
+            continue
+        vendor = str((known.get(agent_id) or {}).get("vendor") or "").strip()
+        remote = bool(str(agent.get("machine") or "").strip())
+        if vendor:
+            if vendor != label:
+                continue
+        elif not remote:
+            continue
+        role = str(agent.get("role") or "")
+        session = str(agent.get("session_status") or "")
+        if awaiting and role != awaiting:
+            # 连上了，但不是这次申请要的那个角色（页面选主 Agent、那边却以子 Agent 接入）。
+            # 如实说，不报成功，也不替它把记录收掉 —— 真正该来的那个还能用它。
+            return {
+                "state": "wrong_role", "agent_id": agent_id, "role": role, "session_status": session,
+                "note": (
+                    "有个席位连上了，但它的角色是"
+                    + ("子 Agent" if role == "worker" else ("主 Agent" if role == "main" else role))
+                    + "，不是这次申请的" + ("主 Agent" if awaiting == "main" else "子 Agent")
+                    + "。请在那边以正确身份重新接入。"
+                ),
+            }
+        return {"state": "arrived", "agent_id": agent_id, "role": role, "session_status": session}
+    return {"state": "waiting"}
+
+
 def observe(
     *, settings: ConsoleConfig, directory: AgentDirectory, project_id: str, adapter: str,
     baseline: set[str] | frozenset[str], enrollment_id: str = "",
@@ -730,47 +881,32 @@ def observe(
     lineup = directory.roster(project_id, entry.path, endpoint, require_fresh=True)
     if lineup is None:
         return {"status": "waiting", "adapter": wanted, "note": "暂时读不到这个项目的 Agent 名单。"}
-    label = _host_label(wanted)
     known = load_profile(settings.profile_path)["agents"]
     awaiting = _awaiting_role(enrollment_id)
-    for agent in lineup.agents:
-        agent_id = str(agent.get("agent_id") or "")
-        if not agent_id or agent_id in baseline:
-            continue
-        vendor = str((known.get(agent_id) or {}).get("vendor") or "").strip()
-        if not vendor or vendor != label:
-            continue
-        role = str(agent.get("role") or "")
-        if awaiting and role != awaiting:
-            # 连上了，但不是这次申请要的那个角色（页面选主 Agent、那边却以子 Agent 接入）。
-            # 如实说，不报成功，也不替它把记录收掉 —— 真正该来的那个还能用它。
-            return {
-                "status": "waiting", "adapter": wanted,
-                "pending": {"agent_id": agent_id, "role": role,
-                            "session_status": str(agent.get("session_status") or "")},
-                "note": (
-                    "有个席位连上了，但它的角色是"
-                    + ("子 Agent" if role == "worker" else ("主 Agent" if role == "main" else role))
-                    + "，不是这次申请的" + ("主 Agent" if awaiting == "main" else "子 Agent")
-                    + "。请在那边以正确身份重新接入。"
-                ),
-            }
+    seat = _attributed_seat(lineup, adapter=wanted, baseline=baseline, known=known, awaiting=awaiting)
+    if seat["state"] == "arrived":
         if enrollment_id:
             try:
-                EnrollmentStore().observe_arrival(enrollment_id, agent_id=agent_id)
+                EnrollmentStore().observe_arrival(enrollment_id, agent_id=seat["agent_id"])
             except RuntimeError:
                 pass
         return {
             "status": "arrived", "adapter": wanted,
-            "agent": {"agent_id": agent_id, "role": role,
-                      "session_status": str(agent.get("session_status") or "")},
+            "agent": {"agent_id": seat["agent_id"], "role": seat["role"],
+                      "session_status": seat["session_status"]},
+        }
+    if seat["state"] == "wrong_role":
+        return {
+            "status": "waiting", "adapter": wanted,
+            "pending": {"agent_id": seat["agent_id"], "role": seat["role"],
+                        "session_status": seat["session_status"]},
+            "note": seat["note"],
         }
     return {"status": "waiting", "adapter": wanted}
 
 
 def _awaiting_role(enrollment_id: str) -> str:
     """Which role the pending record asks for ("" = unknown, e.g. no id passed)."""
-
     if not enrollment_id:
         return ""
     try:
@@ -811,6 +947,7 @@ def _drop_selection(record: Enrollment) -> None:
 def _prepare_network(
     entry: ProjectEntry, endpoint: dict[str, Any], *, host: host_registration.Host, entry_path: Path,
     role: str, nickname: str, profile: str | None, token: str | None, conversation_id: str,
+    directory: AgentDirectory | None = None,
 ) -> dict[str, Any]:
     """打一张给远端机器的邀请（页面这条路）。
 
@@ -858,6 +995,9 @@ def _prepare_network(
     })
     store_id = _record_selection(
         entry=entry, adapter=host.adapter, role="worker", nickname=nickname,
+        # 这台机器上什么都不写，所以"它到没到"唯一能靠的就是这份基线：比它多出来的那个
+        # 席位。远端入席时会自己报机器名，判定据此把它认出来（见 _attributed_seat）。
+        baseline=_roster_ids(directory, entry, endpoint),
     )
     return {
         "status": "invited", "invite": invite, "enrollment_id": store_id, "store_id": store_id,

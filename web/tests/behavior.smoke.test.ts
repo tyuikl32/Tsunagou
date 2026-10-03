@@ -1265,7 +1265,9 @@ describe("控制台接入等待与取消", () => {
       { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在 DeepSeek Harness 自己的桌面聊天里接入。" },
       { adapter: "claudecode", label: "Claude Code", mode: "unsupported", note: "Claude Code 的 MCP 注册还没实现。" },
     ]);
-    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "Claude Code", { silent: true });
+    /* 选项文字带着"（待实现）"后缀（人点了也没用），但程序化回填照旧可用，
+       所以这条"选了接不了的宿主会报错并停在第 2 步"的路仍然是活的 —— 这里走的就是它。*/
+    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "Claude Code（待实现）", { silent: true });
     await enrollmentApi.ui.wizard.next();
     await vi.advanceTimersByTimeAsync(0);
     expect(tip()).toContain("还没实现");
@@ -1402,5 +1404,62 @@ describe("控制台接入等待与取消", () => {
     expect(calls.some((call) => call.url.includes("agents:prepare"))).toBe(false);
     expect(enrollmentApi.ui.wizard.current()).toBe(1);
     expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+  });
+
+  /* 测试同事报的那个 bug 就落在这条路上：刷新之后，一条 DeepSeek Harness 的申请被当成     Codex 的申请去等（写死 adapter/label），到达到时还会把它的厂商记成 Codex —— 于是
+     页面上这个 Agent 从此一直显示成另一家的图标。这里钉住"按申请自己的宿主说话"。
+     等待本身由中间层那条"没有回执就按名单判定"的路负责翻绿，这一条只管页面这半边。*/
+  it("刷新恢复一条宿主自己接入的申请：按它自己的宿主等，到达时厂商也记它自己那家", async () => {    enrollmentDom.window.close();
+    calls = [];
+    await loadPage({
+      status: "waiting", phase: "pending", enrollment_id: "e-7", project_id: "p-1",
+      role: "worker", nickname: "远端小三", vendor: "deepseek", label: "DeepSeek Harness",
+    }, "p-1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls.some((call) => call.url.includes("agents:prepare"))).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls.some((call) => call.url.includes("/enrollments/e-7"))).toBe(true);
+    statusBody = { status: "arrived", enrollment_id: "e-7", agent_id: "a-dsh", role: "worker" };
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    /* 档案写入门与读取是同一个 URL，所以按**载荷**认那一次写入（`api.post` 会把 `patch`
+       那层拆掉，落到后端的就是 `{agents: …}`）。*/
+    const wrote = calls
+      .map((call) => call.body as { agents?: Record<string, { vendor?: string }> })
+      .filter((body) => Boolean(body?.agents?.["a-dsh"]));
+    expect(wrote).toHaveLength(1);
+    expect(wrote[0]!.agents!["a-dsh"]!.vendor).toBe("DeepSeek Harness");
+  });
+
+  /* 厂商只做三家（Codex / DeepSeek Harness / OpenCode）：ZCode 的图标与选项一并撤掉，
+     Claude Code 留着但作为"待实现"——看得见、点不动。程序化回填不受这条限制，所以
+     "选了接不了的宿主会报错并停在第 2 步"那条路仍然在（见下面那条 unsupported 用例）。*/
+  it("厂商选择框：ZCode 已经不在，Claude Code（待实现）点不动，其他厂商照旧能选", async () => {
+    const click = (node: Element) => {
+      node.dispatchEvent(new enrollmentDom.window.MouseEvent("click", { bubbles: true }));
+    };
+    const texts = (panel: Element) =>
+      [...panel.querySelectorAll("p")].map((node) => node.textContent ?? "");
+
+    for (const id of ["newXz2Vendor", "addSubAgentVendor"]) {
+      const panel = enrollmentPage.getElementById(id)!;
+      expect(texts(panel).some((text) => text.includes("ZCode"))).toBe(false);
+      const claude = [...panel.querySelectorAll("p")].find((node) => (node.textContent ?? "").includes("Claude"))!;
+      expect(claude.textContent).toContain("（待实现）");
+      expect(claude.hasAttribute("data-disabled")).toBe(true);
+    }
+
+    const box = enrollmentPage.querySelector("#newXz2 .choosebox") as HTMLElement;
+    const before = enrollmentApi.ui.choosebox.value(box);
+    const claude = [...enrollmentPage.getElementById("newXz2Vendor")!.querySelectorAll("p")]
+      .find((node) => (node.textContent ?? "").includes("Claude"))!;
+    click(claude);
+    expect(enrollmentApi.ui.choosebox.value(box)).toBe(before);
+
+    const opencode = [...enrollmentPage.getElementById("newXz2Vendor")!.querySelectorAll("p")]
+      .find((node) => (node.textContent ?? "").includes("OpenCode"))!;
+    click(opencode);
+    expect(enrollmentApi.ui.choosebox.value(box)).toBe("OpenCode");
   });
 });
