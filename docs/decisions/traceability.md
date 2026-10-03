@@ -33,6 +33,9 @@
 | D188 跨机器协作采用"主机 + 远端接入方"（形态 A） | 跨机器协作可行性（工作区根目录文档）；消息投递跨机器降级为拉取 | — |
 | D189 控制台只监听回环、默认端口固定为 2812 | cli-contract、web/method.md、console 配置与启动 | — |
 | D190 跨机器接入一律"主机发邀请"（A 流程），远端一条命令收下；邀请是机密；协调中心端口 2810 + 对外可达地址；远端自报机器名只作显示 | cli-http-manual、web/method.md、command-catalog、console 实现、Agent 接入 Skill、跨机器协作可行性（工作区根目录文档） | — |
+| D191 远端 Agent 不接要碰文件的任务（拒绝而非警告；`external` 不等于跨机器） | 跨机器协作可行性（工作区根目录文档）、Agent 接入 Skill、execution/workspace 判定与拒绝码词表 | — |
+| D192 远端干文件活走"外部准备 + 它自己报的副本"：报副本、选 external、位置对得上才放行；主机只记账不读，无基线、无清单，证据记自报 | 跨机器协作可行性（工作区根目录文档）、Agent 接入 Skill、cli-http-manual、web/method.md、execution/workspace 判定与词表 | — |
+| D193 控制台自己留一份"上次看到的样子"（按项目分文件、有界、只顶"连不上"、必须带记录时刻、删项目一起删）；确认完工后页面上关掉接入 Agent / 立即存档 / 设为主 Agent（清理与重试类不关） | console.md、web/method.md、console/history 实现、cli-http-manual（删除项目那一段） | — |
 
 重要的早期边界也已贯穿规范：本机首发与Python后端；三个首发宿主正式共同基线，ZCode后置；所有Git写操作归main；初始化即项目内持久化；主子身份/Attempt所有权分离；用户不答不超时；父子任务不隐式门禁/级联；机械代码不作复杂业务语义裁决；减少强制用户决策；Web和远程认证延后。
 

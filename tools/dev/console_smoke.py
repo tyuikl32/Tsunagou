@@ -101,13 +101,21 @@ def _run(*args: str, cwd: Path, env: dict[str, str] | None = None) -> dict[str, 
 
 
 def _sandbox_environment(index_path: Path) -> dict[str, str]:
-    """Keep every subprocess inside the sandbox: the real project index stays untouched.
+    """Keep every subprocess inside the sandbox: the real machine stays untouched.
 
     ``PYTHONUNBUFFERED`` matters here: the console is started as a child and a
     buffered child would hide its startup line until it exits.
+
+    ``TSUNAGOU_ENROLLMENT_DIR`` matters for the same reason as the index: the smoke really
+    does create and cancel an invitation, and the machine-level record belongs to the person
+    running this, not to a throwaway probe.
     """
 
-    return {"TSUNAGOU_PROJECT_INDEX": str(index_path), "PYTHONUNBUFFERED": "1"}
+    return {
+        "TSUNAGOU_PROJECT_INDEX": str(index_path),
+        "TSUNAGOU_ENROLLMENT_DIR": str(index_path.parent / "console-enrollments"),
+        "PYTHONUNBUFFERED": "1",
+    }
 
 
 def _prepare_sandbox(sandbox: Path, index_path: Path) -> tuple[Path, str]:
@@ -371,7 +379,48 @@ def _network_invite_round_trip(base: str, project_id: str) -> bool:
     return not problems
 
 
-def smoke(base: str, project_id: str) -> bool:
+def _record_survives_a_stopped_daemon(
+    base: str, project_id: str, project_root: Path, environment: dict[str, str],
+) -> bool:
+    """项目结束了还看得到内容 —— 这是"上一次记录"的验收。
+
+    先正常读一屏（中间层顺手记一份），再把 daemon 停掉，然后读**同一屏**：
+    必须仍然 200，回答里带 ``history``（说明这一屏是从记录里拿的），而且不能同时
+    把它算进 ``missing``（"读不到"与"有记录"是两件事）。探完不恢复 daemon：
+    冒烟本来就以停掉一切收尾。
+    """
+
+    view = "overview"
+    path = f"{base}/api/v1/console/views/{view}?project_id={project_id}"
+    first = _request(path, project_id)[0]
+    if first != 200:
+        print(f"  FAIL  {first:>3} view {view} (daemon still running)")
+        return False
+    _run_quiet(
+        "daemon", "stop", "--coordination-root", str(project_root),
+        cwd=REPOSITORY_ROOT, env=environment,
+    )
+    time.sleep(1.5)
+    try:
+        status, body = _request(path, project_id)
+    except (urllib.error.URLError, OSError) as error:
+        status, body = 0, str(error).encode()
+    recorded: list[str] = []
+    missing: list[str] = []
+    if status == 200:
+        payload = json.loads(body)
+        recorded = sorted(payload.get("history") or {})
+        missing = sorted(payload.get("missing") or {})
+    ok = status == 200 and bool(recorded) and not missing
+    print(f"  {'PASS' if ok else 'FAIL'}  {status:>3} view {view} after the daemon stops"
+          f"  from-record={recorded} missing={missing}")
+    return ok
+
+
+def smoke(
+    base: str, project_id: str, *,
+    project_root: Path | None = None, environment: dict[str, str] | None = None,
+) -> bool:
     print(f"probing {base}")
     results = [
         _probe(base, "/api/v1/console/config"),
@@ -401,7 +450,13 @@ def smoke(base: str, project_id: str) -> bool:
         base, "/api/v1/projects/00000000-0000-0000-0000-000000000000/tasks",
         project_id="00000000-0000-0000-0000-000000000000", expect=404, note="  (expected refusal)",
     ))
-    return all(results)
+    passed = all(results)
+    # 最后一条要**停掉 daemon**，所以放在其他探针都跑完之后（`--url` 模式下没有 daemon 可停，跳过）。
+    if project_root is not None and environment is not None:
+        passed = _record_survives_a_stopped_daemon(base, project_id, project_root, environment) and passed
+    else:
+        print("  SKIP  record-after-stop (probing an already-running console with --url)")
+    return passed
 
 
 def _run_quiet(*args: str, cwd: Path, env: dict[str, str] | None = None) -> None:
@@ -469,7 +524,7 @@ def main() -> int:
     console: subprocess.Popen[bytes] | None = None
     try:
         console, base = _start_console(sandbox, project_root, environment)
-        passed = smoke(base, project_id)
+        passed = smoke(base, project_id, project_root=project_root, environment=environment)
         if args.keep:
             print("\nleft running: open the page above; press Ctrl+C to stop the console")
             print(f"daemon {daemon_url} keeps running until you stop it:")

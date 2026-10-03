@@ -115,6 +115,19 @@ const ERROR_GUIDANCE: Readonly<Record<string, readonly string[]>> = {
   conversation_identity_required_for_session_file: ENROLLMENT_GUIDANCE,
   stale_connection_epoch: ENROLLMENT_GUIDANCE,
   session_not_found: ENROLLMENT_GUIDANCE,
+  // 跨机器：这台机器到主机的通道不通（远端最常见的一种失败）。消息与任务都还在主机上，
+  // 所以"这次调用没发生"就是真话 —— 别让它变成一句没用的"请求失败"。
+  daemon_unreachable: [
+    "the host's coordination centre did not answer: this machine reaches it over a tunnel, so check that channel and the address in the invitation",
+    "nothing was lost and nothing was changed: this call did not happen — retry once the channel is back",
+    "if this machine is the one that just imported an invitation, re-run the import with --daemon-url <the address this machine can actually reach>",
+  ],
+  host_request_identity_required: [
+    "this call carried no host conversation identity: call the tool from the conversation that owns this Agent (a shared bridge process cannot choose an identity for you)",
+  ],
+  conversation_metadata_required: [
+    "this host names the conversation in the call, but the call arrived without it: run the tool from the conversation itself",
+  ],
   stale_or_blocked_preflight: [
     "re-run preflight so evidence and blockers are recollected",
     "if the blocker is an unaccepted contract: compare the current contract digest, then accept or withdraw it",
@@ -247,6 +260,7 @@ function config(): {
   hostIdCandidates: string[];
   desktopWake: boolean;
   hostMetaKey: string;
+  declaredProjectId?: string;
 } {
   const stateDir = env("TSUNAGOU_STATE_DIR", join(homedir(), ".tsunagou"));
   const projectRoot = env("TSUNAGOU_PROJECT_ROOT");
@@ -268,6 +282,9 @@ function config(): {
     // fresh non-empty string id; the bridge never falls back to another
     // conversation's private credential.
     hostMetaKey: env("TSUNAGOU_HOST_META_KEY"),
+    // Who this call belongs to, declared instead of inferred: `agent import` writes it from
+    // the invitation, because the machine holding only a code copy has no project manifest.
+    declaredProjectId: env("TSUNAGOU_PROJECT_ID") || undefined,
   };
 }
 
@@ -315,24 +332,34 @@ function readProjectDigest(projectRoot: string): string | undefined {
 }
 
 /**
- * The name this machine gave itself when an invitation was imported here.
+ * What this machine said about itself when an invitation was imported here.
  *
- * Written by ``tsunagou agent import --machine`` into the private identity file beside
- * the ticket, and only then reported on enrolment (as ``descriptor_ref``) so the host's
- * roster can say *which* remote a worker sits on. Absent for every local enrollment —
+ * ``tsunagou agent import --machine/--copy/--baseline`` writes these into the private identity
+ * file beside the ticket, and enrolment reports them as ``descriptor_ref`` so the host's roster
+ * can say *which* remote a worker sits on — and, when a copy was declared, so the host can point
+ * an ``external`` workspace at it without ever reading it. Absent for every local enrollment:
  * that absence is exactly what "this Agent is not remote" means to the page.
  */
-function readMachineName(stateDir: string): string | undefined {
-  if (!stateDir) return undefined;
+function readSelfReport(stateDir: string): { machine?: string; copyPath?: string; copyBaseline?: string } {
+  if (!stateDir) return {};
   const path = join(stateDir, "host-identity.json");
-  if (!existsSync(path)) return undefined;
+  if (!existsSync(path)) return {};
   try {
-    const raw = JSON.parse(readFileSync(path, "utf-8")) as { machine?: unknown };
-    if (typeof raw.machine !== "string") return undefined;
-    const value = raw.machine.replace(/[\r\n\t]/g, " ").trim().slice(0, 64);
-    return value || undefined;
+    const raw = JSON.parse(readFileSync(path, "utf-8")) as {
+      machine?: unknown; copy_path?: unknown; copy_baseline?: unknown;
+    };
+    const clean = (value: unknown, limit: number): string | undefined => {
+      if (typeof value !== "string") return undefined;
+      const text = value.replace(/[\r\n\t]/g, " ").trim().slice(0, limit);
+      return text || undefined;
+    };
+    return {
+      machine: clean(raw.machine, 64),
+      copyPath: clean(raw.copy_path, 512),
+      copyBaseline: clean(raw.copy_baseline, 128),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -430,17 +457,26 @@ class HttpTransport {
       schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
       payload,
     };
-    const response = await fetch(`${this.baseUrl}/api/v1/commands/${kind}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${session.secret_token}`,
-        "tsunagou-session-id": session.session_id,
-        "tsunagou-connection-epoch": String(session.connection_epoch),
-        ...(this.projectId ? { "tsunagou-project-id": this.projectId } : {}),
-      },
-      body: JSON.stringify(envelope),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/api/v1/commands/${kind}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${session.secret_token}`,
+          "tsunagou-session-id": session.session_id,
+          "tsunagou-connection-epoch": String(session.connection_epoch),
+          ...(this.projectId ? { "tsunagou-project-id": this.projectId } : {}),
+        },
+        body: JSON.stringify(envelope),
+      });
+    } catch {
+      // A network-level failure (a remote bridge reaches the host through a tunnel) is its
+      // own answer: the request never arrived, so nothing changed and retrying is the whole
+      // repair. Left as a raw fetch error it would be flattened into "bridge_request_failed",
+      // which tells the agent nothing about what to do.
+      throw new Error("daemon_unreachable");
+    }
     const body = (await response.json().catch(() => ({}))) as {
       command_hash?: string;
       result?: unknown;
@@ -496,8 +532,14 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
     }
     if (metaKey !== "threadId" && identity) observedHostMetaKey = metaKey;
     const manifest = join(fixed.projectRoot, ".tsunagou", "project.json");
-    const projectId = fixed.projectRoot && existsSync(manifest)
-      ? JSON.parse(readFileSync(manifest, "utf8")).project_id as string : undefined;
+    // Which project this call belongs to: the daemon needs it to pick its state, and a
+    // multi-project daemon refuses a call that names none. A machine that only holds a code
+    // copy (a remote imported from an invitation) has no project manifest, so the declared
+    // value — written by ``agent import`` from the invitation — comes first there. For a local
+    // enrollment nothing declares it and the manifest stays the one truth.
+    const projectId = fixed.declaredProjectId
+      ?? (fixed.projectRoot && existsSync(manifest)
+        ? JSON.parse(readFileSync(manifest, "utf8")).project_id as string : undefined);
     if (identity && metaKey !== "threadId") {
       const binding = hash("conversation_id:" + identity);
       let sessionFile = join(fixed.stateDir, "sessions", "bridge-session-" + binding.slice(0, 32) + ".json");
@@ -622,7 +664,7 @@ async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<stri
   const handoff = new CredentialHandoff({
     baseUrl, projectId: cfg.projectId, protocolVersion: PROTOCOL_VERSION, schemaBundleDigest: SCHEMA_BUNDLE_DIGEST,
     sessionFile, conversationBindingDigest, hostDigest,
-    machine: readMachineName(cfg.stateDir),
+    selfReport: readSelfReport(cfg.stateDir),
   });
   const recover = async (forceReconnect = false): Promise<PersistedSession> => {
     /* 续接证据的两个输入（票、会话文件）都在本地磁盘上，而它们**会在调用过程中变**：

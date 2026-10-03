@@ -581,6 +581,14 @@ class TaskService:
     def describe_task(self, task_id: str) -> dict[str, Any]:
         task = self._task(task_id)
         attempt = self.attempts.get(task.current_attempt_id or "")
+        scope = task.execution_scope if isinstance(task.execution_scope, dict) else {}
+        declared = scope.get("resources")
+        resources: list[Any] = declared if isinstance(declared, list) else []
+        # 这个任务要不要工作区：资源请求里有 `path` 那一行就是"要碰文件"。说出来是为了让人和 Agent
+        # **在开工之前**就知道 —— 远端那台机器没报代码副本时接不了它（D191/D192），别白跑一趟。
+        requires_workspace = bool(scope.get("roots")) or any(
+            isinstance(row, dict) and row.get("kind") == "path" for row in resources
+        )
         return {
             "task_id": task.task_id, "title": task.title, "objective": task.objective,
             "status": task.status, "revision": task.revision, "scope_revision": task.scope_revision,
@@ -588,6 +596,7 @@ class TaskService:
             "blocks": sorted(task.blocks), "current_attempt_id": task.current_attempt_id,
             "owner_agent_id": attempt.owner_agent_id if attempt is not None else None,
             "block_reason": task.block_reason,
+            "requires_workspace": requires_workspace,
         }
 
     def _task(self, task_id: str) -> Task:

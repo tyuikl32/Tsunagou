@@ -133,6 +133,9 @@ tsunagou agent invite --adapter codex --conversation-id <远端报来的号> --n
 
 返回 `{status: invited, invite, project_id, adapter, role, conversation_id, url, expires_at, expires_in_seconds}`。
 `url` 取的是**对外可达地址**（见下）；主 Agent 不跨机器，`--role main` 直接拒绝（`main_agent_must_be_local`）。
+这条命令**不写**机器级那条待接入记录（回答里 `enrollment_record: not_written`）：那条记录是页面那条路用来
+回答"聊天里被要求接入时该接哪个项目"的，而邀请内容里已经写全了项目、身份与角色 —— 所以别拿
+`agent pending` 去找一张命令行发的邀请。邀请的有效期最少 1 分钟、最多 1 小时（短时效是它的保护之一）。
 控制台页面同一条路：添加子 Agent 里把「位置」选成**网络**，如果厂商是 Codex / DeepSeek Harness，
 页面会多要一格「网络 Agent 编号」（这两家的会话名只有它们自己知道），确定后弹出邀请内容，确认即开始等待。
 
@@ -145,6 +148,9 @@ tsunagou agent import <邀请>               # 收下邀请：写自己的票/�
 
 `agent import` 可选 `--daemon-url`（走 SSH 隧道等场景，远端能连到的地址与邀请里写的不一样时用）、
 `--workdir`（这台机器的代码副本，缺省当前目录）、`--machine`（这台机器叫什么，缺省取本机主机名）、
+`--copy <路径> [--baseline <分支|提交>]`（**这台机器上的代码副本在哪**：报了它，这台机器才能接要动文件的
+任务；主机不会读这个路径，只把位置记成账，工作区按"外部准备"指向同一个位置，**文件活的证据记成自报** ——
+没有基线、交活时也没有清单，见 [跨机器干文件活](../decisions/2026-10-03-remote-file-work-tier0.md)）、
 `--state-dir`。它**只写这台机器自己的东西**（`~/.tsunagou/remote/<adapter>-<hash>`），项目仍然只有主机上那一份。
 它能自检的是"网络通不通、项目对不对、票过没过期"；"工具在不在、身份对不对"要等本机宿主真的加载一次 MCP，
 在那条会话里调一次 `context__project_read` 才算数。DeepSeek Harness 的聊天只能通过插件动手，所以那里用

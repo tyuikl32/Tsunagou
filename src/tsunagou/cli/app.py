@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, cast
 from tsunagou.application.onboarding import conversation_key
 from tsunagou.modules.projects import PENDING_OBJECTIVE
 from tsunagou.platform import host_registration
-from tsunagou.platform.bridge_files import read_bridge_config, write_bridge_config, write_ticket_file
+from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
 from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
@@ -1553,12 +1553,12 @@ if typer is not None:
                 raise RuntimeError("control_credential_missing")
             issued = _invoke_command("agent.ticket.create.user", {
                 "installation_id": installation_id, "kind": "worker", "role": "worker",
-                "ttl_seconds": max(60, int(ttl_seconds)),
+                "ttl_seconds": _invite_ttl(ttl_seconds),
                 "conversation_evidence": {"conversation_id": conversation},
             }, authorization=f"Bearer {token}")
             if not isinstance(issued, dict) or not isinstance(issued.get("secret"), str):
                 raise RuntimeError("ticket_response_invalid")
-            expires_at = format_timestamp(now_ms() + max(60, int(ttl_seconds)) * 1000)
+            expires_at = format_timestamp(now_ms() + _invite_ttl(ttl_seconds) * 1000)
             invite = remote_invite.encode({
                 "project_id": runtime.project_id, "url": url, "adapter": host.adapter,
                 "profile": chosen_profile, "installation_id": installation_id,
@@ -1573,7 +1573,19 @@ if typer is not None:
             "adapter": host.adapter, "profile": chosen_profile, "role": "worker",
             "conversation_id": conversation, "url": url, "expires_at": expires_at,
             "expires_in_seconds": max(0, int(ttl_seconds)),
-            "next": "把 invite 里的整段内容发给远端，在那台机器上跑：tsunagou agent import <邀请>",
+            # 这条命令**不写**机器级那条待接入记录（那是页面/中间层那条路的东西，用来回答
+            # "聊天里被要求接入时该接哪个项目"）。远端不需要它：邀请内容里已经写全了项目、
+            # 身份和角色 —— 但要说清楚，免得有人拿 `agent pending` 去找一张命令行发的邀请。
+            "enrollment_record": "not_written",
+            "next": (
+                # 会话名是我们起的（只有 OpenCode 这一家）：不说清楚，那边起一个别的会话，
+                # 身份对不上，第一次调用就只会得到 not_enrolled。
+                f"让那边用这个名字开会话：opencode --session {conversation}（在代码副本目录里起），"
+                "然后把 invite 里的整段内容发给远端，在那台机器上跑：tsunagou agent import <邀请>"
+                if host.adapter == "opencode" else
+                "把 invite 里的整段内容发给远端，在那台机器上跑：tsunagou agent import <邀请>；"
+                "重启/重载那个宿主窗口后，在**这个会话**里说一句：接入 Tsunagou"
+            ),
         }, ensure_ascii=False, sort_keys=True))
 
     @agent_app.command("import")
@@ -1582,6 +1594,8 @@ if typer is not None:
         workdir: Path | None = typer.Option(None, "--workdir"),  # noqa: B008
         daemon_url: str = typer.Option("", "--daemon-url"),
         machine: str = typer.Option("", "--machine"),
+        copy: str = typer.Option("", "--copy"),
+        baseline: str = typer.Option("", "--baseline"),
         state_dir: Path | None = typer.Option(None, "--state-dir"),  # noqa: B008
     ) -> None:
         """在这台机器上导入一张邀请：一条命令，然后在窗口里说一句话。
@@ -1590,6 +1604,10 @@ if typer is not None:
         不放进代码副本）；再把桥接进本机的宿主。项目本身仍在主机上 —— 这里不会、也不该
         长出第二份协作数据。
 
+        ``--copy``：这台机器上的代码副本在哪（配合 ``--baseline`` 说清是哪条基线）。报了它，
+        这台机器才能接**要动文件**的任务 —— 主机不会去读那个路径（读不到），只把位置记成账，
+        工作区按"外部准备"指向它，证据记成自报。不报也能接入，但只能做不需要文件的活。
+
         这一步能自检的是"网络通不通、项目和票对不对"；"工具在不在、身份对不对"要等本机
         宿主真的加载一次 MCP，那一下由窗口里的 `context__project_read` 完成（失败码在接入
         Skill 里有人话对照）。
@@ -1597,7 +1615,12 @@ if typer is not None:
 
         import tsunagou.platform.remote_invite as remote_invite
         from tsunagou.platform import host_registration
-        from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
+        from tsunagou.platform.bridge_files import (
+            read_bridge_config,
+            write_bridge_config,
+            write_shared_bridge_config,
+            write_ticket_file,
+        )
         from tsunagou.platform.private_files import write_private_bytes
 
         try:
@@ -1606,6 +1629,8 @@ if typer is not None:
             host = host_registration.host_for(data["adapter"])
             if host is None:
                 raise RuntimeError("unknown_host_adapter")
+            copy_path = _reported_copy(copy)
+            copy_baseline = _bounded_baseline(baseline)
             url = daemon_url.strip() or data["url"]
             if urllib.parse.urlsplit(url).hostname in {"127.0.0.1", "localhost", "::1"} and not daemon_url:
                 raise RuntimeError("invite_address_is_loopback:用 --daemon-url 给出这台机器能连到主机的地址")
@@ -1623,19 +1648,40 @@ if typer is not None:
                 # 远端自己报的机器名（不是主机猜的 IP）：宿主把桥接进本机之后，就靠它
                 # 在名单里显示成"远端 · 机器名"。
                 "machine": _machine_name(machine),
+                # 这台机器上的代码副本（有才写）：主机据此把工作区以"外部准备"的形态指向它，
+                # 于是远端也能接要动文件的任务（D192）。主机不读这个路径，只记账。
+                **({"copy_path": copy_path} if copy_path else {}),
+                **({"copy_baseline": copy_baseline} if copy_baseline else {}),
             }, sort_keys=True, indent=2) + "\n").encode("utf-8"))
+            # 桥从哪儿找主机：路由式的宿主（Codex、深寻）**只看**这个状态目录里的 endpoint.json，
+            # 它不读 `TSUNAGOU_HTTP_URL`；本机接入时这份文件是那台机器的 daemon 写的，远端当然没有，
+            # 所以要在这里补一份 —— 内容就是邀请里那个地址（隧道场景下 `--daemon-url` 覆盖过的那个）。
+            write_private_bytes(destination / "endpoint.json",
+                                (json.dumps({"url": url, "advertised_url": url}, sort_keys=True) + "\n").encode("utf-8"))
             ticket_path = write_ticket_file(
                 data["installation_id"], data["conversation_id"], data["secret"],
                 destination / "ticket.json", data["role"],
             )
             extra_env = _write_remote_route(data, workspace=workspace, destination=destination, url=url)
-            bridge_config = write_bridge_config(
-                adapter=data["adapter"], mode="attach", installation_id=data["installation_id"],
-                output_dir=destination, ticket_path=ticket_path, daemon_url=url,
-                # 让桥只认主机这个地址：如果指到代码副本里的 .tsunagou/local，
-                # 副本里万一有一份旧的 endpoint.json，桥就会去连本机那个 daemon。
-                daemon_state_dir=str(destination), project_root=workspace, extra_env=extra_env,
-            )
+            # 路由式的宿主（Codex、深寻）注册的是一份**共享**条目：会话级的事实（票、会话文件、状态
+            # 目录、主机地址）全在路由文件里，由每次调用带的会话身份去取 —— 与本地 `agent connect`
+            # 的形状一致，所以同一台机器上第二个远端会话不会把第一个覆盖掉。
+            # OpenCode 没有路由，靠"每条会话一份配置"（它自己那份 entry 里带着票与会话文件）；
+            # 它的项目号得**显式声明**，因为这台机器上没有项目的 `.tsunagou/project.json`。
+            if data["adapter"] in {"codex", "deepseek"}:
+                bridge_config = write_shared_bridge_config(
+                    adapter=data["adapter"], installation_id=data["installation_id"],
+                    output_dir=destination, routing_dir=extra_env.get("TSUNAGOU_ROUTING_DIR", ""),
+                )
+            else:
+                bridge_config = write_bridge_config(
+                    adapter=data["adapter"], mode="attach", installation_id=data["installation_id"],
+                    output_dir=destination, ticket_path=ticket_path, daemon_url=url,
+                    # 让桥只认主机这个地址：如果指到代码副本里的 .tsunagou/local，
+                    # 副本里万一有一份旧的 endpoint.json，桥就会去连本机那个 daemon。
+                    daemon_state_dir=str(destination), project_root=workspace,
+                    extra_env={"TSUNAGOU_PROJECT_ID": data["project_id"]},
+                )
             registration = _remote_registration(
                 data["adapter"], profile=data["profile"], workspace=workspace,
                 config=read_bridge_config(bridge_config),
@@ -1647,11 +1693,22 @@ if typer is not None:
             "status": "imported", "project_id": data["project_id"], "adapter": data["adapter"],
             "role": data["role"], "conversation_id": data["conversation_id"],
             "url": url, "machine": _machine_name(machine),
+            **({"copy_path": copy_path} if copy_path else {}),
+            **({"copy_baseline": copy_baseline} if copy_baseline else {}),
             "workspace": str(workspace), "state_dir": str(destination),
             "host_registration": {"status": registration.status, "label": registration.label,
                                  **({"note": registration.note} if registration.note else {})},
             "next": "重启或重载这个宿主窗口，然后在里面说一句：接入 Tsunagou",
         }, ensure_ascii=False, sort_keys=True))
+
+    def _invite_ttl(declared: int) -> int:
+        """邀请能活多久：至少一分钟，最多一小时。
+
+        上限不是技术限制，是那条红线：邀请是一次性的、短时效的机密。一张活一整天的邀请，
+        等于把"票绑身份 + 用完即废"这套保护交回去。下限只是别让人发一张当场就过期的。
+        """
+
+        return max(60, min(int(declared), 3600))
 
     def _machine_name(declared: str) -> str:
         """这台机器叫什么：人给的，或它自己的名字。不猜 IP —— 走隧道时 IP 只会骗人。"""
@@ -1665,6 +1722,27 @@ if typer is not None:
             except OSError:  # pragma: no cover - 拿不到主机名时如实说"未命名"
                 text = ""
         return text[:64] or "未命名"
+
+    def _reported_copy(declared: str) -> str:
+        """这台机器上的代码副本在哪（`--copy`）：**必须真的在这台机器上存在**。
+
+        这是"远端能不能干文件活"的唯一凭据，报一个不存在的路径只会让主机把工作区指向一个
+        没有东西的地方 —— 所以这里先在本机确认它是目录，确认不了就拒绝。
+        """
+
+        text = str(declared or "").strip()
+        if not text:
+            return ""
+        path = Path(text).expanduser()
+        if not path.is_dir():
+            raise RuntimeError("copy_path_not_found:--copy 要给这台机器上真实存在的目录")
+        return str(path.resolve())
+
+    def _bounded_baseline(declared: str) -> str:
+        """这条副本对应哪条基线（分支或提交号）：只作显示与记账，去不了换行之类的东西。"""
+
+        text = "".join(ch for ch in str(declared or "") if ch.isprintable() and ch not in "\r\n\t").strip()
+        return text[:128]
 
     def _remote_registration(
         adapter: str, *, profile: str, workspace: Path, config: dict[str, Any],

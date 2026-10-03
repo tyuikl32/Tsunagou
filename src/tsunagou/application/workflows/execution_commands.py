@@ -19,6 +19,20 @@ from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 
 
+def _same_place(left: str, right: str) -> bool:
+    """Do two machine-local paths name the same place?
+
+    Only used to compare what a machine reported about itself with what a workspace was
+    pointed at. Separators, trailing slashes and letter case vary between machines and
+    platforms, and none of that changes which directory is meant.
+    """
+
+    def normalise(value: str) -> str:
+        return str(value or "").strip().replace("\\", "/").rstrip("/").casefold()
+
+    return bool(normalise(left)) and normalise(left) == normalise(right)
+
+
 class ExecutionCommands:
     def __init__(
         self, *, authority: AuthorityService, tasks: TaskService, cognition: CognitionService,
@@ -97,6 +111,8 @@ class ExecutionCommands:
         self.coordination.require_assigned_worker(task.task_id, context["principal_id"])
         self._require_contract_alignment(task.task_id)
         self._require_declared_contract_versions(task.task_id, payload)
+        # 契约那两道先问：契约没谈拢的任务本来就不能开工，用哪台机器来开工都轮不到。
+        self._require_supported_workspace(task, context)
         if self.lifecycle is not None:
             pending = next((item for item in self.lifecycle.decisions.values()
                             if item.subject_ref == task.task_id and item.status == "pending"), None)
@@ -104,9 +120,58 @@ class ExecutionCommands:
                 raise ValueError("user_decision_pending:" + pending.decision_id)
         return task
 
+    def _require_supported_workspace(self, task: Task, context: dict[str, Any]) -> None:
+        """Who may hold a workspace for this task: a local Agent by default, a remote one only
+        when it has declared a code copy and the workspace was pointed at that copy.
+
+        "Touches files" is already defined by the task itself: its resource requests contain a
+        ``path`` row, which is what makes ``prepare_begin`` demand a workspace. A workspace is
+        normally a fact about **this machine's** filesystem — the root binding holds an absolute
+        path and a physical identity, the baseline is scanned from those files, and the evidence
+        records that scan.
+
+        A remote machine's copy cannot be read from here. So it is allowed on exactly one shape:
+        the machine **declared** its copy when it joined (``agent import --copy``, carried as
+        ``descriptor_ref``), and the workspace decision is ``external`` pointing at that same
+        location. Then the host records the location and never reads it, the workspace carries no
+        baseline, and the result is no manifest — "the machine reported it", not "we watched it"
+        (see D192). Anything else is refused, because the failure it would produce is worse than
+        a refusal: a task that looks in scope while the worker edits a same-named path elsewhere.
+        """
+
+        if not any(item.key.kind == "path" for item in self.requests(task)):
+            return
+        agent = self.authority.agents.get(context["principal_id"])
+        machine = str(getattr(agent, "machine", "") or "")
+        if not machine:
+            return                       # 本机 Agent：仓库根就在这台机器上，照旧
+        copy_path = str(getattr(agent, "copy_path", "") or "")
+        if not copy_path:
+            raise ValueError("remote_worker_needs_a_code_copy")
+        decision = max((item for item in self.workspaces.decisions.values() if item.task_id == task.task_id),
+                       key=lambda item: item.revision, default=None)
+        if decision is None:
+            return                       # 还没选工作区：让 prepare_begin 照旧说"先定工作区"
+        if decision.driver_kind != "external":
+            raise ValueError("remote_worker_requires_external_workspace")
+        if not _same_place(decision.external_locator or "", copy_path):
+            raise ValueError("remote_workspace_locator_mismatch")
+
+    def _remote_holder(self, task: Task, context: dict[str, Any]) -> bool:
+        """Is this task's workspace held by another machine (external + a remote claimer)?"""
+
+        agent = self.authority.agents.get(context["principal_id"])
+        if not str(getattr(agent, "machine", "") or "") or not str(getattr(agent, "copy_path", "") or ""):
+            return False
+        decision = max((item for item in self.workspaces.decisions.values() if item.task_id == task.task_id),
+                       key=lambda item: item.revision, default=None)
+        return decision is not None and decision.driver_kind == "external"
+
     @staticmethod
     def requests(task: Task) -> list[ResourceRequest]:
-        scope = task.execution_scope
+        # 只有个壳的任务（调用方给的对象可能只带 task_id）就是"没有范围"：它当然也没有资源请求，
+        # 不该在这里炸成一个属性错误。
+        scope = getattr(task, "execution_scope", None)
         if not scope:
             return []
         if set(scope) == {"roots"}:
@@ -164,13 +229,16 @@ class ExecutionCommands:
             prepared["workspace"] = workspace
             return prepared
         scope_paths = self.evidence.virtual_paths(roots)
+        remote = self._remote_holder(task, context)
         workspace = Workspace(
             new_id(), "pending", decision.decision_id, decision.driver_kind,
             tuple(root["root_id"] for root in roots), decision.repository_id, decision.external_locator,
             scope_paths=tuple(scope_paths) if scope_paths is not None else None,
             scope_digest=canonical_digest(roots), scope_roots=tuple(roots),
         )
-        prepared.update(workspace=workspace, observed=self.evidence.scan(workspace, task))
+        # 远端自己那份副本：主机**不扫**它（也扫不到）。没有基线、没有清单，只有"那台机器说它
+        # 改了什么" —— 这是 D192 那一档证据的全部含义，不能拿主机这边扫出来的东西冒充它。
+        prepared.update(workspace=workspace, observed=None if remote else self.evidence.scan(workspace, task))
         return prepared
 
     def begin(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -181,14 +249,18 @@ class ExecutionCommands:
         if workspace is not None:
             self.resources.set_root_aliases({**self.resources.root_aliases,
                                             **{root["root_id"]: root["physical_identity"] for root in workspace.scope_roots}})
+            workspace = replace(workspace, attempt_id=attempt.attempt_id)
+            self.workspaces.workspaces[workspace.workspace_id] = workspace
             if prepared["observed"] is not None:
-                workspace = replace(workspace, attempt_id=attempt.attempt_id)
-                self.workspaces.workspaces[workspace.workspace_id] = workspace
                 observed = prepared["observed"]
                 self.workspaces.record_baseline(workspace.workspace_id, **{key: observed[key] for key in (
                     "head_commit", "branch", "index_digest", "tracked_state_digest", "untracked_summary",
                     "root_identities", "dirty", "root_observations",
                 )})
+            else:
+                # 远端自己那份副本：主机没看过，所以**没有基线**。工作区照样登记（谁在哪儿动过
+                # 哪块逻辑路径要看得见），状态如实写成"远端自报"，交活时也就不会有清单。
+                workspace.status = "remote_reported"
         reservation = self.resources.reserve_set(task_id=task.task_id, attempt_id=attempt.attempt_id,
                                                 owner_agent_id=context["principal_id"], execution_epoch=attempt.execution_epoch,
                                                 scope_digest=prepared["scope_digest"], requests=prepared["requests"])
@@ -214,19 +286,22 @@ class ExecutionCommands:
         if workspace is not None:
             if self.evidence is None:
                 raise ValueError("workspace_project_required")
-            prepared["observed"] = self.evidence.scan(workspace, self.tasks.tasks[task_id], include_patch=True)
-            patch = prepared["observed"].pop("patch_bytes", b"")
-            if patch:
-                if self.artifacts is None or self.state_runtime is None:
-                    raise ValueError("artifact_service_required")
-                # Materialize immutable bytes before SQLite BEGIN. This temporary
-                # service owns no live reference; the UoW adopts it only on success.
-                staging = ArtifactService(self.artifacts.storage_dir)
-                ref = staging.record_workspace_patch(patch, workspace_id=workspace.workspace_id,
-                                                     actor=context["principal_id"], project_id=self.project_id,
-                                                     lineage_id=self.state_runtime.lineage_id,
-                                                     scope_digest=workspace.scope_digest or "")
-                prepared.update(artifact_ref=ref, artifact_blob=staging.blobs[ref.digest])
+            # 远端自己那份副本没有基线：主机没观察过它，也就没有"改动前后"可比 —— 不扫盘、
+            # 不编清单。交活时带上的是那台机器自己的交代（见 D192）。
+            if workspace.baseline_manifest_id:
+                prepared["observed"] = self.evidence.scan(workspace, self.tasks.tasks[task_id], include_patch=True)
+                patch = prepared["observed"].pop("patch_bytes", b"")
+                if patch:
+                    if self.artifacts is None or self.state_runtime is None:
+                        raise ValueError("artifact_service_required")
+                    # Materialize immutable bytes before SQLite BEGIN. This temporary
+                    # service owns no live reference; the UoW adopts it only on success.
+                    staging = ArtifactService(self.artifacts.storage_dir)
+                    ref = staging.record_workspace_patch(patch, workspace_id=workspace.workspace_id,
+                                                         actor=context["principal_id"], project_id=self.project_id,
+                                                         lineage_id=self.state_runtime.lineage_id,
+                                                         scope_digest=workspace.scope_digest or "")
+                    prepared.update(artifact_ref=ref, artifact_blob=staging.blobs[ref.digest])
         return prepared
 
     def submit(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -242,7 +317,10 @@ class ExecutionCommands:
         prepared = context["_prepared"]
         workspace, observed = prepared["workspace"], prepared["observed"]
         result_ref = None
-        if workspace is not None:
+        # 只有"主机亲自看过"的那一条才写工作区清单：清单里的基线、改动与冲突判定，都是本地观察
+        # 的产物。远端自己那份副本没有基线（见 D192），于是**没有清单** —— 那正是它诚实的样子：
+        # 结果里留下的是那台机器自己的交代，而不是一份看起来像观察的记录。
+        if workspace is not None and observed is not None:
             baseline = self.workspaces.baselines[workspace.baseline_manifest_id]
             ref = prepared["artifact_ref"]
             if ref is not None and self.artifacts is not None:
@@ -258,6 +336,10 @@ class ExecutionCommands:
                 evidence_level="system_verified", validation_metadata=payload.get("validation_metadata"),
             )
             result_ref = manifest.manifest_id
+        elif workspace is not None:
+            # 远端自己那份副本：没有清单可写，但状态要往前走一步 —— 停在"远端自报"会让人以为
+            # 这活还在做。它交的是什么，就在那台机器自己的交代里（见 D192）。
+            workspace.status = "remote_result_reported"
         work = {key: value for key, value in payload.items() if key not in {"task_id", "attempt_id"}}
         work["workspace_result_ref"] = result_ref
         result = self.workflow.submit(task_id, context["principal_id"], work, attempt_id=attempt_id)

@@ -199,7 +199,7 @@ async function runOnboarding(config, args, exec) {
  */
 async function runRemote(config, args, exec) {
   if (args === undefined) args = {};
-  const allowed = ["action", "invite", "machine"];
+  const allowed = ["action", "invite", "machine", "copy", "baseline"];
   if (!args || typeof args !== "object" || Array.isArray(args)
       || Object.keys(args).some((key) => !allowed.includes(key))
       || !["whoami", "import"].includes(args.action)) {
@@ -207,6 +207,10 @@ async function runRemote(config, args, exec) {
   }
   const invite = typeof args.invite === "string" ? args.invite.trim() : "";
   const machine = typeof args.machine === "string" ? args.machine.trim() : "";
+  // Where this machine keeps its code copy. Declaring it is what lets this machine take work
+  // that touches files: the host records the location and points an external workspace at it.
+  const copy = typeof args.copy === "string" ? args.copy.trim() : "";
+  const baseline = typeof args.baseline === "string" ? args.baseline.trim() : "";
   if (args.action === "import" && (!invite || invite.length > MAX_INVITE_LENGTH || invite.includes("\0"))) {
     return { status: "error", error: "tsunagou_remote_invite_required", next: "Pass the invitation text the host sent, exactly as it was sent." };
   }
@@ -217,6 +221,8 @@ async function runRemote(config, args, exec) {
   else {
     cliArgs.push("import", invite, "--workdir", context.cwd);
     if (machine) cliArgs.push("--machine", machine);
+    if (copy) cliArgs.push("--copy", copy);
+    if (baseline) cliArgs.push("--baseline", baseline);
   }
 
   const outcome = await runCli(context, cliArgs);
@@ -270,6 +276,8 @@ function registerConnect(ctx, config) {
         action: { type: "string", enum: ["whoami", "import"] },
         invite: { type: "string", description: "For action=import: the invitation text the host sent, exactly as sent." },
         machine: { type: "string", description: "Optional name for this machine; defaults to the machine's own name." },
+        copy: { type: "string", description: "For action=import: where this machine keeps its code copy. Declaring it lets this machine take work that touches files (the host records the location and never reads it); without it, only work that needs no files." },
+        baseline: { type: "string", description: "For action=import: which revision that copy is on (branch or commit), recorded beside it." },
       },
       required: ["action"],
       additionalProperties: false,

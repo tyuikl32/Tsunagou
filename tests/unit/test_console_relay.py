@@ -45,6 +45,8 @@ class _StubDaemon:
 
     def __init__(self) -> None:
         self.requests: list[_Received] = []
+        #: When set, every answer uses this status ("it was fine a minute ago, now it refuses").
+        self.refuse_with: int | None = None
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -58,7 +60,10 @@ class _StubDaemon:
         return self.requests[-1]
 
     def close(self) -> None:
-        self.server.shutdown()
+        try:
+            self.server.shutdown()
+        except OSError:  # already closed by a test that wanted the daemon "gone"
+            pass
         self.server.server_close()
 
     def _handler(self) -> type[BaseHTTPRequestHandler]:
@@ -83,7 +88,11 @@ class _StubDaemon:
         body = handler.rfile.read(length) if length else b""
         self.requests.append(_Received(handler.command, handler.path, dict(handler.headers), body))
         path = urllib.parse.urlparse(handler.path).path
-        if path.endswith("/boom"):
+        if self.refuse_with is not None and not path.endswith("/health"):
+            # "同一个出口，先答得好好的，后来开始拒绝" —— 用来证明活的拒绝不会被旧记录顶掉。
+            # 健康检查不参与：那是"daemon 还在不在"的问题，另一条规矩管（见 ensure_daemon）。
+            status, payload = self.refuse_with, {"detail": {"code": "refused_now"}}
+        elif path.endswith("/boom"):
             status, payload = 400, {"detail": {"code": "boom"}}
         elif path.endswith("/cognition"):
             status, payload = 403, {"detail": {"code": "forbidden"}}
@@ -322,3 +331,149 @@ def test_the_console_reports_its_own_config_and_stores_the_profile(tmp_path: Pat
     merged = _endpoint(app, "/api/v1/console/profile", "PUT")({"theme": "light"})
     assert merged["theme"] == "light"
     assert merged["agents"]["a-1"]["nickname"] == "熊猫"
+
+
+# ---- 上一次记录：daemon 不在了，屏幕上还剩什么 -------------------------------
+#
+# 这一组盯的是两条纪律：**能顶上来**（项目结束了还看得到内容）与**顶得诚实**
+# （只顶"连不上"这一种情况；daemon 自己给的拒绝一字不改地送回去，不拿旧记录盖掉）。
+
+
+def test_a_relayed_read_is_kept_and_served_once_the_daemon_is_gone(
+    tmp_path: Path, stub: _StubDaemon,
+) -> None:
+    _, project_id = _project(tmp_path, stub)
+    app = create_console_app(_config(tmp_path))
+    relay = _endpoint(app, "/api/v1/projects/{project_id}/{rest:path}")
+
+    live = asyncio.run(relay(project_id, "checkpoints", _request("GET")))
+    assert live.status_code == 200
+
+    stub.close()  # 项目结束：daemon 不在了
+    after = asyncio.run(relay(project_id, "checkpoints", _request("GET")))
+
+    assert after.status_code == 200
+    payload = json.loads(after.body)
+    assert payload["items"] == []
+    assert payload["_history"]["captured_at"], "回答里必须写清这是什么时候记的"
+    assert after.headers["x-tsunagou-history"] == payload["_history"]["captured_at"]
+
+
+def test_a_live_refusal_is_never_papered_over_by_a_record(tmp_path: Path, stub: _StubDaemon) -> None:
+    """同一个出口先答得好好的、后来开始拒绝：页面必须看到**现在**的拒绝。"""
+
+    _, project_id = _project(tmp_path, stub)
+    app = create_console_app(_config(tmp_path))
+    relay = _endpoint(app, "/api/v1/projects/{project_id}/{rest:path}")
+
+    asyncio.run(relay(project_id, "tasks", _request("GET")))  # 记下一份好的
+    stub.refuse_with = 403
+    refused = asyncio.run(relay(project_id, "tasks", _request("GET")))
+
+    assert refused.status_code == 403
+    assert json.loads(refused.body) == {"detail": {"code": "refused_now"}}
+    assert json.loads(refused.body).get("_history") is None
+
+
+def test_an_exit_never_recorded_still_says_the_daemon_is_not_running(
+    tmp_path: Path, stub: _StubDaemon,
+) -> None:
+    _, project_id = _project(tmp_path, stub)
+    app = create_console_app(_config(tmp_path))
+    relay = _endpoint(app, "/api/v1/projects/{project_id}/{rest:path}")
+    stub.close()
+
+    with pytest.raises(ConsoleError) as refusal:
+        asyncio.run(relay(project_id, "tasks", _request("GET")))
+
+    assert refusal.value.code in {"daemon_not_running", "daemon_unreachable"}
+    assert refusal.value.status == 503
+
+
+def test_a_write_is_never_answered_from_a_record(tmp_path: Path, stub: _StubDaemon) -> None:
+    """写动作永远要真的 daemon：记录只服务"看"。"""
+
+    _, project_id = _project(tmp_path, stub)
+    app = create_console_app(_config(tmp_path))
+    relay = _endpoint(app, "/api/v1/projects/{project_id}/{rest:path}")
+
+    asyncio.run(relay(project_id, "tasks", _request("GET")))  # 这一条读过，所以有记录
+    stub.close()
+
+    with pytest.raises(ConsoleError) as refusal:
+        asyncio.run(relay(project_id, "tasks", _request("POST", body=b"{}")))
+
+    assert refusal.value.status == 503
+
+
+def test_a_view_fills_its_panels_from_the_record_and_names_the_moment(
+    tmp_path: Path, stub: _StubDaemon,
+) -> None:
+    _, project_id = _project(tmp_path, stub)
+    app = create_console_app(_config(tmp_path))
+    view = _endpoint(app, "/api/v1/console/views/{view}")
+
+    asyncio.run(view("audit", _request("GET", headers={"Tsunagou-Project": project_id})))
+    stub.close()
+    after = asyncio.run(view("audit", _request("GET", headers={"Tsunagou-Project": project_id})))
+
+    assert sorted(after["sources"]) == ["agents", "intents", "resources"]
+    assert after["missing"] == {}, "有记录就不算读不到"
+    assert sorted(after["history"]) == ["agents", "intents", "resources"]
+    assert all(after["history"][name] for name in after["history"])
+
+
+def test_a_view_that_was_never_recorded_still_refuses(tmp_path: Path, stub: _StubDaemon) -> None:
+    _, project_id = _project(tmp_path, stub)
+    app = create_console_app(_config(tmp_path))
+    view = _endpoint(app, "/api/v1/console/views/{view}")
+    stub.close()
+
+    with pytest.raises(ConsoleError) as refusal:
+        asyncio.run(view("audit", _request("GET", headers={"Tsunagou-Project": project_id})))
+
+    assert refusal.value.status == 503, "没记录过就照旧说未启动 —— 不假装有内容"
+
+
+def test_the_project_list_says_when_a_stopped_project_was_last_seen(
+    tmp_path: Path, stub: _StubDaemon,
+) -> None:
+    """左栏卡片要能说出"上次记录"：daemon 停了，记录还在。"""
+
+    _, project_id = _project(tmp_path, stub)
+    app = create_console_app(_config(tmp_path))
+    listing = _endpoint(app, "/api/v1/projects")
+
+    first = listing()  # 默认探活：daemon 答得上话，这一份才值得记
+    row = [item for item in first["items"] if item["project_id"] == project_id][0]
+    assert row["history"]["captured_at"], "daemon 活着时列一次项目就记一份"
+    assert row["lifecycle"] == "active", "页面靠这个字段判断「只能在做项目时用」的入口"
+
+    stub.close()  # 项目结束：daemon 不在了
+    second = listing()
+    again = [item for item in second["items"] if item["project_id"] == project_id][0]
+    assert again["daemon"]["running"] is False
+    assert again["history"]["captured_at"] == row["history"]["captured_at"], \
+        "记录只能由 daemon 活着时刷新 —— 看列表本身不算"
+
+
+def test_forgetting_a_project_deletes_its_record(tmp_path: Path) -> None:
+    """删除项目 = 连记录一起删（使用者明确要求的语义）。
+
+    这里**不**挂 daemon 桩：``forget`` 会按 endpoint 里的 pid 去杀进程（test 里那个 pid
+    就是 pytest 自己），而不在跑的项目本来就走"没在跑"那一条。
+    """
+
+    from tsunagou.console.history import HistoryStore
+    from tsunagou.console.projects import forget
+
+    _, project_id = _project(tmp_path)
+    config = _config(tmp_path)
+    store = HistoryStore.beside_index(config.index_path)
+    store.record(project_id, "console.project", {"project_id": project_id},
+                 captured_at="2026-10-03T13:00:00+08:00")
+
+    report = forget(config, project_id, delete_files=False)
+
+    assert report["history_removed"] is True
+    assert store.payload(project_id, "console.project") is None

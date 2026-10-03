@@ -143,8 +143,11 @@ def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
             "conversation_digest": str(item.get("conversation_digest") or ""),
             # 跨机器接入的 Agent 会自报一个机器名（`agent import --machine`，经由那张票
             # 入席时带来）。有它就是远端 —— 本机接入的 Agent 从来没有这一项，页面因此
-            # 只给远端那一个画标记。
+            # 只给远端那一个画标记。同一条通道还带它那份代码副本的位置与基线（D192）：
+            # 主机不读那个路径，只记账；远端据此才能接需要文件的任务。
             **({"machine": str(item["machine"])} if str(item.get("machine") or "") else {}),
+            **({"copy_path": str(item["copy_path"])} if str(item.get("copy_path") or "") else {}),
+            **({"copy_baseline": str(item["copy_baseline"])} if str(item.get("copy_baseline") or "") else {}),
         }
         for item in items
         if isinstance(item, dict) and item.get("agent_id")
@@ -374,6 +377,8 @@ def gather(entries: list[Any], directory: AgentDirectory) -> dict[str, Any]:
                 "task": working.get(agent["agent_id"], ""),
                 # 跨机器接入的 Agent 自报的那个机器名（本机接入没有这一项）。
                 **({"machine": agent["machine"]} if agent.get("machine") else {}),
+                **({"copy_path": agent["copy_path"]} if agent.get("copy_path") else {}),
+                **({"copy_baseline": agent["copy_baseline"]} if agent.get("copy_baseline") else {}),
             })
     return {
         "items": items,

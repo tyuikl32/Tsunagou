@@ -344,6 +344,14 @@
                     <div class="dspText">这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目</div>
                     <div class="title2">任务名称</div>
                     <div class="dspText">这是一个任务</div>
+                    <!-- 下面两行只有跨机器接入的 Agent 才显示（本机接入的 Agent 界面完全不变）：
+                         它在哪台机器、这台机器有什么做不到的事。显隐由 render.agentInfoWindow 定。-->
+                    <div class="title2" id="agentInfoMachineTitle" style="display: none;">在哪台机器</div>
+                    <div class="dspText" id="agentInfoMachine" style="display: none;">工位-七</div>
+                    <div class="title2" id="agentInfoCopyTitle" style="display: none;">代码副本</div>
+                    <div class="dspText" id="agentInfoCopy" style="display: none;">D:\work\副本（main）</div>
+                    <div class="title2" id="agentInfoLimitsTitle" style="display: none;">这台机器的限制</div>
+                    <div class="dspText" id="agentInfoLimits" style="display: none;">叫不醒它：消息等它自己来取；不接需要文件的任务</div>
                 </div>
             </div>
             <div class="options">

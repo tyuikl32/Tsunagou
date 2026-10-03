@@ -265,6 +265,33 @@ def write_bridge_config(
     return bridge_config_path
 
 
+def write_shared_bridge_config(
+    *, adapter: str, installation_id: str, output_dir: Path, routing_dir: str,
+) -> Path:
+    """Write the launch description for a host that finds *itself* through a route directory.
+
+    Codex and DeepSeek Harness deliver one conversation identity per call, so a single registered
+    entry serves every conversation on that machine and each call picks its own private route.
+    Per-conversation material (a ticket path, a session file) does not belong in that entry: the
+    second conversation would overwrite the first. The route carries those facts instead.
+
+    This is the shape the local ``agent connect`` path registers, which is why a remote machine's
+    entry needs no special handling.
+    """
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    bridge_config_path = output_dir / bridge_file_name(adapter, installation_id)
+    bridge_config_path.write_text(json.dumps({
+        "adapter": adapter,
+        "mode": "attach",
+        "command": "node",
+        "args": [str(bridge_entry_path())],
+        "env": {"TSUNAGOU_ROUTING_DIR": str(routing_dir)},
+        "secret_fields": [],
+    }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    return bridge_config_path
+
+
 def read_bridge_config(path: Path) -> dict[str, Any]:
     """Read back a launch description; a damaged file is the caller's error to raise."""
 

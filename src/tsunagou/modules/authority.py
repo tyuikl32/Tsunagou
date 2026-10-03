@@ -96,6 +96,10 @@ class Agent:
     # ``descriptor_ref`` on ``agent.enroll``). Display only: it is *reported*, not
     # proven, so nothing decides access by it — the console shows it as "远端 · <名字>".
     machine: str = ""
+    # 那台机器上代码副本的位置与基线（同一条自报通道）。它让"远端干文件活"成立：主机**不读**这个
+    # 路径（也读不到），只记账 —— 工作区于是能以"外部准备"的形态指向它，证据等级记为自报（D192）。
+    copy_path: str = ""
+    copy_baseline: str = ""
 
 
 @dataclass(slots=True)
@@ -238,6 +242,8 @@ class AuthorityService:
         baseline: dict[str, Any] | None = None,
         nonce: str | None = None,
         machine: str = "",
+        copy_path: str = "",
+        copy_baseline: str = "",
     ) -> EnrollmentReceipt:
         del nonce  # the ticket itself is single-use; nonce is an adapter correlation field
         with self._lock:
@@ -262,6 +268,8 @@ class AuthorityService:
             )
             agent.requested_role = ticket.requested_role
             agent.machine = machine
+            agent.copy_path = copy_path
+            agent.copy_baseline = copy_baseline
             session_id = new_id()
             token = secrets.token_urlsafe(32)
             reconnect_nonce = secrets.token_urlsafe(24)

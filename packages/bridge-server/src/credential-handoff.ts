@@ -165,14 +165,23 @@ interface HandoffOptions {
   fetch?: typeof fetch;
   projectId?: string;
   /**
-   * The name this machine gave itself when it was imported from an invitation
-   * (``agent import --machine``, kept in the private ``host-identity.json``). Sent as
-   * ``descriptor_ref`` on enrolment so the host's roster can say *which* remote it is.
-   * It is a report, never a proof: nothing decides access by it.
+   * What this machine said about itself when the invitation was imported here (the private
+   * ``host-identity.json``: a machine name, and — when it declared one — its code copy).
+   * Sent as ``descriptor_ref`` on enrolment so the host can say *which* remote a worker sits on,
+   * and, for a declared copy, point an ``external`` workspace at it without reading it. Both are
+   * reports, never proofs: nothing decides access by them.
    */
-  machine?: string;
+  selfReport?: { machine?: string; copyPath?: string; copyBaseline?: string };
   /** File writer injection is only for failure-window tests. */
   writePrivate?: typeof writePrivateJson;
+}
+
+/** The self-report as it travels: a bare name when that is all there is, an object otherwise. */
+function descriptorRef(report: HandoffOptions["selfReport"]): unknown {
+  if (!report) return undefined;
+  const { machine, copyPath, copyBaseline } = report;
+  if (!copyPath) return machine || undefined;
+  return { ...(machine ? { machine } : {}), copy: { path: copyPath, ...(copyBaseline ? { baseline: copyBaseline } : {}) } };
 }
 
 interface RecoveryInput {
@@ -337,8 +346,8 @@ export class CredentialHandoff {
         probe_payload: input.baseline ?? {},
         // Only on a first enrolment: the other two kinds have their own payload
         // contract, and an extra key there is a typed-tool violation.
-        ...(kind === "agent.enroll" && this.options.machine
-          ? { descriptor_ref: this.options.machine } : {}),
+        ...(kind === "agent.enroll" && descriptorRef(this.options.selfReport)
+          ? { descriptor_ref: descriptorRef(this.options.selfReport) } : {}),
         ...(kind === "session.rebind" ? { target_agent_id: session!.agent_id } : {}),
       };
       pending = {

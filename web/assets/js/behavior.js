@@ -2986,9 +2986,10 @@
 
     render.agents = function (agents) {
         const list = toArray(agents);
-        /* 末尾那个大加号是"添加子 Agent"的入口；一个 Agent 都没有时先放个空状态（加号留着） */
+        /* 末尾那个大加号是"添加子 Agent"的入口；一个 Agent 都没有时先放个空状态（加号留着）。
+           项目确认完成之后不再画它：往一个已经收尾的协作里再接入 Agent 没有意义。*/
         const cards = list.length ? list.map(agentCardHtml) : [EMPTY_CARD];
-        cards.push({ cls: 'itemAdd', parts: [] });
+        if (!projectFinished()) cards.push({ cls: 'itemAdd', parts: [] });
         const html = pageTitleHtml('Agent 管理') +
             '<p class="title2">管理现有的 Agent</p>' +
             boxerHtml(cards);
@@ -3285,6 +3286,11 @@
         const failures = toArray((state.get('checkpointFailures', {}) || {}).items);
         const html =
             pageTitleHtml('验收与存档点') +
+            /* 这一屏是从记录里拿的（daemon 不在了）就先说清楚：验收结果最容易让人
+               以为"刚看过"，而记录可能已经是几天前的。*/
+            (data.recordDetail ? boxerHtml([{
+                cls: 'item', parts: [headerHtml('上次记录'), textZHtml(data.recordDetail)]
+            }]) : '') +
             '<p class="title2">项目完成提案</p>' +
             /* 提案与它的答复是一件事的两半：正文是"还差什么"，按钮是「确认完成」。
                没有待决定的提案时整段空 —— 没有对象可确认（后端也要 proposal_id）。*/
@@ -3311,15 +3317,18 @@
                 })
             }) +
             '<p class="title2">最新存档点</p>' +
-            boxerHtml(toArray(store.latest).map(checkpointCardHtml).concat([{
-                /* 主动存档也是一张卡：不摆标题与说明的话，那张卡里只剩一个悬空按钮。*/
-                cls: 'item',
-                parts: [
-                    headerHtml('立即存档'),
-                    textZHtml('立即将当前状态存档，而不必等待自动存档。'),
-                    optionHtml([{ text: '立即存档', kind: 'active', action: 'checkpoint.create' }])
-                ]
-            }])) +
+            boxerHtml(toArray(store.latest).map(checkpointCardHtml).concat(
+                /* 主动存档也是一张卡：不摆标题与说明的话，那张卡里只剩一个悬空按钮。
+                   项目确认完成之后**不再画这张卡** —— 完工本来就会落一个存档点，
+                   再"立即存档"属于只该在做项目时用的动作。*/
+                projectFinished() ? [] : [{
+                    cls: 'item',
+                    parts: [
+                        headerHtml('立即存档'),
+                        textZHtml('立即将当前状态存档，而不必等待自动存档。'),
+                        optionHtml([{ text: '立即存档', kind: 'active', action: 'checkpoint.create' }])
+                    ]
+                }])) +
             '<p class="title2">历史存档点</p>' +
             boxerHtml(toArray(store.history).map(checkpointCardHtml)) +
             '<p class="title2">存档失败</p>' +
@@ -4060,13 +4069,44 @@
         node.setAttribute('data-nickname', nickname);
         /* 这个窗口的版式是「标签 + 值」自上而下排（.title2 / .textbox2 / .dspText），
            没有 .item、也没有 .fword，所以按位置回填而不是按标签文字：
-           唯一那个输入框是昵称，两个 .dspText 依次是项目名称、任务名称。*/
+           唯一那个输入框是昵称，四个 .dspText 依次是项目、任务、在哪台机器、这台机器的限制。*/
         form.fill(node, [nickname]);
         const shown = qsa('.dspText', node);
         if (shown[0]) shown[0].textContent = toText(data.project);
         if (shown[1]) shown[1].textContent = toText(data.task);
+        /* 跨机器才有「在哪台机器 / 这台机器的限制」这两行：
+           有自报的机器名就是远端（本机接入从来不写它）。本机接入的 Agent 连标题都不出现，
+           与加这个功能之前一模一样。 */
+        const info = agentNetworkOf(data);
+        const record = isPlainObject(data) ? data : {};
+        const machine = toText(record.machine || info.machine);
+        const copyPath = toText(record.copy_path);
+        const remote = Boolean(machine) || info.network === true;
+        [
+            { title: byId('agentInfoMachineTitle'), value: byId('agentInfoMachine'), text: machine },
+            { title: byId('agentInfoCopyTitle'), value: byId('agentInfoCopy'),
+              text: copyPath ? (copyPath + (toText(record.copy_baseline) ? '（' + toText(record.copy_baseline) + '）' : '')) : '' },
+            { title: byId('agentInfoLimitsTitle'), value: byId('agentInfoLimits'),
+              text: remote ? remoteLimitsText(copyPath) : '' }
+        ].forEach(function (row) {
+            const visible = Boolean(remote && toText(row.text));
+            [row.title, row.value].forEach(function (target) {
+                if (target) target.style.display = visible ? '' : 'none';
+            });
+            if (visible && row.value) row.value.textContent = toText(row.text);
+        });
         return node;
     };
+
+    /* 远端那台机器做不到/做得到什么，各一句人话。唤醒是本机机制（主机叫不醒别的机器上的窗口），
+       永远做不到；文件任务要看它有没有报过自己的代码副本（D192）—— 报了就以"外部准备"的形态
+       让它做，但证据是它**自报**的（主机读不到那份副本，也就不出清单）。*/
+    function remoteLimitsText(copyPath) {
+        if (toText(copyPath)) {
+            return '叫不醒它：消息等它自己来取；文件活能做，但证据是它自报的（主机不读那份副本）';
+        }
+        return '叫不醒它：消息等它自己来取；没报代码副本，只做不需要文件的活（要文件活请在主机上做）';
+    }
 
     /* 设置窗口：把值回填到控件（现在只剩"颜色主题"一项）。
        回填一律走 silent，否则会被 choosebox:change 当成用户操作。*/
@@ -5860,6 +5900,19 @@
         return toText(known.path);
     }
 
+    /* 项目确认完成（或已归档）之后，"只能在做项目时用"的入口就该消失：再接一个 Agent、
+       再存一档、再任命主 Agent —— 都没有意义了。判据只有一处：项目自己那份
+       `.tsunagou/project.json` 里的 lifecycle（中间层随项目列表给过来），
+       所以 daemon 停着也判得出来。删项目、校验存档点、重试存档不受影响：
+       清理与"把没存成的那一档补上"恰恰是完工之后还需要做的事。*/
+    function projectFinished() {
+        const id = toText(state.get('currentProjectId'));
+        if (!id) return false;
+        const known = findById(state.get('projects', []), id) || {};
+        const lifecycle = toText(known.lifecycle);
+        return lifecycle === 'completed' || lifecycle === 'archived';
+    }
+
     /* 进度和下一步由中间层判断：已认领、登记、工具加载与原会话回执是不同阶段。
        尤其不能把“再读一次上下文”描述成所有失败都能修好的保证。*/
     function joiningNote(answer, host) {
@@ -6461,6 +6514,44 @@
         return label + '读取不到（' + (note.code || note.status || '未知原因') + '）';
     }
 
+    /* ---- 上一次记录 -------------------------------------------------------
+       项目结束（daemon 停了）之后，中间层会把它**搬运过的**那些出口拿出来顶上，
+       并在回答里说清那是**记录**：聚合视图放在 `history`（一个出口一个时刻），
+       页面自己直连的那些出口放在 payload 的 `_history` 里。
+
+       两条纪律：只能在"读不到"的时候用它；显示时必须带记录时刻。把记录当成现在看，
+       比留空难查得多 —— 所以这里只负责把时刻取出来，由各处写明「上次记录（记录到 …）」。*/
+    function recordStamp(raw) {
+        if (!isPlainObject(raw)) return '';
+        const relayed = isPlainObject(raw._history) ? toText(raw._history.captured_at) : '';
+        if (relayed) return relayed;
+        const sources = isPlainObject(raw.history) ? raw.history : {};
+        const stamps = Object.keys(sources).map(function (name) { return toText(sources[name]); });
+        return stamps.filter(Boolean).sort().pop() || '';
+    }
+
+    function recordText(stamp) {
+        const at = toText(stamp);
+        if (!at) return '';
+        /* 后端的时刻是带时区的 ISO 串；人读的是"几点"，所以取时分那一段。*/
+        const part = at.replace('T', ' ').slice(0, 16);
+        return '上次记录（记录到 ' + part + '）';
+    }
+
+    function recordNote(raw) {
+        const stamp = recordStamp(raw);
+        if (!stamp) return null;
+        return recordText(stamp) + '：daemon 已经不在，下面是它还在时最近一次看到的内容。';
+    }
+
+    /* 同一件事的另一种说法：卡片已经有「上次记录」这个抬头时用它，免得抬头与正文重复。*/
+    function recordDetail(raw) {
+        const stamp = recordStamp(raw);
+        if (!stamp) return '';
+        return '记录到 ' + toText(stamp).replace('T', ' ').slice(0, 16)
+            + '：daemon 已经不在，下面是它还在时最近一次看到的内容。';
+    }
+
     /* ---- 总路径的阶段 ----------------------------------------------------
 
        协议里没有"阶段"这个字段 —— 它是**展示口径**：把行动按发生先后排好，
@@ -6573,8 +6664,14 @@
                     status: done ? 'finished' : (running ? 'working' : 'preparing'),
                     statusText: done ? (p.lifecycle === 'archived' ? '已归档' : '已完成')
                         : (running ? '进行中' : '未启动'),
-                    /* 卡片右下角那行小字：就说 daemon 起没起。*/
-                    time: running ? 'daemon 运行中' : (daemon ? 'daemon 无响应' : 'daemon 未启动'),
+                    /* 卡片右下角那行小字：daemon 起没起。daemon 不在了但有记录时，补一句
+                       "上次记录"—— 这样人知道点进去还能看到东西，也知道那是旧的那一份。*/
+                    time: (running ? 'daemon 运行中' : (daemon ? 'daemon 无响应' : 'daemon 未启动'))
+                        + (!running && isPlainObject(p.history) && toText(p.history.captured_at)
+                            ? ' · ' + recordText(p.history.captured_at) : ''),
+                    /* 上面那行要"项目是否已完工"和"有没有记录"都判得了，两份原值都留着。*/
+                    lifecycle: toText(p.lifecycle),
+                    history: isPlainObject(p.history) ? p.history : null,
                     /* 分组与状态文字用同一个判据：确认完工（completed）的项目就该和已归档的
                        一起落到「已完成的协作」那一组 —— 否则卡片写着"已完成"却留在上面那一组，
                        而控制台里没有归档入口，它会一直混在"进行中"里。*/
@@ -6612,7 +6709,9 @@
                        也等于"这是远端"（本机接入那条路从来不写它）。*/
                     network: item.network === true || Boolean(toText(item.machine)),
                     online: item.online === true,
-                    machine: toText(item.machine)
+                    machine: toText(item.machine),
+                    copy_path: toText(item.copy_path),
+                    copy_baseline: toText(item.copy_baseline)
                 };
             });
         },
@@ -6746,7 +6845,9 @@
                 missingNote(missing, 'agents', 'Agent'),
                 missingNote(missing, 'tasks', '任务'),
                 missingNote(missing, 'cognition', '认知报告'),
-                missingNote(missing, 'decisions', '待用户决定')
+                missingNote(missing, 'decisions', '待用户决定'),
+                /* daemon 不在了、这一屏是从记录里拿的：写清时刻，别让人当现在看。*/
+                recordNote(raw)
             ].filter(Boolean);
             return {
                 id: header.project_id,
@@ -6858,6 +6959,8 @@
                     network: a.role !== 'main' && (a.network === true || Boolean(a.machine)),
                     online: a.online === true,
                     machine: toText(a.machine),
+                    copy_path: toText(a.copy_path),
+                    copy_baseline: toText(a.copy_baseline),
                     name: nickname || codename,
                     /* 厂商已知就给厂商的 logo，认不出来由 agentIconFor 统一摆 Tsunagou 小标
                        （见"图标"那一节；这里不再自己写第二份规则）。*/
@@ -6875,11 +6978,12 @@
                        没有会话（missing 为 null）就两栏都不画。*/
                     basic: glossTags('capability_admission', a.missing_admission),
                     ops: glossTags('capability_operational', a.missing_operational),
-                    actions: (a.role === 'main' || !main
+                    actions: (a.role === 'main' || !main || projectFinished()
                         ? []
                         : [{ text: '设为主 Agent', action: 'agent.setMain:' + toText(a.agent_id) }]).concat([
                             /* 「修改」改昵称（存用户档案）；「删除」后端没装配，
-                               按钮留着，点了会如实说做不了（见 actions.removeAgent）。*/
+                               按钮留着，点了会如实说做不了（见 actions.removeAgent）。
+                               这两项与"项目是否已完工"无关：改名字、退掉一个 Agent 是清理。*/
                             { text: '修改', action: 'agent.edit:' + toText(a.agent_id) },
                             { text: '删除', action: 'agent.remove:' + toText(a.agent_id) }
                         ])
@@ -7114,7 +7218,11 @@
                         reason: round ? toText(round.reason) : ''
                     };
                 }),
-                lifecycle: header.lifecycle
+                lifecycle: header.lifecycle,
+                /* daemon 不在了、这一屏是从记录里拿的：验收与存档点这一屏最容易让人
+                   以为"刚看过"，所以同样把记录时刻摆出来。*/
+                record: recordNote(raw),
+                recordDetail: recordDetail(raw)
             };
         },
         /* GET P/history（审计分页）→ render.timeline 需要的 [{era, items[]}]。

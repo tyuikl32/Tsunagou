@@ -402,8 +402,8 @@ describe("控制台页面（web/）结构冒烟", () => {
 
   /* 左栏项目卡片上那个主 Agent 胶囊走的是同一条"按 agent_id 从档案现算"的路。
      它以前是照着 agentIconFor 的默认值画的，而那个默认值是 DeepSeek 的鲸鱼图标 ——
-     于是"厂商还不知道"在界面上长得像"这个 Agent 是 DeepSeek 的"。现在未知一律摆
-     Tsunagou 自己的小标，这条用例把两种取值都钉住。*/
+     于是"厂商还不知道"在界面上长得像"这个 Agent 是 DeepSeek 的"。
+     未知一律摆 Tsunagou 自己的小标，这条用例把两种取值都钉住。*/
   it("左栏主 Agent 的图标：厂商已知用厂商 logo，未知摆 Tsunagou 小标", async () => {
     const win = dom.window as unknown as {
       fetch: unknown;
@@ -489,6 +489,125 @@ describe("控制台页面（web/）结构冒烟", () => {
       : node.getAttribute("data-project-id"));
     expect(layout).toEqual(["进行中的协作", "p-1", "已完成的协作", "p-2"]);
     expect(rail.querySelector('.projItem[data-project-id="p-2"] .right p')!.textContent).toBe("已完成");
+  });
+
+  /* ---- 确认完工之后：只能在做项目时用的入口该消失 -------------------------
+     判据只有一处：项目自己那份 project.json 里的 lifecycle（中间层随项目列表给过来，
+     所以 daemon 停着也判得出来）。清理类动作不受影响：改昵称、删除、校验存档点、
+     重试存档 —— 那些恰恰是收尾之后还要做的事。*/
+
+  async function projectWith(lifecycle: string, stamp?: string): Promise<{
+    win: { Tsunagou: { state: { set: (path: string, value: unknown) => void }; refresh: (keys?: string[]) => Promise<unknown>; dispatch: (type: string, payload?: unknown) => { ok: boolean } } };
+  }> {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+        dispatch: (type: string, payload?: unknown) => { ok: boolean };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      /* 更具体的路径要排在前面：匹配是"包含即算"，`/api/v1/projects` 会先吃掉
+         `/api/v1/projects/p-1/agents`（于是一个项目行被当成了一个 Agent）。*/
+      ["/projects/p-1/agents", {
+        items: [
+          { agent_id: "a-1", role: "main", status: "active" },
+          { agent_id: "a-2", role: "worker", status: "active" },
+        ],
+        main_agent_id: "a-1",
+      }],
+      ["/console/views/acceptance", {
+        sources: {
+          overview: { project_id: "p-1", name: "协作", lifecycle },
+          tasks: [], agents: [], results: [], reviews: [], decisions: [],
+        },
+        missing: {},
+        ...(stamp ? { history: { overview: stamp, tasks: stamp } } : {}),
+      }],
+      ["/api/v1/projects", {
+        items: [{ project_id: "p-1", name: "协作", lifecycle, available: true, main_agent_id: "a-1" }],
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["settings", "projects", "agents"]);
+    return { win };
+  }
+
+  async function acceptanceFrom(
+    win: { Tsunagou: { refresh: (keys?: string[]) => Promise<unknown>; dispatch: (type: string, payload?: unknown) => { ok: boolean } } },
+  ): Promise<void> {
+    /* 这一屏走真路径（refresh → 形状转换 → 渲染）：`history` 是**中间层**在回答里加的
+       标记，直接 dispatch 原始 payload 会绕过那次转换，测的就不是真行为了。*/
+    win.Tsunagou.dispatch("checkpoint.list", { latest: [], history: [] });
+    await win.Tsunagou.refresh(["acceptance"]);
+  }
+
+  it("确认完工之后：接入 Agent / 立即存档 / 设为主 Agent 都不再画", async () => {
+    const { win } = await projectWith("completed");
+    await acceptanceFrom(win);
+
+    expect(page.querySelector("#pane-agents .itemAdd")).toBeNull();
+    expect(page.querySelector("#pane-agents")!.textContent).not.toContain("设为主 Agent");
+    expect(page.querySelector("#pane-acceptance")!.textContent).not.toContain("立即存档");
+    // 清理类动作留着：改昵称、删除一个 Agent 与"项目是否完工"无关。
+    expect(page.querySelector("#pane-agents")!.textContent).toContain("修改");
+  });
+
+  it("还在进行的协作：这些入口照旧都在（同一条判据的另一半）", async () => {
+    const { win } = await projectWith("active");
+    await acceptanceFrom(win);
+
+    expect(page.querySelector("#pane-agents .itemAdd")).not.toBeNull();
+    expect(page.querySelector("#pane-agents")!.textContent).toContain("设为主 Agent");
+    expect(page.querySelector("#pane-acceptance")!.textContent).toContain("立即存档");
+  });
+
+  it("daemon 停了但有记录：左栏卡片说得出上次记录到什么时候", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: { refresh: (keys?: string[]) => Promise<unknown> };
+    };
+    const body = {
+      items: [{
+        project_id: "p-1", name: "已经收尾", lifecycle: "completed", available: true,
+        main_agent_id: "a-1", daemon: { url: "http://127.0.0.1:1" },
+        history: { captured_at: "2026-10-03T06:14:00.000Z", sources: 6 },
+      }],
+    };
+    win.fetch = () => Promise.resolve({
+      ok: true, status: 200,
+      json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)),
+    });
+    await win.Tsunagou.refresh(["projects"]);
+
+    const card = page.querySelector('.projItem[data-project-id="p-1"]')!;
+    // 端点文件还在、进程已经没了 —— 中间层如实说"无响应"，并补上"上次记录"。
+    expect(card.textContent).toContain("daemon 无响应");
+    expect(card.textContent).toContain("上次记录（记录到 2026-10-03 06:14）");
+  });
+
+  it("这一屏是从记录里拿的：面板上写明记录时刻，不装作现在", async () => {
+    const { win } = await projectWith("completed", "2026-10-03T06:15:00.000Z");
+    await acceptanceFrom(win);
+
+    const pane = page.querySelector("#pane-acceptance")!;
+    // 抬头是「上次记录」，正文写清记录到什么时候、以及 daemon 已经不在。
+    expect(pane.textContent).toContain("上次记录");
+    expect(pane.textContent).toContain("记录到 2026-10-03 06:15");
+    expect(pane.textContent).toContain("daemon 已经不在");
   });
 
   /* 子 Agent 头像一行最多 3 个，多出来的用 `+N` 说明——N 是**没摆出来的**数量。
@@ -659,6 +778,52 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(badge(2)!.textContent).toBe("网络离线 · NAS");
     /* 本机接入没有这一项 —— 连标记都不出现。*/
     expect(badge(0)).toBeNull();
+  });
+
+  /* 2026-10-03：Agent 详细窗口里的两行"跨机器才出现"—— 在哪台机器、这台机器做不到什么。
+     唤醒是本机机制（主机叫不醒别的机器上的窗口），文件任务按 D191 直接拒绝。
+     本机接入的 Agent 连标题都不出现，所以那个窗口和加这个功能之前一模一样。*/
+  it("详细窗口：远端多出「在哪台机器 / 这台机器的限制」两行，本机接入不出现", () => {
+    const win = dom.window as unknown as {
+      Tsunagou: {
+        state: { set: (path: string, value: unknown) => void };
+        app: { openAgentInfo: (id: string) => boolean };
+      };
+    };
+    const shown = (id: string) => {
+      const node = page.querySelector<HTMLElement>("#" + id);
+      return Boolean(node && node.style.display !== "none");
+    };
+    /* 名单窗口的行（中间层归一化后的样子）：一个本机、一个远端（没报副本）、一个远端（报了副本）。
+       本机那一个用没被别的用例推过状态的 id —— 推来的网络状态会盖过数据里的。*/
+    win.Tsunagou.state.set("agentsWindow", [
+      { id: "p-1/a-7", agent_id: "a-7", project: "示例", task: "", network: false, online: false, machine: "" },
+      { id: "p-1/a-2", agent_id: "a-2", project: "示例", task: "", network: true, online: true, machine: "工位-七" },
+      { id: "p-1/a-3", agent_id: "a-3", project: "示例", task: "", network: true, online: true,
+        machine: "NAS", copy_path: "D:\\work\\副本", copy_baseline: "main" },
+    ]);
+
+    win.Tsunagou.app.openAgentInfo("p-1/a-2");
+    expect(shown("agentInfoMachineTitle")).toBe(true);
+    expect(page.querySelector("#agentInfoMachine")?.textContent).toBe("工位-七");
+    expect(shown("agentInfoCopyTitle")).toBe(false);
+    expect(shown("agentInfoLimitsTitle")).toBe(true);
+    expect(page.querySelector("#agentInfoLimits")?.textContent).toContain("叫不醒它");
+    expect(page.querySelector("#agentInfoLimits")?.textContent).toContain("没报代码副本");
+
+    /* 报了副本的远端：多一行"代码副本"，限制那句也跟着变（文件活能做，但证据是自报的）。*/
+    win.Tsunagou.app.openAgentInfo("p-1/a-3");
+    expect(shown("agentInfoCopyTitle")).toBe(true);
+    expect(page.querySelector("#agentInfoCopy")?.textContent).toBe("D:\\work\\副本（main）");
+    expect(page.querySelector("#agentInfoLimits")?.textContent).toContain("自报");
+
+    win.Tsunagou.app.openAgentInfo("p-1/a-7");
+    expect(shown("agentInfoMachineTitle")).toBe(false);
+    expect(shown("agentInfoMachine")).toBe(false);
+    expect(shown("agentInfoCopyTitle")).toBe(false);
+    expect(shown("agentInfoCopy")).toBe(false);
+    expect(shown("agentInfoLimitsTitle")).toBe(false);
+    expect(shown("agentInfoLimits")).toBe(false);
   });
 
   it("DAG：有节点但彼此没依赖时，不再往画布上摆一块会压住节点的 .empty", () => {

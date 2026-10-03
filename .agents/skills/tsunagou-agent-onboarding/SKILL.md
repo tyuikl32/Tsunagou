@@ -114,8 +114,39 @@ Plain-language readings of what the import and the first calls can answer:
 | `invite_project_not_served_by_that_daemon` | something is listening there, but it is not that project's daemon | check which daemon/tunnel that address reaches |
 | `conversation_id_required_for_this_host` (host side) | Codex/DSH still owe their number | run step 1 and send the number |
 | `not_enrolled:run_agent_connect` | the bridge ran without a route for this conversation | the import did not finish, or the window was not reloaded |
+| `daemon_unreachable` | the host's coordination centre did not answer — this machine reaches it through a tunnel | check that channel and the address; nothing was changed, so retrying is the whole repair |
+| `host_request_identity_required` | the call arrived without a host conversation identity | call the tool from the conversation that owns this Agent, not from a shared process |
+| `remote_worker_needs_a_code_copy` | this machine never declared where its code copy is, and the task needs a workspace | re-run the import with `--copy <path> [--baseline <branch\|commit>]` (or ask the host to send a fresh invitation) |
+| `remote_worker_requires_external_workspace` | the task's workspace is a shared directory or a Git worktree — those bind to the **host's** roots | ask the main agent to select the external (外部准备) shape for this task |
+| `remote_workspace_locator_mismatch` | the workspace points somewhere other than the copy this machine declared | ask the main agent to fill the locator with exactly the path this machine reported |
+
+**Nothing wakes this machine.** Wake-up is a local mechanism: the host can start a conversation on
+its *own* machine, never on this one. Messages and tasks wait on the host exactly as they are, and
+you see them when you run — so read your inbox on every turn instead of waiting to be called. The
+host's roster shows the same fact ("叫不醒它：消息等它自己来取").
+
+**Work that touches files** is possible from here, but only one way: declare your copy
+(`agent import --copy <path> [--baseline <branch|commit>]`) when you join, and let the main agent
+select the **external** workspace shape pointing at that same path. Then you can take file tasks —
+but be plain about what that means: the host never reads your copy, so there is **no baseline and no
+workspace manifest** for your result. What you changed is *your report*, not the host's observation.
+If a task's workspace is a shared directory or a worktree, it is meant for the host machine: say so
+instead of working around it.
 
 Never put the invitation text into commits, logs or shared documents; a ticket is a credential.
+
+**This machine does not take work that touches files unless it declared a copy.** A workspace,
+its baseline and its evidence are facts about the *host's* filesystem (a root binding is an
+absolute path with a physical identity, and the baseline is a scan of those files). So a task
+that reserves a path is refused here **unless all three hold**: you declared your copy at import
+(`--copy <path> [--baseline <branch|commit>]`), the main agent selected the **external** (外部准备)
+shape for that task, and its locator is exactly the path you reported. Anything else is a refusal
+with a reason of its own (`remote_worker_needs_a_code_copy`,
+`remote_worker_requires_external_workspace`, `remote_workspace_locator_mismatch`), and a shared
+directory or a Git worktree is meant for the host machine — say so instead of working around it.
+What that door does *not* give you is host-verified evidence: the host never reads your copy, so
+there is no baseline and no workspace manifest, and what you changed is your own report. Do not
+describe it as if the host had checked it.
 
 ## Other adapters
 

@@ -236,6 +236,42 @@ def test_the_remote_refuses_a_daemon_that_does_not_serve_that_project(
     assert "invite_project_not_served_by_that_daemon" in result.output
 
 
+def test_the_remote_declares_where_its_code_copy_is(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """报副本：主机据此才敢把"要动文件"的活交给远端（主机不读这个路径，只记账）。"""
+
+    cli = importlib.import_module("tsunagou.cli.app")
+    monkeypatch.setattr(cli, "_read_daemon_health",
+                        lambda url: {"status": "ok", "runtime": {"project_ids": [PROJECT_ID]}})
+    monkeypatch.setattr(cli, "_remote_registration",
+                        lambda adapter, **kwargs: Registration(
+                            adapter=adapter, label="OpenCode", status=REGISTERED, name="tsunagou"))
+    workspace, copy_dir, state = tmp_path / "code", tmp_path / "副本", tmp_path / "state"
+    workspace.mkdir()
+    copy_dir.mkdir()
+
+    declared = runner.invoke(cli.app, [
+        "agent", "import", remote_invite.encode(_invite()), "--workdir", str(workspace),
+        "--state-dir", str(state), "--copy", str(copy_dir), "--baseline", "main",
+    ])
+
+    assert declared.exit_code == 0, declared.output
+    answer = json.loads(declared.output)
+    assert answer["copy_path"] == str(copy_dir.resolve()) and answer["copy_baseline"] == "main"
+    identity = json.loads((state / "host-identity.json").read_text(encoding="utf-8"))
+    assert identity["copy_path"] == str(copy_dir.resolve()) and identity["copy_baseline"] == "main"
+
+    # 报一个这台机器上不存在的地方：拒绝，而且什么都没写（把工作区指向没有东西的地方最糟）。
+    missing_state = tmp_path / "state2"
+    refused = runner.invoke(cli.app, [
+        "agent", "import", remote_invite.encode(_invite()), "--workdir", str(workspace),
+        "--state-dir", str(missing_state), "--copy", str(tmp_path / "没有这个目录"),
+    ])
+    assert refused.exit_code == 4 and "copy_path_not_found" in refused.output
+    assert not (missing_state / "host-identity.json").exists()
+
+
 def test_whichever_host_owns_the_name_reports_it(monkeypatch: pytest.MonkeyPatch) -> None:
     """报号：Codex / DSH 的会话名只有它们自己知道，主机签票前得先拿到。"""
 

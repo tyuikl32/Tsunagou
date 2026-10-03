@@ -96,6 +96,9 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "ready": "就绪",
         "result_recorded": "已记录结果",
         "cleanup_pending": "待清理",
+        # 跨机器：工作区在另一台机器上，主机没扫过它 —— 没有基线、交活时也没有清单（D192）
+        "remote_reported": "远端自报",
+        "remote_result_reported": "远端已交活",
     },
     # 消息的答复状态（messages 出口的 status；后端据回应义务派生，见
     # bootstrap/container.py 的 message_status）
@@ -211,6 +214,10 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "project_not_found": "找不到项目",
         "session_not_rebindable": "会话不可重接",
         "task_not_claimable": "任务不可认领",
+        # 跨机器：远端干文件活的两道门（D191 拒绝 → D192 在"报了副本 + 外部准备 + 位置对得上"时放行）
+        "remote_worker_needs_a_code_copy": "远端没报副本",
+        "remote_worker_requires_external_workspace": "远端外部准备",
+        "remote_workspace_locator_mismatch": "副本位置不符",
     },
     # 事件自己那句"为什么"（审计出口的 reason_code）。拒绝码有单独一张表
     # （denial_reason），这里放的是**不是拒绝**的那些：用户裁决、后台作业用尽重试、
