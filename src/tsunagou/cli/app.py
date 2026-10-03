@@ -171,6 +171,8 @@ def _runtime_for_connect(adapter: str, expected_enrollment_id: str | None = None
             if pending.get("enrollment_id") != expected_enrollment_id:
                 raise RuntimeError("enrollment_selection_changed")
         if pending is not None:
+            if expected_enrollment_id is not None and pending.get("place") == "network":
+                raise RuntimeError("enrollment_selection_invalid")
             root = Path(str(pending["project_root"])).expanduser().resolve()
             if read_object(root / ".tsunagou/project.json").get("project_id") != pending["project_id"]:
                 raise RuntimeError("onboarding_project_mismatch")
@@ -1937,6 +1939,13 @@ if typer is not None:
                 _connection_operations(adapter, pending_enrollment_id), adapter=adapter, role=effective_role, profile=profile, mode=mode,
                 output_dir=output_dir, request_file=request_file, register_host=register_host,
             )
+            if adapter == "deepseek" and pending_enrollment_id is not None:
+                from tsunagou.platform.enrollment_store import EnrollmentStore
+
+                EnrollmentStore().link_deepseek(
+                    pending_enrollment_id, project_id=connected["project_id"],
+                    role=connected["role"], agent_id=connected["agent_id"],
+                )
             print(json.dumps(connected, sort_keys=True))
         except typer.BadParameter as exc:
             print(json.dumps({"status": "error", "error": str(exc)}))

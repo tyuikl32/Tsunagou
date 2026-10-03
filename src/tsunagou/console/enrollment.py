@@ -346,6 +346,7 @@ def prepare(
         store_id = _record_selection(
             entry=entry, adapter=host.adapter, role=role, nickname=nickname,
             baseline=_roster_ids(directory, entry, endpoint),
+            place="local",
         )
         return {
             "status": "prepared", "enrollment_id": store_id, "store_id": store_id,
@@ -516,6 +517,7 @@ def _roster_ids(
 def _record_selection(
     *, entry: ProjectEntry, adapter: str, role: str, nickname: str,
     baseline: tuple[str, ...] = (),
+    place: str | None = None,
 ) -> str:
     """Write the person's decision into the machine-level slot, and return its id.
 
@@ -533,7 +535,7 @@ def _record_selection(
     try:
         record = store.create(
             project_id=entry.project_id, project_root=entry.path.resolve(),
-            role=role, nickname=nickname, adapter=adapter, baseline=baseline,
+            role=role, nickname=nickname, adapter=adapter, baseline=baseline, place=place,
         )
     except RuntimeError as exc:
         error = _intent_error(exc)
@@ -597,6 +599,29 @@ def _waiting_note(record: dict[str, Any]) -> str:
     return f"已登记，等待 {label} 那边完成接入：它一出现在名单里且角色正确，这里就会显示已接入。"
 
 
+def _local_deepseek(record: Mapping[str, Any]) -> bool:
+    return record.get("adapter") == "deepseek" and record.get("place") == "local"
+
+
+def _watch_deepseek(record: dict[str, Any], *, lineup: Any, waiting: dict[str, Any]) -> dict[str, Any]:
+    agent_id = record.get("agent_id")
+    if not agent_id:
+        return {**waiting, "note": "请在原 DeepSeek Harness 聊天调用接入工具，完成本次申请关联。"}
+    candidate = next((a for a in lineup.agents if a.get("agent_id") == agent_id), None)
+    if candidate is None:
+        return {**waiting, "note": "等待已关联的 DeepSeek Harness Agent 出现在名单中。"}
+    # The association comes only from a validated deepseek CLI result, not a display profile.
+    if candidate.get("role") != record["requested_role"]:
+        return {**waiting, "pending": {"agent_id": agent_id, "role": candidate.get("role"),
+                                       "session_status": candidate.get("session_status")},
+                "note": "已关联 Agent 的角色与申请不符，请在原聊天检查接入身份。"}
+    if candidate.get("session_status") != "ready" or candidate.get("status") != "active":
+        return {**waiting, "note": "已关联 DeepSeek Harness Agent，等待会话 ready。"}
+    arrived = EnrollmentStore().observe_arrival(record["enrollment_id"], agent_id=agent_id)
+    return {**_intent_public(arrived), "status": "arrived",
+            "agent": {"agent_id": agent_id, "role": candidate["role"], "session_status": "ready"}}
+
+
 def _watch_roster(
     record: dict[str, Any], *, lineup: Any, settings: ConsoleConfig, waiting: dict[str, Any],
 ) -> dict[str, Any]:
@@ -612,12 +637,17 @@ def _watch_roster(
     enrollment_id = str(record["enrollment_id"])
     store = EnrollmentStore()
     try:
+        if _local_deepseek(record):
+            return _watch_deepseek(record, lineup=lineup, waiting=waiting)
         known = load_profile(settings.profile_path)["agents"]
         if record.get("baseline") is None:
             # 申请时读不到名单（daemon 还没起）：把"现在"当作基线写下来，免得把已经在那儿的人
             # 当成刚到的人。下一次轮询起才作数 —— 没记下来之前，一律按还没到处理。
             store.note_baseline(enrollment_id, agent_ids=[str(a.get("agent_id") or "") for a in lineup.agents])
-            return {**waiting, "note": "已经记下这个项目现在有谁；那边一出现就会认出来。"}
+            note = "已经记下这个项目现在有谁；那边一出现就会认出来。"
+            if adapter == "deepseek" and record.get("place") is None:
+                note += "若这是旧的本机接入申请，请在原 DSH 聊天重试接入工具以补关联。"
+            return {**waiting, "note": note}
         seat = _attributed_seat(
             lineup, adapter=adapter, baseline=record["baseline"], known=known,
             awaiting=str(record.get("requested_role") or ""),
@@ -638,7 +668,10 @@ def _watch_roster(
             }
     except RuntimeError as exc:
         raise _intent_error(exc) from exc
-    return {**waiting, "note": _waiting_note(record)}
+    note = _waiting_note(record)
+    if adapter == "deepseek" and record.get("place") is None:
+        note += "若这是旧的本机接入申请，请在原 DSH 聊天重试接入工具以补关联。"
+    return {**waiting, "note": note}
 
 
 def _intent_status(record: dict[str, Any], *, settings: ConsoleConfig, directory: AgentDirectory) -> dict[str, Any]:
@@ -873,6 +906,11 @@ def observe(
     wanted = str(adapter or "").strip().lower()
     if not wanted:
         raise ConsoleError("adapter_required", status=400)
+    intent = _intent_or_none(enrollment_id) if enrollment_id else None
+    if intent is not None and _local_deepseek(intent):
+        if intent["project_id"] != project_id or wanted != "deepseek":
+            raise ConsoleError("onboarding_project_mismatch", status=409)
+        return _intent_status(intent, settings=settings, directory=directory)
     entry = find(settings, project_id)
     endpoint = daemon_state(entry.path, probe=True)
     if endpoint is None or not endpoint.get("running"):
@@ -998,6 +1036,7 @@ def _prepare_network(
         # 这台机器上什么都不写，所以"它到没到"唯一能靠的就是这份基线：比它多出来的那个
         # 席位。远端入席时会自己报机器名，判定据此把它认出来（见 _attributed_seat）。
         baseline=_roster_ids(directory, entry, endpoint),
+        place="network",
     )
     return {
         "status": "invited", "invite": invite, "enrollment_id": store_id, "store_id": store_id,

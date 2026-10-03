@@ -113,6 +113,7 @@ class EnrollmentStore:
         nickname: str = "",
         adapter: str = "codex",
         baseline: Iterable[str] = (),
+        place: str | None = None,
     ) -> dict[str, Any]:
         """Record the person's decision: this Agent joins this project with this role.
 
@@ -133,6 +134,7 @@ class EnrollmentStore:
         if (
             not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", str(adapter or ""))
             or role not in {"main", "worker"} or not project_id or not project_root.is_absolute()
+            or place not in {None, "local", "network"}
         ):
             raise RuntimeError("enrollment_selection_invalid")
         known = sorted({str(item) for item in baseline if str(item)})
@@ -144,6 +146,7 @@ class EnrollmentStore:
                     and Path(active["project_root"]).resolve() == project_root.resolve()
                     and active["requested_role"] == role
                     and active["adapter"] == adapter
+                    and (place is None or active.get("place") in {None, place})
                 ):
                     return dict(active)
                 raise RuntimeError("enrollment_already_pending")
@@ -158,6 +161,7 @@ class EnrollmentStore:
                 "adapter": adapter,
                 "status": "pending",
                 "revision": 1,
+                **({"place": place} if place is not None else {}),
                 "created_at": now,
                 "updated_at": now,
                 "expires_at": now + ENROLLMENT_TTL_SECONDS,
@@ -166,6 +170,30 @@ class EnrollmentStore:
             }
             state["records"][enrollment_id] = record
             state["active_id"] = enrollment_id
+            return dict(record)
+
+    def link_deepseek(self, enrollment_id: str, *, project_id: str, role: str, agent_id: str) -> dict[str, Any]:
+        """Associate a local DSH CLI result without claiming readiness or changing identity."""
+        if not agent_id:
+            raise RuntimeError("enrollment_agent_required")
+        with self._transaction() as state:
+            record = self._record(state, enrollment_id)
+            if record["adapter"] != "deepseek" or record.get("place") == "network" or record.get("thread_id"):
+                raise RuntimeError("enrollment_selection_invalid")
+            if record["project_id"] != project_id:
+                raise RuntimeError("onboarding_project_mismatch")
+            if record["requested_role"] != role:
+                raise RuntimeError("enrollment_role_conflict")
+            if record.get("agent_id") and record["agent_id"] != agent_id:
+                raise RuntimeError("enrollment_agent_mismatch")
+            if record["status"] in _TERMINAL:
+                raise RuntimeError("enrollment_" + record["status"])
+            if record["status"] == "arrived":
+                return dict(record)
+            if state.get("active_id") != enrollment_id or record["status"] != "pending":
+                raise RuntimeError("enrollment_not_pending")
+            if record.get("agent_id") != agent_id or record.get("place") != "local":
+                self._change(record, agent_id=agent_id, place="local")
             return dict(record)
 
     def note_baseline(self, enrollment_id: str, *, agent_ids: Iterable[str]) -> dict[str, Any]:

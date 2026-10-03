@@ -121,3 +121,15 @@ FX3/FX4/FX6 负责原 Codex 会话自动唤醒的产品接入与现场验收；�
 Agent 先自行查看 daemon status、doctor、agent list --json。daemon 不可用时 connect 自动启动所选实例；可用时 bridge 复用现有 session，真正失效或宿主代次变化才 reconnect。宿主端点变更时重新 prepare/connect 同一会话，不能通过创建新身份掩盖故障。使用 project history、task history 查询已持久化的时间线。
 
 CLI 结果不能证明 LLM 已开始工作。完整使用方法见 [CLI/HTTP 手册](cli-http-manual.md)，角色边界见 [子 Agent 指南](subagent-guide.md)。
+
+
+### 本机 DSH 控制台等待恢复
+
+控制台准备后，原 DSH 聊天通过 `tsunagou_connect` 接入。CLI 将实际 Agent ID
+关联到这次申请；控制台看到该 Agent 角色正确、会话 ready 后自动确认。
+原聊天仍须调用 `context__project_read` 验证自身上下文。控制台确认不是原聊天回执。
+
+若旧的、尚未过期的申请因 baseline 卡住，在原聊天重新调用接入工具即可复用身份并补关联；
+无需改 baseline 或手动执行 CLI。已过期申请保持过期，已有 Agent 不会因此被删除。
+本次修复不改变 Codex、OpenCode 或跨机器邀请流程。运行中的旧控制台需要在用户安排下
+加载更新；DSH 插件的实际加载版本仍须在现场确认，自动化通过不代表原聊天验收完成。

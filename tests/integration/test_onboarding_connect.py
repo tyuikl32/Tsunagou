@@ -161,7 +161,7 @@ def test_deepseek_pending_selection_controls_real_bridge_and_rejects_rebinding(t
     from tsunagou.application.onboarding import conversation_key
     from tsunagou.platform.enrollment_store import EnrollmentStore
 
-    selected = tmp_path / "selected"
+    selected = tmp_path / "中文 selected"
     other = tmp_path / "chat-cwd"
     subprocess.run(["git", "init", "--quiet", str(selected)], check=True)
     other.mkdir()
@@ -189,6 +189,13 @@ def test_deepseek_pending_selection_controls_real_bridge_and_rejects_rebinding(t
         assert result.returncode == 0, result.stderr or result.stdout
         connected = json.loads(result.stdout)
         assert connected["project_id"] == project_id and connected["role"] == "worker"
+        linked = store.get(request["enrollment_id"])
+        assert linked["agent_id"] == connected["agent_id"] and linked["place"] == "local"
+        repeated = cli("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
+                       "--pending-enrollment-id", request["enrollment_id"])
+        assert repeated.returncode == 0, repeated.stdout
+        assert json.loads(repeated.stdout)["agent_id"] == connected["agent_id"]
+        assert store.get(request["enrollment_id"])["revision"] == linked["revision"]
         route = json.loads((tmp_path / "routes" / (conversation_key("real-dsh-chat") + ".json")).read_text(encoding="utf-8"))
         assert route["project_id"] == project_id and Path(route["project_root"]) == selected
         assert Path(route["state_dir"]).parent == selected / ".tsunagou/bridges"

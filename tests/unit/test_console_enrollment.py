@@ -351,6 +351,7 @@ def test_the_host_that_enrolls_itself_only_leaves_the_decision_in_the_machine_sl
     assert recorded["requested_role"] == "main"
     assert Path(recorded["project_root"]).resolve() == entry.path.resolve()
     assert recorded["enrollment_id"] == answer["enrollment_id"]
+    EnrollmentStore().link_deepseek(answer["enrollment_id"], project_id=PROJECT_ID, role="main", agent_id="a-2")
     # 到达之后这条记录要自己让位：同一时刻只允许一条，下一个人还得接得上。
     _host_profile(tmp_path, {"a-1": "DeepSeek Harness", "a-2": "DeepSeek Harness"})
     monkeypatch.setattr(enrollment, "daemon_state", lambda root, probe=True: {
@@ -381,6 +382,7 @@ def test_a_seat_with_the_wrong_role_does_not_finish_this_enrollment(
         entry, dict(entry.daemon or {}), vendor="deepseek", role="main", nickname="熊猫",
         directory=Rosters(),
     )
+    EnrollmentStore().link_deepseek(prepared["enrollment_id"], project_id=PROJECT_ID, role="main", agent_id="a-2")
     _host_profile(tmp_path, {"a-1": "DeepSeek Harness", "a-2": "DeepSeek Harness"})
     monkeypatch.setattr(enrollment, "daemon_state", lambda root, probe=True: {
         "running": True, "url": "http://127.0.0.1:59999", "project_id": PROJECT_ID,
@@ -393,7 +395,7 @@ def test_a_seat_with_the_wrong_role_does_not_finish_this_enrollment(
 
     assert answer["status"] == "waiting"
     assert answer["pending"]["role"] == "worker"
-    assert "子 Agent" in answer["note"] and "主 Agent" in answer["note"]
+    assert "角色" in answer["note"]
     assert EnrollmentStore().active_for("deepseek") is not None, "记录留着等真正该来的那个"
 
     # 同一个席位换成正确身份回来时，才算到了。
@@ -1177,6 +1179,23 @@ def test_an_in_host_seat_is_recognised_from_the_roster(monkeypatch: pytest.Monke
     assert EnrollmentStore().active() is None, "认出来了就把那条唯一的名额让出来"
 
 
+@pytest.mark.parametrize("baseline", [(), ("old-agent", "new-agent")])
+def test_dsh_connection_result_survives_late_or_polluted_baseline(monkeypatch, tmp_path, baseline):
+    enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="deepseek", baseline=baseline)
+    store = EnrollmentStore()
+    store.link_deepseek(enrollment_id, project_id=PROJECT_ID, role="worker", agent_id="new-agent")
+    settings = _config(tmp_path)
+    update_profile(settings.profile_path, {"agents": {"new-agent": {"vendor": _host_label("deepseek")}}})
+    roster = Rosters(("old-agent", "new-agent"), session_status="degraded")
+    assert enrollment.current_status(settings=settings, directory=roster)["status"] == "waiting"
+    roster.session_status = "ready"
+    arrived = enrollment.observe(settings=settings, directory=roster, project_id=PROJECT_ID,
+                                 adapter="deepseek", baseline={"new-agent"}, enrollment_id=enrollment_id)
+    assert arrived["status"] == "arrived"
+    assert EnrollmentStore().get(enrollment_id)["agent_id"] == "new-agent"
+    assert enrollment.status(enrollment_id, settings=settings, directory=roster)["status"] == "arrived"
+
+
 def test_a_seat_that_was_already_there_is_not_an_arrival(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     enrollment_id = _watched_record(monkeypatch, tmp_path, adapter="deepseek")
     settings = _config(tmp_path)
@@ -1255,3 +1274,23 @@ def test_the_page_observer_and_the_console_judge_alike(monkeypatch: pytest.Monke
 
     assert watched["status"] == console["status"] == "arrived"
     assert watched["agent"]["agent_id"] == console["agent_id"] == "new-agent"
+
+
+def test_local_dsh_waits_for_link_and_completes_serial_requests(monkeypatch, tmp_path):
+    monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
+    entry = _entry(tmp_path)
+    settings = _config(tmp_path)
+    directory = Rosters(("first", "second"))
+    for agent_id in ("first", "second"):
+        request_id = enrollment._record_selection(entry=entry, adapter="deepseek", role="worker",
+                                                  nickname="DSH", place="local")
+        waiting = enrollment.current_status(settings=settings, directory=directory)
+        assert waiting["status"] == "waiting" and "关联" in waiting["note"]
+        EnrollmentStore().link_deepseek(request_id, project_id=PROJECT_ID, role="worker", agent_id=agent_id)
+        # A temporary daemon outage must not complete the associated request.
+        with monkeypatch.context() as patch:
+            patch.setattr(enrollment, "daemon_state", lambda *args, **kwargs: None)
+            assert enrollment.status(request_id, settings=settings, directory=directory)["status"] == "waiting"
+        arrived = enrollment.current_status(settings=settings, directory=directory)
+        assert arrived["status"] == "arrived" and arrived["agent_id"] == agent_id
+        assert EnrollmentStore().active() is None

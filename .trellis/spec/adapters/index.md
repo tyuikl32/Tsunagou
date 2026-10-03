@@ -85,3 +85,14 @@ return completed.get(commandId);
 bridge.reconnect(epoch2); // clears completed results
 return transport.send(envelope, { connectionEpoch: 2, authorization });
 ```
+
+
+## Local DSH console association
+
+The existing pending-enrollment-id connects the validated DSH CLI result to the local
+console request. Keep the record pending until a fresh roster shows that exact active
+Agent with the requested role and ready session. Never infer local arrival from baseline
+membership. New local/network requests record their place; legacy records retain their
+existing behavior until an original-chat retry explicitly links a local DSH result.
+Codex receipts, OpenCode, and network roster attribution remain separate. Repeated links
+are idempotent; wrong project/role/Agent and terminal records cannot be overwritten.

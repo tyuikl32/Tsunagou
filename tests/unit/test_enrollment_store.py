@@ -202,3 +202,50 @@ def test_a_watched_arrival_closes_the_slot_but_a_bound_record_belongs_to_its_cha
     with pytest.raises(RuntimeError, match="^enrollment_claimed_by_another_chat$"):
         store.observe_arrival(bound["enrollment_id"], agent_id="agent-b")
     assert store.active() == store.get(bound["enrollment_id"])
+
+
+@pytest.mark.parametrize("field,value,error", [
+    ("project_id", "wrong", "onboarding_project_mismatch"),
+    ("role", "main", "enrollment_role_conflict"),
+    ("agent_id", "other", "enrollment_agent_mismatch"),
+])
+def test_deepseek_link_rejects_conflicts(tmp_path, field, value, error):
+    store = EnrollmentStore(tmp_path / "store")
+    record = store.create(project_id="p", project_root=tmp_path, role="worker", adapter="deepseek")
+    args = dict(project_id="p", role="worker", agent_id="a")
+    linked = store.link_deepseek(record["enrollment_id"], **args)
+    assert store.link_deepseek(record["enrollment_id"], **args) == linked
+    with pytest.raises(RuntimeError, match=error):
+        store.link_deepseek(record["enrollment_id"], **{**args, field: value})
+    assert store.get(record["enrollment_id"]) == linked
+
+
+@pytest.mark.parametrize("ending", ["cancelled", "expired", "network", "codex"])
+def test_deepseek_link_does_not_cross_terminal_or_host_boundaries(tmp_path, ending):
+    now = [100.0]
+    store = EnrollmentStore(tmp_path / "store", clock=lambda: now[0])
+    record = store.create(project_id="p", project_root=tmp_path, role="worker",
+                          adapter="codex" if ending == "codex" else "deepseek",
+                          place="network" if ending == "network" else "local")
+    if ending == "cancelled":
+        store.cancel(record["enrollment_id"])
+    if ending == "expired":
+        now[0] += 1000
+    with pytest.raises(RuntimeError):
+        store.link_deepseek(record["enrollment_id"], project_id="p", role="worker", agent_id="a")
+    assert "agent_id" not in store.get(record["enrollment_id"])
+
+
+def test_deepseek_link_can_retry_after_failed_private_write(monkeypatch, tmp_path):
+    store = EnrollmentStore(tmp_path / "store")
+    record = store.create(project_id="p", project_root=tmp_path, role="worker", adapter="deepseek")
+    import tsunagou.platform.enrollment_store as module
+    original = module.write_private_bytes
+    def fail(*args, **kwargs):
+        raise OSError("write failed")
+    monkeypatch.setattr(module, "write_private_bytes", fail)
+    with pytest.raises(OSError):
+        store.link_deepseek(record["enrollment_id"], project_id="p", role="worker", agent_id="a")
+    monkeypatch.setattr(module, "write_private_bytes", original)
+    assert "agent_id" not in store.get(record["enrollment_id"])
+    assert store.link_deepseek(record["enrollment_id"], project_id="p", role="worker", agent_id="a")["agent_id"] == "a"
