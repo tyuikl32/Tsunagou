@@ -25,6 +25,21 @@
         </div>
         <!--协作项目列表-->
         <div class="subMgr" id="projList"></div>
+        <!--项目卡片上的操作菜单（点卡片右上角那个笔打开；位置由 JS 贴在卡片旁）-->
+        <section class="selection" id="projMenu">
+            <div class="item" data-proj-action="rename"><i class="fa-solid fa-pen-to-square"></i>重命名</div>
+            <div class="item" data-proj-action="delete"><i class="fa-solid fa-trash"></i>删除项目</div>
+        </section>
+        <!--排序菜单（点左栏「进行中的协作」右边的设置按钮打开）-->
+        <section class="selection" id="sortMenu">
+            <div class="title">排序规则</div>
+            <div class="item" data-sort-order="new"><div class="left"><i class="fa-solid fa-arrow-up"></i>新的在前</div></div>
+            <div class="item" data-sort-order="old"><div class="left"><i class="fa-solid fa-arrow-down"></i>旧的在前</div></div>
+            <div class="title">排序方式</div>
+            <div class="item" data-sort-by="viewed"><div class="left"><i class="fa-solid fa-clock"></i>按查看时间</div></div>
+            <div class="item" data-sort-by="created"><div class="left"><i class="fa-solid fa-clock"></i>按创建时间</div></div>
+            <div class="item" data-sort-by="name"><div class="left"><i class="fa-solid fa-tag"></i>按名称</div></div>
+        </section>
         <!--侧边栏底部按钮-->
         <div class="btmTabs">
             <div class="btmBtn" onclick="Tsunagou.app.openAgents()">
@@ -370,13 +385,34 @@
             <div class="content">
                 <div class="left"><i class="fa-solid fa-circle-exclamation"></i></div>
                 <div class="right">
-                    <p class="bigTxt">确定要删除这几个 Agent 吗？</p>
-                    <p class="description">此操作不可挽回，请务必考虑清楚。</p>
+                    <p class="bigTxt">确定要让这个 Agent 退役吗？他立刻不能再派活、接活。</p>
+                    <p class="description">他做过的任务和发过的消息仍然记他的名字，不会被改写。</p>
                 </div>
             </div>
             <div class="options">
                 <div class="buttonbox2" onclick="Tsunagou.app.closeWindow('delPmt')">取消</div>
                 <div class="buttonbox2 buttonbox2active">确定</div>
+            </div>
+        </div>
+    </section>
+
+    <!--窗口：重命名协作（名字只是给人看的标签，改它不动 id 与目录）
+        用 window2：和 Agent 详细信息同一个版式 —— 那个窗口也带输入框。-->
+    <section class="secWindow" id="renamePmt">
+        <div class="window2">
+            <div class="titleBar">
+                <div class="title"><i class="fa-solid fa-pen-to-square"></i> 重命名协作</div>
+                <div class="button" onclick="Tsunagou.app.closeWindow('renamePmt')">×</div>
+            </div>
+            <div class="content">
+                <div class="uiBlock">
+                    <div class="title2">项目名称</div>
+                    <div class="textbox2"><input class="inner" id="renamePmtInput" placeholder="新的项目名称" /></div>
+                </div>
+            </div>
+            <div class="options">
+                <div class="buttonbox2" onclick="Tsunagou.app.closeWindow('renamePmt')">取消</div>
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.submitRename()">确定</div>
             </div>
         </div>
     </section>

@@ -169,6 +169,68 @@ body {
         }
     }
 
+    .searchBar {
+        color: var(--col-6);
+        padding: 8px 10px;
+        font-size: 14px;
+        /* display:none; */
+
+        .inner {
+            height:30px;
+            border-radius:6px;
+            background-color:var(--col-3);
+            border:1px solid var(--col-4-5);
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 2px;
+            gap: 2px;
+            
+            .left {
+                outline: none;
+                border: none;
+                background-color: var(--col-3);
+                color: var(--col-8);
+                flex-grow: 1;
+                /* margin-right: 6px; */
+            }
+
+            .icon {
+                width: 24px;
+                height:24px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                transition:background-color 0.15s,color 0.15s;
+                border-radius:6px;
+            }
+    
+            .iconA::before {
+                content: "\f002";
+                font-family: "Font Awesome 6 Free";
+                font-weight: 900;
+                font-size:13px;
+            }
+
+            .iconB::before {
+                content: "\f00d";
+                font-family: "Font Awesome 6 Free";
+                font-weight: 900;
+                font-size: 16px;
+            }
+
+            .iconB:hover {
+                background-color:var(--col-4-5);
+            }
+
+            .iconB:active {
+                background-color:var(--col-4);
+            }
+        }
+    }
+    
     .subMgr {
         flex: 1;
         display: flex;
@@ -346,7 +408,9 @@ body {
             }
 
             .edit::before {
-                content: "×";
+                font-family: "Font Awesome 6 Free";
+                font-weight: 900;
+                content: "\f304";
             }
 
             .edit:active {
@@ -717,7 +781,7 @@ body {
         user-select: none;
 
         .tabS {
-            padding: 8px 14px;
+            padding: 10px 14px;
             border-bottom: 4px solid var(--col-2);
             transition: border-color 0.15s, background-color 0.15s;
             font-size: 14px;
@@ -1182,7 +1246,7 @@ body {
 
     .window2 {
         width: 480px;
-        min-height: 280px;
+        /* min-height: 280px; */
         background-color: var(--col-3);
         border-radius: 20px;
         display: flex;
@@ -1190,6 +1254,7 @@ body {
         flex-wrap: nowrap;
         /* box-shadow: 0 0 4px 1px var(--col-1); */
         justify-content: space-between;
+        
         
         .titleBar {
             color: var(--col-7-5);
@@ -1574,7 +1639,7 @@ body {
 
 .secAnnounce2 {
     position: fixed;
-    height: 40px;
+    min-height: 40px;
     min-width: 240px;
     background-color: var(--brand-col);
     z-index: 999;
@@ -1590,8 +1655,13 @@ body {
     transition: top 0.25s cubic-bezier(0, 0, 0, 0.93);
     overflow: hidden;
     gap: 12px;
-    padding: 0 20px;
+    padding: 5px 20px;
     transform: translateX(50%);
+    
+    
+    
+    
+    
 
     .aIcon {
         flex-grow: 0;
@@ -2936,6 +3006,64 @@ body {
 
 .emptybox::before {
     content:"这里暂时还没有内容";
+}
+
+.selection {
+    display:none;
+    position:fixed;
+    min-width: 130px;
+    z-index:10;
+    background-color: var(--col-4);
+    border-radius:10px;
+    flex-direction: column;
+    padding:4px;
+    font-size:14px;
+    /* box-shadow: 0 0 2px 2px var(--col-1-5); */
+    /* gap: 4px; */
+    
+    >.title {
+        padding: 6px 10px 6px 10px;
+        color: var(--col-6);
+        user-select: none;
+    }
+        
+    >.item {
+        border-radius:8px;
+        padding: 6px 10px;
+        color:var(--col-8);
+        user-select:none;
+        transition:background-color 0.15s;
+        display:flex;
+        align-items: center;
+        gap: 10px;
+        justify-content: space-between;
+        
+
+        .left {
+            gap: 10px;
+            display:flex;
+            align-items: center;
+        }
+
+        .right {
+            width:20px;
+            display: flex;
+            justify-content: center;
+        }
+        
+        i {
+            width:16px;
+            text-align:center;
+        }
+    }
+    >.item:hover {
+        background-color:var(--brand-col);
+    }
+
+    >.item:active {
+        background-color:var(--brand-col-0);
+    }
+
 }
 
 /* CSS 动画声明 */

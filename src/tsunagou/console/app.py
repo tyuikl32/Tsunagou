@@ -34,8 +34,10 @@ from tsunagou.console.projects import (
     find,
     forget,
     register,
+    rename,
 )
 from tsunagou.console.proxy import ForwardResponse, ensure_matching_project, forward, project_token
+from tsunagou.platform.project_index import load_index
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 CONSOLE_VERSION = "0.1.0"
@@ -128,6 +130,12 @@ class AgentPrepareRequest(BaseModel):
     place: str = "local"
     #: 只有"会话名由宿主自己生成"的宿主（Codex、DeepSeek Harness）才需要：远端报上来的号。
     conversation_id: str = ""
+
+
+class RenameProjectRequest(BaseModel):
+    """Give one project a new display name. The id and the folder do not change."""
+
+    name: str
 
 
 class ForgetProjectRequest(BaseModel):
@@ -304,8 +312,17 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         Each row also carries ``history``: when this project's record was last written and
         how many exits it holds. The page uses it to say "last seen at ..." on a card whose
         daemon is gone — the record itself is read through the exits, not from here.
+
+        ``created_at`` comes from the project index: the moment this machine first
+        registered the project. It is what "按创建时间" sorts by (the manifest itself does
+        not record a creation time), and it is absent for a project the index has never
+        seen — the page then falls back to the record stamp.
         """
 
+        indexed = {
+            str(item.get("project_id") or ""): item
+            for item in load_index(settings.index_path)["projects"]
+        }
         items: list[dict[str, Any]] = []
         for entry in discover(settings, probe=probe, agents=directory if agents else None):
             row = entry.public()
@@ -314,6 +331,7 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
             if isinstance(entry.daemon, dict) and entry.daemon.get("running"):
                 history.record(entry.project_id, "console.project", row, captured_at=format_timestamp(now_ms()))
             row["history"] = history.summary(entry.project_id)
+            row["created_at"] = str((indexed.get(str(entry.project_id)) or {}).get("created_at") or "")
             items.append(row)
         return {
             "items": items,
@@ -462,6 +480,15 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
 
         wanted = payload or ForgetProjectRequest()
         return forget(settings, project_id, delete_files=wanted.delete_files)
+
+    @app.post("/api/v1/console/projects/{project_id}:rename")
+    def rename_project(project_id: str, payload: RenameProjectRequest) -> dict[str, Any]:
+        """改一个协作的显示名。名字是标签，不是身份：项目号与目录都不动。
+
+        清单（项目自己的 ``.tsunagou/project.json``）是权威，索引只是便利，两边一起写。
+        """
+
+        return rename(settings, project_id, payload.name)
 
     def _woken(entry: ProjectEntry) -> dict[str, Any]:
         """Start a freshly created project's daemon, and report what happened.

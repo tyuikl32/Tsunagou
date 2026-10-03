@@ -17,6 +17,7 @@ from tsunagou.shared_kernel.baseline import (
     BASELINE_CAPABILITIES,
     missing_baseline_capabilities,
 )
+from tsunagou.shared_kernel.errors import CommandRefused
 
 ROOT = Path(__file__).parents[2]
 
@@ -139,6 +140,84 @@ def test_appoint_requires_ready_session(tmp_path: Path) -> None:
     result = endpoint("authority.appoint", _request({"agent_id": ready.agent_id}), Response(), "Bearer ctl", None, None)
     assert result["result"]["main_agent_id"] == ready.agent_id
     assert authority.main_agent_id == ready.agent_id
+
+
+def test_appoint_refuses_a_remote_agent(tmp_path: Path) -> None:
+    """跨机器入席的人自报了机器名 → 不能当主 Agent（主 Agent 必须和协调中心同机）。"""
+
+    app, authority = _app(tmp_path, control_token="ctl")
+    endpoint = _endpoint(app)
+    local = authority.redeem_ticket(
+        authority.issue_ticket("install-local", "conversation-local"),
+        "install-local", "conversation-local", baseline=complete_baseline(),
+    )
+    remote = authority.redeem_ticket(
+        authority.issue_ticket("install-remote", "conversation-remote"),
+        "install-remote", "conversation-remote", baseline=complete_baseline(),
+    )
+    authority.agents[remote.agent_id].machine = "工位-九"
+
+    endpoint("authority.appoint", _request({"agent_id": local.agent_id}), Response(), "Bearer ctl", None, None)
+    with pytest.raises(HTTPException) as exc:
+        endpoint("authority.appoint", _request({"agent_id": remote.agent_id}), Response(), "Bearer ctl", None, None)
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "main_agent_must_be_local"
+    assert authority.main_agent_id == local.agent_id, "拒绝之后原来的主 Agent 不许动"
+
+
+def test_retire_takes_the_agent_out_of_service_and_refuses_the_main(tmp_path: Path) -> None:
+    """退役走用户命令：普通成员能退，当前主 Agent 被拒（项目永远得有一个主 Agent）。"""
+
+    app, authority = _app(tmp_path, control_token="ctl")
+    endpoint = _endpoint(app)
+    main = authority.redeem_ticket(
+        authority.issue_ticket("install-main", "conversation-main"),
+        "install-main", "conversation-main", baseline=complete_baseline(),
+    )
+    worker = authority.redeem_ticket(
+        authority.issue_ticket("install-worker", "conversation-worker"),
+        "install-worker", "conversation-worker", baseline=complete_baseline(),
+    )
+    endpoint("authority.appoint", _request({"agent_id": main.agent_id}), Response(), "Bearer ctl", None, None)
+
+    result = endpoint(
+        "agent.retire.user", _request({"agent_id": worker.agent_id, "reason": "test"}),
+        Response(), "Bearer ctl", None, None,
+    )
+    assert result["result"]["status"] == "retired"
+    assert authority.agents[worker.agent_id].status == "retired"
+    assert not authority.verify_token(worker.session_id, worker.secret_token)
+
+    with pytest.raises(HTTPException) as exc:
+        endpoint(
+            "agent.retire.user", _request({"agent_id": main.agent_id}),
+            Response(), "Bearer ctl", None, None,
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "main_agent_cannot_retire"
+    assert authority.main_agent_id == main.agent_id
+
+
+def test_a_refusal_carries_the_facts_the_page_has_to_show(tmp_path: Path) -> None:
+    """拒绝时把事实一起给出去（"他手上还有这些任务"）：页面照着列，不用自己编话。"""
+
+    dispatcher = CommandDispatcher(ROOT / "protocol" / "registry" / "commands.json")
+    authority = AuthorityService(tmp_path / "identity.json")
+    for kind, handler in build_handlers(authority=authority).items():
+        dispatcher.register(kind, handler)
+
+    def refuse(_payload: dict[str, Any], _context: dict[str, Any]) -> dict[str, Any]:
+        raise CommandRefused("agent_has_open_work", {"tasks": [{"task_id": "t-1", "title": "改登录"}]})
+
+    dispatcher.register("agent.retire.user", refuse)
+    app = create_app(dispatcher, authenticator=LocalCommandAuthenticator(authority=authority, control_token="ctl"))
+    endpoint = _endpoint(app)
+
+    with pytest.raises(HTTPException) as exc:
+        endpoint("agent.retire.user", _request({"agent_id": "a-1"}), Response(), "Bearer ctl", None, None)
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "agent_has_open_work"
+    assert exc.value.detail["tasks"] == [{"task_id": "t-1", "title": "改登录"}]
 
 
 def test_build_application_full_enrollment_chain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

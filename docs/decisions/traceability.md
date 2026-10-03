@@ -37,6 +37,8 @@
 | D192 远端干文件活走"外部准备 + 它自己报的副本"：报副本、选 external、位置对得上才放行；主机只记账不读，无基线、无清单，证据记自报 | 跨机器协作可行性（工作区根目录文档）、Agent 接入 Skill、cli-http-manual、web/method.md、execution/workspace 判定与词表 | — |
 | D193 控制台自己留一份"上次看到的样子"（按项目分文件、有界、只顶"连不上"、必须带记录时刻、删项目一起删）；确认完工后页面上关掉接入 Agent / 立即存档 / 设为主 Agent（清理与重试类不关） | console.md、web/method.md、console/history 实现、cli-http-manual（删除项目那一段） | — |
 | D194 "宿主自己接入"与跨机器邀请那类申请的到达判定改用名单比对（机器级记录写下申请时的基线；身份归属沿用厂商/自报机器名规则；页面与控制台共用同一判据），Codex 仍走认领+回执；页面不再把 in_host 说成手工命令、恢复时不再写死 Codex | console.md、web/method.md、enrollment_store、console/enrollment | — |
+| D195 只有本机 Agent 能当主 Agent（入席自报机器名者为远端，拒绝码 `main_agent_must_be_local`，页面不画按钮）；项目永远有且只有一个主 Agent，因此不提供"撤销主 Agent"入口；`expected_authority_epoch` 运行时无人读取，页面不再带它、也不假装它是并发保护 | console.md、web/method.md、authority、handlers、glossary | Agent 换地位与删除方案（工作区根目录文档） |
+| D196 "删除 Agent"做成退役：只有用户能删（`agent.retire.user`）；退役=他不能再动而历史一字不改（会话结束、凭据失效、授权收回、代次递增、记录与归属保留）；当前主 Agent 与手上还有活的都拒绝（后者带任务清单）；远端只在本机侧停掉并提示去那台机器清登记；不给"回来"的路 | command-catalog、protocol/schema、authority、tasks、handlers、cli-http-manual、web/method.md、glossary | Agent 换地位与删除方案（工作区根目录文档） |
 
 重要的早期边界也已贯穿规范：本机首发与Python后端；三个首发宿主正式共同基线，ZCode后置；所有Git写操作归main；初始化即项目内持久化；主子身份/Attempt所有权分离；用户不答不超时；父子任务不隐式门禁/级联；机械代码不作复杂业务语义裁决；减少强制用户决策；Web和远程认证延后。
 

@@ -413,6 +413,41 @@ def forget(
     }
 
 
+def rename(config: ConsoleConfig, project_id: str, name: str) -> dict[str, Any]:
+    """改写一个协作的显示名。
+
+    名字只是给人看的标签，不是项目的身份：**项目号与目录都不动**，清单里其它字段原样保留。
+    项目清单是权威，索引只是便利（它缓存着名字），所以两边一起写 —— 否则左栏还会显示旧名字。
+    """
+
+    wanted = str(name or "").strip()
+    if not wanted:
+        raise ConsoleError("project_name_required", detail={"note": "名字不能是空的。"})
+    if len(wanted) > 120:
+        raise ConsoleError("project_name_too_long", detail={"note": "名字太长了（最多 120 个字）。"})
+    entry = find(config, project_id)
+    manifest = read_manifest(entry.path)
+    if manifest is None:
+        raise ConsoleError(
+            "project_manifest_unreadable",
+            detail={"path": (entry.path / PROJECT_MANIFEST).as_posix(),
+                    "note": "读不到这个项目的清单，不敢改它的名字。"},
+        )
+    manifest["name"] = wanted
+    manifest_path = entry.path / PROJECT_MANIFEST
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+    record_project(
+        project_id=entry.project_id, path=entry.path, name=wanted,
+        source="console", index=config.index_path,
+    )
+    return {
+        "status": "renamed", "project_id": entry.project_id, "name": wanted,
+        "path": entry.path.as_posix(),
+    }
+
+
 def _is_inside(path: Path, parent: Path) -> bool:
     try:
         resolved = path.expanduser().resolve()

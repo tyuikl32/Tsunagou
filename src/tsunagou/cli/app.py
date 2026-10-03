@@ -2119,6 +2119,31 @@ if typer is not None:
             "agent_id": agent_id, "status": "appointed", **result,
         }, sort_keys=True))
 
+    @agent_app.command("retire")
+    def agent_retire(
+        agent_id: str = typer.Argument(...),
+        reason: str = typer.Option("user_requested", "--reason"),
+    ) -> None:
+        """让一个 Agent 退役：他从此不能再动，但他做过的事一个字都不改。
+
+        两道拒绝会原样报出来：当前主 Agent 不能退（先设别人当主），手上还压着活的不能退
+        （清单一起给出）。远端 Agent 只会在这里被停掉 —— 那台机器上的登记要人去清。
+        """
+
+        token = _control_token()
+        if not token:
+            print(json.dumps({"status": "control_credential_missing"}, sort_keys=True))
+            raise typer.Exit(1)
+        try:
+            result = _invoke_command(
+                "agent.retire.user", {"agent_id": agent_id, "reason": reason},
+                authorization=f"Bearer {token}",
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "refused", "error": str(exc), "agent_id": agent_id}, sort_keys=True))
+            raise typer.Exit(4) from exc
+        print(json.dumps({"agent_id": agent_id, "status": "retired", **result}, sort_keys=True, ensure_ascii=False))
+
     @decision_app.command("list")
     def decision_list() -> None:
         try:
