@@ -45,6 +45,25 @@ corepack pnpm exec vitest run web/tests            # 前端结构冒烟（不需
 
 HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)；前端侧逐字段对照在 `web/method.md` §6/§7。
 
+## 上一次记录（daemon 停了还看得到东西）
+
+项目结束、daemon 停掉之后，一屏一屏都会变空。所以中间层把**自己搬运过的回答**记下来：
+`~/.tsunagou/console-history/<项目>.json`（跟着机器级索引走，没有新的配置项），
+一个出口一条，内容是"最近一次看到的回答 + 什么时候看到的"。它是**记录**，不是第二份真相：
+
+- 只在**连不上** daemon 时顶上来；daemon 自己给的拒绝（4xx/5xx）一字不改地送回去，
+  写动作永远要真 daemon；
+- 只在读不到的地方出现，且都带着记录时刻 —— 聚合视图在 `history`（出口→时刻），
+  页面直连的出口在 payload 的 `_history` 里，另加 HTTP 头 `X-Tsunagou-History`；
+- 记录只能由"daemon 活着"刷新；长列表会截断并写明，超大的一份只留说明，坏文件读成"没有记录"，
+  写不进去只当没记（**绝不影响本来能看的读取**）；
+- 删除项目时**无条件**连它一起删（`projects.forget` 的 `history_removed` 报告这一步）。
+
+判断"项目是否已完工"用的是项目自己那份 `.tsunagou/project.json` 里的 `lifecycle`
+（用户确认完成那一步写的，daemon 停着也读得到）：`completed` / `archived` 时页面不再画
+**接入 Agent / 立即存档 / 设为主 Agent**；改昵称、删除 Agent、删除项目、校验与重试存档照旧。
+决定与理由见 [D193](../decisions/2026-10-03-console-record-and-finished-project.md)。
+
 ## Codex 一句话接入
 
 在控制台选好项目、昵称和主/子 Agent 后，在目标 Codex Desktop 对话中说 **“请接入 Tsunagou”**。已安装的接入 Skill 执行 `tsunagou agent join`；不要求用户重复输入目录、角色或会话 ID。

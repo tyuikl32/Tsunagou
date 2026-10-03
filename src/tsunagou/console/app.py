@@ -23,6 +23,7 @@ from tsunagou.console.agents import AgentDirectory, gather
 from tsunagou.console.config import ConsoleConfig
 from tsunagou.console.errors import ConsoleError
 from tsunagou.console.glossary import public as glossary
+from tsunagou.console.history import HistoryStore
 from tsunagou.console.profile import load_profile, update_profile
 from tsunagou.console.projects import (
     ProjectEntry,
@@ -158,6 +159,9 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
     # It is also the place where a vendor is filled in for Agents the console never
     # enrolled (see ``agents.reconcile_vendors``).
     directory = AgentDirectory(profile_path=settings.profile_path)
+    # 控制台自己的记录：它搬运过的那些出口，最近一次看到的样子（见 console/history.py）。
+    # 放在索引旁边，所以测试把索引指到临时目录时，记录自然也跟着进临时目录。
+    history = HistoryStore.beside_index(settings.index_path)
     app = FastAPI(title="Tsunagou Console", version=CONSOLE_VERSION)
 
     @app.exception_handler(ConsoleError)
@@ -168,6 +172,27 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         entry = find(settings, project_id)
         endpoint = ensure_daemon(entry, autostart=settings.daemon_autostart)
         ensure_matching_project(endpoint, project_id)
+        return entry, endpoint
+
+    # 只有这两种拒绝才允许"用记录顶上"：daemon 不在（没起过 / 起不来）。项目对不上号
+    # （daemon_project_mismatch）是配置出了问题，那时拿一份记录出来只会把问题藏起来。
+    _STOPPED_CODES = ("daemon_not_running", "daemon_start_failed")
+
+    def _resolve_readable(project_id: str) -> tuple[ProjectEntry, dict[str, Any] | None]:
+        """Where to read a screen from: this project's daemon, or its record.
+
+        A finished project's daemon is gone, and ``ensure_daemon`` refuses long before any
+        exit is asked. For a **read** that is too early to give up: if this console has a
+        record of the project, the answer is "here is what it last said", not an error.
+        Nothing else changes — a project we never saw still refuses exactly as before.
+        """
+
+        try:
+            entry, endpoint = _resolve_project(project_id)
+        except ConsoleError as exc:
+            if exc.code not in _STOPPED_CODES or history.summary(project_id)["sources"] == 0:
+                raise
+            return find(settings, project_id), None
         return entry, endpoint
 
     def _requested_project(request: Request, explicit: str | None) -> str:
@@ -182,19 +207,60 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
                 return str(candidate)
         raise ConsoleError("project_not_selected")
 
+    def _relay_source(path: str) -> str:
+        """How one relayed exit is named in the record: the path, without its query.
+
+        The page varies the query (limits, cursors); "the same screen" is the path, and
+        keeping one entry per path is what stops the record from growing with every page.
+        """
+
+        return "relay:" + path.split("?", 1)[0]
+
     async def _relay(
-        entry: ProjectEntry, endpoint: dict[str, Any], method: str, path: str, request: Request,
+        entry: ProjectEntry, endpoint: dict[str, Any] | None, method: str, path: str, request: Request,
     ) -> Response:
         body = await request.body() if method.upper() not in {"GET", "HEAD"} else None
-        forwarded = await run_in_threadpool(
-            forward,
-            endpoint=endpoint, method=method, path=path, query=request.url.query,
-            body=body, token=project_token(entry.path, endpoint),
-        )
-        return Response(
-            content=forwarded.body, status_code=forwarded.status,
-            media_type=forwarded.content_type or "application/json",
-        )
+        reading = method.upper() in {"GET", "HEAD"}
+        recorded = history.payload(entry.project_id, _relay_source(path)) if reading else None
+        if endpoint is not None:
+            try:
+                forwarded = await run_in_threadpool(
+                    forward,
+                    endpoint=endpoint, method=method, path=path, query=request.url.query,
+                    body=body, token=project_token(entry.path, endpoint),
+                )
+            except ConsoleError:
+                # 连不上（daemon 停了、挂了）：读得出记录就拿记录顶上，并明确标出它是什么
+                # 时候的。写动作永不记录，也永不用记录顶替。
+                if recorded is None:
+                    raise
+                return _recorded_answer(recorded)
+            if reading and 200 <= forwarded.status < 300:
+                # 读得通就记一份（这个出口下次 daemon 不在了也能看）。
+                try:
+                    history.record(entry.project_id, _relay_source(path), json.loads(forwarded.body or b"null"),
+                                   captured_at=format_timestamp(now_ms()))
+                except json.JSONDecodeError:
+                    pass
+            # daemon 自己给的回答（包括 4xx 的拒绝）一律原样送回去：那是**现在**的答案，
+            # 不该被一份旧记录顶掉 —— 藏着活的拒绝比留空更坏。
+            return Response(
+                content=forwarded.body, status_code=forwarded.status,
+                media_type=forwarded.content_type or "application/json",
+            )
+        # 已经没有 daemon 可问了（项目结束）：这一条读的是记录，没有记录就照旧说连不上。
+        if recorded is None:
+            raise ConsoleError("daemon_not_running", status=503,
+                               detail={"project_id": entry.project_id, "path": entry.path.as_posix()})
+        return _recorded_answer(recorded)
+
+    def _recorded_answer(recorded: tuple[Any, str]) -> Response:
+        """One recorded exit, marked so nobody mistakes it for a live answer."""
+
+        payload, captured_at = recorded
+        if isinstance(payload, dict):
+            payload = {**payload, "_history": {"captured_at": captured_at}}
+        return JSONResponse(content=payload, headers={"X-Tsunagou-History": captured_at})
 
     # ---- facts that belong to the machine, not to a project ----------------
 
@@ -234,13 +300,23 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         memory: the daemons are asked once per project and then only when their own
         storage changed. Default off, because a caller that only wants names should
         not pay for talking to every daemon.
+
+        Each row also carries ``history``: when this project's record was last written and
+        how many exits it holds. The page uses it to say "last seen at ..." on a card whose
+        daemon is gone — the record itself is read through the exits, not from here.
         """
 
+        items: list[dict[str, Any]] = []
+        for entry in discover(settings, probe=probe, agents=directory if agents else None):
+            row = entry.public()
+            # 只在**这一行的内容真的来自 daemon**（刚探活成功）时记一份。否则"上次记录"
+            # 会被"看了一次列表"本身刷新成现在 —— 那它就再也说不出"最后活着是什么时候"。
+            if isinstance(entry.daemon, dict) and entry.daemon.get("running"):
+                history.record(entry.project_id, "console.project", row, captured_at=format_timestamp(now_ms()))
+            row["history"] = history.summary(entry.project_id)
+            items.append(row)
         return {
-            "items": [
-                entry.public()
-                for entry in discover(settings, probe=probe, agents=directory if agents else None)
-            ],
+            "items": items,
             "projects_root": settings.projects_root.as_posix(),
             "scan_roots": [root.as_posix() for root in settings.resolved_scan_roots()],
             "index_path": settings.index_path.as_posix(),
@@ -411,32 +487,64 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         Each source is either the daemon's own answer or an explanation of why it
         is missing, so one refused exit leaves a hole in one panel instead of a
         blank page. If the daemon itself is down the whole view refuses, which is
-        what the page needs to say "未启动".
+        what the page needs to say "未启动" — unless this console has a record of the
+        project, in which case the panel is filled from it and every such source is
+        named in ``history`` with the moment it was recorded.
         """
 
         sources = CONSOLE_VIEWS.get(view)
         if sources is None:
             raise ConsoleError("console_view_unknown", status=404, detail={"view": view})
         project_id = _requested_project(request, project_id)
-        entry, endpoint = _resolve_project(project_id)
+        entry, endpoint = _resolve_readable(project_id)
         token = project_token(entry.path, endpoint)
         gathered: dict[str, Any] = {}
         missing: dict[str, Any] = {}
+        # 哪几个来源这一屏其实是从记录里拿的（页面据此写「上次记录（记录到 …）」）。
+        from_history: dict[str, str] = {}
+        unreachable: ConsoleError | None = None
         for name, source in sources.items():
-            answered = await run_in_threadpool(
-                forward, endpoint=endpoint, method="GET",
-                path=exit_path(project_id, source), token=token,
-            )
+            answered: ForwardResponse | None = None
+            if endpoint is not None:
+                try:
+                    answered = await run_in_threadpool(
+                        forward, endpoint=endpoint, method="GET",
+                        path=exit_path(project_id, source), token=token,
+                    )
+                except ConsoleError as exc:
+                    unreachable = unreachable or exc
+            if answered is None:
+                # The daemon is not there at all. Serve what was recorded for this exit; if
+                # nothing was, this panel keeps its hole (and the view refuses below when
+                # *no* source had a record).
+                kept = history.payload(project_id, name)
+                if kept is None:
+                    missing[name] = {"status": 503, "code": "daemon_not_running"}
+                    continue
+                payload, captured_at = kept
+                gathered[name] = payload
+                from_history[name] = captured_at
+                continue
             if answered.status >= 400:
+                # A live refusal stays a hole in this panel: it is an answer about *now*,
+                # and an old record must not paper over it.
                 missing[name] = explain_missing(answered)
                 continue
             try:
-                gathered[name] = json.loads(answered.body or b"null")
+                payload = json.loads(answered.body or b"null")
             except json.JSONDecodeError:
                 missing[name] = {"status": answered.status, "code": "unreadable_answer"}
+                continue
+            gathered[name] = payload
+            # 读得通就记一份（这一屏下次 daemon 不在了也能看）。
+            history.record(project_id, name, payload, captured_at=format_timestamp(now_ms()))
+        if unreachable is not None and not from_history:
+            # Nothing was ever recorded either: this is the plain "daemon 未启动" case.
+            raise unreachable
         return {
             "project_id": project_id, "view": view, "sources": gathered, "missing": missing,
             "gathered_at": format_timestamp(now_ms()),
+            **({"history": from_history} if from_history else {}),
         }
 
     @app.post("/api/v1/commands/{command_kind}")
@@ -447,13 +555,13 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
 
     @app.api_route("/api/v1/projects/{project_id}/{rest:path}", methods=RELAY_METHODS)
     async def relay_project(project_id: str, rest: str, request: Request) -> Response:
-        entry, endpoint = _resolve_project(project_id)
+        entry, endpoint = _resolve_readable(project_id)
         return await _relay(entry, endpoint, request.method, f"/api/v1/projects/{project_id}/{rest}", request)
 
     @app.api_route("/api/v1/{rest:path}", methods=RELAY_METHODS)
     async def relay_anything(rest: str, request: Request) -> Response:
         project_id = _requested_project(request, None)
-        entry, endpoint = _resolve_project(project_id)
+        entry, endpoint = _resolve_readable(project_id)
         return await _relay(entry, endpoint, request.method, f"/api/v1/{rest}", request)
 
     # ---- the page itself ---------------------------------------------------

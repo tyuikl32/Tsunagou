@@ -297,7 +297,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | 情况 | 行为 |
 |---|---|
 | input 所在窗口/区块**有**主按钮（如 `#addSubAgent`、向导每一步） | 点按钮才提交。向导的「下一步」在第 1/2 步会**真的做事**（建项目 / 接入主 Agent，失败就停在原地），第 3 步只是翻页；「完成」只收窗复位、不再发请求。**校验不过时窗口/步骤保持不动**，只弹提示 |
-| `#mgrAgentInfo` 的输入 | **昵称可改**，项目/任务只读（2026-10-02 换版式）：窗口里已经没有 `.items/.item`，是「标签 + 值」一路排下来 —— `>.title2` 当标签、`.textbox2 > input` 是昵称、`>.dspText` 依次是项目名称与任务名称。所以回填**按位置**（`render.agentInfoWindow`：`form.fill(node, [昵称])` + 两个 `.dspText`），不再按标签文字，`keyOfInput` 在这里也用不上（没有 `.item .fword`）。窗口里**没有「厂商」那一栏** —— 标题与胶囊上的 logo 已经说明它来自哪个宿主，而那个值是按 id 从用户档案现算的。标题文字由 `setWindowTitleText` 替换，**保留**标题里那个 `<i>` 图标（直接写 `textContent` 会把图标擦掉）。窗口里的「确定」= `app.saveAgentInfo()`（存昵称再关窗），**不再是关窗按钮**；因为 `#mgrAgentInfo` 在 `AUTOCOMMIT_EXCLUDE` 里，昵称框失焦**不会**自动提交 |
+| `#mgrAgentInfo` 的输入 | **昵称可改**，其余只读（2026-10-02 换版式，2026-10-03 加三行）：窗口里已经没有 `.items/.item`，是「标签 + 值」一路排下来 —— `>.title2` 当标签、`.textbox2 > input` 是昵称、`>.dspText` 依次是项目名称、任务名称，**再三行只有跨机器接入的 Agent 才出现**（`#agentInfoMachineTitle`/`#agentInfoMachine`「在哪台机器」、`#agentInfoCopyTitle`/`#agentInfoCopy`「代码副本」（**只有报了副本的才出现**，格式 `路径（基线）`）、`#agentInfoLimitsTitle`/`#agentInfoLimits`「这台机器的限制」：叫不醒它，以及文件活能不能做/做了算什么证据 —— 报了副本的写"证据是它自报的"，没报的写"只做不需要文件的活"）。所以回填**按位置**（`render.agentInfoWindow`：`form.fill(node, [昵称])` + 前两个 `.dspText` 按位置，后三行按 id 回填并定显隐），不再按标签文字，`keyOfInput` 在这里也用不上（没有 `.item .fword`）。**本机接入的 Agent 连那些标题都不出现**（`display:none`），所以那个窗口和加这个功能之前一模一样。窗口里**没有「厂商」那一栏** —— 标题与胶囊上的 logo 已经说明它来自哪个宿主，而那个值是按 id 从用户档案现算的。标题文字由 `setWindowTitleText` 替换，**保留**标题里那个 `<i>` 图标（直接写 `textContent` 会把图标擦掉）。窗口里的「确定」= `app.saveAgentInfo()`（存昵称再关窗），**不再是关窗按钮**；因为 `#mgrAgentInfo` 在 `AUTOCOMMIT_EXCLUDE` 里，昵称框失焦**不会**自动提交 |
 | input **没有**提交按钮（`.textbox` / `.textbox2` 里、不在 `#addProj` / `#addSubAgent` / `#mgrAgentInfo` 中，且所在区块没有按钮 —— 目前 `index.html` 里没有这样的静态输入框，这是留给动态渲染/宿主注入内容的机制） | **失焦即提交**，并提示"改动已成功保存"；按 Enter 等效于失焦；值没变化不重复提交、不重复提示 |
 | 设置里的"颜色主题"下拉框 | 选中即生效（立即换肤）。**选回同一个值不会重复提示**；程序化回填必须走 `{silent:true}` |
 
@@ -403,7 +403,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 **读取类**（2026-09-28 接线后的真实表；说明见 §10）
 | 键 | 路径 | 作用域 | 期望返回 |
 |---|---|---|---|
-| `projects` | `/projects?agents=1` | 全局 | `{items:[{project_id,name,objective,lifecycle,policy_revision,path,daemon,main_agent_id,agents,agents_fetched_at}]}`（中间层提供；daemon 没有这个路由。`agents=1` 才去问名单，见 §7） |
+| `projects` | `/projects?agents=1` | 全局 | `{items:[{project_id,name,objective,lifecycle,policy_revision,path,daemon,main_agent_id,agents,agents_fetched_at,history}]}`（中间层提供；daemon 没有这个路由。`agents=1` 才去问名单，见 §7） |
 | `agentsWindow` | `/console/agents` | 全局 | `{items:[{agent_id,role,status,project_id,project_name,task}],unreadable:[project_id],fetched_at}`（**跨项目汇总**：一行 = 一个 (项目, Agent)；中间层提供，见 §7） |
 | `settings` | `/console/profile` | 全局 | `{version,nickname,theme,agents:{<agent_id>:{nickname,vendor}}}`（中间层的用户档案） |
 | `glossary` | `/console/glossary` | 全局 | `{version, domains:{<域>:{<token>:中文}}}`（后端参数值的中文对照表，中间层维护，见 §7.3） |
@@ -511,6 +511,32 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > 是并发拉的，先到的那份不能把名字烘死成 id 缩写。
 > 读不到时 `agents` 为 `null`（不能写成 `[]`，那会看起来像“这个项目没有 Agent”）；
 > 想强制重读：`POST /api/v1/console/projects/{id}/agents:refresh`。
+>
+> **`history { captured_at, sources }`**：中间层自己那份记录的最后时刻（见
+> [console.md §上一次记录](../docs/implementation/console.md)）。daemon 不在时，卡片右下角那行
+> 除了「daemon 未启动 / 无响应」再补一句「上次记录（记录到 …）」—— 人据此知道点进去还有东西、
+> 也知道那是旧的那一份。`captured_at` 为空就不要写这一句。
+
+### 上一次记录：读不到时页面看到的东西
+
+项目结束（daemon 停了）之后，中间层会把**它搬运过的回答**拿出来顶上，并在回答里说清那是记录：
+
+- 聚合视图 `GET /console/views/{view}`：多一个 `history`，形如 `{ 出口名: 时刻 }`
+  —— 列在这里的出口是**从记录里拿的**；没列进 `missing` 的也不算"读不到"。
+- 页面自己直连的出口（`/projects/{id}/history`、`/checkpoints`…）：payload 里多一个
+  `_history { captured_at }`（只在从记录里拿的时候出现），HTTP 头 `X-Tsunagou-History` 带同一时刻。
+- **写动作永远不会被记录顶上**；daemon 还在时的拒绝（4xx/5xx）也一字不改地送回来。
+
+页面只做两件事：**只在读不到的分支里**用它，并且**写出记录时刻**（`recordText` /
+`recordNote` / `recordDetail`）。把旧记录画得像现在，比留空难查得多。
+
+### 确认完工之后：只能在做项目时用的入口不再画
+
+判据：当前项目的 `lifecycle` 是 `completed` 或 `archived`（`projectFinished()`，原值来自项目列表）。
+不再画的是**推进协作**的那几个：**接入 Agent**（Agent 管理页的加号）、**立即存档**（验收与存档点
+那一屏的存档卡）、**设为主 Agent**（Agent 卡片上的动作）。
+**照旧画**：修改（改昵称）、删除 Agent、删除项目、校验存档点、重试存档 —— 收尾之后还要做这些。
+这是页面级的关闭，后端照旧接受；理由见 [D193](../docs/decisions/2026-10-03-console-record-and-finished-project.md)。
 
 ### Agent 列表窗口 `render.agentWindow`
 ```

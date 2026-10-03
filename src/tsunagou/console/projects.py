@@ -25,6 +25,7 @@ from typing import Any
 from tsunagou.console.agents import AgentDirectory, attach
 from tsunagou.console.config import ConsoleConfig
 from tsunagou.console.errors import ConsoleError
+from tsunagou.console.history import HistoryStore
 from tsunagou.platform import host_registration
 from tsunagou.platform.bridge_files import bridge_identities
 from tsunagou.platform.project_index import forget_project as forget_index_entry
@@ -383,6 +384,9 @@ def forget(
                                               all_registrations=True, run=run)
         registrations.append({"adapter": adapter, "profile": profile, **outcome.public()})
     dropped = enrollment.forget_project(entry.project_id)
+    # 控制台自己那份记录跟着项目一起消失：项目行都没了，记录就没有归属。**无条件**删
+    # （哪怕调用方要求保留目录文件）—— 留下它只会在下次同名项目出现时对不上号。
+    history_removed = HistoryStore.beside_index(config.index_path).forget(entry.project_id)
     in_own_root = _is_inside(root, config.projects_root)
     files: dict[str, Any] = {"path": root.as_posix(), "deleted": False}
     if not delete_files:
@@ -403,6 +407,7 @@ def forget(
         "daemon": daemon,
         "host_registrations": registrations,
         "enrollments_dropped": dropped,
+        "history_removed": history_removed,
         "index": index,
         "files": files,
     }
