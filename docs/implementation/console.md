@@ -45,8 +45,26 @@ corepack pnpm exec vitest run web/tests            # 前端结构冒烟（不需
 
 HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)；前端侧逐字段对照在 `web/method.md` §6/§7。
 
-## 上一次记录（daemon 停了还看得到东西）
+## 接入等待：这次申请"到没到"由什么判定
 
+控制台里那条待接入记录（机器级那一条，见 `platform/enrollment_store.py`）有两种来源，判定
+**不是同一个**，由记录里有没有**基线**决定：
+
+| 来源 | 判定 |
+|---|---|
+| Codex 的申请（会被某个聊天认领） | 认领 + 桥写回执 → 主机核对回执（`_receipt_matches`，只认那一个聊天） |
+| 宿主自己接入（`in_host`，如 DeepSeek Harness）、跨机器邀请 | **名单比对**：申请时不在、现在出现、身份对得上、角色对得上的那个席位 |
+
+- 基线与记录一起落盘（申请时名单上有谁）。申请时读不到名单就**不写**，等第一次读得到时补记
+  （`note_baseline`）——宁多多等一轮，也不把老席位当成刚到的人。
+- 身份归属沿用 `observe` 出口已有那套：档案里从接入文件学到的**厂商**要对得上；唯一例外是
+  **自己报了机器名**的席位（跨机器邀请在这台机器上什么都不写，机器名就是唯一证据，而那是
+  daemon 入席时观察到的）。
+- `/console/enrollments/{id}` 与 `/projects/{id}/enrollments:observe` **共用同一个判据**
+  （`_attributed_seat`），页面与控制台不许各说各话。决定与理由见
+  [D194](../decisions/2026-10-03-in-host-arrival-by-roster.md)。
+
+## 上一次记录（daemon 停了还看得到东西）
 项目结束、daemon 停掉之后，一屏一屏都会变空。所以中间层把**自己搬运过的回答**记下来：
 `~/.tsunagou/console-history/<项目>.json`（跟着机器级索引走，没有新的配置项），
 一个出口一条，内容是"最近一次看到的回答 + 什么时候看到的"。它是**记录**，不是第二份真相：
