@@ -576,7 +576,7 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
     if (typeof route[key] !== "string" || !route[key]) throw new Error("private_route_invalid");
   }
   let consoleEnrollment: RoutedConfig["consoleEnrollment"];
-  if (codexDesktop && route.console_enrollment !== undefined) {
+  if ((codexDesktop || metaKey === "ai.opencode/sessionID") && route.console_enrollment !== undefined) {
     const enrollment = record(route.console_enrollment);
     if (!enrollment || typeof enrollment.enrollment_id !== "string" || !enrollment.enrollment_id
         || (enrollment.requested_role !== "main" && enrollment.requested_role !== "worker")
@@ -603,8 +603,8 @@ function configurationForRequest(request: CallToolRequest): RoutedConfig {
 /** Local observation of an original-host read, never a daemon admission grant. */
 async function recordConsoleArrival(cfg: RoutedConfig, result: unknown, session: PersistedSession): Promise<void> {
   const enrollment = cfg.consoleEnrollment;
-  // Only shared Codex routing can populate this reference, after requiring actual
-  // per-call _meta.threadId. CLI bootstrap transports explicitly mark themselves.
+  // Shared Codex/OpenCode routing requires actual per-call host metadata.
+  // CLI bootstrap transports explicitly mark themselves.
   if (!enrollment || !cfg.conversationId || env("TSUNAGOU_CONNECT_HELPER") === "1") return;
   const context = record(result);
   const observedSession = record(context?.session);

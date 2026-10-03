@@ -4,8 +4,8 @@ Not every host can be enrolled the same way, and the page must not pretend
 otherwise. A host is in exactly one of three states (``enroll_mode``):
 
 * ``console`` — this console can finish the handoff. Codex stores only a private
-  selection and its real chat claims it later; OpenCode gets a ticket bound to a
-  session name the console hands out, and the person opens that named session.
+  selection and its real chat claims it later; local OpenCode follows the same
+  request-only flow using its host-provided session identity.
 * ``in_host`` — the host enrolls from inside its own chat (DeepSeek Harness).
   Nothing is signed or queued here: the page says where to say the one sentence.
 * ``unsupported`` — no implementation yet; the page says so instead of queueing.
@@ -335,6 +335,33 @@ def prepare(
             profile=profile, token=token, conversation_id=conversation_id, directory=directory,
         )
 
+    if host.adapter in {"codex", "opencode"}:
+        try:
+            intent = EnrollmentStore().create(
+                project_id=entry.project_id, project_root=entry.path.resolve(), role=role, nickname=nickname,
+                adapter=host.adapter, **({"place": "local"} if host.adapter == "opencode" else {}),
+            )
+        except RuntimeError as exc:
+            error = _intent_error(exc)
+            if str(exc) == "enrollment_already_pending":
+                active = EnrollmentStore().active()
+                if active is not None:
+                    error.detail["enrollment"] = {**_intent_public(active), "status": "waiting"}
+                error.detail["note"] = (
+                    "已有其他项目或角色的接入申请，请先处理当前申请。"
+                    f"未认领的申请可取消；已认领的申请需在原 {host.label} 聊天继续完成。"
+                )
+            raise error from exc
+        return {
+            **_intent_public(intent), "status": "prepared", "mode": mode,
+            "host_registration": {
+                "adapter": host.adapter, "label": host.label, "status": "deferred", "name": "tsunagou",
+                "note": f"等待目标 {host.label} 聊天认领；项目和角色已保存，认领时才签票并绑定真实聊天。",
+            },
+            "next": (f"在要接入的 {host.label} 聊天中说：请接入 Tsunagou。"
+                     "首次安装需先准备宿主入口和共享 MCP，并重载原对话。"),
+        }
+
     if enrollment_mode == IN_HOST_MODE:
         # 这条路的票由那条聊天里的 CLI 以用户身份自己签（身份来自宿主给的会话 id），
         # 控制台不签票、不写宿主配置。但"用户要让谁接入哪个项目"这个决定必须留在机器上：
@@ -358,31 +385,6 @@ def prepare(
                 "note": _enroll_note(host, enrollment_mode),
             },
             "next": _enroll_note(host, enrollment_mode),
-        }
-
-    if host.adapter == "codex":
-        try:
-            intent = EnrollmentStore().create(
-                project_id=entry.project_id, project_root=entry.path.resolve(), role=role, nickname=nickname,
-            )
-        except RuntimeError as exc:
-            error = _intent_error(exc)
-            if str(exc) == "enrollment_already_pending":
-                active = EnrollmentStore().active()
-                if active is not None:
-                    error.detail["enrollment"] = {**_intent_public(active), "status": "waiting"}
-                error.detail["note"] = (
-                    "已有其他项目或角色的接入申请，请先处理当前申请。"
-                    "未认领的申请可取消；已认领的申请需在原 Codex 聊天继续完成。"
-                )
-            raise error from exc
-        return {
-            **_intent_public(intent), "status": "prepared", "mode": mode,
-            "host_registration": {
-                "adapter": "codex", "label": host.label, "status": "deferred", "name": "tsunagou",
-                "note": "等待目标 Codex 聊天认领；项目和角色已保存，认领时才签票并绑定真实聊天。",
-            },
-            "next": "在要接入的 Codex 桌面聊天中说：请接入 Tsunagou。首次安装需先加载 Tsunagou Skill 和共享 MCP。",
         }
 
     # 名单要在**记下这次选择之前**取：这些记录没有票、没有回执，等到没到只能靠"比这份多
@@ -594,9 +596,14 @@ def _waiting_note(record: dict[str, Any]) -> str:
     """What this wait is waiting for, in the words of the host it belongs to."""
 
     label = _host_label(str(record.get("adapter") or ""))
-    if str(record.get("adapter") or "") == "codex":
-        return "已登记，等待原 Codex 聊天调用项目上下文并确认角色和就绪状态。"
+    if _uses_receipt(record):
+        return f"已登记，等待原 {label} 聊天调用项目上下文并确认角色和就绪状态。"
     return f"已登记，等待 {label} 那边完成接入：它一出现在名单里且角色正确，这里就会显示已接入。"
+
+
+def _uses_receipt(record: Mapping[str, Any]) -> bool:
+    return "baseline" not in record and (record.get("adapter") == "codex" or (
+        record.get("adapter") == "opencode" and record.get("place") == "local"))
 
 
 def _local_deepseek(record: Mapping[str, Any]) -> bool:
@@ -685,21 +692,17 @@ def _intent_status(record: dict[str, Any], *, settings: ConsoleConfig, directory
     if phase == "forgotten":
         return {**public, "status": "cancelled", "note": "项目已从控制台移除，这次接入申请已失效。"}
     waiting = {**public, "status": "waiting"}
-    # 有没有回执可等，决定这条申请的"到了"由什么判定：
-    #   · Codex 的申请：那个聊天认领（claimed/enrolled）后由桥写回执，主机核对回执；
-    #   · 宿主自己接入（in_host）与跨机器邀请：主机这边**什么都不写**，没有票可问、没有回执
-    #     可等 —— 唯一的证据是名单里那个"申请时不在、现在出现、身份与角色都对得上"的席位。
-    # 判据是记录里有没有**基线**（那两条路申请时会写下"当时名单上有谁"），加上宿主本身是否
-    # 走回执（只有 codex 走）。两者共用 _attributed_seat，页面那条 observe 出口不会各说各话。
-    watched = "baseline" in record or str(record.get("adapter") or "") != "codex"
+    # Local Codex and new local OpenCode requests require the owning chat's receipt.
+    # Legacy project tickets and network/in-host roster handoffs retain their existing evidence.
+    watched = not _uses_receipt(record)
     if phase == "failed":
         return {**waiting, "error": record.get("error"),
                 "note": (f"接入遇到问题，请在刚才的 {_host_label(str(record.get('adapter') or ''))} 聊天重试；"
                          "申请仍绑定那个聊天。")}
     if phase == "pending" and not watched:
-        return {**waiting, "note": "等待 Codex 聊天认领：请接入 Tsunagou。"}
+        return {**waiting, "note": f"等待 {_host_label(record['adapter'])} 聊天认领：请接入 Tsunagou。"}
     if phase == "claimed":
-        return {**waiting, "note": "目标 Codex 聊天已认领，正在完成接入。"}
+        return {**waiting, "note": f"目标 {_host_label(record['adapter'])} 聊天已认领，正在完成接入。"}
     try:
         entry = find(settings, record["project_id"])
     except ConsoleError:
@@ -907,8 +910,8 @@ def observe(
     if not wanted:
         raise ConsoleError("adapter_required", status=400)
     intent = _intent_or_none(enrollment_id) if enrollment_id else None
-    if intent is not None and _local_deepseek(intent):
-        if intent["project_id"] != project_id or wanted != "deepseek":
+    if intent is not None and (_local_deepseek(intent) or _uses_receipt(intent)):
+        if intent["project_id"] != project_id or wanted != intent["adapter"]:
             raise ConsoleError("onboarding_project_mismatch", status=409)
         return _intent_status(intent, settings=settings, directory=directory)
     entry = find(settings, project_id)

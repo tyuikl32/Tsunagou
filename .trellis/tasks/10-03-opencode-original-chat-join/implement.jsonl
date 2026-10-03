@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/adapters/index.md", "reason": "host identity and original chat requirements"}
+{"file": ".trellis/spec/backend/entrypoint-contracts.md", "reason": "join/claim/receipt contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "quality gates"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "small reuse boundaries"}

@@ -174,3 +174,43 @@ Exercise cwd at another project, a project subdirectory, no project, and the sel
 ### 7. Wrong vs Correct
 
 Wrong: `runtime.project_id` exists, so return before inspecting DeepSeek pending. Correct: retain explicit selectors, validate the pending project when present, and use cwd discovery only when no corresponding request exists.
+
+## Scenario: OpenCode original-chat join
+
+### 1. Scope / Trigger
+
+Local OpenCode console requests bind the existing original conversation regardless of cwd. Legacy ticket records and network invitations retain their paths; no bulk migration.
+
+### 2. Signatures
+
+- `agent prepare --adapter opencode`: install user-level credential-free entry only.
+- `agent join --adapter opencode`: claim and enroll with host-provided identity; default `agent join` remains Codex.
+- Host `tsunagou_connect`: empty arguments; no new daemon command, state or permission.
+
+### 3. Contracts
+
+The plugin passes live `ctx.sessionID` through the fixed CLI child's `TSUNAGOU_HOST_CONVERSATION_ID`, cleans inherited host/project identity and forces UTF-8. CLI matches adapter, project manifest, role and route before claim; no cwd fallback. OpenCode routes live under `hosts/opencode`; native MCP supplies `ai.opencode/sessionID` on every call. New local prepare saves a request without daemon startup or ticket issuance. Shared route receipt handling must not enable Codex wake for OpenCode.
+
+Arrival requires the exact original-call receipt and fresh matching Agent/role/epoch on every polling endpoint. CLI helper reads never satisfy arrival. Same-chat retry preserves ownership. Reuse existing store locks and lifecycle; project config/legacy-binding conflicts are explicit, never silently overwritten.
+
+### 4. Validation & Error Matrix
+
+| Condition | Result |
+|---|---|
+| No matching request or missing real identity | Error before claim; no project initialization |
+| Foreign route, manifest, old binding or role conflict | Refuse before issuing credentials |
+| Another conversation owns request | Existing claim-owner rejection |
+| Missing or stale original-call receipt | Waiting, never arrived |
+| User config or plugin conflict | Prepare fails without overwriting user content |
+
+### 5. Good/Base/Bad Cases
+
+Good: unrelated cwd joins the console-selected project and role. Base: initial installation requires one reload, then later joins only add routes. Bad: fabricate a session name, reuse another conversation's credential, or equate helper enrollment with arrival.
+
+### 6. Tests Required
+
+Extend console join/store, registration, bridge receipt and real-daemon integration tests for OpenCode; retain Codex/DSH regression coverage. Host tool subprocess tests assert trusted identity, empty arguments, cleaned environment and sanitized results. Live host evidence must separately prove matching plugin/MCP identities, reload continuity and real CLI/daemon/bridge arrival; document whether the model driver is a controlled fixture.
+
+### 7. Wrong vs Correct
+
+Wrong: derive the selected project from cwd or mark arrived when CLI reports enrolled. Correct: match and claim the console request, then require a successful original native MCP context and exact receipt.

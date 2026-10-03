@@ -1,1 +1,1 @@
-{"name":"@tsunagou/adapter-opencode","version":"0.1.0","type":"module","private":true,"dependencies":{"@tsunagou/bridge-sdk":"workspace:*"},"scripts":{"check":"tsc -p tsconfig.json --noEmit"}}
+{"name":"@tsunagou/adapter-opencode","version":"0.1.0","type":"module","private":true,"dependencies":{"@tsunagou/bridge-sdk":"workspace:*"},"scripts":{"check":"tsc -p tsconfig.json --noEmit && node --check connect.js","test":"node --test connect.test.js"}}

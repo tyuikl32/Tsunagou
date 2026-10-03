@@ -117,8 +117,8 @@ class EnrollmentStore:
     ) -> dict[str, Any]:
         """Record the person's decision: this Agent joins this project with this role.
 
-        Codex claims the record from inside its chat and the ticket is signed at claim
-        time; the other hosts keep their own handoff (a ticket written into the project,
+        Codex and local OpenCode claim the record from inside their chat; the ticket
+        is signed at claim time. Other hosts keep their own handoff (a ticket written into the project,
         or nothing at all because the chat signs its own) and only *read* this record to
         learn where they are joining. Both shapes need the same three facts, and both
         need the single slot: one enrollment at a time is what makes "which project"
@@ -223,16 +223,19 @@ class EnrollmentStore:
             active_id = state.get("active_id")
             return dict(self._record(state, active_id)) if active_id else None
 
-    def current(self, thread_id: str | None = None) -> dict[str, Any]:
+    def current(self, thread_id: str | None = None, *, adapter: str | None = None) -> dict[str, Any]:
         with self._transaction() as state:
             if thread_id:
-                owned = [r for r in state["records"].values() if r.get("thread_id") == thread_id and r["status"] in _BOUND]
+                owned = [r for r in state["records"].values() if r.get("thread_id") == thread_id and r["status"] in _BOUND
+                         and (adapter is None or r.get("adapter") == adapter)]
                 if owned:
                     return dict(max(owned, key=lambda r: r["created_at"]))
             active_id = state.get("active_id")
             if not active_id:
                 raise RuntimeError("enrollment_not_pending")
             record = self._record(state, active_id)
+            if adapter is not None and record.get("adapter") != adapter:
+                raise RuntimeError("enrollment_not_pending")
             if record.get("thread_id") and record["thread_id"] != thread_id:
                 raise RuntimeError("enrollment_claimed_by_another_chat")
             return dict(record)
@@ -309,7 +312,7 @@ class EnrollmentStore:
 
         An in-chat entry point asks "is somebody waiting for *me*?": a Codex selection
         must not be handed to a DeepSeek chat that happens to ask first, and vice versa.
-        Reading only — claiming is still the Codex path's job (or the console's).
+        Reading only — claiming is the joining chat's job (or the console's).
         """
 
         wanted = str(adapter or "").strip().lower()
@@ -324,7 +327,7 @@ class EnrollmentStore:
         The hosts that enroll inside their own chat (or into a file the host reads)
         never claim a record: there is no thread id to bind, and the console sees the
         Agent appear in the roster instead. That observation is the same fact
-        ``mark_arrived`` records for Codex, so it closes the slot the same way.
+        ``mark_arrived`` records for a claimed chat, so it closes the slot the same way.
         """
 
         if not agent_id:

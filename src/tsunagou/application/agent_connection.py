@@ -15,10 +15,12 @@ from tsunagou.application.onboarding import (
     codex_routing_directory,
     conversation_key,
     deepseek_routing_directory,
+    opencode_routing_directory,
     prepare_codex_request,
     read_codex_request,
     write_codex_route,
     write_deepseek_route,
+    write_opencode_route,
 )
 from tsunagou.hostwake.port import HostWakeError
 from tsunagou.platform.bridge_files import HOST_META_KEYS, write_ticket_file
@@ -84,6 +86,7 @@ def connect_agent(
         runtime = operations.runtime()
         requested_role = role if role is not None or adapter == "deepseek" else "worker"
         desktop = adapter == "deepseek" and profile == "desktop"
+        opencode_shared = adapter == "opencode" and profile == "desktop" and not register_host
         request = None
         if request_file is not None or (adapter == "codex" and register_host):
             if adapter != "codex":
@@ -115,15 +118,21 @@ def connect_agent(
         # Connect serializes only its own conversation. CredentialHandoff
         # continues to own session rotation and ticket cleanup separately.
         with ProjectLock(destination / "connect.lock"):
-            if request is not None or desktop:
+            if request is not None or desktop or opencode_shared:
                 if request is not None:
                     write_codex_route(request, runtime, destination)
                     environment = {"TSUNAGOU_ROUTING_DIR": str(codex_routing_directory())}
-                else:
+                elif desktop:
                     write_deepseek_route(conversation_id, runtime, destination)
                     environment = {
                         "TSUNAGOU_ROUTING_DIR": str(deepseek_routing_directory()),
                         "TSUNAGOU_HOST_META_KEY": DEEPSEEK_HOST_META_KEY,
+                    }
+                else:
+                    write_opencode_route(conversation_id, runtime, destination)
+                    environment = {
+                        "TSUNAGOU_ROUTING_DIR": str(opencode_routing_directory()),
+                        "TSUNAGOU_HOST_META_KEY": HOST_META_KEYS["opencode"],
                     }
                 bridge_config_path = destination / "bridge-config.json"
                 config = {

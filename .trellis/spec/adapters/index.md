@@ -96,3 +96,9 @@ membership. New local/network requests record their place; legacy records retain
 existing behavior until an original-chat retry explicitly links a local DSH result.
 Codex receipts, OpenCode, and network roster attribution remain separate. Repeated links
 are idempotent; wrong project/role/Agent and terminal records cannot be overwritten.
+
+## OpenCode original-chat onboarding
+
+OpenCode local console onboarding uses a user-level credential-free plugin and native MCP entry, with private routes per actual conversation. `agent prepare --adapter opencode` installs once; after the initial reload, joining adds only a route. The zero-argument host tool obtains identity from the live execution context and calls the installed `agent join --adapter opencode`; models cannot supply identity, project, role or commands. Do not clone the DSH MCP transport: OpenCode supplies `ai.opencode/sessionID` natively. Keep Codex wake independent of generic receipt handling.
+
+Installed OpenCode 2.0.18 uses a directory plugin exporting `{id, setup(api)}`, `api.tool.transform`, plain JSON Schema input and `execute(args, ctx)` returning MCP content; identity is `ctx.sessionID`. Upstream dev/v1 plugin examples are not evidence of this installed API. Original-chat readiness requires its successful MCP context and exact receipt, excluding the CLI helper. Legacy project bindings and user config conflicts fail explicitly; no bulk migration or fabricated replacement identity. See the [decision](../../../docs/decisions/2026-10-03-opencode-original-chat.md).

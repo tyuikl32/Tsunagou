@@ -1442,9 +1442,20 @@ if typer is not None:
         from tsunagou.application.onboarding import powershell_quote, prepare_codex_request
         from tsunagou.hostwake.port import HostWakeError
 
-        if adapter not in {"codex", "deepseek"} or role not in {"worker", "main"}:
-            raise typer.BadParameter("prepare supports codex/deepseek and role worker/main")
+        if adapter not in {"codex", "deepseek", "opencode"} or role not in {"worker", "main"}:
+            raise typer.BadParameter("prepare supports codex/deepseek/opencode and role worker/main")
         try:
+            if adapter == "opencode":
+                from tsunagou.platform.opencode_onboarding import prepare_opencode_host
+
+                if profile != "desktop":
+                    raise RuntimeError("opencode_prepare_requires_desktop_profile")
+                result = prepare_opencode_host()
+                print(json.dumps({"status": "prepared", "adapter": adapter, "profile": profile,
+                                  "host_registration": result.status, "host_ready": False, "creates_agent": False,
+                                  "files": [str(path) for path in result.files], "note": result.note,
+                                  "next": "reload_original_conversation_then_call_tsunagou_connect"}, ensure_ascii=False))
+                return
             if adapter == "deepseek":
                 if profile != "desktop":
                     raise RuntimeError("deepseek_prepare_requires_desktop_profile")
@@ -1957,27 +1968,33 @@ if typer is not None:
             raise typer.Exit(4) from exc
 
     @agent_app.command("join")
-    def agent_join() -> None:
-        """Join the console's pending Agent as this real Codex Desktop conversation."""
+    def agent_join(adapter: str = typer.Option("codex", "--adapter")) -> None:
+        """Join the console selection as the current Codex or OpenCode conversation."""
         from tsunagou.application.agent_connection import connect_agent
         from tsunagou.application.onboarding import (
             bind_console_enrollment,
             prepare_codex_request,
             read_codex_request,
             validate_codex_route,
+            validate_opencode_route,
         )
         from tsunagou.hostwake.port import HostWakeError
         from tsunagou.platform.enrollment_store import EnrollmentStore
         from tsunagou.platform.runtime_context import read_object
 
+        if adapter not in {"codex", "opencode"}:
+            raise typer.BadParameter("join supports codex/opencode")
         store = EnrollmentStore()
         claimed: dict[str, Any] | None = None
         selection = None
-        thread_id = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+        thread_id = (os.environ.get("TSUNAGOU_HOST_CONVERSATION_ID") if adapter == "opencode"
+                     else os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID"))
         try:
-            if not thread_id:
-                raise RuntimeError("desktop_context_missing:run_agent_join_inside_the_codex_conversation")
-            intent = store.current(thread_id)
+            if not thread_id or not thread_id.strip():
+                raise RuntimeError(f"desktop_context_missing:run_agent_join_inside_the_{adapter}_conversation")
+            intent = store.current(thread_id, adapter=adapter)
+            if adapter == "opencode" and (intent.get("place") != "local" or "baseline" in intent):
+                raise RuntimeError("opencode_legacy_binding_conflict")
             root = Path(intent["project_root"]).resolve()
             previous_root = _selected_project_root.get()
             if previous_root is not None and previous_root.resolve() != root:
@@ -1987,21 +2004,27 @@ if typer is not None:
             manifest = read_object(root / ".tsunagou/project.json")
             if runtime.project_id != intent["project_id"] or manifest.get("project_id") != intent["project_id"]:
                 raise RuntimeError("onboarding_project_mismatch")
-            request_file = prepare_codex_request(runtime)
-            request = read_codex_request(request_file, runtime)
-            if request["conversation_id"] != thread_id:
-                raise RuntimeError("desktop_conversation_mismatch")
-            validate_codex_route(request, runtime)
+            request_file = None
+            if adapter == "codex":
+                request_file = prepare_codex_request(runtime)
+                request = read_codex_request(request_file, runtime)
+                if request["conversation_id"] != thread_id:
+                    raise RuntimeError("desktop_conversation_mismatch")
+                validate_codex_route(request, runtime)
+            else:
+                request = {"adapter": adapter, "conversation_id": thread_id}
+                validate_opencode_route(thread_id, runtime, retry=intent.get("thread_id") == thread_id)
             claimed = store.claim(intent["enrollment_id"], thread_id, expected_revision=int(intent["revision"]))
             connected = connect_agent(
-                _connection_operations(), adapter="codex", role=claimed["requested_role"],
-                profile="current", request_file=request_file,
+                _connection_operations(), adapter=adapter, role=claimed["requested_role"],
+                profile="current" if adapter == "codex" else "desktop", request_file=request_file,
+                register_host=adapter != "opencode",
             )
             if (connected.get("project_id") != intent["project_id"]
                     or connected.get("role") != intent["requested_role"]):
                 raise RuntimeError("onboarding_result_mismatch")
             registration = str(connected.get("host_registration") or "")
-            if not registration.startswith(("registered:", "unchanged:")):
+            if adapter == "codex" and not registration.startswith(("registered:", "unchanged:")):
                 raise RuntimeError("codex_mcp_registration_incomplete")
             bind_console_enrollment(request, claimed)
             store.mark_enrolled(claimed["enrollment_id"], thread_id, agent_id=connected["agent_id"])

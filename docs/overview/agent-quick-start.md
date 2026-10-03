@@ -73,15 +73,17 @@ profile 只作显示标签。同一 IDE 的不同对话/subagent 由真实会话
 
 工具返回 enrolled 后，**同一聊天**再调用 `mcp__tsunagou__context__project_read`，核对项目、自己的 Agent、角色和 ready 状态。CLI/helper 成功、临时 headless 会话成功或插件文件存在都不能替代这一步。Desktop 入口的实际验证状态以[现有验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)为准；此入口不承诺 Codex 专属自动唤醒。
 
-## OpenCode 接入（从控制台）
+## OpenCode 接入（当前对话，任意目录）
 
-前端选 OpenCode 准备接入后，等待提示会给出一个**会话名**（形如 `ses_<profile>`）：票绑的就是这个名字，所以人要用同一个名字开会话，两边的身份才对得上。
+首次安装运行 `tsunagou agent prepare --adapter opencode`，配置用户级接入工具和无凭据共享 MCP。重载一次并回到**原对话**，等待 MCP 连接完成；安装不创建 Agent、不签票。配置冲突时先解决提示的问题，不覆盖用户其他配置。
 
-1. 在这个项目的目录里用该名字打开（或继续）会话：`opencode --session ses_<profile>`。
-2. 在那边重载一次（`opencode reload` 或重启窗口），让项目里的 MCP 配置生效。
-3. 该会话首次调用 `context__project_read` 即完成接入，控制台随即显示已接入。
+1. 在控制台选择项目、角色和 OpenCode，准备接入。此时只保存申请，不指定会话名。
+2. 在要加入的当前对话中说“请接入 Tsunagou”，调用无参数的 `tsunagou_connect`。工作目录可以与项目无关；工具读取宿主真实会话 ID，通过已安装 CLI 的 `agent join --adapter opencode` 认领申请。
+3. 工具返回 enrolled 后，**同一对话**调用共享 MCP 的 `context__project_read`。控制台核对原会话回执、Agent、项目、角色及 ready 状态后显示已接入。
 
-同一次等待重试沿用同一个名字（记在该会话的私有 bridge 目录里）；换名字就是另一次接入——项目里一条 MCP 条目只对一个会话。别的会话调用同一个 bridge 会被明确拒绝（`not_enrolled`），不会顶替这次接入。
+后续接入只增加私有会话路由，不重复修改 MCP 配置。没有申请时明确提示先在控制台准备；失败由原对话重试。不要手填会话 ID、复制凭据或另建对话替代原对话验证。已有其他项目路由或旧绑定发生冲突时明确报错，不静默创建第二个身份。
+
+旧项目级接入及跨机器邀请保留原流程，不批量迁移已有 Agent。旧绑定检查覆盖当前目标及本机索引中的项目；若旧项目已移出索引或移动后未重新登记，须先处理原绑定。本机 v2.0.18 的插件入口使用目录插件、`setup(api)` 和宿主执行上下文；不可照搬旧版插件示例。真实功能验证状态见[适配器实施说明](../implementation/adapter-opencode.md)。
 
 ## 多项目和查询
 

@@ -23,10 +23,11 @@ from tsunagou.platform.runtime_context import resolve_runtime
 cli_module = importlib.import_module("tsunagou.cli.app")
 
 
+@pytest.mark.parametrize("adapter", ["codex", "opencode"])
 @pytest.mark.parametrize("role", ["main", "worker"])
-def test_console_join_through_real_daemon_and_bridge(tmp_path, monkeypatch, role):
+def test_console_join_through_real_daemon_and_bridge(tmp_path, monkeypatch, role, adapter):
     source = Path(__file__).resolve().parents[2]
-    root = tmp_path / "projects" / "chosen"
+    root = tmp_path / "projects" / "选择 项目"
     subprocess.run(["git", "init", "--quiet", str(root)], check=True)
     outside = tmp_path / "other-cwd"
     outside.mkdir()
@@ -34,7 +35,10 @@ def test_console_join_through_real_daemon_and_bridge(tmp_path, monkeypatch, role
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("TSUNAGOU_ENROLLMENT_DIR", str(tmp_path / "enrollments"))
     monkeypatch.setenv("TSUNAGOU_ROUTING_DIR", str(tmp_path / "routes"))
+    monkeypatch.setenv("TSUNAGOU_PROJECT_INDEX", str(tmp_path / "projects.json"))
     monkeypatch.setenv("CODEX_THREAD_ID", "fixture-console-thread")
+    monkeypatch.setenv("TSUNAGOU_HOST_CONVERSATION_ID", "fixture-console-thread")
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
     monkeypatch.setenv("CODEX_APP_TOOLS_PIPE_PATH", "fixture-desktop-pipe")
 
     class Host:
@@ -52,7 +56,8 @@ def test_console_join_through_real_daemon_and_bridge(tmp_path, monkeypatch, role
 
     def cli(*args):
         result = subprocess.run(
-            [sys.executable, "-m", "tsunagou", "--project-root", str(root), *args], cwd=source, capture_output=True, text=True, timeout=45
+            [sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
+            cwd=source, capture_output=True, text=True, encoding="utf-8", timeout=45,
         )
         assert result.returncode == 0, result.stderr or result.stdout
         return json.loads(result.stdout)
@@ -65,10 +70,10 @@ def test_console_join_through_real_daemon_and_bridge(tmp_path, monkeypatch, role
         )
         entry = find(config, project["project_id"])
         directory = AgentDirectory()
-        pending = enrollment.prepare(entry, resolve_runtime(root).endpoint, vendor="codex", role=role, directory=directory)
+        pending = enrollment.prepare(entry, resolve_runtime(root).endpoint, vendor=adapter, role=role, directory=directory)
         assert pending["host_registration"]["status"] == "deferred"
         monkeypatch.chdir(outside)
-        result = CliRunner().invoke(cli_module.app, ["agent", "join"])
+        result = CliRunner().invoke(cli_module.app, ["agent", "join", "--adapter", adapter])
         assert result.exit_code == 0, result.output
         joined = json.loads(result.output)
         assert joined["project_id"] == project["project_id"] and joined["role"] == role
@@ -90,7 +95,8 @@ const transport = new StdioClientTransport({command: config.command, args: confi
 const client = new Client({name: 'fixture-original-host', version: '1.0'}, {capabilities: {}});
 try {
   await client.connect(transport);
-  const result = await client.callTool({name: 'context__project_read', arguments: {}, _meta: {threadId: 'fixture-console-thread'}});
+  const result = await client.callTool({name: 'context__project_read', arguments: {},
+    _meta: {[config.env.TSUNAGOU_HOST_META_KEY || "threadId"]: 'fixture-console-thread'}});
   if (result.isError) throw new Error('fixture_context_failed');
   const context = JSON.parse(result.content.find(item => item.type === 'text').text);
   process.stdout.write(JSON.stringify({project_id: context.project_id, agent_id: context.agent_id, role: context.role}));
@@ -108,7 +114,7 @@ try {
         assert json.loads(observed.stdout)["agent_id"] == joined["agent_id"]
         arrived = enrollment.status(pending["enrollment_id"], settings=config, directory=directory)
         assert arrived["status"] == "arrived" and arrived["agent_id"] == joined["agent_id"]
-        again = CliRunner().invoke(cli_module.app, ["agent", "join"])
+        again = CliRunner().invoke(cli_module.app, ["agent", "join", "--adapter", adapter])
         assert again.exit_code == 0, again.output
         assert json.loads(again.output)["agent_id"] == joined["agent_id"]
         assert len(cli("agent", "list", "--json")["items"]) == 1

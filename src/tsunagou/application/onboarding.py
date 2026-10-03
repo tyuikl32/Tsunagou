@@ -77,6 +77,49 @@ def deepseek_routing_directory() -> Path:
     return Path(configured).expanduser().resolve() if configured else Path.home() / ".tsunagou/hosts/deepseek"
 
 
+def opencode_routing_directory() -> Path:
+    configured = os.environ.get("TSUNAGOU_ROUTING_DIR")
+    return Path(configured).expanduser().resolve() if configured else Path.home() / ".tsunagou/hosts/opencode"
+
+
+def validate_opencode_route(conversation_id: str, runtime: RuntimeContext, *, retry: bool = False) -> None:
+    """Reject foreign routes and legacy bindings in the selected and indexed projects.
+
+    Unindexed or moved legacy projects cannot be discovered here; this is not a
+    filesystem scan and never changes their configuration or identity files.
+    """
+    from tsunagou.platform.bridge_files import bridge_identities
+    from tsunagou.platform.project_index import load_index
+
+    route = opencode_routing_directory() / (conversation_key(conversation_id) + ".json")
+    with private_file_lock(route):
+        previous = read_object(route)
+        if previous:
+            if (previous.get("conversation_id") != conversation_id
+                    or previous.get("project_id") != runtime.project_id
+                    or Path(str(previous.get("project_root", ""))).resolve() != runtime.project_root):
+                raise RuntimeError("host_route_project_conflict")
+        else:
+            roots = {runtime.project_root}
+            for project in load_index()["projects"]:
+                path = project.get("path")
+                if isinstance(path, str) and Path(path).is_absolute():
+                    roots.add(Path(path).resolve())
+            for root in roots:
+                for row in bridge_identities(root):
+                    if row.get("adapter") != "opencode" or row.get("conversation_id") != conversation_id:
+                        continue
+                    destination = root / ".tsunagou/bridges" / f"opencode-{row['profile']}"
+                    identity = read_object(destination / "host-identity.json")
+                    if (retry and root == runtime.project_root
+                            and row["profile"] == conversation_key(conversation_id)[:16]
+                            and identity.get("profile") == "desktop"
+                            and not any((destination / name).exists()
+                                        for name in ("ticket.json", "bridge-session.json", "connection.json"))):
+                        continue  # This claimed attempt failed before writing its route.
+                    raise RuntimeError("opencode_legacy_binding_conflict")
+
+
 def validate_codex_route(request: dict[str, Any], runtime: RuntimeContext) -> None:
     """Reject a chat already routed elsewhere before it consumes a console claim."""
     route = codex_routing_directory() / (conversation_key(request["conversation_id"]) + ".json")
@@ -96,6 +139,10 @@ def write_deepseek_route(conversation_id: str, runtime: RuntimeContext, destinat
     return _write_host_route(conversation_id, runtime, destination, deepseek_routing_directory(), adapter="deepseek")
 
 
+def write_opencode_route(conversation_id: str, runtime: RuntimeContext, destination: Path) -> Path:
+    return _write_host_route(conversation_id, runtime, destination, opencode_routing_directory(), adapter="opencode")
+
+
 def _write_host_route(conversation_id: str, runtime: RuntimeContext, destination: Path, directory: Path,
                       *, endpoint: str | None = None, adapter: str | None = None) -> Path:
     route = directory / (conversation_key(conversation_id) + ".json")
@@ -112,7 +159,7 @@ def _write_host_route(conversation_id: str, runtime: RuntimeContext, destination
             **({"endpoint": endpoint} if endpoint is not None else {}),
             **({"adapter": adapter} if adapter is not None else {}),
         }
-        if adapter is None and "console_enrollment" in previous:
+        if adapter in {None, "opencode"} and "console_enrollment" in previous:
             value["console_enrollment"] = previous["console_enrollment"]
         if value != previous:
             write_private_bytes(route, (json.dumps(value, sort_keys=True) + "\n").encode())
@@ -121,7 +168,8 @@ def _write_host_route(conversation_id: str, runtime: RuntimeContext, destination
 
 def bind_console_enrollment(request: dict[str, Any], intent: dict[str, Any]) -> None:
     """Attach only this claim's receipt destination to its existing private route."""
-    route = codex_routing_directory() / (conversation_key(request["conversation_id"]) + ".json")
+    directory = opencode_routing_directory() if request.get("adapter") == "opencode" else codex_routing_directory()
+    route = directory / (conversation_key(request["conversation_id"]) + ".json")
     with private_file_lock(route):
         value = read_object(route)
         if (value.get("conversation_id") != request["conversation_id"]

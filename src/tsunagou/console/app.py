@@ -399,7 +399,7 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
     def prepare_project_agent(project_id: str, payload: AgentPrepareRequest) -> dict[str, Any]:
         """Prepare one host conversation to become an Agent (see console/enrollment.py).
 
-        Codex stores selection only; its target chat starts the daemon and signs
+        Codex and local OpenCode store selection only; their target chat starts the daemon and signs
         a ticket after claiming. Other hosts need a live daemon, so an explicit
         ``start_daemon`` may wake the project the same way a person would; without it
         the configured ``daemon_autostart`` decides, as everywhere else. The ticket's
@@ -408,7 +408,7 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         """
 
         entry = find(settings, project_id)
-        if payload.vendor.strip().lower() == "codex" and payload.place != "network":
+        if payload.vendor.strip().lower() in {"codex", "opencode"} and payload.place != "network":
             # A refreshed page may have stopped polling after the chat completed.
             # Verify that receipt before reusing the slot or starting another one.
             enrollment.current_status(settings=settings, directory=directory)

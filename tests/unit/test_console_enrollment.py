@@ -148,62 +148,34 @@ def _registered(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return recorded
 
 
-def test_the_secret_never_reaches_the_answer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_opencode_prepare_has_no_ticket_or_registration(monkeypatch, tmp_path):
     entry = _entry(tmp_path)
     daemon = Daemon()
     monkeypatch.setattr(enrollment, "forward", daemon)
     recorded = _registered(monkeypatch)
-
-    report = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="熊猫",
-        directory=Rosters(),
-    )
-
-    assert SECRET not in json.dumps(report, ensure_ascii=False), (
-        "a page that held the enrollment secret would be one extension away from an Agent identity"
-    )
-    ticket = Path(str(report["ticket_file"]))
-    assert ticket.is_file()
-    assert json.loads(ticket.read_text(encoding="utf-8"))["secret"] == SECRET
-    assert report["nickname"] == "熊猫", "the person's name is remembered, not turned into a path"
-    assert report["profile"].isalnum() and len(str(report["profile"])) == 12, (
-        "profile is the machine's unique slot name, not the nickname"
-    )
-    assert report["installation_id"] == "opencode:" + str(report["profile"])
-    assert recorded and recorded[0]["adapter"] == "opencode"
-    assert recorded[0]["bridge"]["env"]["TSUNAGOU_TICKET_FILE"] == str(ticket)
-    assert daemon.calls[1] == "/api/v1/credential-deliveries/ref-1/ack", "the delivery is acknowledged"
+    report = enrollment.prepare(entry, {}, vendor="opencode", role="worker", directory=Rosters())
+    assert report["host_registration"]["status"] == "deferred"
+    assert report["phase"] == "pending"
+    assert not daemon.calls and not recorded
+    assert "ticket_file" not in report and "conversation_id" not in report
+    assert not (entry.path / ".tsunagou/bridges").exists()
 
 
-def test_two_enrollments_never_share_one_local_slot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_repeated_opencode_prepare_reuses_pending_selection(monkeypatch, tmp_path):
     entry = _entry(tmp_path)
-    monkeypatch.setattr(enrollment, "forward", Daemon())
-    _registered(monkeypatch)
-
-    first = enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="agent", directory=Rosters())
-    second = enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="agent", directory=Rosters())
-
-    assert first["profile"] != second["profile"], "the same nickname twice is still two conversations"
-    assert first["bridge_dir"] != second["bridge_dir"]
+    first = enrollment.prepare(entry, {}, vendor="opencode", role="worker", nickname="agent")
+    second = enrollment.prepare(entry, {}, vendor="opencode", role="worker", nickname="agent")
+    assert first["enrollment_id"] == second["enrollment_id"]
+    assert "thread_id" not in EnrollmentStore().current()
 
 
-def test_the_launch_description_points_at_the_ticket_and_the_daemon(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_opencode_prepare_preserves_role_without_using_display_profile(monkeypatch, tmp_path):
     entry = _entry(tmp_path)
-    monkeypatch.setattr(enrollment, "forward", Daemon())
-    _registered(monkeypatch)
-
-    report = enrollment.prepare(
-        entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="main",
-        profile="main", directory=Rosters(),
-    )
-
-    config = json.loads(Path(str(report["bridge_config"])).read_text(encoding="utf-8"))
-    assert config["adapter"] == "opencode"
-    assert config["env"]["TSUNAGOU_HTTP_URL"] == "http://127.0.0.1:59999"
-    # 路径按平台比：配置里是原生写法（Node 要读它），报告里是 posix 写法（给人看）。
-    assert Path(str(config["env"]["TSUNAGOU_TICKET_FILE"])) == Path(str(report["ticket_file"]))
-    assert Path(str(config["env"]["TSUNAGOU_PROJECT_ROOT"])) == entry.path
-    assert Path(str(report["bridge_dir"])) == entry.path / ".tsunagou" / "bridges" / "opencode-main"
+    report = enrollment.prepare(entry, {}, vendor="opencode", role="main", profile="display-only")
+    record = EnrollmentStore().current()
+    assert record["requested_role"] == "main" and record["place"] == "local"
+    assert "thread_id" not in record and "baseline" not in record
+    assert report["host_registration"]["status"] == "deferred"
 
 
 def test_an_unknown_vendor_is_refused_before_a_ticket_is_issued(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -246,25 +218,18 @@ def test_an_unbuilt_bridge_is_refused_before_a_ticket_is_issued(
     assert daemon.calls == [], "registering a command that cannot start helps nobody"
 
 
-def test_a_daemon_refusal_travels_back_with_its_own_code(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_opencode_preparation_does_not_need_daemon(monkeypatch, tmp_path):
+    def forbidden(**_kwargs):
+        pytest.fail("request-only preparation must not call daemon")
+    monkeypatch.setattr(enrollment, "forward", forbidden)
+    assert enrollment.prepare(_entry(tmp_path), {}, vendor="opencode", role="worker")["phase"] == "pending"
+
+
+def test_opencode_request_is_not_arrived_when_an_unrelated_agent_appears(monkeypatch, tmp_path):
     entry = _entry(tmp_path)
-    monkeypatch.setattr(enrollment, "forward", Daemon(status=400))
-
-    with pytest.raises(ConsoleError) as refusal:
-        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker")
-
-    assert refusal.value.code == "unknown_payload_field"
-    assert refusal.value.status == 400
-
-
-def test_a_ticket_without_a_secret_is_not_treated_as_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    entry = _entry(tmp_path)
-    monkeypatch.setattr(enrollment, "forward", Daemon(result={"delivery_ref": "ref-1"}))
-
-    with pytest.raises(ConsoleError) as refusal:
-        enrollment.prepare(entry, dict(entry.daemon or {}), vendor="opencode", role="worker")
-
-    assert refusal.value.code == "ticket_unavailable"
+    report = enrollment.prepare(entry, {}, vendor="opencode", role="worker")
+    result = enrollment.status(report["enrollment_id"], settings=_config(tmp_path), directory=Rosters(("unrelated",)))
+    assert result["status"] == "waiting" and result["phase"] == "pending"
 
 
 def test_a_name_that_is_not_a_path_still_gets_one_profile_per_conversation() -> None:
@@ -486,35 +451,11 @@ def test_a_network_invitation_is_worker_only(
     assert refused.value.code == "main_agent_must_be_local"
 
 
-def test_opencode_gets_one_session_name_the_ticket_and_the_person_both_use(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-) -> None:
-    """OpenCode names its conversation when it is opened, so we name it first.
-
-    The bridge drops a ticket bound to another conversation (``server.ts``), which is
-    why the console's OpenCode flow could only ever wait for an expiry. Handing out
-    the name the person will actually open is the whole fix, and a retry has to keep
-    the same name.
-    """
-
-    entry = _entry(tmp_path)
-    monkeypatch.setattr(enrollment, "forward", Daemon())
-    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
-    recorded = _registered(monkeypatch)
-
-    def prepared() -> dict[str, Any]:
-        return enrollment.prepare(
-            entry, dict(entry.daemon or {}), vendor="opencode", role="worker",
-            nickname="熊猫", profile="worker-a", directory=Rosters(),
-        )
-
-    first = prepared()
-    ticket = json.loads(Path(str(first["ticket_file"])).read_text(encoding="utf-8"))
-
-    assert ticket["conversation_id"] == "ses_" + str(first["profile"])
-    assert str(ticket["conversation_id"]) in str(first["next"]), "页面照抄这句话就能开会话"
-    assert recorded and recorded[0]["adapter"] == "opencode"
-    assert prepared()["profile"] == first["profile"], "重试给的是同一个名字，不是新会话"
+def test_opencode_prepare_does_not_preselect_conversation(monkeypatch, tmp_path):
+    report = enrollment.prepare(_entry(tmp_path), {}, vendor="opencode", role="worker", profile="name")
+    record = EnrollmentStore().current()
+    assert record["adapter"] == "opencode" and "thread_id" not in record
+    assert "conversation_id" not in report and "installation_id" not in report
 
 
 def _built_bridge(tmp_path: Path) -> Path:
@@ -544,6 +485,22 @@ def test_the_console_serves_the_prepare_route(tmp_path: Path) -> None:
     assert "/api/v1/console/enrollments/{enrollment_id}" in routes
 
 
+def _legacy_prepared_record(entry, endpoint, *, vendor, role, nickname="", directory=None):
+    """An existing pre-upgrade project-ticket record; no new legacy enrollment."""
+    ticket = entry.path / ".tsunagou/bridges/opencode-legacy/ticket.json"
+    ticket.parent.mkdir(parents=True, exist_ok=True)
+    ticket.write_text("{}", encoding="utf-8")
+    roster = directory.roster(entry.project_id, entry.path, endpoint) if directory else None
+    record = enrollment.Enrollment(
+        enrollment_id="legacy-record", project_id=entry.project_id, adapter=vendor, label="OpenCode",
+        profile="legacy", nickname=nickname, role=role,
+        known_agents=frozenset(a["agent_id"] for a in roster.agents) if roster else frozenset(),
+        expires_at=enrollment.time.time() + 900, ticket_file=str(ticket), blind=roster is None,
+    )
+    enrollment._remember(record)
+    return {**record.public(), "ticket_file": str(ticket)}
+
+
 def test_a_waiting_enrollment_turns_into_an_arrival_and_the_nickname_lands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -555,7 +512,7 @@ def test_a_waiting_enrollment_turns_into_an_arrival_and_the_nickname_lands(
     monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
     rosters = Rosters(("agent-old",))
 
-    prepared = enrollment.prepare(
+    prepared = _legacy_prepared_record(
         entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="熊猫", directory=rosters,
     )
     config = _config(tmp_path)
@@ -586,7 +543,7 @@ def _prepared(
     monkeypatch.setattr(enrollment, "forward", Daemon())
     _registered(monkeypatch)
     monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
-    prepared = enrollment.prepare(
+    prepared = _legacy_prepared_record(
         entry, dict(entry.daemon or {}), vendor="opencode", role=role, nickname="熊猫", directory=rosters,
     )
     return prepared, _config(tmp_path), str(prepared["enrollment_id"])
@@ -675,7 +632,7 @@ def test_a_project_that_cannot_be_read_keeps_waiting_instead_of_failing(
         def roster(self, project_id: str, root: Path, endpoint: dict[str, Any] | None, *, force: bool = False) -> None:
             return None
 
-    prepared = enrollment.prepare(
+    prepared = _legacy_prepared_record(
         entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="x", directory=Silent(),
     )
     answer = enrollment.status(str(prepared["enrollment_id"]), settings=_config(tmp_path), directory=Silent())
@@ -688,7 +645,7 @@ def test_an_expired_enrollment_says_so(monkeypatch: pytest.MonkeyPatch, tmp_path
     entry = _entry(tmp_path)
     monkeypatch.setattr(enrollment, "forward", Daemon())
     _registered(monkeypatch)
-    prepared = enrollment.prepare(
+    prepared = _legacy_prepared_record(
         entry, dict(entry.daemon or {}), vendor="opencode", role="worker", directory=Rosters(),
     )
     record = enrollment.pending(str(prepared["enrollment_id"]))
@@ -728,7 +685,7 @@ def test_cancelling_removes_the_ticket_and_takes_the_host_entry_back(
     monkeypatch.setattr(host_registration, "unregister", fake_unregister)
     config = _config(tmp_path)
     rosters = Rosters(("agent-old",))
-    prepared = enrollment.prepare(
+    prepared = _legacy_prepared_record(
         entry, dict(entry.daemon or {}), vendor="opencode", role="worker", nickname="熊猫", directory=rosters,
     )
     ticket = Path(str(prepared["ticket_file"]))
@@ -753,7 +710,7 @@ def test_cancelling_an_arrived_enrollment_is_refused(monkeypatch: pytest.MonkeyP
     _registered(monkeypatch)
     monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
     rosters = Rosters()
-    prepared = enrollment.prepare(
+    prepared = _legacy_prepared_record(
         entry, dict(entry.daemon or {}), vendor="opencode", role="worker", directory=rosters,
     )
     rosters.agent_ids = ("agent-new",)
@@ -819,14 +776,14 @@ def test_forgetting_a_project_drops_its_pending_enrollments_and_their_tickets(tm
 
 
 
-def _codex_intent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, role: str = "main") -> dict[str, Any]:
+def _codex_intent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, role: str = "main", adapter: str = "codex") -> dict[str, Any]:
     monkeypatch.setattr("tsunagou.console.projects.daemon_alive", lambda _url: True)
     entry = _entry(tmp_path)
-    return enrollment.prepare(entry, dict(entry.daemon or {}), vendor="codex", role=role, nickname="熊猫")
+    return enrollment.prepare(entry, dict(entry.daemon or {}), vendor=adapter, role=role, nickname="熊猫")
 
 
-def _codex_enrolled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, role: str = "main") -> dict[str, Any]:
-    prepared = _codex_intent(monkeypatch, tmp_path, role=role)
+def _codex_enrolled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, role: str = "main", adapter: str = "codex") -> dict[str, Any]:
+    prepared = _codex_intent(monkeypatch, tmp_path, role=role, adapter=adapter)
     store = EnrollmentStore()
     record = store.get(prepared["enrollment_id"])
     store.claim(record["enrollment_id"], "real-private-thread", expected_revision=record["revision"])
@@ -872,11 +829,12 @@ def test_codex_prepare_refuses_a_second_pending_slot(monkeypatch: pytest.MonkeyP
     assert EnrollmentStore().current()["enrollment_id"] == first["enrollment_id"]
 
 
+@pytest.mark.parametrize("adapter", ["codex", "opencode"])
 @pytest.mark.parametrize("role", ["main", "worker"])
 def test_codex_arrival_requires_original_chat_receipt_and_survives_console_restart(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str, adapter: str,
 ) -> None:
-    record = _codex_enrolled(monkeypatch, tmp_path, role=role)
+    record = _codex_enrolled(monkeypatch, tmp_path, role=role, adapter=adapter)
     enrollment.forget_all()
     rosters = Rosters(("unrelated-agent", "bound-agent"), role=role)
     settings = _config(tmp_path)
@@ -887,7 +845,7 @@ def test_codex_arrival_requires_original_chat_receipt_and_survives_console_resta
     arrived = enrollment.status(record["enrollment_id"], settings=settings, directory=rosters)
     assert arrived["status"] == "arrived"
     assert arrived["agent_id"] == "bound-agent"
-    assert load_profile(settings.profile_path)["agents"]["bound-agent"] == {"nickname": "熊猫", "vendor": "Codex"}
+    assert load_profile(settings.profile_path)["agents"]["bound-agent"] == {"nickname": "熊猫", "vendor": _host_label(adapter)}
     assert "real-private-thread" not in json.dumps(arrived)
     assert "receipt_file" not in arrived
     with pytest.raises(ConsoleError, match="enrollment_already_arrived"):
@@ -1294,3 +1252,30 @@ def test_local_dsh_waits_for_link_and_completes_serial_requests(monkeypatch, tmp
         arrived = enrollment.current_status(settings=settings, directory=directory)
         assert arrived["status"] == "arrived" and arrived["agent_id"] == agent_id
         assert EnrollmentStore().active() is None
+
+
+def test_opencode_observe_cannot_bypass_original_chat_receipt(monkeypatch, tmp_path):
+    record = _codex_enrolled(monkeypatch, tmp_path, adapter="opencode")
+    settings = _config(tmp_path)
+    rosters = Rosters(("bound-agent",), role="main")
+    report = enrollment.observe(settings=settings, directory=rosters, project_id=record["project_id"],
+                                adapter="opencode", baseline=set(), enrollment_id=record["enrollment_id"])
+    assert report["status"] == "waiting" and report["phase"] == "enrolled"
+    _host_receipt(record)
+    report = enrollment.observe(settings=settings, directory=rosters, project_id=record["project_id"],
+                                adapter="opencode", baseline=set(), enrollment_id=record["enrollment_id"])
+    assert report["status"] == "arrived" and report["agent_id"] == "bound-agent"
+
+
+def test_opencode_http_prepare_does_not_start_daemon(monkeypatch, tmp_path):
+    from tsunagou.console.app import AgentPrepareRequest, create_console_app
+
+    _entry(tmp_path)
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("request-only preparation must not start a daemon")
+    monkeypatch.setattr("tsunagou.console.app.ensure_daemon", forbidden)
+    routes = {getattr(route, "path", ""): getattr(route, "endpoint", None)
+              for route in create_console_app(_config(tmp_path)).routes}
+    report = routes["/api/v1/console/projects/{project_id}/agents:prepare"](
+        PROJECT_ID, AgentPrepareRequest(vendor="opencode", role="worker", place="local"))
+    assert report["host_registration"]["status"] == "deferred"
