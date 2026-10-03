@@ -35,6 +35,18 @@
       "schema": "commands/agent/retire.schema.json",
       "uri": "/agents/{id}:retire"
     },
+    "agent.retire.user": {
+      "payload_fields": [
+        "agent_id",
+        "reason"
+      ],
+      "principal": "U",
+      "required_fields": [
+        "agent_id"
+      ],
+      "schema": "commands/agent/retire/user.schema.json",
+      "uri": "/control/agents/{id}:retire"
+    },
     "agent.succession": {
       "payload_fields": [
         "attempt_plan",
@@ -1522,6 +1534,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:18fac2118245d78ecc08f6f1a3320bb36b4f49a04bee01d21b434f3775346247",
+  "schema_bundle_digest": "sha256:17c94f00893671a9af7e655cb2f5093fa01619a499f1b5a5ec2adcce5cde7ea3",
   "supported_previous_version": "0.9"
 }

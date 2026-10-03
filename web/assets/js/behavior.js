@@ -280,8 +280,7 @@
        值为 null = 后端没有这个能力：api.command 会明确拒绝并说明原因，不会拼出坏地址。
 
        ⚠️ daemon 命令那几条（agentSetMain / checkpointRetry / acceptanceConfirm）的 payload
-       还是**接线前**的写法（既不转发调用点备好的字段，命令名也有旧的）。原因与要补的东西
-       记在 `Tsunagou-前端接入-尚未实现清单.md` §1；中间层能做的两条本轮已接通。
+       由下面的 `payload` 现拼（服务端只认自己的白名单字段）。
 
        这里**故意没有**"创建 Agent / 创建子 Agent"这类键：后端没有"创建 Agent"这个概念。
        接入一个 Agent = 用户给某个宿主对话签一张一次性票据（agent.ticket.create.user），由那个对话的
@@ -341,7 +340,9 @@
         agentSetMain: {
             /* handler 只读 `agent_id`（`handlers.py` 的 `appoint_main`）：白名单里那两个
                `expected_authority_epoch` / `ceiling_template` **运行时没人读**，所以这里不需要代次。
-               能失败的情形只有一个：要设的那个人不存在。*/
+               两个窗口同时改主不会互相拦：后到的赢，结果仍然是"有且只有一个主 Agent"，
+               不需要代次来保证正确性（协议字段留着，但我们不假装它在保护什么）。
+               能失败的情形只有两种：要设的那个人不存在；他是个远端 Agent（主 Agent 必须本机）。*/
             kind: 'authority.appoint',
             payload: function (b) { return { agent_id: b.id, reason: 'set main from console' }; }
         },
@@ -400,7 +401,12 @@
         },
         /* —— 后端尚未装配 / 没有这个概念 —— */
         acceptanceArchive: null,  /* project.archive 已声明但未装配；页面上已经没有归档入口了 */
-        agentRemove: null,        /* agent.retire 已声明但未装配 */
+        agentRemove: {
+            /* handler 只读 `agent_id`/`reason`（`handlers.py` 的 `retire_agent`）。
+               只有用户能删：控制台持 U 令牌，daemon 侧 `context.kind != "U"` 一律拒。*/
+            kind: 'agent.retire.user',
+            payload: function (b) { return { agent_id: b.id, reason: toText(b.reason) || 'removed from console' }; }
+        },
         pathRecord: null          /* 后端无此概念 */
     };
 
@@ -837,10 +843,15 @@
         }
     };
 
-    /* 点窗口遮罩关闭：只有点在 .secWindow 自己身上（不是窗口盒子内部）才算 */
+    /* 点窗口背景（.secWindow 自己那层黑遮罩）：**不算提交、也不算取消**。
+       以前这里一律 close，而"关闭"对有些窗口就等于走它自己的那条路（向导、确认框……），
+       于是点一下黑边就把事情办了 —— 太容易误触。
+       唯一例外是加载遮罩 #loadW：把它关掉本来就是"我不等了"。*/
     ui.window.bindBackdrop = function () {
         delegateClick(['.secWindow'], function (node, event) {
-            if (event.target === node) ui.window.close(node);
+            if (event.target !== node) return;      /* 点在窗口盒子里不算 */
+            if (node.id !== 'loadW') return;        /* 其余窗口：点了不动 */
+            ui.window.close(node);
         });
     };
 
@@ -2531,6 +2542,20 @@
     /* 同上，给 .boxerbox 用（卡片组里它得冒充一张卡片的宽高占位）*/
     const EMPTY_CARD = { cls: 'emptybox', parts: [] };
 
+    /* 空状态居中：容器里只剩"这里暂时还没有内容"时，那行字贴左看着很孤单。
+       做法：容器临时变成"一行、水平居中"，并让那个空盒子**独占一整行**
+       （flex-basis 100%）。只加必要的几条，有内容了全部清掉、交回 CSS。
+       为什么还要管空盒子本身：它 CSS 里是 width:100%，但在换行的 flex 行里
+       一旦被压成内容宽度，容器再居中也没有用 —— 两边一起写才稳。 */
+    function centerEmptyState(container, empty) {
+        if (!container) return null;
+        const box = qs('.emptybox', container);
+        container.style.display = empty ? 'flex' : '';
+        container.style.justifyContent = empty ? 'center' : '';
+        if (box) box.style.flex = empty ? '1 1 100%' : '';
+        return container;
+    }
+
     /* Agent 胶囊：<div class="item [cls]"><img class="left"><div class="right">名字</div></div>
        options.identity = true 时才考虑 .id-user / .id-mAgent 这两个配色类
        —— 因为原设计里它们只用在“总路径”那一张表上，别处都是普通胶囊。
@@ -2779,8 +2804,213 @@
             '</div>';
     }
 
+    /* ---- 左栏排序：偏好记在浏览器本地 -------------------------------------
+       “我这台机器想怎么看这个列表”是本机偏好，不占项目里的任何事实，所以存 localStorage。
+       三种排序方式里：**名称**是后端给的事实；**查看时间**是"我上次打开它是几点"——
+       这是本机记录（后端没有这个概念），没打开过的退回卡片上那个"上次记录"时刻；
+       **创建时间**后端目前也没有给这个字段，同样先用记录时刻顶上：等中间层在列表行里
+       补一个创建时间，把 projStamp 里那一行换掉即可（不用动别处）。 */
+    const PROJ_SORT_KEY = 'tsunagou.console.projSort';
+    const PROJ_VIEWED_KEY = 'tsunagou.console.projViewedAt';
+    const PROJ_SORT_DEFAULT = { order: 'new', by: 'viewed' };
+
+    function readStoredJson(key, fallback) {
+        try {
+            const raw = JSON.parse(window.localStorage.getItem(key) || 'null');
+            return isPlainObject(raw) ? raw : fallback;
+        } catch (error) {
+            return fallback;   /* 本地存储读不出来（隐私模式等）就用默认值 */
+        }
+    }
+
+    let projSort = (function () {
+        const stored = readStoredJson(PROJ_SORT_KEY, {});
+        const order = stored.order === 'old' ? 'old' : (stored.order === 'new' ? 'new' : PROJ_SORT_DEFAULT.order);
+        const by = ['viewed', 'created', 'name'].indexOf(stored.by) >= 0 ? stored.by : PROJ_SORT_DEFAULT.by;
+        return { order: order, by: by };
+    })();
+    let projViewedAt = readStoredJson(PROJ_VIEWED_KEY, {});
+
+    function saveProjSort() {
+        try { window.localStorage.setItem(PROJ_SORT_KEY, JSON.stringify(projSort)); } catch (error) { /* 存不下就只在这次会话里生效 */ }
+    }
+
+    /* 打开一个项目时记一笔：排序用的"查看时间"就是这么来的（只在本机、只在这台浏览器）。*/
+    function rememberProjViewed(projectId) {
+        const id = toText(projectId);
+        if (!id) return;
+        projViewedAt[id] = Date.now();
+        try { window.localStorage.setItem(PROJ_VIEWED_KEY, JSON.stringify(projViewedAt)); } catch (error) { /* 同上 */ }
+    }
+
+    function stampOf(text) {
+        const ms = Date.parse(toText(text));
+        return Number.isFinite(ms) ? ms : 0;
+    }
+
+    function projStamp(row) {
+        const data = row || {};
+        const id = toText(data.project_id) || toText(data.id);
+        /* 按创建时间：用后端给的 created_at（项目索引里"第一次登记"的时刻）。
+           后端没给就退回记录时刻 —— 那时它和"按查看时间"的回退值同源，两种排序结果一样。*/
+        if (projSort.by === 'created') {
+            return stampOf(data.created_at) || stampOf((data.history || {}).captured_at);
+        }
+        const local = Number(projViewedAt[id]);
+        if (Number.isFinite(local) && local > 0) return local;
+        return stampOf((data.history || {}).captured_at);
+    }
+
+    function sortProjects(rows) {
+        const list = toArray(rows).slice();
+        const newestFirst = projSort.order !== 'old';
+        list.sort(function (a, b) {
+            if (projSort.by === 'name') {
+                const diff = toText(a.name).localeCompare(toText(b.name), 'zh-Hans-CN');
+                return newestFirst ? -diff : diff;
+            }
+            const diff = projStamp(a) - projStamp(b);
+            return newestFirst ? -diff : diff;
+        });
+        return list;
+    }
+
+    /* ---- 左栏的两个弹出菜单（项目操作 / 排序）-----------------------------
+       菜单本身写在 index.html 里（`<section class="selection">`）：CSS 是
+       display:none + position:fixed。JS 只做两件事 —— 写 display 开/收，以及把它贴到
+       触发它的那个按钮旁边。贴位置要写 left/top：fixed 的弹层脱离文档流，没有别的写法
+       能表达"贴在谁旁边"（这是全文件唯一一处这样写行内样式的地方）。
+       点别处、按 Esc 都收起来；菜单开着的期间点它自己的项不算"点别处"。*/
+    const SELECTION_IDS = ['projMenu', 'sortMenu'];
+    let openSelectionId = '';
+    let openSelectionAnchor = null;   /* 是哪个键把它打开的：再点同一个键就是收起 */
+    let selectionProjectId = '';
+    /* 重命名窗口正在改哪个项目（窗口开着的时候记着，确定时用它）。*/
+    let renameTargetId = '';
+
+    function closeSelections() {
+        SELECTION_IDS.forEach(function (id) { hideEl(byId(id)); });
+        openSelectionId = '';
+        openSelectionAnchor = null;
+    }
+
+    /* 把菜单贴到触发它的那个东西旁边。两种菜单贴法不同：
+       · 卡片菜单（#projMenu）：贴在右上角那支笔的**右边**，顶部与**卡片**齐平；
+       · 排序菜单（#sortMenu）：贴在被点的设置键下方，右对齐到那个键。
+       量尺寸必须在 syncSortMenu() **之后**：第一次打开时对勾是 JS 现加的，
+       先量再摆会量到"还没有对勾"的宽高，位置就偏了。 */
+    function positionSelection(menu, anchor) {
+        const rect = anchor && anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
+        if (!rect) return;
+        const width = menu.offsetWidth || 150;
+        const height = menu.offsetHeight || 90;
+        let left;
+        let top;
+        if (menu.id === 'projMenu') {
+            const card = closest(anchor, '.projItem');
+            /* 与"看得见的卡片"上沿齐平：量 .inner —— 它带着外边距，那才是那张卡片真正的框；
+               量 .projItem 外层会连着外边距一起算进去，菜单就比卡片高出一截。 */
+            const face = card ? qs('.inner', card) : null;
+            const faceRect = face && face.getBoundingClientRect ? face.getBoundingClientRect() : null;
+            const cardRect = card && card.getBoundingClientRect ? card.getBoundingClientRect() : null;
+            left = rect.right + 6;
+            top = (faceRect || cardRect || rect).top;
+        } else {
+            left = rect.right - width;
+            top = rect.bottom + 6;
+        }
+        menu.style.left = Math.max(8, Math.min(left, window.innerWidth - width - 8)) + 'px';
+        menu.style.top = Math.max(8, Math.min(top, window.innerHeight - height - 8)) + 'px';
+    }
+
+    function openSelection(id, anchor, projectId) {
+        const menu = byId(id);
+        if (!menu) return null;
+        closeSelections();
+        if (toText(projectId)) selectionProjectId = toText(projectId);
+        displayEl(menu, 'flex');
+        openSelectionId = id;
+        openSelectionAnchor = anchor || null;
+        syncSortMenu();                       /* 先摆对勾（会改变宽高）… */
+        positionSelection(menu, anchor);      /* …再量、再贴 */
+        return menu;
+    }
+
+    /* 同一个触发键再点一次 = 收起（不是"收起又立刻打开"）；点另一个键则挪到那边。*/
+    function toggleSelection(id, anchor, projectId) {
+        if (openSelectionId === id && openSelectionAnchor === anchor) {
+            closeSelections();
+            return null;
+        }
+        return openSelection(id, anchor, projectId);
+    }
+
+    /* 排序菜单里那个对勾：挪到当前选择上（HTML 里初始标在哪不重要，以这里为准）。*/
+    function syncSortMenu() {
+        const menu = byId('sortMenu');
+        if (!menu) return;
+        qsa('.item[data-sort-order], .item[data-sort-by]', menu).forEach(function (item) {
+            let right = qs('.right', item);
+            if (!right) {
+                right = document.createElement('div');
+                right.className = 'right';
+                item.appendChild(right);
+            }
+            const active = toText(item.getAttribute('data-sort-order')) === projSort.order
+                || toText(item.getAttribute('data-sort-by')) === projSort.by;
+            fill(right, active ? '<i class="fa-solid fa-check"></i>' : '');
+        });
+    }
+
+    /* ---- 项目搜索（左栏那个搜索条）----------------------------------------
+       HTML 挂在**第一个**分组标题下面（见 render.list 里的 titleWithSearch）。CSS 里
+       `display:none` 那行是注释掉的，所以它默认可见 —— 初始由这里写 display:none，
+       打开时清成空串、交回 CSS。
+       打字只做"过滤已经画出来的卡片"，不重画整列：重画会把输入框连同光标一起换掉。
+       过滤期间分组标题收起来；一张都不匹配时复用同一个空状态占位符。*/
+    const PROJECT_SEARCH_BAR = '<div class="searchBar">' +
+        '<div class="inner">' +
+        '<div class="icon iconA"></div><input class="left" placeholder="搜索你的项目">' +
+        '<div class="icon iconB"></div>' +
+        '</div></div>';
+    let projQuery = '';
+    let projSearchOpen = false;
+
+    function applyProjectFilter() {
+        const container = byId('projList') || qs('.secAside .subMgr');
+        if (!container) return null;
+        const bar = qs('.searchBar', container);
+        if (bar) {
+            displayEl(bar, projSearchOpen ? '' : 'none');
+            const input = qs('.left', bar);
+            /* 只在"和状态不一致"时回填（重画之后要补回来）；打字过程中两者一致，不动光标 */
+            if (input && toText(input.value) !== toText(projQuery)) input.value = toText(projQuery);
+        }
+        const query = toText(projQuery).trim().toLowerCase();
+        /* 搜索条一打开，分组标题就收起来（不只是"输了字之后"）：位置让给搜索条。*/
+        qsa('.wkTitle', container).forEach(function (node) {
+            displayEl(node, (projSearchOpen || query) ? 'none' : '');
+        });
+        let matches = 0;
+        qsa('.projItem', container).forEach(function (card) {
+            const name = toText(qs('.title', card) && qs('.title', card).textContent).toLowerCase();
+            const hit = !query || name.indexOf(query) >= 0;
+            if (hit) matches += 1;
+            displayEl(card, hit ? '' : 'none');
+        });
+        /* 一张都不匹配时用同一个空状态占位符；列表自己已经带着一个（真的没有项目）就不再加 */
+        const own = qs('.emptybox[data-search-blank]', container);
+        const listed = qs('.emptybox:not([data-search-blank])', container);
+        if (query && matches === 0 && !listed) {
+            if (!own) container.insertAdjacentHTML('beforeend', '<div class="emptybox" data-search-blank="1"></div>');
+        } else if (own) {
+            own.remove();
+        }
+        return container;
+    }
+
     render.list = function (projects) {
-        const list = toArray(projects);
+        const list = sortProjects(toArray(projects));
         const active = list.filter(function (item) { return item.group !== 'done'; });
         const done = list.filter(function (item) { return item.group === 'done'; });
         /* 哪一张是"选中"的：整列一次算清，**最多一张**。
@@ -2804,18 +3034,29 @@
         const groupTitle = function (text) {
             return '<div class="wkTitle"><div class="wkTleft">' + esc(text) + '</div>' +
                 '<div class="wkTright">' +
-                '<div class="wkTbtn"><i class="fa-solid fa-search"></i></div>' +
-                '<div class="wkTbtn"><i class="fa-solid fa-cog"></i></div>' +
+                '<div class="wkTbtn" data-tg-role="project-search"><i class="fa-solid fa-search"></i></div>' +
+                '<div class="wkTbtn" data-tg-role="project-sort"><i class="fa-solid fa-cog"></i></div>' +
                 '</div></div>';
         };
         /* 空的分组不显示标题，免得出现只有标题没有卡片的空段；
            一个协作都没有时给一个空状态（但数据还没来过就先空着，见 projectListLoaded）。*/
+        /* 搜索条挂在**第一个**分组标题下面（"进行中的协作"通常就是第一个）。
+           两个分组都为空时不画标题，也就没有搜索条 —— 没有项目可搜。*/
+        let searchPlaced = false;
+        const titleWithSearch = function (text) {
+            const block = groupTitle(text);
+            if (searchPlaced) return block;
+            searchPlaced = true;
+            return block + PROJECT_SEARCH_BAR;
+        };
         const html = list.length ?
-            (active.length ? groupTitle('进行中的协作') + active.map(card).join('') : '') +
-            (done.length ? groupTitle('已完成的协作') + done.map(card).join('') : '')
+            (active.length ? titleWithSearch('进行中的协作') + active.map(card).join('') : '') +
+            (done.length ? titleWithSearch('已完成的协作') + done.map(card).join('') : '')
             : (projectListLoaded ? EMPTY_BOX : '');
         const container = byId('projList') || qs('.secAside .subMgr');
         fill(container, html);
+        /* 重画之后把"正在搜索"的状态贴回去：搜索条显隐、标题显隐、卡片过滤、输入框里的字 */
+        applyProjectFilter();
         return container;
     };
 
@@ -2824,6 +3065,40 @@
     /* 顶部导航条：.navArea 在 .inner 外面，不属于任何标签页，单独渲染。
        输出的标记与原 index.html 里的静态写法完全一致（名字 + 状态胶囊），
        只是换成由数据驱动，不多不少。*/
+    /* 顶部标题那条渐隐（CSS 里 `.navArea .left > p` 的 mask-image）只在文字**确实够长**时
+       才该出现：短标题被渐隐，看着像是后面还有字被截掉了。所以这里量一下文字本身的宽度，
+       不到 160px 就用行内 `mask-image: none` 把 CSS 那条盖掉；够长就把行内值清掉、交回 CSS。
+       量的是文字宽度（Range 框住文本节点），不是容器的宽度 —— 容器宽度不等于"字有多长"。
+       什么时候重量：标题重画（render.navbar）、窗口尺寸变化、字体加载完。*/
+    const TITLE_MASK_MIN_PX = 160;
+
+    function titleTextWidth(node) {
+        if (!node) return 0;
+        try {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const rect = range.getBoundingClientRect();
+            if (rect && rect.width) return rect.width;
+        } catch (error) { /* 量不了文字就退回下面两种 */ }
+        const box = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+        return Math.max(node.scrollWidth || 0, (box && box.width) || 0);
+    }
+
+    function syncTitleMask(node) {
+        const target = node || qs('.secProjPanel .navArea .left > p');
+        if (!target) return null;
+        const value = titleTextWidth(target) >= TITLE_MASK_MIN_PX ? '' : 'none';
+        target.style.maskImage = value;
+        target.style.webkitMaskImage = value;   /* 老 Chrome 认前缀版；浏览器不认也无害 */
+        return target;
+    }
+
+    window.addEventListener('resize', function () { syncTitleMask(); });
+    if (document.fonts && document.fonts.ready) {
+        /* 字体晚一步到齐时文字宽度会变（图标字体尤其）：到齐后重量一次 */
+        document.fonts.ready.then(function () { syncTitleMask(); }, function () { /* 忽略 */ });
+    }
+
     render.navbar = function (project) {
         const data = project || {};
         const box = qs('.secProjPanel .navArea .left');
@@ -2831,6 +3106,8 @@
         fill(box, '<p>' + esc(data.name) + '</p>' +
             '<div class="status' + (data.statusClass ? ' ' + esc(data.statusClass) : '') + '">' +
             esc(data.statusText || '') + '</div>');
+        /* 刚写进去的名字：够长才留渐隐（见上面 syncTitleMask） */
+        syncTitleMask(qs('p', box));
         return box;
     };
 
@@ -4051,6 +4328,8 @@
                 '<div class="txtBlock"><div class="left">任务</div><div class="right">' + esc(agent.task) + '</div></div>' +
                 '</div></div>';
         }).join('') : EMPTY_BOX) + '</div>');
+        /* 一个 Agent 都没有时，把那行"这里暂时还没有内容"水平居中（有内容就交回 CSS）*/
+        centerEmptyState(qs('.table', container), !list.length);
         return container;
     };
 
@@ -4505,6 +4784,43 @@
             });
         },
 
+        /* 重命名一个协作（中间层 `POST /console/projects/{id}:rename`）。
+           名字是给人看的标签，不是项目的身份：id/路径都不动，所以不碰任何数据。
+           走窗口里那个输入框（#renamePmt），确定后交给 submitRename。*/
+        renameProject: function (projectId) {
+            const id = toText(projectId);
+            if (!id) return Promise.resolve(false);
+            const project = findById(state.get('projects', []), id) || {};
+            /* 名字优先取名单里的；名单里没有（数据还没到、或字段对不上）就从**卡片上**读 ——
+               那张卡片上正写着它，人就是看着它点的。这样输入框不会空着让人重打一遍。*/
+            const card = qsa('#projList .projItem').filter(function (node) {
+                return toText(node.getAttribute('data-project-id')) === id;
+            })[0] || null;
+            const title = card ? qs('.title', card) : null;
+            renameTargetId = id;
+            const input = byId('renamePmtInput');
+            if (input) input.value = toText(project.name) || toText(title && title.textContent);
+            ui.window.open('renamePmt');
+            if (input && input.focus) input.focus();
+            return Promise.resolve(true);
+        },
+
+        /* 重命名窗口的"确定"。空名字不动（名字是必填的），失败原样说出来。*/
+        submitRename: function () {
+            const id = toText(renameTargetId);
+            const input = byId('renamePmtInput');
+            const name = toText(input && input.value).trim();
+            if (!id) return Promise.resolve(false);
+            if (!name) { notify.error('名字不能是空的'); return Promise.resolve(false); }
+            const path = '/console/projects/' + encodeURIComponent(id) + ':rename';
+            return notify.track('正在重命名协作', api.post(path, { name: name }))
+                .then(function () {
+                    ui.window.close('renamePmt');
+                    notify.success({ title: '已重命名', sub: name });
+                    return Tsunagou.refresh(['projects', 'project']).then(function () { return true; });
+                }, function () { return false; });
+        },
+
         /* 添加子 Agent（窗口 #addSubAgent 的"确定"）。
            后端**没有**"创建 Agent"这个能力：Agent 是在宿主那边连上来的。
            所以这里的动作是"让中间层准备接入"：Codex 由真实聊天认领申请，其他宿主签票并登记。
@@ -4638,24 +4954,52 @@
             }, function () { return false; });
         },
 
-        /* 删除 / 退席一个 Agent：暂不实现（决定 11 起就不做）。
-           按钮留着（设计里就有这个位置），点了就一句话说清楚。*/
-        removeAgent: function () {
-            return notImplemented();
+        /* 删除 / 退役一个 Agent：他从此不能再动，但他做过的事一个字都不改。
+           两道拒绝由后端说了算：当前主 Agent 不能删；手上还压着活的不能删（把清单一起
+           给出来，页面照着列）。远端 Agent 只在这台机器上被停掉，确认框里会提醒去那台
+           机器上清登记。*/
+        removeAgent: function (id) {
+            const agent = toArray(state.get('agents', [])).filter(function (item) {
+                return toText(item.id) === toText(id);
+            })[0] || {};
+            const machine = toText(agent.machine);
+            return confirmThen({
+                title: '删除 Agent',
+                text: '确定要让这个 Agent 退役吗？他立刻不能再派活、接活。',
+                description: '他做过的任务和发过的消息仍然记他的名字，不会被改写。'
+                    + (machine ? '那台机器（' + machine + '）上还留着一条登记，请去那台机器上清掉。' : ''),
+                okText: '删除',
+                danger: true
+            }, function () {
+                return api.post('agentRemove', { id: id, reason: 'removed from console' })
+                    .then(function () {
+                        notify.success({ title: '已删除 Agent' });
+                        Tsunagou.refresh(['agents', 'project', 'tasks']);
+                        return true;
+                    }, function (error) {
+                        /* 后端把"他还占着哪些任务"一起给了：照它列出来，别自己编一句话。*/
+                        const detail = (error && error.raw && error.raw.detail) || {};
+                        const held = toArray(detail.tasks).map(function (task) {
+                            return toText(task.title) || toText(task.task_id);
+                        });
+                        if (held.length) {
+                            notify.error('他手上还有活，先处理：' + held.slice(0, 3).join('、')
+                                + (held.length > 3 ? ' 等 ' + held.length + ' 个任务' : ''));
+                        }
+                        return false;
+                    });
+            });
         },
 
         /* 设为主 Agent */
         setMainAgent: function (id) {
-            const agent = toArray(state.get('agents', [])).filter(function (item) {
-                return toText(item.id) === toText(id);
-            })[0] || {};
             return confirmThen({
                 title: '设为主 Agent',
-                text: '确定要让这个 Agent 接管主 Agent 的位置吗？',
+                text: '确定要让这个 Agent 接管主 Agent 的位置吗？原来的主 Agent 会变回普通成员。',
                 okText: '设为主 Agent'
             }, function () {
-                /* 带当前权威代次：不带的话后端会以 stale_authority_epoch 拒绝。*/
-                return api.post('agentSetMain', { id: id, authority_epoch: agent.authority_epoch })
+                /* 不带代次：后端根本不读它（见上面 agentSetMain 的注释）。*/
+                return api.post('agentSetMain', { id: id })
                     .then(function () {
                         notify.success({ title: '已设为主 Agent' });
                         Tsunagou.refresh(['agents', 'project']);
@@ -5168,6 +5512,9 @@
         createProject: function () { ui.wizard.open(); return true; },
         /* 卡片右上角的删除块（.edit）走这里，也可以从宿主脚本调 */
         deleteProject: function (id) { return actions.deleteProject(id); },
+        /* 卡片菜单里的「重命名」与重命名窗口的「确定」（index.html 里那个按钮调的是 submitRename）*/
+        renameProject: function (id) { return actions.renameProject(id); },
+        submitRename: function () { return actions.submitRename(); },
         /* 「登记已有项目」：向导已按决定 11 改成这个语义。
            传本机项目目录（里面已经有 .tsunagou/project.json）就登记进项目索引，
            其余参数（name/objective）则会在中间层配置的 projects_root 下新建一个项目。
@@ -5253,17 +5600,82 @@
 
     function bindProjectCards() {
         delegateClick(['#projList .projItem'], function (card, event) {
-            /* 点右上角那个删除块不属于"选这个项目" —— 它自己有一套（见下面的 .edit 绑定），
-               这里直接让路，不然会先把项目打开、再问要不要删掉它。*/
+            /* 点右上角那一块不属于"选这个项目" —— 它自己有一套（见下面的 .edit 绑定），
+               这里直接让路，不然会先把项目打开、再弹出菜单。*/
             if (closest(event.target, '.edit')) return;
             const id = selectProjectCard(card);
+            rememberProjViewed(id);
             app.openProject(id);
         });
-        /* 卡片右上角的删除块（.edit，CSS 里 hover 才露出来）*/
+        /* 卡片右上角那一块（.edit，CSS 里 hover 才露出来；样式已改成"修改"的笔）。
+           点它不再直接删项目，而是弹出菜单：重命名 / 删除项目。再点一次收起。*/
         delegateClick(['#projList .projItem .edit'], function (node) {
             const card = closest(node, '.projItem');
-            return app.deleteProject(card && card.getAttribute('data-project-id'));
+            return toggleSelection('projMenu', node, card && card.getAttribute('data-project-id'));
         });
+        /* 「进行中的协作」右边那个设置按钮：排这个列表的序（搜索按钮先留着不动）。
+           再点一次收起 —— 开着的时候点它必须能关掉。*/
+        delegateClick(['#projList .wkTbtn[data-tg-role="project-sort"]'], function (node) {
+            return toggleSelection('sortMenu', node, '');
+        });
+        /* 项目操作菜单里的两项 */
+        delegateClick(['#projMenu .item'], function (node) {
+            const action = toText(node.getAttribute('data-proj-action'));
+            const id = selectionProjectId;
+            closeSelections();
+            if (action === 'rename') return app.renameProject(id);
+            if (action === 'delete') return app.deleteProject(id);
+            return null;
+        });
+        /* 排序菜单：选规则或选方式，选完整列重排一次（并记住这个偏好）。*/
+        delegateClick(['#sortMenu .item'], function (node) {
+            const order = toText(node.getAttribute('data-sort-order'));
+            const by = toText(node.getAttribute('data-sort-by'));
+            if (order) projSort = { order: order, by: projSort.by };
+            if (by) projSort = { order: projSort.order, by: by };
+            saveProjSort();
+            syncSortMenu();
+            render.list(state.get('projects', []));
+            return null;
+        });
+        /* 搜索：点放大镜 → 收起分组标题、放出搜索条并聚焦输入框；
+           点搜索条里的 iconB → 收回去、清掉关键字（列表复原）。*/
+        delegateClick(['#projList .wkTbtn[data-tg-role="project-search"]'], function () {
+            closeSelections();
+            projSearchOpen = true;
+            applyProjectFilter();
+            const input = qs('#projList .searchBar .left');
+            if (input && input.focus) input.focus();
+            return null;
+        });
+        delegateClick(['#projList .searchBar .iconB'], function () {
+            projSearchOpen = false;
+            projQuery = '';
+            applyProjectFilter();
+            return null;
+        });
+        /* 点菜单以外的地方 / 按 Esc 收起来。只绑一次：绑定函数可能被多次调用。*/
+        if (!bindProjectCards.bound) {
+            bindProjectCards.bound = true;
+            /* 打字实时过滤。挂在 document 上再按选择器认：列会重画，元素会被换掉。*/
+            document.addEventListener('input', function (event) {
+                const input = closest(event.target, '#projList .searchBar .left');
+                if (!input) return;
+                projSearchOpen = true;
+                projQuery = toText(input.value);
+                applyProjectFilter();
+            });
+            document.addEventListener('click', function (event) {
+                if (!openSelectionId) return;
+                if (closest(event.target, '.selection')) return;
+                if (closest(event.target, '.projItem .edit')) return;
+                if (closest(event.target, '.wkTbtn[data-tg-role="project-sort"]')) return;
+                closeSelections();
+            }, true);
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') closeSelections();
+            });
+        }
     }
 
     /* 点 Agent 卡片的选中态（先只广播事件，具体功能后面再补） */
@@ -6971,6 +7383,10 @@
                    没有会话（ready 之外本来就是 degraded，但 exit 给 null 表示读不到）时
                    还是照旧看席位状态。*/
                 const sessionBroken = a.session_status === 'degraded' || a.session_status === 'ended';
+                /* 在不在别的机器上 —— 只给"能不能当主 Agent"用：跨机器入席的人自报了机器名，
+                   或者中间层标了 network。下面那枚「网络接入」标记另有主 Agent 的例外，
+                   所以判据单独写一份在这里，别让它跟着徽标的口径走。*/
+                const remoteSeat = a.network === true || Boolean(a.machine);
                 return {
                     id: a.agent_id,
                     isMain: a.role === 'main',
@@ -6993,22 +7409,24 @@
                         : glossText('agent_status', a.status),
                     statusOk: !sessionBroken && a.status === 'active',
                     desc: '后端代号：' + codename,
-                    /* 权威代次：设为主 Agent 时要原样带回（authority.appoint 的期望代次）*/
-                    authority_epoch: a.authority_epoch,
                     currentTask: mine.length ? mine[0].title : '',
                     /* 基础能力 = 4 项准入，运营能力 = 7 项运营（名单与中文都在中间层词表里）。
                        出口的 missing_admission / missing_operational 说缺哪几项；
                        没有会话（missing 为 null）就两栏都不画。*/
                     basic: glossTags('capability_admission', a.missing_admission),
                     ops: glossTags('capability_operational', a.missing_operational),
-                    actions: (a.role === 'main' || !main || projectFinished()
+                    actions: (a.role === 'main' || !main || projectFinished() || remoteSeat
                         ? []
                         : [{ text: '设为主 Agent', action: 'agent.setMain:' + toText(a.agent_id) }]).concat([
-                            /* 「修改」改昵称（存用户档案）；「删除」后端没装配，
-                               按钮留着，点了会如实说做不了（见 actions.removeAgent）。
-                               这两项与"项目是否已完工"无关：改名字、退掉一个 Agent 是清理。*/
-                            { text: '修改', action: 'agent.edit:' + toText(a.agent_id) },
-                            { text: '删除', action: 'agent.remove:' + toText(a.agent_id) }
+                            /* 已退役的席位只剩"查看"（卡片本身点得开）：不能再改名字、也不能
+                               再删一次 —— 否则等于把一条历史记录翻来覆去地改。
+                               「修改」改昵称（存用户档案）；「删除」让他退役（后端两道拒绝：
+                               当前主 Agent、手上还有活）。这两项与"项目是否已完工"无关：
+                               改名字、退掉一个 Agent 是清理。*/
+                            ...(a.status === 'retired' || a.role === 'main' ? [] : [
+                                { text: '修改', action: 'agent.edit:' + toText(a.agent_id) },
+                                { text: '删除', action: 'agent.remove:' + toText(a.agent_id) }
+                            ])
                         ])
                 };
             });
@@ -7548,6 +7966,12 @@
 
     /* 注意：写动作不再用路径，统一走 WRITE_COMMANDS / api.command()。
        写端点由后端决定，前端不再用 config.setPath 去覆盖它们。*/
+
+    /* 重命名这两个动作要挂在 Tsunagou.app 上：卡片菜单调 app.renameProject、
+       重命名窗口的「确定」按钮（index.html 内联 onclick）调 app.submitRename。
+       Tsunagou.app 是别处装配出来的，所以这里补挂上去 —— 比在那个对象里再加一行更不容易漏。*/
+    Tsunagou.app.renameProject = function (id) { return actions.renameProject(id); };
+    Tsunagou.app.submitRename = function () { return actions.submitRename(); };
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

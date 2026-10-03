@@ -17,6 +17,22 @@ class RevisionConflict(TsunagouError):
     code = "revision_conflict"
 
 
+class CommandRefused(TsunagouError, ValueError):
+    """A command the domain refuses, together with the facts the person needs to act.
+
+    ``code`` says what happened; ``detail`` carries the evidence (the tasks still in
+    somebody's hands, the machine a retired Agent lives on). The HTTP layer answers 409
+    with ``{code, …detail}``, so the page can show the list instead of inventing a
+    sentence of its own. It is also a ``ValueError``: a refusal is recorded as a refusal,
+    not reported as an outage.
+    """
+
+    def __init__(self, code: str, detail: dict[str, Any] | None = None) -> None:
+        super().__init__(code)
+        self.code = code
+        self.detail = dict(detail or {})
+
+
 class ResourceConflict(TsunagouError, ValueError):
     """A reservation request that lost to a holder already in place.
 

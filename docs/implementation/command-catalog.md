@@ -67,6 +67,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | authority.transition.adopt | `/authority-transitions/{id}:adopt` | H / authority.converge | adopted_refs,expected_revisions,reason | Transition；target且scope可覆盖 |
 | agent.succession | `/agents/{id}:succeed` | M / agent.coordinate | successor_agent_id,attempt_plan,obligation_plan,expected_revisions,residual_risk_refs,reason | SuccessionResult+Operations；不改owner |
 | agent.retire | `/agents/{id}:retire` | M / agent.coordinate | expected_revisions,reason,stop_evidence? | Agent；若仍有执行先安全收敛 |
+| agent.retire.user | `/control/agents/{id}:retire` | U | agent_id,reason? | Agent；只有用户能删。退役=他不能再动、历史一字不改；当前主 Agent 与手上还有活的都拒绝 |
 
 ## 任务、Attempt 与验收
 

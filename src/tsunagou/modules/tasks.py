@@ -578,6 +578,29 @@ class TaskService:
             current = self._task(current.parent_task_id)
         return chain
 
+    def open_work_for(self, agent_id: str) -> list[dict[str, Any]]:
+        """这个 Agent 手上还压着的活：占着 Attempt，或者任务还没收尾。
+
+        退役要拒绝的是"把活悄悄搁下"：调用方把这份清单摆给人看，让人自己决定先收尾还是
+        先把活交出去 —— 第一版不做自动收敛（那牵扯任务状态机，风险不是一个量级）。
+        """
+
+        held: list[dict[str, Any]] = []
+        for task in self.tasks.values():
+            attempt = self.attempts.get(task.current_attempt_id or "")
+            owns_attempt = (
+                attempt is not None and attempt.owner_agent_id == agent_id
+                and attempt.status not in ATTEMPT_TERMINAL
+            )
+            if not owns_attempt or task.status in TASK_TERMINAL:
+                continue
+            held.append({
+                "task_id": task.task_id, "title": task.title, "status": task.status,
+                "attempt_id": attempt.attempt_id if attempt else None,
+                "attempt_status": attempt.status if attempt else None,
+            })
+        return sorted(held, key=lambda item: str(item["task_id"]))
+
     def describe_task(self, task_id: str) -> dict[str, Any]:
         task = self._task(task_id)
         attempt = self.attempts.get(task.current_attempt_id or "")
