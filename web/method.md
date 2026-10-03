@@ -517,8 +517,20 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > 除了「daemon 未启动 / 无响应」再补一句「上次记录（记录到 …）」—— 人据此知道点进去还有东西、
 > 也知道那是旧的那一份。`captured_at` 为空就不要写这一句。
 
-### 上一次记录：读不到时页面看到的东西
+### 接入等待：`in_host` 与跨机器邀请靠名单翻绿
 
+等待遮罩有两条回路，走哪条由**申请自己的宿主**决定，不由页面猜：
+
+- `waitForEnrollment` → `/console/enrollments/{id}`：Codex 那条路（认领 + 回执）；
+- `waitForHostArrival` → `/projects/{id}/enrollments:observe`：宿主自己接入与跨机器邀请那条路
+  （名单比对）。
+
+`host_registration.status === 'in_host'` 也是"等着就行"，**不是**"要人手工补命令"；刷新恢复时
+按记录自己的 `vendor`/`label` 继续等（写死 Codex 会让等待框永远不翻绿，到达时还会把厂商记错）。
+到达时页面按 `host.label` 写一次用户档案（那一次是"厂商 + 昵称 + agent_id"同时在手的唯一时刻）。
+见 [D194](../docs/decisions/2026-10-03-in-host-arrival-by-roster.md)。
+
+### 上一次记录：读不到时页面看到的东西
 项目结束（daemon 停了）之后，中间层会把**它搬运过的回答**拿出来顶上，并在回答里说清那是记录：
 
 - 聚合视图 `GET /console/views/{view}`：多一个 `history`，形如 `{ 出口名: 时刻 }`

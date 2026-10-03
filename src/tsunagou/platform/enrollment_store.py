@@ -21,7 +21,7 @@ import os
 import re
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -112,6 +112,7 @@ class EnrollmentStore:
         role: str,
         nickname: str = "",
         adapter: str = "codex",
+        baseline: Iterable[str] = (),
     ) -> dict[str, Any]:
         """Record the person's decision: this Agent joins this project with this role.
 
@@ -121,6 +122,12 @@ class EnrollmentStore:
         learn where they are joining. Both shapes need the same three facts, and both
         need the single slot: one enrollment at a time is what makes "which project"
         unambiguous for the chat that is asking.
+
+        ``baseline`` is who already sat in this project when the request was made. A host
+        that enrolls inside its own chat has no ticket and no receipt to wait for, so the
+        only thing that can be watched is the roster: "somebody new arrived". Without the
+        baseline written down here, a console that was restarted (or a page that was
+        reloaded after the arrival) could never tell "new" from "already there".
         """
 
         if (
@@ -128,6 +135,7 @@ class EnrollmentStore:
             or role not in {"main", "worker"} or not project_id or not project_root.is_absolute()
         ):
             raise RuntimeError("enrollment_selection_invalid")
+        known = sorted({str(item) for item in baseline if str(item)})
         with self._transaction() as state:
             if state.get("active_id"):
                 active = self._record(state, state["active_id"])
@@ -154,9 +162,25 @@ class EnrollmentStore:
                 "updated_at": now,
                 "expires_at": now + ENROLLMENT_TTL_SECONDS,
                 "receipt_file": str(self.directory / (enrollment_id + ".receipt.json")),
+                **({"baseline": known} if known else {}),
             }
             state["records"][enrollment_id] = record
             state["active_id"] = enrollment_id
+            return dict(record)
+
+    def note_baseline(self, enrollment_id: str, *, agent_ids: Iterable[str]) -> dict[str, Any]:
+        """Write the baseline down late, for a record whose project was unreadable then.
+
+        Only ever fills a gap: a record that already has a baseline (or that a chat has
+        claimed) is left exactly as it is.
+        """
+
+        known = sorted({str(item) for item in agent_ids if str(item)})
+        with self._transaction() as state:
+            record = self._record(state, enrollment_id)
+            if record.get("baseline") is not None or record.get("thread_id") or record["status"] in _TERMINAL:
+                return dict(record)
+            self._change(record, baseline=known)
             return dict(record)
 
     def get(self, enrollment_id: str) -> dict[str, Any]:

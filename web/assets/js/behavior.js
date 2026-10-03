@@ -6151,7 +6151,11 @@
             if (typeof prepared.nickname === 'string') nickname = prepared.nickname.trim();
             const registration = prepared.host_registration || {};
             const registrationState = toText(registration.status);
-            if (registrationState && registrationState !== 'registered' && registrationState !== 'deferred') {
+            /* `in_host` 也是"等着就行"：那条聊天里说一句话就完成接入，没有要人手工补的命令
+               （它的 next 已经写着该去哪说）。以前不认这个状态，于是 DSH 被说成"要人手工
+               补一条命令"——一句话的接入被写成了手工活。*/
+            if (registrationState && registrationState !== 'registered'
+                && registrationState !== 'deferred' && registrationState !== 'in_host') {
                 /* 票和 bridge 配置都备好了，只是这个宿主要人手工补一条命令 —— 不假装在等 */
                 finished = true;
                 enrollmentFlowActive = false;
@@ -6404,8 +6408,15 @@
         return api.get('enrollmentCurrent', null, { silent: true }).then(function (current) {
             if (enrollmentFlowActive || !current || current.status !== 'waiting' || !current.enrollment_id) return false;
             const projectId = toText(current.project_id);
+            /* 这条申请是哪个宿主的，就按哪个宿主继续等 —— 以前这里写死 Codex，于是一条 DSH
+               的申请被当成 Codex 的申请去等一个它永远不会有的回执（等待框永远不翻绿）。
+               中间层那边已经给"没有回执可等"的申请改用名单判定，所以照实带上宿主即可。*/
             return connectAgent({
-                host: { adapter: 'codex', label: 'Codex' }, role: current.role,
+                host: {
+                    adapter: toText(current.vendor) || 'codex',
+                    label: toText(current.label) || 'Codex'
+                },
+                role: current.role,
                 nickname: current.nickname, prepared: current,
                 waitingPrefix: enrollmentSelectionNote(current)
             }).then(function (outcome) {
@@ -6425,8 +6436,10 @@
     /* 等待/失败时给人一句能读懂的话（两个入口共用，免得文案两处跑偏）*/
     function connectTrouble(status, host) {
         const label = toText((host || {}).label) || '宿主';
-        /* 在宿主自己聊天里接入的那条路没有票：这里不能说"票过期/票据作废"。*/
-        if (toText((host || {}).mode) === 'in_host') {
+        /* 在宿主自己聊天里接入的那条路没有票：这里不能说"票过期/票据作废"。判据用宿主本身
+           （codex 之外都是"那条聊天自己签票"），不靠调用点额外传一个 mode —— 传漏了就会
+           把 DSH 说成 Codex。*/
+        if (toText((host || {}).adapter).toLowerCase() !== 'codex') {
             if (status === 'timeout') {
                 return '还没看到它出现在名单里：确认那条聊天里已经说了「接入 Tsunagou」，' +
                     '或者让它把那边的报错说出来';

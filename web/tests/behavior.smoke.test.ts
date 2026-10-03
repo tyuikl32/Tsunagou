@@ -1403,4 +1403,32 @@ describe("控制台接入等待与取消", () => {
     expect(enrollmentApi.ui.wizard.current()).toBe(1);
     expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
   });
+
+  /* 测试同事报的那个 bug 就落在这条路上：刷新之后，一条 DeepSeek Harness 的申请被当成
+     Codex 的申请去等（写死 adapter/label），到达到时还会把它的厂商记成 Codex —— 于是
+     页面上这个 Agent 从此一直显示成另一家的图标。这里钉住"按申请自己的宿主说话"。
+     等待本身由中间层那条"没有回执就按名单判定"的路负责翻绿，这一条只管页面这半边。*/
+  it("刷新恢复一条宿主自己接入的申请：按它自己的宿主等，到达时厂商也记它自己那家", async () => {
+    enrollmentDom.window.close();
+    calls = [];
+    await loadPage({
+      status: "waiting", phase: "pending", enrollment_id: "e-7", project_id: "p-1",
+      role: "worker", nickname: "远端小三", vendor: "deepseek", label: "DeepSeek Harness",
+    }, "p-1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls.some((call) => call.url.includes("agents:prepare"))).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls.some((call) => call.url.includes("/enrollments/e-7"))).toBe(true);
+    statusBody = { status: "arrived", enrollment_id: "e-7", agent_id: "a-dsh", role: "worker" };
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    /* 档案写入门与读取是同一个 URL，所以按**载荷**认那一次写入（`api.post` 会把 `patch`
+       那层拆掉，落到后端的就是 `{agents: …}`）。*/
+    const wrote = calls
+      .map((call) => call.body as { agents?: Record<string, { vendor?: string }> })
+      .filter((body) => Boolean(body?.agents?.["a-dsh"]));
+    expect(wrote).toHaveLength(1);
+    expect(wrote[0]!.agents!["a-dsh"]!.vendor).toBe("DeepSeek Harness");
+  });
 });
