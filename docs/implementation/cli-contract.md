@@ -18,6 +18,8 @@ CLI 是用户控制入口，持有 user_control 凭据。用户已授权安装/�
 
 当前公共形式：`tsunagou [--project-root <path>] [--json] <group> <command> ...`。项目上下文由显式根目录、绑定环境或最近祖先的 `.tsunagou/project.json` 确定；冲突报错，不按进程 cwd 猜另一项目。部分查询要求其签名列出的业务 project_id，不能把它当成不存在的全局 `--project` 参数。下表未实施的子命令仍是规划契约，实际可执行项以顶部说明和 CLI `--help` 为准。
 
+DeepSeek 的 `agent connect` 在没有显式项目选择时，优先采用该宿主的待接入申请，再回退到 cwd/父目录。显式根目录或绑定环境与申请不一致时返回 `onboarding_project_mismatch`，不静默替换任何选择。`agent pending --adapter deepseek` 的非秘密投影包含 `enrollment_id`、`project_root`、`project_id` 和角色；宿主适配器使用隐藏参数 `agent connect --pending-enrollment-id ID` 固定本次读取的申请，CLI 在连接前拒绝已失效或被替换的申请。它不认领申请、不签回执，也不增加领域命令或权限。
+
 | CLI | payload来源 / 对应已定入口 | 成功输出 |
 |---|---|---|
 | `installation-info [--json]` | 本机用户级安装记录白名单投影；无需 daemon | source_root/commit/source_dirty/runtime 版本、安装起止及 duration_ms；缺失时间为 null，不含接入秘密 |

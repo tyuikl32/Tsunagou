@@ -128,7 +128,8 @@ def _pending_record(adapter: str) -> dict[str, Any] | None:
     try:
         from tsunagou.platform.enrollment_store import EnrollmentStore
 
-        return EnrollmentStore().active_for(adapter)
+        record = EnrollmentStore().active_for(adapter)
+        return record if adapter != "deepseek" or record is None or record.get("status") == "pending" else None
     except RuntimeError:
         return None
 
@@ -154,16 +155,47 @@ def _role_for_connect(adapter: str, explicit: str | None) -> str | None:
     return wanted or explicit or None
 
 
-def _runtime_for_connect(adapter: str) -> RuntimeContext:
-    """接入时项目从哪来：显式指定/环境 → 那条唯一待接入记录 → 聊天的工作目录。
+def _runtime_for_connect(adapter: str, expected_enrollment_id: str | None = None) -> RuntimeContext:
+    """Resolve DSH's selected project before cwd discovery or identity writes."""
+    if adapter == "deepseek":
+        from tsunagou.application.onboarding import deepseek_routing_directory
+        from tsunagou.platform.enrollment_store import EnrollmentStore
+        from tsunagou.platform.private_file_lock import private_file_lock
+        from tsunagou.platform.runtime_context import read_object
 
-    宿主聊天里说"请接入 Tsunagou"的那一刻，它手上只有自己的会话 id 和工作目录；而工作
-    目录经常不是协调仓库 —— 一个项目可以协调好几个文件夹，控制台也把项目建在自己的根下。
-    机器上唯一说得清"接哪个项目、什么角色"的，就是用户在控制台点接入时留下的那条记录
-    （``platform/enrollment_store.py``）。只在 cwd 推不出项目时才用它：显式路径和环境变量
-    永远优先，工作目录里真有项目时也不必绕这一圈。
-    """
+        active = EnrollmentStore().active_for(adapter)
+        pending = active if active is not None and active.get("status") == "pending" else None
+        if expected_enrollment_id is not None:
+            if pending is None:
+                raise RuntimeError("enrollment_not_pending")
+            if pending.get("enrollment_id") != expected_enrollment_id:
+                raise RuntimeError("enrollment_selection_changed")
+        if pending is not None:
+            root = Path(str(pending["project_root"])).expanduser().resolve()
+            if read_object(root / ".tsunagou/project.json").get("project_id") != pending["project_id"]:
+                raise RuntimeError("onboarding_project_mismatch")
+            explicit = _selected_project_root.get()
+            configured = os.environ.get("TSUNAGOU_PROJECT_ROOT")
+            for selected in (explicit, Path(configured) if configured else None):
+                if selected is not None and selected.expanduser().resolve() != root:
+                    raise RuntimeError("onboarding_project_mismatch")
+            runtime = resolve_runtime(root)
+            if runtime.project_id != pending["project_id"]:
+                raise RuntimeError("onboarding_project_mismatch")
+            _selected_project_root.set(root)
+        else:
+            runtime = _runtime_context()
+        conversation_id = os.environ.get("DSH_SESSION_ID")
+        if conversation_id:
+            route = deepseek_routing_directory() / (conversation_key(conversation_id) + ".json")
+            with private_file_lock(route):
+                previous = read_object(route)
+                if previous and (previous.get("project_id") != runtime.project_id
+                                 or Path(str(previous.get("project_root", ""))).resolve() != runtime.project_root):
+                    raise RuntimeError("onboarding_project_mismatch")
+        return runtime
 
+    # Other hosts retain their existing cwd-first fallback.
     runtime = _runtime_context()
     if runtime.project_id or not adapter:
         return runtime
@@ -1477,10 +1509,10 @@ if typer is not None:
             raise RuntimeError("bridge_context_invalid")
         return cast(dict[str, Any], value)
 
-    def _connection_operations(adapter: str = "") -> ConnectionOperations:
+    def _connection_operations(adapter: str = "", expected_enrollment_id: str | None = None) -> ConnectionOperations:
         from tsunagou.application.agent_connection import ConnectionOperations
         return ConnectionOperations(
-            runtime=lambda: _runtime_for_connect(adapter), ensure_daemon=_ensure_project_daemon,
+            runtime=lambda: _runtime_for_connect(adapter, expected_enrollment_id), ensure_daemon=_ensure_project_daemon,
             control_token=_control_token,
             host_conversation_id=_host_conversation_id, profile_identity=_profile_identity,
             write_bridge=lambda adapter, mode, installation, destination, ticket: _write_bridge_config(
@@ -1868,6 +1900,7 @@ if typer is not None:
             # 记录自己的状态：claimed/enrolled 表示已经有别的聊天认领或已经接入 —— 那是别人的，
             # 不要试图接手（Codex 的 agent join 会以 enrollment_claimed_by_another_chat 拒绝）。
             "state": record.get("status"),
+            "enrollment_id": record.get("enrollment_id"),
             "adapter": record.get("adapter"),
             "role": record.get("requested_role"),
             "nickname": record.get("nickname"),
@@ -1885,6 +1918,7 @@ if typer is not None:
         output_dir: Path | None = typer.Option(None, "--output-dir"),  # noqa: B008
         request_file: Path | None = typer.Option(None, "--request-file"),  # noqa: B008
         register_host: bool = typer.Option(True, "--register-host/--no-register-host"),
+        pending_enrollment_id: str | None = typer.Option(None, "--pending-enrollment-id", hidden=True),
     ) -> None:
         """Enroll the actual conversation and register its route in one user action."""
         from tsunagou.application.agent_connection import ConnectionFailure, connect_agent
@@ -1894,11 +1928,13 @@ if typer is not None:
                 raise typer.BadParameter("mode must be attach/launch; role must be worker/main")
             if not re.fullmatch(r"[A-Za-z0-9_-]+", adapter) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
                 raise typer.BadParameter("adapter/profile must contain only letters, digits, '_' or '-'")
+            if pending_enrollment_id is not None and adapter != "deepseek":
+                raise typer.BadParameter("pending enrollment selection supports deepseek only")
             # 角色先定下来：有记录就以记录为准（用户的决定），与显式 --role 冲突直接拒绝。
             # 放在 connect_agent 之前，失败时不留下任何桥材料。
             effective_role = _role_for_connect(adapter, role)
             connected = connect_agent(
-                _connection_operations(adapter), adapter=adapter, role=effective_role, profile=profile, mode=mode,
+                _connection_operations(adapter, pending_enrollment_id), adapter=adapter, role=effective_role, profile=profile, mode=mode,
                 output_dir=output_dir, request_file=request_file, register_host=register_host,
             )
             print(json.dumps(connected, sort_keys=True))

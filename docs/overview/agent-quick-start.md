@@ -45,7 +45,7 @@ tsunagou agent pending --adapter <本宿主的 adapter，例如 deepseek>
 - 有申请：返回 `project_root`、`project_id`、`role`、`nickname`（**没有凭据**），照它接入即可；
 - `status: none`：现在没有人等这个宿主接入 —— 如实报告，请用户先在控制台为目标项目准备接入。**不要**从机器上的项目清单里自己挑一个，也**不要**为了让接入有个去处而 `project init`。
 
-宿主自己接入那条路（DeepSeek Harness）与 OpenCode 都走这条回退：CLI 在**工作目录推不出项目**时才读这条记录；显式 `--project-root`、`TSUNAGOU_PROJECT_ROOT` 和工作目录里真正的项目永远优先。
+DeepSeek Harness 的 `tsunagou_connect` 先读取本宿主仍处于 pending 的控制台申请，项目以申请为准；没有申请才按聊天工作目录及父目录发现项目。显式 `--project-root` 或 `TSUNAGOU_PROJECT_ROOT` 与申请冲突会报项目不匹配。OpenCode 的既有连接路径仍在**工作目录推不出项目**时才用记录。
 
 ## 手动指定项目和角色的接入
 
@@ -67,7 +67,7 @@ profile 只作显示标签。同一 IDE 的不同对话/subagent 由真实会话
 
 在正常打开的 Desktop 项目聊天中要求接入即可。Agent 优先调用宿主本地工具 `tsunagou_connect`；首次尚无此工具时，使用已安装 CLI 执行 `agent prepare --adapter deepseek`，把已有身份插件注册到实际 Desktop profile。此准备步骤不创建 Agent、不启动 daemon。优先使用宿主热重载，必要时完整重启一次并回到原聊天，不要求用户另开终端执行接入命令。
 
-那条聊天的工作目录**不必**是协调仓库：控制台点接入时写下的那条待接入记录就是项目与角色的来源（`agent pending --adapter deepseek` 可核对），CLI 只在工作目录推不出项目时才用它。所以顺序是：先在控制台为目标项目点一次接入，再去那条聊天里说“接入 Tsunagou”。
+那条聊天的工作目录**不必**是协调仓库：控制台点接入时写下的待接入记录就是项目与角色的来源（`agent pending --adapter deepseek` 可核对）。即使 cwd 属于另一项目，DSH 也优先接入控制台选定的项目；无申请时才按 cwd 手动接入。所以顺序是：先在控制台为目标项目点一次接入，再去那条聊天里说“接入 Tsunagou”。
 
 `tsunagou_connect` 从本次调用的宿主上下文取得真实聊天和工作目录，再调用固定的已安装 CLI；不接受模型填写的身份、凭据、任意命令或目录。不指定角色时保留已有角色，新登记默认为 worker；main 仍须用户明确指定。插件共享入口不保存某个 Agent 的凭据，每个聊天按自身身份选择私有路由。
 
