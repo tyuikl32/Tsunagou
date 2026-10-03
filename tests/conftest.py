@@ -55,3 +55,33 @@ def test_guard_the_suite_never_registers_into_the_real_index(isolated_machine_in
     assert Path(os.environ["TSUNAGOU_PROJECT_INDEX"]) == isolated_machine_index
     assert index_path() == isolated_machine_index
     assert index_path() != Path.home() / ".tsunagou" / "projects.json"
+
+
+@pytest.fixture(autouse=True)
+def isolated_enrollment_store(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep this test's pending enrollment out of the user's home directory.
+
+    The machine-level enrollment record (``~/.tsunagou/console-enrollments``) is the one
+    answer to "which project and role should this chat join", and there is exactly **one**
+    of them per OS user. Tests that drive the console or the CLI write it, so without this
+    guard two things happen: a record left pending by one test makes the next one fail with
+    ``enrollment_already_pending``, and the user's machine ends up claiming that somebody is
+    waiting to join a project that was deleted with the test's temporary folder.
+
+    Scoped per test rather than per run: a test that deliberately leaves a pending record
+    (the cross-machine flow does) must not be able to block the next one.
+    """
+
+    directory = tmp_path_factory.mktemp("console-enrollments")
+    monkeypatch.setenv("TSUNAGOU_ENROLLMENT_DIR", str(directory))
+    return directory
+
+
+def test_guard_the_suite_never_writes_the_real_enrollment_store(isolated_enrollment_store: Path) -> None:
+    """同样这条守卫也是承重的：记录属于"这台机器"，测试不该在那上面留痕。"""
+
+    from tsunagou.platform.enrollment_store import EnrollmentStore
+
+    assert Path(os.environ["TSUNAGOU_ENROLLMENT_DIR"]) == isolated_enrollment_store
+    assert EnrollmentStore().directory == isolated_enrollment_store
+    assert EnrollmentStore().directory != Path.home() / ".tsunagou" / "console-enrollments"

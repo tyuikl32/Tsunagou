@@ -732,6 +732,10 @@ def _query_provider(
                      # 入席者自报的机器名（跨机器导入时由远端报上来的那一个）：页面据此画
                      # "远端 · 机器名"。本机接入没有这一项，页面也就不画那个标记。
                      **({"machine": item.machine} if item.machine else {}),
+                     # 那台机器上代码副本的位置与基线（同一条自报通道）。主机**不读**这个路径，
+                     # 只把它记成账：远端要干文件活时，工作区就以"外部准备"的形态指向它（D192）。
+                     **({"copy_path": item.copy_path} if item.copy_path else {}),
+                     **({"copy_baseline": item.copy_baseline} if item.copy_baseline else {}),
                      "session_status": next((s.status for s in authority.sessions.values()
                                              if s.agent_id == item.agent_id and s.active), "inactive"),
                      "current_task_ids": [task.task_id for task in tasks.tasks.values()
@@ -880,6 +884,9 @@ def _query_provider(
                 "items": [
                     {"workspace_id": workspace.workspace_id, "attempt_id": workspace.attempt_id,
                      "driver_kind": workspace.driver_kind, "status": workspace.status,
+                     # 外部准备的工作区在哪儿：远端那份副本的位置由它自己报上来，主机只记账。
+                     # 有了这一项，复核的人才知道"这活是在哪台机器上的哪个目录做的"。
+                     **({"external_locator": workspace.external_locator} if workspace.external_locator else {}),
                      "baseline_manifest_id": workspace.baseline_manifest_id,
                      "result_manifest_id": workspace.result_manifest_id,
                      **({"result": {

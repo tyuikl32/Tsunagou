@@ -63,6 +63,36 @@ def _required_str(payload: dict[str, Any], key: str) -> str:
     return value
 
 
+def _self_reported(descriptor: Any) -> tuple[str, str, str]:
+    """What the enrolling machine said about itself: ``(machine, copy_path, copy_baseline)``.
+
+    Two spellings are accepted: the bare string a bridge sends when the only thing it has to
+    say is its own name, and the object form used when the machine also names its code copy —
+    ``{"machine": …, "copy": {"path": …, "baseline": …}}``. The copy is what makes file work
+    possible on a remote machine: the host records the location and never reads it.
+
+    Anything unusable is read as "did not say": a self-report is never the reason an
+    enrollment fails. A name that is merely too long is **cut short rather than dropped**,
+    because "did this machine name itself" is what decides whether it counts as remote.
+    """
+
+    if not isinstance(descriptor, dict):
+        return (_bounded_text(descriptor, 64), "", "")
+    copy = descriptor.get("copy")
+    copy_path = copy_baseline = ""
+    if isinstance(copy, dict):
+        copy_path = _bounded_text(copy.get("path"), 512)
+        copy_baseline = _bounded_text(copy.get("baseline"), 128)
+    return (_bounded_text(descriptor.get("machine"), 64), copy_path, copy_baseline)
+
+
+def _bounded_text(value: Any, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = "".join(ch for ch in value if ch.isprintable() and ch not in "\r\n\t").strip()
+    return text[:limit]
+
+
 def _admission_report(baseline: Any) -> dict[str, Any]:
     """Which of the four admission rows this report did *not* prove.
 
@@ -209,16 +239,15 @@ def build_handlers(
         if baseline is not None and not isinstance(baseline, dict):
             raise ValueError("invalid_probe_payload")
         # ``descriptor_ref`` 是"入席者对自己这台机器的描述"。今天只有跨机器导入的那条桥会填
-        # （远端自己报的机器名），本机接入的桥不填。它只是**显示用**：入席者说是谁，不代表
-        # 系统认得它 —— 权限、角色、范围一律仍由票和会话决定。
-        machine = payload.get("descriptor_ref")
-        if not isinstance(machine, str) or len(machine) > 64 or any(ch in machine for ch in "\r\n\t"):
-            machine = ""
+        # （远端自己报的机器名，以及它那份代码副本的位置与基线），本机接入的桥不填。名字只是**显示用**：
+        # 入席者说是谁，不代表系统认得它 —— 权限、角色、范围一律仍由票和会话决定。副本位置是
+        # "远端干文件活"的记账依据（主机不读它），见 D192。
+        machine, copy_path, copy_baseline = _self_reported(payload.get("descriptor_ref"))
         # context["principal_id"] is the one-time ticket secret carried by the T
         # bearer; redeem_ticket hashes it and enforces single-use/expiry/identity.
         receipt = authority.redeem_ticket(
             context["principal_id"], installation_id, conversation_id, baseline=baseline,
-            machine=machine.strip(),
+            machine=machine, copy_path=copy_path, copy_baseline=copy_baseline,
         )
         return {
             "agent_id": receipt.agent_id,
