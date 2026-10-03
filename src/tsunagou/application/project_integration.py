@@ -21,6 +21,11 @@ SOURCE_REPOSITORY = "https://github.com/tyuikl32/Tsunagou.git"
 GENERATOR_VERSION = "project-bootstrap-v4"
 START_MARKER = "<!-- TSUNAGOU:START -->"
 END_MARKER = "<!-- TSUNAGOU:END -->"
+WAKE_REMINDER = (
+    "需要唤醒其他 Agent 时，请通过 PowerShell 执行对应宿主的唤醒操作；"
+    "发起方和接收方都为 Codex 时，沿用 Codex 已有的唤醒机制。"
+    "请确认是否确实需要唤醒，避免重复操作。"
+)
 
 
 class ProjectIntegrationError(RuntimeError):
@@ -134,6 +139,8 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 6. 上游决定阻塞时调用 `task.block` 保存进展、释放占用并结束本轮；不相交的任务可以继续。
    恢复前重读状态并再次 begin。静默、断线或同库重启不会转移资源 owner，主 Agent 可以显式回收。
 7. 需要扩大范围、改变项目设计或处理无法协调的冲突时向主 Agent 提出；越过用户上限时建立 UserDecision，不能自行绕过。
+8. {WAKE_REMINDER}
+   此规则仅作提醒，具体操作由当前 Agent 判断并执行。
 
 ## 被拒时怎么办
 

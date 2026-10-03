@@ -70,6 +70,30 @@ def test_bootstrap_is_idempotent_and_preserves_user_agents_content(tmp_path: Pat
     assert (root / ".gitignore").read_text(encoding="utf-8").startswith("dist/\n")
 
 
+def test_bootstrap_reminder_matches_bridge_and_refreshes_without_main_instruction(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    _project(root)
+    (root / "AGENTS.md").write_text("# User rules\nkeep this line\n", encoding="utf-8")
+    integration = ProjectIntegration(root)
+    integration.bootstrap()
+    context_path = root / ".tsunagou/agent-context.md"
+    wake = (
+        "需要唤醒其他 Agent 时，请通过 PowerShell 执行对应宿主的唤醒操作；"
+        "发起方和接收方都为 Codex 时，沿用 Codex 已有的唤醒机制。"
+        "请确认是否确实需要唤醒，避免重复操作。"
+    )
+    bridge_rules = Path(__file__).resolve().parents[2] / "packages/bridge-server/src/reminders.ts"
+    assert wake in bridge_rules.read_text(encoding="utf-8")
+    context = context_path.read_text(encoding="utf-8")
+    assert wake in context
+    assert "project__completion_propose" not in context
+    # A previously generated context is replaced through the existing refresh path.
+    context_path.write_text(context.replace(wake, "旧版上下文"), encoding="utf-8")
+    integration.bootstrap(refresh=True)
+    assert wake in context_path.read_text(encoding="utf-8")
+    assert (root / "AGENTS.md").read_text(encoding="utf-8").startswith("# User rules\nkeep this line\n")
+
+
 def test_bootstrap_project_lock_filename_is_windows_safe_and_root_specific(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

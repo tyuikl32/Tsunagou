@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { CredentialHandoff, loadSession, type PersistedSession, type SessionCredential, type TicketFile } from "./credential-handoff.js";
 import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
+import { needsCompletionContext, reminderContent, WAKE_REMINDER } from "./reminders.js";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -632,7 +633,7 @@ async function recordConsoleArrival(cfg: RoutedConfig, result: unknown, session:
   });
 }
 
-async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<string, unknown>, commandId: string, restoreOnly = false): Promise<unknown> {
+async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<string, unknown>, commandId: string, restoreOnly = false, observeContext = true): Promise<unknown> {
   let ticket = cfg.ticketFile && existsSync(cfg.ticketFile) ? readTicketFile(cfg.ticketFile) : undefined;
   const expectedBinding = cfg.conversationId ? hash("conversation_id:" + cfg.conversationId) : undefined;
   const hostIdentity = cfg.conversationId
@@ -727,7 +728,7 @@ async function executeTool(cfg: RoutedConfig, kind: string, payload: Record<stri
     session = await recover(true);
     result = await transport.dispatch(kind, payload, session, commandId);
   }
-  if (kind === "context.project_read") await recordConsoleArrival(cfg, result, session);
+  if (kind === "context.project_read" && observeContext) await recordConsoleArrival(cfg, result, session);
   return result;
 }
 
@@ -776,7 +777,8 @@ async function main(): Promise<void> {
       instructions: "Read context__project_read and inbox on each coordination turn, and again at every natural break "
         + "- after finishing a sub-step, a build or a test run. "
         + "Use task__begin before work, task__submit for delivery, task__block before waiting. "
-        + "Main handles routine worker requests within existing authorization; only major decisions require the user.",
+        + "Main handles routine worker requests within existing authorization; only major decisions require the user. "
+        + WAKE_REMINDER,
     },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -804,7 +806,19 @@ async function main(): Promise<void> {
       const result = await executeTool(cfg, tool.command_kind, args, commandId);
       void restoreDesktopBindings();
       if (tool.command_kind === "context.project_read") rememberContracts(result);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+      let reminderContext = tool.command_kind === "context.project_read" ? result : undefined;
+      if (needsCompletionContext(tool.command_kind)) {
+        try {
+          // Re-read with this caller's configuration: role can change between calls.
+          reminderContext = await executeTool(cfg, "context.project_read", {}, randomUUID(), false, false);
+        } catch {
+          // Optional guidance must never turn an accepted mutation into an error.
+        }
+      }
+      return { content: [
+        { type: "text" as const, text: JSON.stringify(result) },
+        ...reminderContent(tool.command_kind, reminderContext),
+      ] };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const detail = (error as { detail?: unknown } | null | undefined)?.detail;

@@ -117,6 +117,17 @@ FX3/FX4/FX6 负责原 Codex 会话自动唤醒的产品接入与现场验收；�
 
 普通 Task 完成不等于 Project 完成；用户按手册执行 project complete，checkpoint 失败查询 Operation 并按需 retry。
 
+### 协作提醒 hook
+
+共享 bridge 为 Codex、OpenCode、DeepSeek Harness 提供两个纯提醒 hook。提醒以独立文本附加在原有工具 JSON 之后，不改变业务结果或权限。
+
+- **唤醒提醒（所有 Agent）**：需要唤醒其他 Agent 时，请通过 PowerShell 执行对应宿主的唤醒操作；**发起方和接收方都为 Codex 时**，沿用 Codex 已有的唤醒机制。请确认是否确实需要唤醒，避免重复操作。规则出现在 MCP instructions、项目上下文，以及分派任务、提交结果、审核反馈、发送协作消息等成功操作之后。
+- **完工提案提醒（仅当前 main）**：读取上下文、成功接受或自验收任务结果后，提醒 main：如果所有工作已经完成，且合并与验收已通过，请调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认提案时不要重复提交，最终完工由用户确认。是否已经完成全部工作由 main 判断，单个任务完成不代表整体验收通过。
+
+hook 不执行 PowerShell、不发送额外消息、不自动唤醒或续跑 Agent，也不自动发起或确认提案。失败操作保留原有错误指导。提醒不证明某个宿主具备可用的唤醒能力，具体操作仍由 Agent 根据实际宿主处理。
+
+升级共享 bridge 后，运行中的旧 bridge 需重载才能使用新的工具提醒；已有项目通过 `tsunagou project bootstrap --refresh` 更新生成的常驻上下文，用户自写区块仍予保留。
+
 
 ## 断线恢复
 

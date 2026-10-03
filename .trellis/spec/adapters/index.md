@@ -1,5 +1,7 @@
 # Adapter and TypeScript guidance
 
+Shared bridge reminder rules: [Reminder-only coordination hooks](reminder-hooks.md).
+
 Status: shared bridge and diagnostic adapters are implemented. Existing Codex/OpenCode acceptance remains unchanged. The DeepSeek Harness 0.2.0-rc.2 ordinary Desktop onboarding repair passed live acceptance on 2026-10-02; release-gate status remains unchanged. Use the [single acceptance report](../../../docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md) for evidence and retained limitations.
 
 Host fact proven on OpenCode v2.0.18: local MCP servers receive no session env vars; the host conversation id arrives per tool call via `_meta["ai.opencode/sessionID"]`. Bridge identity for such hosts must be derived from that field, and a project-shared bridge must keep one private session file per conversation.

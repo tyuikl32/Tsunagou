@@ -457,3 +457,36 @@ Real OpenCode v2.0.18 host: fixed bridge _meta session identity and per-conversa
 ### Status
 
 [OK] **Completed**
+
+
+## Session 20: Agent reminder hooks implemented
+<!-- trellis-session: v=2 fp=809adb2912a3f5e3 -->
+
+**Date**: 2026-10-03
+**Task**: Agent reminder hooks implemented
+**Branch**: `elysia`
+
+### Summary
+
+Implemented reminder-only bridge hooks and generated context; reviewed with no blocking findings. No commit requested.
+
+### Main Changes
+
+- Wake reminder for all Agents; Codex exception requires both sender and recipient Codex.
+- Current authenticated main gets conditional completion-proposal reminder; original JSON preserved.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 3 new stdio, 39 existing bridge, 9 template tests; 8 workspace type checks; Ruff, mypy and docs checks passed.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Review uncommitted changes; reload updated bridge and bootstrap refresh existing project context when deploying.

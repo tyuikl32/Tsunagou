@@ -1,0 +1,4 @@
+{"file":".trellis/spec/adapters/index.md","reason":"Host/session isolation and reminder contract"}
+{"file":".trellis/spec/backend/entrypoint-contracts.md","reason":"Authentication and template refresh"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Relevant verification"}
+{"file": ".trellis/spec/adapters/reminder-hooks.md", "reason": "Verify authenticated reminder scoping and side effects"}

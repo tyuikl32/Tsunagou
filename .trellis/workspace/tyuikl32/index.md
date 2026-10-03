@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
-- **Last Active**: 2026-09-28
+- **Total Sessions**: 20
+- **Last Active**: 2026-10-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~459 | Active |
+| `journal-1.md` | ~492 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-10-03 | Agent reminder hooks implemented | - | `elysia` |
 | 19 | 2026-09-28 | OpenCode 11 baseline live + merged-tree retest | `e29a2ae` | `elysia` |
 | 17 | 2026-09-21 | Job lease recovery 与公共 jobs 查询 | - | `main` |
 | 16 | 2026-09-21 | M1 重启事实查询与审查回退撤权 | - | `main` |
