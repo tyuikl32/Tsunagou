@@ -484,10 +484,12 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["projects"]);
 
     const rail = page.querySelector("#projList")!;
+    /* 左栏的结构：分组标题 → 搜索条（挂在第一个标题下面）→ 卡片 → 下一个标题 → 卡片。
+       搜索条那一段写成 "搜索条"：它是新加的一层，但位置固定，写清楚比跳过它更能说明结构。*/
     const layout = [...rail.children].map((node) => node.classList.contains("wkTitle")
       ? node.textContent!.trim()
-      : node.getAttribute("data-project-id"));
-    expect(layout).toEqual(["进行中的协作", "p-1", "已完成的协作", "p-2"]);
+      : (node.classList.contains("searchBar") ? "搜索条" : node.getAttribute("data-project-id")));
+    expect(layout).toEqual(["进行中的协作", "搜索条", "p-1", "已完成的协作", "p-2"]);
     expect(rail.querySelector('.projItem[data-project-id="p-2"] .right p')!.textContent).toBe("已完成");
   });
 
@@ -778,6 +780,49 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(badge(2)!.textContent).toBe("网络离线 · NAS");
     /* 本机接入没有这一项 —— 连标记都不出现。*/
     expect(badge(0)).toBeNull();
+  });
+
+  /* 主 Agent 必须和协调中心同一台机器：远端的按钮不画（后端也拒，两道门都要）。*/
+  it("设为主 Agent 只给本机 Agent，远端的按钮不画", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/projects/p-1/agents", {
+        items: [
+          { agent_id: "a-1", role: "main", status: "active" },
+          { agent_id: "a-2", role: "worker", status: "active" },
+          { agent_id: "a-3", role: "worker", status: "active", machine: "工位-七", online: true },
+        ],
+        main_agent_id: "a-1",
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["agents", "settings"]);
+
+    const cards = [...page.querySelectorAll("#pane-agents .boxerbox > .item")]
+      .map((node) => node.textContent ?? "");
+    expect(cards).toHaveLength(3);
+    expect(cards[0]).not.toContain("设为主 Agent");  /* 已经是主 Agent */
+    expect(cards[1]).toContain("设为主 Agent");      /* 本机子 Agent */
+    expect(cards[2]).not.toContain("设为主 Agent");  /* 远端子 Agent */
+    expect(cards[2]).toContain("网络");              /* 徽标照旧画 */
   });
 
   /* 2026-10-03：Agent 详细窗口里的两行"跨机器才出现"—— 在哪台机器、这台机器做不到什么。
