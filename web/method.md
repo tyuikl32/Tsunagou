@@ -297,7 +297,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 | 情况 | 行为 |
 |---|---|
 | input 所在窗口/区块**有**主按钮（如 `#addSubAgent`、向导每一步） | 点按钮才提交。向导的「下一步」在第 1/2 步会**真的做事**（建项目 / 接入主 Agent，失败就停在原地），第 3 步只是翻页；「完成」只收窗复位、不再发请求。**校验不过时窗口/步骤保持不动**，只弹提示 |
-| `#mgrAgentInfo` 的输入 | **昵称可改**，其余只读（2026-10-02 换版式，2026-10-03 加三行）：窗口里已经没有 `.items/.item`，是「标签 + 值」一路排下来 —— `>.title2` 当标签、`.textbox2 > input` 是昵称、`>.dspText` 依次是项目名称、任务名称，**再三行只有跨机器接入的 Agent 才出现**（`#agentInfoMachineTitle`/`#agentInfoMachine`「在哪台机器」、`#agentInfoCopyTitle`/`#agentInfoCopy`「代码副本」（**只有报了副本的才出现**，格式 `路径（基线）`）、`#agentInfoLimitsTitle`/`#agentInfoLimits`「这台机器的限制」：叫不醒它，以及文件活能不能做/做了算什么证据 —— 报了副本的写"证据是它自报的"，没报的写"只做不需要文件的活"）。所以回填**按位置**（`render.agentInfoWindow`：`form.fill(node, [昵称])` + 前两个 `.dspText` 按位置，后三行按 id 回填并定显隐），不再按标签文字，`keyOfInput` 在这里也用不上（没有 `.item .fword`）。**本机接入的 Agent 连那些标题都不出现**（`display:none`），所以那个窗口和加这个功能之前一模一样。窗口里**没有「厂商」那一栏** —— 标题与胶囊上的 logo 已经说明它来自哪个宿主，而那个值是按 id 从用户档案现算的。标题文字由 `setWindowTitleText` 替换，**保留**标题里那个 `<i>` 图标（直接写 `textContent` 会把图标擦掉）。窗口里的「确定」= `app.saveAgentInfo()`（存昵称再关窗），**不再是关窗按钮**；因为 `#mgrAgentInfo` 在 `AUTOCOMMIT_EXCLUDE` 里，昵称框失焦**不会**自动提交 |
+| `#mgrAgentInfo` 的输入 | **昵称可改**，其余只读（2026-10-02 换版式，2026-10-03 加三行）：窗口里已经没有 `.items/.item`，是「标签 + 值」一路排下来 —— `>.title2` 当标签、`.textbox2 > input` 是昵称、`>.dspText2` 依次是项目名称、任务名称，**再三行只有跨机器接入的 Agent 才出现**（`#agentInfoMachineTitle`/`#agentInfoMachine`「在哪台机器」、`#agentInfoCopyTitle`/`#agentInfoCopy`「代码副本」（**只有报了副本的才出现**，格式 `路径（基线）`）、`#agentInfoLimitsTitle`/`#agentInfoLimits`「这台机器的限制」：叫不醒它，以及文件活能不能做/做了算什么证据 —— 报了副本的写"证据是它自报的"，没报的写"只做不需要文件的活"）。所以回填**按位置**（`render.agentInfoWindow`：`form.fill(node, [昵称])` + 前两个 `.dspText2` 按位置，后三行按 id 回填并定显隐），不再按标签文字，`keyOfInput` 在这里也用不上（没有 `.item .fword`）。**本机接入的 Agent 连那些标题都不出现**（`display:none`），所以那个窗口和加这个功能之前一模一样。窗口里**没有「厂商」那一栏** —— 标题与胶囊上的 logo 已经说明它来自哪个宿主，而那个值是按 id 从用户档案现算的。标题文字由 `setWindowTitleText` 替换，**保留**标题里那个 `<i>` 图标（直接写 `textContent` 会把图标擦掉）。窗口里的「确定」= `app.saveAgentInfo()`（存昵称再关窗），**不再是关窗按钮**；因为 `#mgrAgentInfo` 在 `AUTOCOMMIT_EXCLUDE` 里，昵称框失焦**不会**自动提交 |
 | input **没有**提交按钮（`.textbox` / `.textbox2` 里、不在 `#addProj` / `#addSubAgent` / `#mgrAgentInfo` 中，且所在区块没有按钮 —— 目前 `index.html` 里没有这样的静态输入框，这是留给动态渲染/宿主注入内容的机制） | **失焦即提交**，并提示"改动已成功保存"；按 Enter 等效于失焦；值没变化不重复提交、不重复提示 |
 | 设置里的"颜色主题"下拉框 | 选中即生效（立即换肤）。**选回同一个值不会重复提示**；程序化回填必须走 `{silent:true}` |
 
@@ -470,8 +470,8 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 
 > 通用约定：`agent` 是 `{ name, icon }`，`icon` 取 `'deepseek' | 'codex' | 'claudecode'`
 > （也可以直接给图片路径，只要以 `-l.png` / `-d.png` 结尾就会跟着主题自动切换）。
-> 向导 / 添加子 Agent 里"厂商"是选择框的选项文字：`Claude Code` / `DeepSeek Harness` / `Codex` /
-> `OpenCode` / `ZCode`（面板顺序就是这个），字段名用 `vendor`（**不是 `api`**）；
+> 向导 / 添加子 Agent 里"厂商"是选择框的选项文字：`Claude Code（待实现）` / `DeepSeek Harness` / `Codex` /
+> `OpenCode`（面板顺序就是这个），字段名用 `vendor`（**不是 `api`**）；
 > 图标按 `vendor` 文字映射（`agentIconFor()`）。**默认项是 `Codex`** ——
 > 面板里 Codex 那项带 `data-default`，`resetCsBox()` 认这个标记（见 §3.4）。
 > 凡是多行的文本字段（如"改动的文件"）直接用 `\n` 分隔即可。
@@ -885,7 +885,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 `.boxerbox > .item/.itemL/.itemAdd`、`.tablebox > .th/.tr > .colu(.colu-l/.colu-m/.colu-cdt) > .citem1/.citem2/.citem3`、
 `.table > .item > .itemTh/.itemTd(.itemTdActive)`、`.tags`→`.tagZ(.tagZOK/.tagZS)`、
 `.listfieldbox > .item(.itemS/.itemC/.itemJ)`、`.st.st-1…13`、`.title/.title2/.title3/.bgTxt/.textArea/.textZ/.textZbox/.textN/.textTime/.bgTitle`、
-`.option > .buttonbox2(.buttonbox2active/.buttonbox2important)`、`.buttonbox`、`.uiBlock`（其内 `>.title2` 当标签、`>.dspText` 当长文本值）、`.textbox/.textbox2 > input`。
+`.option > .buttonbox2(.buttonbox2active/.buttonbox2important)`、`.buttonbox`、`.uiBlock`（其内 `>.title2` 当标签、`>.dspText2` 当长文本值）、`.textbox/.textbox2 > input`。
 
 ---
 
@@ -960,7 +960,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 
 **2026-09-27 增补（AI 协助；只改 `behavior.js` 与本文）**
 - **向导第 2 步 / 添加子 Agent 的"厂商"改成选择框**：Agent 字段由 `api`（API 地址）改为 `vendor`
-  （`Claude Code` / `DeepSeek Harness` / `Codex`），图标按文字映射（`agentIconFor()`）。
+  （`Claude Code（待实现）` / `DeepSeek Harness` / `Codex`），图标按文字映射（`agentIconFor()`，按前缀认厂商，所以带"（待实现）"后缀照样画它自己的图标）。
   `DEFAULT_PATHS.detectAgent` 与 `GET /agents/detect` 一并删除——后端没有"Agent 地址"这个概念。
 - **下拉面板的定位与尺寸由 JS 管**：展开时与选择框等宽、对齐其右边缘、贴框正下方；
   窗口缩放或滚动容器滚动时跟随；收起时清掉行内 `width/left/top`。
@@ -1003,7 +1003,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 | 向导的「上一步」与子 Agent 的「×」 | **暂不实现**（2026-09-28 你定）：按钮留着，点了只弹「撤回功能当前尚未实现」。理由：上一步想做的事 = 撤回上一步的效果，而分步后撤不在本轮范围内（子 Agent 那个 `×` 是 CSS 画的 `.itemC::before`，点它就是"删掉这个 Agent"）。低层导航 `ui.wizard.prev()` 仍在，只是页面按钮不再用它。 |
 | 「添加子 Agent」的两个入口 | 已区分：两个入口都走同一条真接入（见 §7.1），只是收尾不同 —— 向导第 3 步的小加号把结果记进向导第 3 步的列表；Agent 管理页的大加号成功后重拉名单/卡片/昵称。 |
 | 向导第 2 步的"你所选的 Agent" | 厂商由选择框决定（**默认 Codex**，见 §3.4 的“表单清空时回到哪一项”）；这个预览框显示的是**你在名称输入框里填的 Agent 名字**（图标才是厂商），名字为空就留空。**不再有 `GET /agents/detect` 探测请求**（后端没有"Agent 地址"这个概念）。<br>**整块（标签 + 预览框）的显隐**：名字与厂商**两样都给了才显示**，否则一块空板子不占位置（`actions.detectMainAgent()` 里顺带定，只动 `display`）。 |
-| 向导遇到接不了的宿主 | **Codex 与 OpenCode** 能从网页接入（表在中间层：`mode=console` 才是"页面能办完"）。**DeepSeek Harness 属 `in_host`**：它只能在它自己的桌面聊天里接入 —— 页面先 `prepare` 一次写下"哪个项目、什么角色"（不签票），再把那句话（后端 `note`）摆在**等待遮罩**上，等名单里出现它（判断在中间层：`enrollments:observe`；没有票，所以没有"过期"，人点「停止等待」会撤掉那条记录）。**Claude Code / ZCode 是 `unsupported`**：选了点"下一步"会**报错**并停在第 2 步（项目已经在第 1 步建好了，不会白费）。宿主 CLI 不在 PATH、注册命令执行失败同理。OpenCode 注册完要在那边**用页面给的会话名开会话**（`opencode --session <名字>`）并 reload 一次，配置才生效 —— 等待提示就是后端 `next` 那句话 |
+| 向导遇到接不了的宿主 | **Codex 与 OpenCode** 能从网页接入（表在中间层：`mode=console` 才是"页面能办完"）。**DeepSeek Harness 属 `in_host`**：它只能在它自己的桌面聊天里接入 —— 页面先 `prepare` 一次写下"哪个项目、什么角色"（不签票），再把那句话（后端 `note`）摆在**等待遮罩**上，等名单里出现它（判断在中间层：`enrollments:observe`；没有票，所以没有"过期"，人点「停止等待」会撤掉那条记录）。**Claude Code 是 `unsupported`**：选项画成 `Claude Code（待实现）` 且**点不动**（`data-disabled`，见 `ui.choosebox.bindClicks`）；程序化回填照旧可用，所以"选了它"的报错路径仍在 —— 点"下一步"会**报错**并停在第 2 步（项目已经在第 1 步建好了，不会白费）。ZCode 已从页面移除（图标、选项都不再出现；后端登记与诊断 adapter 仍在，见 `release_gates.OPTIONAL_HOSTS`）。宿主 CLI 不在 PATH、注册命令执行失败同理。OpenCode 注册完要在那边**用页面给的会话名开会话**（`opencode --session <名字>`）并 reload 一次，配置才生效 —— 等待提示就是后端 `next` 那句话 |
 | 删除协作 | 左栏卡片右上角的 `.edit`（hover 才露出来）→ `dialog.confirm` → `POST /console/projects/{id}:forget`。中间的 daemon / 宿主登记 / 票 / 索引条目 / 目录一起清；登记进来的外部项目只注销登记、保留目录 |
 | 没有“返回初始工作区”的界面入口 | `Tsunagou.app.openHome()` / `dispatch('ui.workspace.home')` 都已就绪，但**页面上没有入口——这是原设计就没做的按钮，属于你的设计范围**，需要时自己加一个（我这侧不自行添加元素）。 |
 | 错误提示的颜色 | 成功与失败用的是同一个品牌色（CSS `--brand-col`），目前只靠图标/文案区分。要有独立配色就得加 CSS。 |

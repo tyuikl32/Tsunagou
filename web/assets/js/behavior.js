@@ -1680,7 +1680,10 @@
     ui.choosebox.bindClicks = function () {
         document.addEventListener('click', function (event) {
             const option = closest(event.target, '.chooseboxOpen p');
-            if (option) { selectCsOption(option); return; }
+            /* 带 data-disabled 的选项（如"Claude Code（待实现）"）画出来但不给选：
+               点了什么都不发生，面板留着让人挑别的。程序化回填不走这里，照旧可用。*/
+            if (option && !option.hasAttribute('data-disabled')) { selectCsOption(option); return; }
+            if (option) return;
             const box = closest(event.target, '.choosebox');
             const inPanel = closest(event.target, '.chooseboxOpen');
             if (box && !inPanel) { ui.choosebox.toggle(box); return; }
@@ -2481,8 +2484,7 @@
         codex: './assets/img/agent/codex-l.png',
         claudecode: './assets/img/agent/claudecode-l.png',
         claude: './assets/img/agent/claudecode-l.png',
-        opencode: './assets/img/agent/opencode-l.png',
-        zcode: './assets/img/agent/zcode-l.png'
+        opencode: './assets/img/agent/opencode-l.png'
     };
 
     /* 厂商未知（或压根没有 Agent）时摆的图标：Tsunagou 自己的小标（本来就是 1:1，
@@ -2506,15 +2508,15 @@
         return themedIconPath(AGENT_ICONS[text.toLowerCase()] || TSUNAGOU_CARD_ICON);
     }
 
-    /* 选择框里的厂商文字（"DeepSeek Harness" / "Claude Code" / "OpenCode" …）→ 图标。
+    /* 选择框里的厂商文字（"DeepSeek Harness" / "Claude Code（待实现）" / "OpenCode" …）→ 图标。
        认不出来（空串、id 缩写、没见过的厂商）就摆 Tsunagou 小标 —— 这是全页唯一一处
-       "未知怎么画"的规则，调用点不要再各写一遍（写歪一处就会显示成某家的图标）。*/
+       "未知怎么画"的规则，调用点不要再各写一遍（写歪一处就会显示成某家的图标）。
+       待实现的那家在选项里带着"（待实现）"后缀，这里按前缀认厂商，照样画它自己的图标。*/
     function agentIconFor(vendor) {
         const text = toText(vendor).toLowerCase();
         if (text.indexOf('claude') >= 0) return AGENT_ICONS.claudecode;
         if (text.indexOf('deepseek') >= 0) return AGENT_ICONS.deepseek;
         if (text.indexOf('opencode') >= 0) return AGENT_ICONS.opencode;
-        if (text.indexOf('zcode') >= 0) return AGENT_ICONS.zcode;
         if (text.indexOf('codex') >= 0) return AGENT_ICONS.codex;
         return TSUNAGOU_CARD_ICON;
     }
@@ -4067,11 +4069,11 @@
         /* 记下是谁：没有 agent_id 就没地方存昵称（保存时会如实拒绘）*/
         node.setAttribute('data-agent-id', agentId);
         node.setAttribute('data-nickname', nickname);
-        /* 这个窗口的版式是「标签 + 值」自上而下排（.title2 / .textbox2 / .dspText），
+        /* 这个窗口的版式是「标签 + 值」自上而下排（.title2 / .textbox2 / .dspText2），
            没有 .item、也没有 .fword，所以按位置回填而不是按标签文字：
-           唯一那个输入框是昵称，四个 .dspText 依次是项目、任务、在哪台机器、这台机器的限制。*/
+           唯一那个输入框是昵称，四个 .dspText2 依次是项目、任务、在哪台机器、这台机器的限制。*/
         form.fill(node, [nickname]);
-        const shown = qsa('.dspText', node);
+        const shown = qsa('.dspText2', node);
         if (shown[0]) shown[0].textContent = toText(data.project);
         if (shown[1]) shown[1].textContent = toText(data.task);
         /* 跨机器才有「在哪台机器 / 这台机器的限制」这两行：
@@ -4475,7 +4477,7 @@
             const name = toText(project.name) || shortId(id);
             return dialog.confirm({
                 title: '删除这个协作？',
-                text: '「' + name + '」会被整个删掉，不能撤销。',
+                text: '“' + name + '”会被整个删掉，不能撤销。',
                 description: '它的 daemon 会停掉，宿主里为它注册的 bridge 会注销，' +
                     '项目目录与里面的协作数据一并删除。',
                 okText: '删除', danger: true
@@ -4675,7 +4677,7 @@
             return confirmThen({
                 title: '确认完成项目',
                 text: '确定要确认项目完成吗？',
-                description: '项目会立即被标注为"已完成"，并新建一个存档点。',
+                description: '项目会立即被标注为“已完成”，并新建一个存档点。',
                 okText: '确认完成'
             }, function () {
                 return api.post('acceptanceConfirm', {
@@ -4725,7 +4727,7 @@
             return confirmThen({
                 title: '立即存档',
                 text: '要把当前状态存成一个存档点吗？',
-                description: '不用等自动存档；存好之后这一屏的「最新存档点」会多一条。',
+                description: '不用等自动存档，存好之后这一屏的“最新存档点”会多一条。',
                 okText: '存档'
             }, function () {
                 return notify.track('正在存档', api.post('checkpointCreate', {})).then(function (result) {
@@ -5807,13 +5809,19 @@
 
     /* 界面上选的厂商 → 中间层的宿主行（GET /console/hosts，表在 platform/host_registration.py）。
        匹配 adapter 名或显示名都行；"支不支持、跑什么命令"由中间层那张表决定，
-       页面不维护第二份名单（否则加一个厂商要改两种语言）。*/
+       页面不维护第二份名单（否则加一个厂商要改两种语言）。
+       选项文字可能带着"（待实现）"这类后缀（页面上要如实标出来，见 index.html 的
+       data-disabled），比对前先去掉它 —— 中间层表里的显示名是干净的名字。*/
+    function vendorName(value) {
+        return toText(value).replace(/（待实现）\s*$/, '').trim().toLowerCase();
+    }
+
     function hostFor(vendor) {
-        const wanted = toText(vendor).trim().toLowerCase();
+        const wanted = vendorName(vendor);
         if (!wanted) return null;
         return toArray(state.get('hosts', [])).filter(function (host) {
             return toText(host.adapter).toLowerCase() === wanted
-                || toText(host.label).toLowerCase() === wanted;
+                || vendorName(host.label) === wanted;
         })[0] || null;
     }
 
@@ -5923,9 +5931,9 @@
         const label = toText((host || {}).label) || '宿主';
         const missing = toArray(pending.missing_admission).map(toText).filter(Boolean);
         const path = currentProjectPath();
-        return '「' + label + '」那边的会话已经连上了，但还没就位' +
+        return '“' + label + '”那边的会话已经连上了，但还没就位' +
             (missing.length ? '（还缺：' + missing.join('、') + '）' : '') +
-            '。请在' + (path ? '「' + path + '」下' : '那边') +
+            '。请在' + (path ? '“' + path + '”下' : '那边') +
             '让它检查接入状态，并确认原会话能读取项目上下文。正在等待连接';
     }
 
@@ -5934,10 +5942,10 @@
     function openWindowHint(host, phrase) {
         const label = toText((host || {}).label) || '宿主';
         if (toText((host || {}).adapter).toLowerCase() === 'codex') {
-            return '请在要接入的 Codex 当前对话中说「请接入 Tsunagou」。正在等待连接';
+            return '请在要接入的 Codex 当前对话中说“请接入 Tsunagou”。正在等待连接';
         }
         const path = currentProjectPath();
-        return '请在「' + (path || '这个项目所在的目录') + '」下打开/重载 ' + label +
+        return '请在“' + (path || '这个项目所在的目录') + '”下打开/重载 ' + label +
             ' 窗口，让它' + (phrase || '') + '接入 Tsunagou。正在等待连接';
     }
 
@@ -5976,7 +5984,7 @@
         const id = toText((enrollment || {}).project_id);
         const project = findById(state.get('projects', []), id) || {};
         const role = toText((enrollment || {}).role) === 'main' ? '主 Agent' : '子 Agent';
-        return '项目「' + (toText(project.name) || id || '原项目') + '」的' + role + '：';
+        return '项目“' + (toText(project.name) || id || '原项目') + '”的' + role + '：';
     }
 
     /* 宿主自己接入（`in_host`）时遮罩上那句话：中间层给的那句指路（"在目标聊天里让它
@@ -5991,7 +5999,7 @@
             || ('请在 ' + label + ' 自己的项目聊天里让它接入 Tsunagou。');
         const path = currentProjectPath();
         const as = toText(role) === 'main' ? '以主 Agent 身份接入' : '以子 Agent 身份接入';
-        return (path ? ('请在「' + path + '」下：') : '') + note +
+        return (path ? ('请在“' + path + '”下：') : '') + note +
             '（本次' + as + '）正在等待它出现';
     }
 
@@ -6237,7 +6245,7 @@
         const node = byId('netInvite');
         if (!node) return Promise.resolve(false);
         const input = qs('.textbox2 input', node);
-        const shown = qsa('.dspText', node);
+        const shown = qsa('.dspText2', node);
         if (input) input.value = toText(prepared.invite);
         if (shown[1]) {
             const minutes = Math.max(1, Math.round(Number(prepared.expires_in_seconds || 0) / 60));
@@ -6441,7 +6449,7 @@
            把 DSH 说成 Codex。*/
         if (toText((host || {}).adapter).toLowerCase() !== 'codex') {
             if (status === 'timeout') {
-                return '还没看到它出现在名单里：确认那条聊天里已经说了「接入 Tsunagou」，' +
+                return '还没看到它出现在名单里：确认那条聊天里已经说了“接入 Tsunagou”，' +
                     '或者让它把那边的报错说出来';
             }
             if (status === 'cancelled' || status === 'stopped') {
