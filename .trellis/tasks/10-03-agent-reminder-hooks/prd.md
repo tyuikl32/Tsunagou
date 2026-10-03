@@ -10,6 +10,8 @@ User approved the final design and explicitly requested implementation on 2026-1
 - Deliver completion guidance on main context reads and successful review acceptance/self acceptance. Main interprets whether all work/merge/acceptance is complete; no semantic completion detector.
 - Preserve original JSON tool result; append separate MCP text content. Failed/unrelated operations do not gain post-success reminders.
 - No automatic wake, continuation, proposal, confirmation, shell execution, recipient message, new authority or protocol command. Existing wake and frontend behavior stay intact.
+- Follow-up approved by user: enrich the first reminder with per-host commands or operational documentation entrypoints. Explicitly discourage relying on incompletely implemented Tsunagou automatic wake and repeatedly trying its configuration/binding/probe path. Prefer existing host-native original-session operations and verifiable evidence; do not invent unsupported commands. This is reminder/runbook enhancement only.
+- Additional user steering: when wake fails, first recheck whether the target vendor/host was misidentified; independently verify actual host, original session and operation, correct mistakes and validate again. Do not ask the user to manually wake the Agent. Genuine unsupported/permission blockers remain explicit unresolved facts; never fabricate success or bypass authority.
 
 ## Acceptance
 - Both main and worker see wake guidance with BOTH-Codex exception; only current authenticated main sees targeted completion guidance.

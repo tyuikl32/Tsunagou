@@ -13,3 +13,6 @@ Wake guidance: context.project_read, coordination.plan, coordination.takeover, t
 
 ## Compatibility
 Hints perform no shell commands, new messages, retries or wake calls. Preserve response JSON and error guidance. Template refresh uses existing bootstrap flow, preserving user content. Docs describe reminder-only guarantees and BOTH-Codex exception.
+
+## Follow-up: actionable wake guidance
+Keep the inline hint compact with an explicit warning that Tsunagou auto-wake is not a reliable prerequisite. Add a focused source runbook with Codex/OpenCode/DeepSeek sections and pointers to existing operational evidence. Include a source-relative guide path plus repository fallback in the shared hint; generated context can expose its resolved installed-source docs path. The unpublished working-tree guide is authoritative until published, so do not claim the remote URL already contains it. No unverified universal resume command, secret-bearing endpoint example or recovery loop. Host guidance must preserve the original conversation and validate actual turn/presentation rather than queued delivery.

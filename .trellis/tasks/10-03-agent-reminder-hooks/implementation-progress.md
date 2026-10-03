@@ -24,3 +24,16 @@ Parent ran python tools/docs/validate_docs.py: PASS (48 unchanged archived sourc
 - Extra post-acceptance authenticated context query inherits existing transport waiting behavior; a slow daemon can delay successful tool output. No dedicated reminder timeout was added; review judged nonblocking for this scope.
 - Source checkout has no .tsunagou/agent-context.md or enrolled runtime context; no identity was fabricated. Native Trellis helpers are not new project members.
 - No Git commit/push requested or performed. Implementation/review finished; task retained for review rather than claiming committed delivery.
+
+## Follow-up: host operation guide and failure self-check
+The original hooks were committed outside this agent's work as c5edb36 (`hooks`). This follow-up remains uncommitted; no commit/push was performed by the implementation helpers or coordinator.
+
+User requested practical host operation pointers and less reliance on incomplete Tsunagou automatic wake, then clarified failures must trigger self-investigation of misidentified host/vendor rather than asking the user to manually wake. Updated both inline/template reminder text, source-local guide path, and added docs/overview/agent-wake-guide.md with Codex/OpenCode/DeepSeek sections. OpenCode example omits historical --auto to preserve existing approval settings; DSH web evidence is not represented as universal Desktop support. Reminder rules and completion hook are unchanged.
+
+Passing checks reported by implementer:
+- `uv run pytest -q tests/unit/test_project_integration.py`: 9 passed.
+- `corepack pnpm --filter @tsunagou/bridge-server test:reminders`: 3 actual stdio scenarios passed.
+- `corepack pnpm run check`: passed.
+- `python tools/docs/validate_docs.py` and `git diff --check`: passed.
+
+Independent reviewer verified command/evidence accuracy and reran targeted Ruff, mypy, bridge TypeScript, node syntax and diff checks: passed with no source fixes needed. Online guide is a publication fallback; new content currently exists in local source only. No real wake, host enrollment or user-project refresh was executed; no stronger live-host reliability claim is made.

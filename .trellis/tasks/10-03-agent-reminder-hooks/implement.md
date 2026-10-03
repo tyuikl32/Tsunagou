@@ -9,4 +9,4 @@
 
 Rollback: revert only task-owned reminder code/template/docs/test changes. No migration or persisted runtime changes.
 
-Code is implemented and reviewed; kept uncommitted for user review. See implementation-progress.md for evidence and limits.
+Code is implemented and reviewed. Original hooks are now in externally created commit c5edb36; the subsequent actionable wake/failure guidance remains uncommitted for user review. See implementation-progress.md for evidence and limits.
