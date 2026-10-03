@@ -8,6 +8,8 @@ Harness 是 profile/plugin 宿主，stock `@deepseek-ai/dsh-mcp-client` 的 `too
 
 身份不明、私有路由缺失或不匹配时拒绝调用；不能回退到别人的凭据。旧 stock overlay 的借用反例和已撤回命令行守卫只作历史，不能证明新 Desktop 入口。低层 headless overlay 兼容路径保留。注销仅删除指定会话或项目的私有路由，保留共享 provider、其他配置、原生会话与项目历史。
 
+控制台存在 DeepSeek 待接入申请时，`tsunagou_connect` 通过已安装 CLI 的 `agent pending --adapter deepseek` 获取用户选定的项目，再把项目根目录和申请 ID 交给 connect；聊天工作目录不覆盖该选择。CLI 在连接前核对申请仍有效、项目 manifest 的 ID 一致，并拒绝把已绑定其他项目的同一会话接入新项目。没有对应申请时，保留按聊天工作目录及其父目录发现项目的手动接入。模型工具参数仍只接受角色，不接受项目、会话 ID 或命令。本次修复不改变控制台等待状态、认领或回执链；项目选择正确不代表页面已经自动确认接入。
+
 安装由用户选择具体 Harness 版本和 profile；静态配置只有可信程序和私有路由位置。token 只由 bridge 私有内存或用户私有文件提供，不写 prompt、工具参数、静态 MCP 配置或环境。以下无模型 Web 探针继续使用临时 `DSH_HOME` 与 `DSH_AGENTS_HOME`；用户明确授权的 Desktop 原聊天验收则核对指定聊天的新调用，不能用另起 web/headless 结果替代，也不导出原始凭据或完整聊天。
 
 官方 Web 流程是：`dsh web --no-open` 打印带 token 的本机根 URL；首次 GET 只用于交换一次 token，服务返回绑定 Host 的 HttpOnly、SameSite cookie 并重定向到无 token 的 `/`；之后对 `/api` 发送 `client-request` envelope，`method` 必须与路径末段一致，Remote 参数放在 `payload.args`。session-controller 的业务 endpoint 包括 `session/list`、`session/create`、`session/fork`、`session/page` 和 `session/follow`。探针只使用 `session/create` 与 `session/list`，不执行模型 prompt、fork 或持久用户会话操作。

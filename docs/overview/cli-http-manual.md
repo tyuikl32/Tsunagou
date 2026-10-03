@@ -117,7 +117,9 @@ tsunagou agent pending --adapter deepseek
 
 **角色由记录决定。** 只要该 adapter 有一条待接入记录，`agent connect` 就用记录里的 `requested_role`：显式传的 `--role` 与它冲突时直接失败（`enrollment_role_conflict`，在写任何桥材料之前就拒绝），不会静默照做。没有记录时才回到"`--role` 优先，否则保留已有角色 / 新登记为 worker"的手动接入规则。这样"页面上选主 Agent"就等于"那条聊天只能以主 Agent 接入"；而且 daemon 本身也不可能被接入方要求角色 —— `agent.enroll` 的 payload 没有角色字段，席位角色只来自票，票里是 main 时由 daemon 在就绪那一刻自行任命。
 
-连接那条路在**工作目录推不出项目**时才读它：`--project-root`、`TSUNAGOU_PROJECT_ROOT` 与工作目录里真正的项目永远优先（三者都没有、也没有记录时，`project_root` 就是当前目录，而它没有 `project_id`）。Codex 的 `agent join` 一直是这样——它先读记录再设置解析根；OpenCode 与 DeepSeek Harness 现在同样如此。
+**DeepSeek 的项目也由记录决定。** 控制台为 DSH 留下申请时，即使聊天开在另一项目的目录，接入目标仍是控制台选择的项目。无申请才按聊天目录及父目录发现项目。显式项目参数与申请冲突，或同一会话已有另一个项目的私有路由时，接入会报项目不匹配，不自动改绑。取消或替换申请后应重新发起接入，不继续使用旧选择。此规则只修正项目落点；等待页面的自动确认不属于本次修复。
+
+OpenCode 等既有 `agent connect` 路径仅在**工作目录推不出项目**时读取申请：`--project-root`、`TSUNAGOU_PROJECT_ROOT` 与工作目录里真正的项目优先。DeepSeek 使用上一段的专属顺序，申请优先于 cwd；Codex 的 `agent join` 先读取申请再设置解析根。没有显式选择、对应申请或可发现的项目时，`project_root` 为当前目录，`project_id` 为空。
 
 ### 跨机器接入：主机发邀请，远端一条命令（1a / 1b / 1c）
 

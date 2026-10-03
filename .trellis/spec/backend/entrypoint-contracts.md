@@ -14,6 +14,7 @@ Apply when implementing T03/T06/T16/T17 or changing a request example. Sources: 
 - User decision: `POST /api/v1/projects/{project_id}/control/decisions/{id}:resolve`, user_control, no Grant.
 - REST and MCP adapt into the same dispatcher; neither has a private authorization bypass.
 - Current CLI project selection: `--project-root` or the explicit bound environment, then the nearest ancestor `.tsunagou/project.json`. All endpoint/control reads use the same RuntimeContext; conflicting project IDs/roots/endpoints fail with context conflicts.
+- DeepSeek `agent connect` inserts the matching active console selection before cwd discovery. Explicit selection must match that request; no request preserves manual cwd discovery. See the DeepSeek project-selection scenario below.
 - Daemon health includes actual service PID/runtime_id/project_ids/source. Stop verifies this identity before terminating. A Windows virtualenv launcher PID is not necessarily the service PID.
 - Current local HTTP safety boundary: `create_app(dispatcher=None, *, authenticator=None)`; `LocalCommandAuthenticator.authenticate(principal_kind, authorization, *, session_id, connection_epoch) -> PrincipalContext`. Default construction has no credential and fails closed for business commands.
 - Current authority primitives: `issue_ticket(installation_id, conversation_id, ttl_seconds=600) -> secret`, `redeem_ticket(secret, installation_id, conversation_id, *, baseline=None) -> EnrollmentReceipt`, `session_status(baseline) -> ready|degraded`.
@@ -135,3 +136,41 @@ Good: a chat running in another directory joins the console-selected main and re
 ### 7. Wrong vs Correct
 
 Wrong: `prepare --role worker` after a console join error, or report success because any new Agent appeared. Correct: `agent join`, retry only in the owning chat, then call the original conversation's MCP context; the console checks the bound Agent and its receipt.
+
+## Scenario: DeepSeek Console Project Selection
+
+### 1. Scope / Trigger
+
+Apply to DSH `tsunagou_connect` and DeepSeek CLI connect. The console's project selection must not be displaced by host cwd or its ancestor project. This contract does not change console observation, claims, receipts, or other adapters.
+
+### 2. Signatures
+
+- `agent pending --adapter deepseek`: public non-secret selection including `enrollment_id`, `project_root`, `project_id`, `role`, and record `state`.
+- `tsunagou [--project-root ROOT] agent connect --adapter deepseek [--pending-enrollment-id ID]`: the enrollment ID option is hidden and used by the host adapter to pin a selection.
+- `tsunagou_connect` accepts only optional `role`; project paths and identity never come from model arguments.
+
+### 3. Contracts
+
+The adapter probes pending through the installed CLI using real host identity/cwd. Matching selection supplies the project root and enrollment ID to connect; `status:none` retains cwd fallback. Invalid or failed probe must not become a successful manual fallback. CLI rechecks the exact active request, manifest root/id, and existing private conversation route before creating bridge identity, ticket, or agent. Explicit root/environment and pending selection must agree. With no DeepSeek request, manual cwd/ancestor discovery remains supported. Other host requests are ignored.
+
+### 4. Validation & Error Matrix
+
+| Condition | Outcome |
+|---|---|
+| Pending manifest/root/id or explicit selection differs | `onboarding_project_mismatch`; no connection side effects |
+| Existing DSH conversation route names another project | `onboarding_project_mismatch`; existing route preserved |
+| Pinned request cancelled/expired/missing | `enrollment_not_pending`; no cwd fallback |
+| Pinned request replaced by another ID | `enrollment_selection_changed`; no connection side effects |
+| No matching request and no pin | Existing manual project discovery |
+
+### 5. Good/Base/Bad Cases
+
+Good: console A and chat cwd B connect to A. Base: no request connects to the project discovered in cwd. Bad: returning immediately because cwd found B, allowing the model to pass a project, or swallowing a failed pending probe and joining B.
+
+### 6. Tests Required
+
+Exercise cwd at another project, a project subdirectory, no project, and the selected project; no-request manual fallback; another adapter's request; explicit-root/environment conflicts; manifest mismatch; existing-route conflict before identity/ticket writes; cancellation/replacement between adapter probe and connect. Adapter subprocess tests must cover the probe and connect invocations and verify sanitized output. Live DSH verification remains distinct from fixture tests.
+
+### 7. Wrong vs Correct
+
+Wrong: `runtime.project_id` exists, so return before inspecting DeepSeek pending. Correct: retain explicit selectors, validate the pending project when present, and use cwd discovery only when no corresponding request exists.
