@@ -208,10 +208,17 @@ def build_handlers(
         baseline = payload.get("probe_payload")
         if baseline is not None and not isinstance(baseline, dict):
             raise ValueError("invalid_probe_payload")
+        # ``descriptor_ref`` 是"入席者对自己这台机器的描述"。今天只有跨机器导入的那条桥会填
+        # （远端自己报的机器名），本机接入的桥不填。它只是**显示用**：入席者说是谁，不代表
+        # 系统认得它 —— 权限、角色、范围一律仍由票和会话决定。
+        machine = payload.get("descriptor_ref")
+        if not isinstance(machine, str) or len(machine) > 64 or any(ch in machine for ch in "\r\n\t"):
+            machine = ""
         # context["principal_id"] is the one-time ticket secret carried by the T
         # bearer; redeem_ticket hashes it and enforces single-use/expiry/identity.
         receipt = authority.redeem_ticket(
-            context["principal_id"], installation_id, conversation_id, baseline=baseline
+            context["principal_id"], installation_id, conversation_id, baseline=baseline,
+            machine=machine.strip(),
         )
         return {
             "agent_id": receipt.agent_id,
@@ -657,7 +664,7 @@ def build_handlers(
                 # The owner releases resources with task.block; main may recover explicitly.
                 messages.send(command_id=context["command_id"] + ":decision", sender_agent_id=context["principal_id"],
                               recipient_agent_id=attempt.owner_agent_id, kind="user_decision.pending",
-                              subject_ref="task/" + related_task.task_id, summary="Pause work affected by the pending decision",
+                              subject_ref="task/" + related_task.task_id, summary="有未决决定，先挂起这个任务",
                               payload={"task_id": related_task.task_id, "decision_id": decision.decision_id})
         return {"decision_id": decision.decision_id, "proposal_digest": decision.input_digest,
                 "revision": decision.expected_revision, "status": decision.status,
@@ -683,7 +690,7 @@ def build_handlers(
                 command_id=context["command_id"] + ":decision-resolved",
                 sender_agent_id=context["principal_id"], recipient_agent_id=authority.main_agent_id,
                 kind="user_decision.resolved", subject_ref="decision/" + resolved.decision_id,
-                summary="User decision resolved: " + str(resolved.decision),
+                summary="用户已裁决：" + str(resolved.decision),
                 payload={
                     "decision_id": resolved.decision_id, "kind": resolved.kind,
                     "subject_ref": resolved.subject_ref, "revision": resolved.expected_revision,
@@ -866,7 +873,7 @@ def build_handlers(
                 # The new digest travels in the summary: message views do not expose the
                 # payload, and a notice that cannot say which version is now in force is
                 # useless to the agent that has to switch to it.
-                summary=f"contract revised: {proposal.supersedes_id} -> {proposal.proposal_id} @ {proposal.digest}",
+                summary=f"契约已修订：{proposal.supersedes_id} → {proposal.proposal_id} @ {proposal.digest}",
                 payload={
                     "proposal_id": proposal.proposal_id,
                     "supersedes_id": proposal.supersedes_id,
@@ -1111,7 +1118,7 @@ def build_handlers(
             if auto_wake:
                 message = messages.send(command_id=context["command_id"] + ":" + item.assignment_id,
                                         sender_agent_id=context["principal_id"], recipient_agent_id=item.assigned_worker_id,
-                                        kind="task.assigned", subject_ref="task/" + item.task_id, summary="Task available",
+                                        kind="task.assigned", subject_ref="task/" + item.task_id, summary="有任务可领",
                                         payload={"task_id": item.task_id, "assignment_id": item.assignment_id})
                 item.message_id = message.message_id
             result.append({"assignment_id": item.assignment_id, "task_id": item.task_id,

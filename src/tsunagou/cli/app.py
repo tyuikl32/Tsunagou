@@ -17,10 +17,12 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from tsunagou.application.onboarding import conversation_key
 from tsunagou.modules.projects import PENDING_OBJECTIVE
 from tsunagou.platform import host_registration
-from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
+from tsunagou.platform.bridge_files import read_bridge_config, write_bridge_config, write_ticket_file
 from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
+from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 if TYPE_CHECKING:
     from tsunagou.application.agent_connection import ConnectionOperations
@@ -34,8 +36,145 @@ _selected_project_root: ContextVar[Path | None] = ContextVar("cli_project_root",
 _write_ticket_private = write_ticket_file
 
 
+def _advertised_url(declared: str, bind_host: str) -> str:
+    """核对"别人该怎么连我"这句话，返回规范化后的地址（空串 = 没声明）。
+
+    监听地址回答"我在哪些网卡上听"，对外地址回答"远端该拨哪个号"——同一台机器上常常
+    不是同一个值（绑 ``0.0.0.0`` 时尤其明显：那不是一个远方能拨的地址）。所以两件事分开：
+    监听仍由 ``--host/--port`` 决定，这里只管写给别人看的那一个。
+    """
+
+    text = str(declared or "").strip().rstrip("/")
+    if not text:
+        return ""
+    # 手写 "192.168.1.10:2810" 是常态：补上默认协议再解析，别让人为了一个冒号重敲一遍。
+    candidate = text if "://" in text else f"http://{text}"
+    parsed = urllib.parse.urlsplit(candidate)
+    hostname = parsed.hostname or ""
+    if hostname in {"0.0.0.0", "::"}:
+        # 绑 0.0.0.0 是"在所有网卡上听"，不是"我在这里"：写成对外地址，远端永远连不上。
+        raise RuntimeError("advertised_url_must_not_be_a_wildcard")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("advertised_url_must_be_an_origin") from exc
+    if (parsed.scheme not in {"http", "https"} or not hostname
+            or parsed.path not in {"", "/"} or parsed.query or parsed.fragment):
+        raise RuntimeError("advertised_url_must_be_an_origin")
+    loopback_bind = bind_host in {"127.0.0.1", "localhost", "::1"}
+    loopback_advertised = hostname in {"127.0.0.1", "localhost", "::1"}
+    if loopback_advertised and not loopback_bind:
+        print(json.dumps({
+            "status": "warning", "error": "advertised_url_is_loopback",
+            "advertised_url": text,
+            "note": "对外地址写的是回环：只有这台机器自己能连，远端拿到这张邀请也连不上。",
+        }, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+    if loopback_bind and not loopback_advertised:
+        print(json.dumps({
+            "status": "warning", "error": "daemon_bind_is_loopback",
+            "advertised_url": text, "host": bind_host,
+            "note": f"对外地址是 {text}，但监听只在 {bind_host}：远端连不上。"
+                    f"要跨机器就同时给 --host 0.0.0.0（或那张网卡的地址）。",
+        }, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+    port = parsed.port
+    return f"{parsed.scheme}://{hostname}" + (f":{port}" if port else "")
+
+
 def _runtime_context() -> RuntimeContext:
     return resolve_runtime(_selected_project_root.get())
+
+
+#: The coordination centre's fixed port. Reachable remotes need a port that survives a
+#: restart — that is the whole point of fixing it — but a port somebody else already holds
+#: must never stop the daemon: it falls back to a free one and says so (``--port 0`` still
+#: means "any free port", and says nothing because that is what was asked for).
+DEFAULT_DAEMON_PORT = 2810
+
+
+def _daemon_port_is_free(host: str, port: int) -> bool:
+    """Can this address be bound right now?
+
+    No ``SO_REUSEADDR`` on purpose: on Windows that option lets a second process bind a
+    port that is already in use, which would turn this check into a yes-man.
+    """
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, port))
+        return True
+    except OSError:
+        return False
+
+
+def _pick_daemon_port(host: str, requested: int) -> tuple[int, bool]:
+    """Return ``(port, fell_back)``: the fixed port, or a free one when it is taken."""
+
+    if requested == 0:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, 0))
+            return int(sock.getsockname()[1]), False
+    if _daemon_port_is_free(host, requested):
+        return requested, False
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((host, 0))
+        return int(sock.getsockname()[1]), True
+
+
+def _pending_record(adapter: str) -> dict[str, Any] | None:
+    """The one pending handoff the console wrote for this host, if there is one."""
+
+    if not adapter:
+        return None
+    try:
+        from tsunagou.platform.enrollment_store import EnrollmentStore
+
+        return EnrollmentStore().active_for(adapter)
+    except RuntimeError:
+        return None
+
+
+def _role_for_connect(adapter: str, explicit: str | None) -> str | None:
+    """Which role does this join take? The record decides while it is pending.
+
+    The console wrote down what the person chose (main or worker) together with the
+    project. That decision is the answer to "what am I joining as", so it outranks a
+    role the chat happens to ask for: a request for the other role is refused
+    (``enrollment_role_conflict``) instead of quietly obeyed. Without a pending record
+    this is the explicit manual path: ``--role`` wins, and ``None`` means "keep whatever
+    this conversation already is, else the host default".
+
+    The daemon cannot be talked into a role by the enrolling side at all — ``agent.enroll``
+    carries no role field, and the seat takes the role written in the ticket.
+    """
+
+    pending = _pending_record(adapter)
+    wanted = str((pending or {}).get("requested_role") or "").strip()
+    if wanted and explicit and explicit != wanted:
+        raise RuntimeError("enrollment_role_conflict")
+    return wanted or explicit or None
+
+
+def _runtime_for_connect(adapter: str) -> RuntimeContext:
+    """接入时项目从哪来：显式指定/环境 → 那条唯一待接入记录 → 聊天的工作目录。
+
+    宿主聊天里说"请接入 Tsunagou"的那一刻，它手上只有自己的会话 id 和工作目录；而工作
+    目录经常不是协调仓库 —— 一个项目可以协调好几个文件夹，控制台也把项目建在自己的根下。
+    机器上唯一说得清"接哪个项目、什么角色"的，就是用户在控制台点接入时留下的那条记录
+    （``platform/enrollment_store.py``）。只在 cwd 推不出项目时才用它：显式路径和环境变量
+    永远优先，工作目录里真有项目时也不必绕这一圈。
+    """
+
+    runtime = _runtime_context()
+    if runtime.project_id or not adapter:
+        return runtime
+    pending = _pending_record(adapter)
+    if pending is None:
+        return runtime
+    root = Path(str(pending["project_root"])).expanduser().resolve()
+    if not (root / ".tsunagou" / "project.json").is_file():
+        return runtime
+    _selected_project_root.set(root)
+    return _runtime_context()
 
 
 try:
@@ -521,11 +660,6 @@ if typer is not None:
             raise RuntimeError("project_context_conflict")
         return resolve_runtime(coordination_root).state_dir / "endpoint.json"
 
-    def _choose_port(host: str) -> int:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind((host, 0))
-            return int(sock.getsockname()[1])
-
     def _read_daemon_health(url: str) -> dict[str, Any]:
         with urllib.request.urlopen(url.rstrip("/") + "/api/v1/health", timeout=2) as response:
             return cast(dict[str, Any], json.load(response))
@@ -597,16 +731,18 @@ if typer is not None:
     def daemon_start(
         coordination_root: Path | None = typer.Option(None, "--coordination-root"),  # noqa: B008
         host: str = typer.Option("127.0.0.1", "--host"),
-        port: int = typer.Option(0, "--port", min=0, max=65535),
+        port: int = typer.Option(DEFAULT_DAEMON_PORT, "--port", min=0, max=65535),
         name: str = typer.Option("Tsunagou project", "--name"),
         objective: str = typer.Option(PENDING_OBJECTIVE, "--objective"),
         host_wake: str = typer.Option("auto", "--host-wake"),
+        advertised_url: str = typer.Option("", "--advertised-url"),
         reuse: Path | None = typer.Option(None, "--reuse"),  # noqa: B008
     ) -> None:
         from tsunagou.modules.projects import ProjectRegistry
 
         if host_wake not in {"disabled", "managed", "desktop", "auto"}:
             raise typer.BadParameter("host-wake must be disabled, managed, desktop or auto")
+        advertised = _advertised_url(advertised_url, host)
         root = (coordination_root or _project_root()).expanduser().resolve()
         manifest_path = _endpoint_manifest(root)
         try:
@@ -622,6 +758,17 @@ if typer is not None:
                               "next": "project restore --coordination-root <clone> --checkpoint-digest <digest>"}))
             raise typer.Exit(4)
         state_dir.mkdir(parents=True, exist_ok=True)
+        # 上一次写在清单里的对外地址要沿用：重启时没人会再敲一遍那个参数，
+        # 而远端手里那张邀请依赖它不变。
+        previous_manifest: dict[str, Any] = {}
+        if manifest_path.is_file():
+            try:
+                loaded_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if isinstance(loaded_manifest, dict):
+                    previous_manifest = loaded_manifest
+            except (OSError, json.JSONDecodeError):
+                previous_manifest = {}
+        advertised = advertised or str(previous_manifest.get("advertised_url") or "")
         existing: dict[str, Any] = {}
         if reuse is not None:
             try:
@@ -667,7 +814,10 @@ if typer is not None:
                     current_source = str(running_source_root())
                     if health["runtime"].get("source_root") != current_source:
                         raise RuntimeError("daemon_source_mismatch")
-                    print(json.dumps({"status": "already_running", **existing}, sort_keys=True))
+                    print(json.dumps({"status": "already_running", **existing,
+                                      **({"note": "对外地址改过了：重启 daemon（daemon stop 再 start）才会生效。"}
+                                         if advertised and advertised != existing.get("advertised_url") else {})},
+                                     ensure_ascii=False, sort_keys=True))
                     return
             except RuntimeError as exc:
                 print(json.dumps({"status": "error", "error": str(exc)}))
@@ -683,7 +833,14 @@ if typer is not None:
         else:
             token = secrets.token_urlsafe(32)
             write_private_bytes(token_path, (token + "\n").encode("utf-8"))
-        selected_port = port or _choose_port(host)
+        selected_port, port_fallback = _pick_daemon_port(host, port)
+        if port_fallback:
+            # 人得看得见：地址变了，邀请里用的也是这个新端口。
+            print(json.dumps({
+                "status": "warning", "error": "daemon_port_in_use", "requested_port": port,
+                "port": selected_port,
+                "note": f"{port} 已被占用，这次改用空闲端口 {selected_port}；给远端的邀请里会带上真正使用的端口。",
+            }, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         url = f"http://{host}:{selected_port}"
         log_path = state_dir / "daemon.log"
         child_env = os.environ.copy()
@@ -694,6 +851,7 @@ if typer is not None:
             "TSUNAGOU_CONTROL_TOKEN": token,
             "TSUNAGOU_HOST_WAKE": host_wake,
             "TSUNAGOU_DAEMON_URL": url,
+            **({"TSUNAGOU_DAEMON_ADVERTISED_URL": advertised} if advertised else {}),
             "TSUNAGOU_DAEMON_REGISTRY": existing.get("daemon_registry", str(state_dir / "daemon-projects.json")),
             "PYTHONPATH": os.pathsep.join(
                 [str(Path(__file__).resolve().parents[2]), child_env.get("PYTHONPATH", "")]
@@ -733,7 +891,10 @@ if typer is not None:
             raise typer.Exit(1) from exc
         # The daemon writes all member endpoints after registering their containers.
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        print(json.dumps({"status": "started", **manifest}, sort_keys=True))
+        print(json.dumps({
+            "status": "started", **manifest,
+            **({"port_fallback": {"requested": port, "used": selected_port}} if port_fallback else {}),
+        }, sort_keys=True))
 
     @daemon_app.command("status")
     def daemon_status(
@@ -1316,10 +1477,11 @@ if typer is not None:
             raise RuntimeError("bridge_context_invalid")
         return cast(dict[str, Any], value)
 
-    def _connection_operations() -> ConnectionOperations:
+    def _connection_operations(adapter: str = "") -> ConnectionOperations:
         from tsunagou.application.agent_connection import ConnectionOperations
         return ConnectionOperations(
-            runtime=_runtime_context, ensure_daemon=_ensure_project_daemon, control_token=_control_token,
+            runtime=lambda: _runtime_for_connect(adapter), ensure_daemon=_ensure_project_daemon,
+            control_token=_control_token,
             host_conversation_id=_host_conversation_id, profile_identity=_profile_identity,
             write_bridge=lambda adapter, mode, installation, destination, ticket: _write_bridge_config(
                 adapter=adapter, mode=mode, installation_id=installation, output_dir=destination, ticket_path=ticket,
@@ -1335,6 +1497,306 @@ if typer is not None:
             launch_command=lambda profile, config: _deepseek_launch_command(profile=profile, bridge_config_path=config),
             daemon_version=lambda: str(_daemon_request("GET", "/api/v1/health")["version"]),
         )
+
+    @agent_app.command("invite")
+    def agent_invite(
+        adapter: str = typer.Option(..., "--adapter"),
+        profile: str = typer.Option("", "--profile"),
+        role: str = typer.Option("worker", "--role"),
+        nickname: str = typer.Option("", "--nickname"),
+        conversation_id: str = typer.Option("", "--conversation-id"),
+        ttl_seconds: int = typer.Option(600, "--ttl"),
+    ) -> None:
+        """打一张给远端机器的邀请（主机这边执行）：一段可以复制的内容。
+
+        里面写着"接哪个项目、用什么身份、当什么角色、什么时候失效"，以及那张一次性票。
+        远端只需要把这段内容粘进 `agent import` 一条命令里。
+
+        身份这件事分两种宿主：**会话名可以由主机起的**（OpenCode）这边直接起一个；
+        **只有它自己知道会话名的**（Codex、DeepSeek Harness）要先让它报号（`agent whoami`），
+        再用 `--conversation-id` 传进来。主 Agent 必须和协调中心在同一台机器上，所以这里
+        只发子 Agent 的邀请。
+        """
+
+        import tsunagou.platform.remote_invite as remote_invite
+        from tsunagou.platform.host_registration import host_for
+
+        try:
+            host = host_for(adapter)
+            if host is None:
+                raise RuntimeError("unknown_host_adapter")
+            if role != "worker":
+                # 主 Agent 要和协调中心同机：跨机器那一个只能是子 Agent。
+                raise RuntimeError("main_agent_must_be_local")
+            runtime = _runtime_context()
+            if not runtime.project_id:
+                raise RuntimeError("project_not_initialized")
+            url = str(runtime.endpoint.get("advertised_url") or runtime.endpoint.get("url") or "")
+            if not url:
+                raise RuntimeError("daemon_endpoint_not_configured")
+            if urllib.parse.urlsplit(url).hostname in {"127.0.0.1", "localhost", "::1"}:
+                print(json.dumps({
+                    "status": "warning", "error": "invite_address_is_loopback",
+                    "note": "现在这个地址只有这台机器能连：远端拿到邀请也连不上。"
+                            "跨机器请让协调中心带上 --advertised-url（并 --host 0.0.0.0 或网卡地址）。",
+                }, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+            chosen_profile = profile.strip() or nickname.strip() or "remote"
+            conversation = conversation_id.strip()
+            if not conversation:
+                if host.adapter != "opencode":
+                    raise RuntimeError("conversation_id_required_for_this_host")
+                # 这个名字是我们起的：票绑它，人用同一个名字开会话，两边身份就对上了。
+                conversation = f"ses_{chosen_profile}"
+            installation_id = f"{host.adapter}:{chosen_profile}"
+            token = _control_token()
+            if not token:
+                raise RuntimeError("control_credential_missing")
+            issued = _invoke_command("agent.ticket.create.user", {
+                "installation_id": installation_id, "kind": "worker", "role": "worker",
+                "ttl_seconds": max(60, int(ttl_seconds)),
+                "conversation_evidence": {"conversation_id": conversation},
+            }, authorization=f"Bearer {token}")
+            if not isinstance(issued, dict) or not isinstance(issued.get("secret"), str):
+                raise RuntimeError("ticket_response_invalid")
+            expires_at = format_timestamp(now_ms() + max(60, int(ttl_seconds)) * 1000)
+            invite = remote_invite.encode({
+                "project_id": runtime.project_id, "url": url, "adapter": host.adapter,
+                "profile": chosen_profile, "installation_id": installation_id,
+                "conversation_id": conversation, "role": "worker",
+                "nickname": nickname.strip(), "secret": issued["secret"], "expires_at": expires_at,
+            })
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, sort_keys=True))
+            raise typer.Exit(4) from exc
+        print(json.dumps({
+            "status": "invited", "invite": invite, "project_id": runtime.project_id,
+            "adapter": host.adapter, "profile": chosen_profile, "role": "worker",
+            "conversation_id": conversation, "url": url, "expires_at": expires_at,
+            "expires_in_seconds": max(0, int(ttl_seconds)),
+            "next": "把 invite 里的整段内容发给远端，在那台机器上跑：tsunagou agent import <邀请>",
+        }, ensure_ascii=False, sort_keys=True))
+
+    @agent_app.command("import")
+    def agent_import(
+        invite: str = typer.Argument(...),
+        workdir: Path | None = typer.Option(None, "--workdir"),  # noqa: B008
+        daemon_url: str = typer.Option("", "--daemon-url"),
+        machine: str = typer.Option("", "--machine"),
+        state_dir: Path | None = typer.Option(None, "--state-dir"),  # noqa: B008
+    ) -> None:
+        """在这台机器上导入一张邀请：一条命令，然后在窗口里说一句话。
+
+        只写**这台机器自己的**东西：身份、票、桥的启动配置（都放在本机私有目录里，
+        不放进代码副本）；再把桥接进本机的宿主。项目本身仍在主机上 —— 这里不会、也不该
+        长出第二份协作数据。
+
+        这一步能自检的是"网络通不通、项目和票对不对"；"工具在不在、身份对不对"要等本机
+        宿主真的加载一次 MCP，那一下由窗口里的 `context__project_read` 完成（失败码在接入
+        Skill 里有人话对照）。
+        """
+
+        import tsunagou.platform.remote_invite as remote_invite
+        from tsunagou.platform import host_registration
+        from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
+        from tsunagou.platform.private_files import write_private_bytes
+
+        try:
+            data = remote_invite.decode(invite)
+            remote_invite.check(data)
+            host = host_registration.host_for(data["adapter"])
+            if host is None:
+                raise RuntimeError("unknown_host_adapter")
+            url = daemon_url.strip() or data["url"]
+            if urllib.parse.urlsplit(url).hostname in {"127.0.0.1", "localhost", "::1"} and not daemon_url:
+                raise RuntimeError("invite_address_is_loopback:用 --daemon-url 给出这台机器能连到主机的地址")
+            workspace = (workdir or Path.cwd()).expanduser().resolve()
+            destination = (state_dir or (Path.home() / ".tsunagou" / "remote"
+                                         / f"{data['adapter']}-{conversation_key(data['conversation_id'])[:16]}")).resolve()
+            health = _read_daemon_health(url)
+            served = (health.get("runtime") or {}).get("project_ids") or []
+            if health.get("status") != "ok" or data["project_id"] not in served:
+                raise RuntimeError("invite_project_not_served_by_that_daemon")
+            destination.mkdir(parents=True, exist_ok=True)
+            write_private_bytes(destination / "host-identity.json", (json.dumps({
+                "adapter": data["adapter"], "profile": data["profile"],
+                "installation_id": data["installation_id"], "conversation_id": data["conversation_id"],
+                # 远端自己报的机器名（不是主机猜的 IP）：宿主把桥接进本机之后，就靠它
+                # 在名单里显示成"远端 · 机器名"。
+                "machine": _machine_name(machine),
+            }, sort_keys=True, indent=2) + "\n").encode("utf-8"))
+            ticket_path = write_ticket_file(
+                data["installation_id"], data["conversation_id"], data["secret"],
+                destination / "ticket.json", data["role"],
+            )
+            extra_env = _write_remote_route(data, workspace=workspace, destination=destination, url=url)
+            bridge_config = write_bridge_config(
+                adapter=data["adapter"], mode="attach", installation_id=data["installation_id"],
+                output_dir=destination, ticket_path=ticket_path, daemon_url=url,
+                # 让桥只认主机这个地址：如果指到代码副本里的 .tsunagou/local，
+                # 副本里万一有一份旧的 endpoint.json，桥就会去连本机那个 daemon。
+                daemon_state_dir=str(destination), project_root=workspace, extra_env=extra_env,
+            )
+            registration = _remote_registration(
+                data["adapter"], profile=data["profile"], workspace=workspace,
+                config=read_bridge_config(bridge_config),
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, sort_keys=True))
+            raise typer.Exit(4) from exc
+        print(json.dumps({
+            "status": "imported", "project_id": data["project_id"], "adapter": data["adapter"],
+            "role": data["role"], "conversation_id": data["conversation_id"],
+            "url": url, "machine": _machine_name(machine),
+            "workspace": str(workspace), "state_dir": str(destination),
+            "host_registration": {"status": registration.status, "label": registration.label,
+                                 **({"note": registration.note} if registration.note else {})},
+            "next": "重启或重载这个宿主窗口，然后在里面说一句：接入 Tsunagou",
+        }, ensure_ascii=False, sort_keys=True))
+
+    def _machine_name(declared: str) -> str:
+        """这台机器叫什么：人给的，或它自己的名字。不猜 IP —— 走隧道时 IP 只会骗人。"""
+
+        import socket as socket_module
+
+        text = "".join(ch for ch in str(declared or "") if ch.isprintable() and ch not in "\r\n\t").strip()
+        if not text:
+            try:
+                text = socket_module.gethostname().strip()
+            except OSError:  # pragma: no cover - 拿不到主机名时如实说"未命名"
+                text = ""
+        return text[:64] or "未命名"
+
+    def _remote_registration(
+        adapter: str, *, profile: str, workspace: Path, config: dict[str, Any],
+    ) -> host_registration.Registration:
+        """把这台机器的宿主配置好，好让桥被它加载起来。
+
+        OpenCode / Codex 是"每个会话一份"：把它们自己的入口写进宿主配置。
+        DeepSeek Harness 只有**整机一份**插件（每个会话靠路由目录找自己），所以这里做的是
+        "确保那颗插件装着"，而不是灌进我们这份每会话配置 —— 那份配置交进去也只会被拒绝。
+        """
+
+        if adapter != "deepseek":
+            return host_registration.register(
+                adapter, profile=profile, project_root=workspace, bridge=config,
+            )
+        try:
+            change = _prepare_deepseek_desktop()
+        except RuntimeError as exc:
+            change = host_registration.ConfigChange(host_registration.FAILED, note=str(exc))
+        return host_registration.Registration(
+            adapter="deepseek", label="DeepSeek Harness", status=change.status,
+            name="tsunagou", files=tuple(str(path) for path in change.files),
+            note=change.note or "插件是整机一份：装好之后，这个会话靠路由文件找到自己。",
+        )
+
+    def _write_remote_route(
+        data: dict[str, Any], *, workspace: Path, destination: Path, url: str,
+    ) -> dict[str, str]:
+        """给"靠路由目录找自己"的宿主写一份远端路由（Codex、DeepSeek Harness）。
+
+        这两个宿主的 tools/call 各自带一个会话身份，桥按键去路由目录里找自己那一条 ——
+        所以远端导入时也得在这里写一条：项目在主机上，票和会话文件在本机私有目录里。
+
+        写不出的宿主（OpenCode 靠 `_meta` 直接找，不用路由）返回空字典。
+        """
+
+        from tsunagou.application.onboarding import (
+            codex_routing_directory,
+            deepseek_routing_directory,
+            write_codex_route,
+            write_deepseek_route,
+        )
+        from tsunagou.platform.runtime_context import RuntimeContext
+
+        adapter = str(data["adapter"])
+        if adapter not in {"codex", "deepseek"}:
+            return {}
+        # 远端没有本机 daemon，"daemon 状态目录"就指自己的私有目录（里面没有 endpoint.json，
+        # 于是桥只会用主机那个地址）；project_root 是代码副本 —— 项目本身仍在主机上。
+        runtime = RuntimeContext(
+            project_root=workspace, state_dir=destination, project_id=str(data["project_id"]),
+            endpoint={"url": url, "project_id": str(data["project_id"])}, daemon_url=url, source_root=None,
+        )
+        if adapter == "codex":
+            # 远端不参与"唤醒桌面 App"：那需要主机那台机器的管道，跨机器不成立（也不在本次范围内）。
+            write_codex_route({
+                "conversation_id": str(data["conversation_id"]),
+                "installation_id": str(data["installation_id"]),
+                "endpoint": "", "source_root": "", "host_generation": "",
+            }, runtime, destination)
+            return {"TSUNAGOU_ROUTING_DIR": str(codex_routing_directory())}
+        write_deepseek_route(str(data["conversation_id"]), runtime, destination)
+        return {"TSUNAGOU_ROUTING_DIR": str(deepseek_routing_directory())}
+
+    @agent_app.command("whoami")
+    def agent_whoami(
+        adapter: str = typer.Option(..., "--adapter"),
+    ) -> None:
+        """报号：把"我这条会话在宿主眼里的编号"打出来，好让主机给我发邀请。
+
+        Codex / DeepSeek Harness 的会话名只有宿主自己知道，主机签票前必须先拿到它。
+        编号不是凭据（凭据是那张一次性票），但它是主机签票时要绑的另一半身份 —— 所以这个
+        命令**必须在 Agent 自己的会话里跑**（编号来自宿主给的上下文）。
+
+        OpenCode 不用报号：它的会话名由主机起（`ses_<名字>`）。
+        """
+
+        try:
+            conversation_id = _host_conversation_id(adapter)
+        except RuntimeError as exc:
+            print(json.dumps({
+                "status": "error", "error": str(exc),
+                "note": "这个命令要在 Agent 自己的会话里跑：编号来自宿主给的上下文，在别处跑不出来。",
+            }, ensure_ascii=False, sort_keys=True))
+            raise typer.Exit(4) from exc
+        print(json.dumps({
+            "status": "ok", "adapter": adapter, "conversation_id": conversation_id,
+            "next": "把这串编号发给主机上的人；他在「添加子 Agent → 位置＝网络」里填进去，"
+                    "再把生成的邀请发回来，你在这台机器上 import 一次就完成接入。",
+        }, ensure_ascii=False, sort_keys=True))
+
+    @agent_app.command("pending")
+    def agent_pending(
+        adapter: str | None = typer.Option(None, "--adapter"),
+    ) -> None:
+        """谁在等我接入？—— 只读地看一眼机器上那条唯一的待接入记录。
+
+        给"在宿主聊天里被要求接入 Tsunagou"的 Agent 用：它手上只有自己的会话 id 和工作
+        目录，而工作目录经常不是协调仓库（项目可以协调好几个文件夹）。机器上唯一说得清
+        "接哪个项目、什么角色"的就是这条记录 —— 它是用户在控制台点接入时写下的。
+
+        没有记录时如实说没有，不要让 Agent 去猜、也不要让它自己建项目：接入是用户的决定。
+        读这个命令不改任何状态；票和凭据都不在这里（控制台那条路没有票，另一条由聊天自己签）。
+        """
+
+        from tsunagou.platform.enrollment_store import EnrollmentStore
+
+        try:
+            store = EnrollmentStore()
+            record = store.active_for(adapter) if adapter else store.active()
+        except RuntimeError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}))
+            raise typer.Exit(4) from exc
+        if record is None:
+            print(json.dumps({
+                "status": "none",
+                "note": "现在没有待接入的申请。请让用户在控制台为这个项目点一次接入"
+                        "（或在控制台登记这个项目），不要在这里自己创建项目。",
+            }, ensure_ascii=False, sort_keys=True))
+            return
+        print(json.dumps({
+            "status": "pending",
+            # 记录自己的状态：claimed/enrolled 表示已经有别的聊天认领或已经接入 —— 那是别人的，
+            # 不要试图接手（Codex 的 agent join 会以 enrollment_claimed_by_another_chat 拒绝）。
+            "state": record.get("status"),
+            "adapter": record.get("adapter"),
+            "role": record.get("requested_role"),
+            "nickname": record.get("nickname"),
+            "project_id": record.get("project_id"),
+            "project_root": record.get("project_root"),
+            "expires_in_seconds": max(0, int(float(record.get("expires_at") or 0) - time.time())),
+        }, ensure_ascii=False, sort_keys=True))
 
     @agent_app.command("connect")
     def agent_connect(
@@ -1354,8 +1816,11 @@ if typer is not None:
                 raise typer.BadParameter("mode must be attach/launch; role must be worker/main")
             if not re.fullmatch(r"[A-Za-z0-9_-]+", adapter) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
                 raise typer.BadParameter("adapter/profile must contain only letters, digits, '_' or '-'")
+            # 角色先定下来：有记录就以记录为准（用户的决定），与显式 --role 冲突直接拒绝。
+            # 放在 connect_agent 之前，失败时不留下任何桥材料。
+            effective_role = _role_for_connect(adapter, role)
             connected = connect_agent(
-                _connection_operations(), adapter=adapter, role=role, profile=profile, mode=mode,
+                _connection_operations(adapter), adapter=adapter, role=effective_role, profile=profile, mode=mode,
                 output_dir=output_dir, request_file=request_file, register_host=register_host,
             )
             print(json.dumps(connected, sort_keys=True))

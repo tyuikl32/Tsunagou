@@ -22,6 +22,7 @@ import os
 import re
 import tempfile
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -228,12 +229,17 @@ def bridge_file_name(adapter: str, installation_id: str) -> str:
 def write_bridge_config(
     *, adapter: str, mode: str, installation_id: str, output_dir: Path,
     ticket_path: Path, daemon_url: str, daemon_state_dir: str, project_root: Path,
+    extra_env: Mapping[str, str] | None = None,
 ) -> Path:
     """Write how to launch this conversation's bridge, for a host to pick up.
 
     Everything the bridge needs to find its daemon and its ticket is an environment
     variable, so a host's MCP entry can be generated from this file mechanically —
     see ``host_registration`` for the per-host spelling of that.
+
+    ``extra_env`` is for the hosts that find *themselves* through a route directory
+    (Codex, DeepSeek Harness): their bridge is handed an identity per call and looks the
+    route up by it, so the directory has to travel in this file too.
     """
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -252,6 +258,7 @@ def write_bridge_config(
             "TSUNAGOU_PROJECT_ROOT": str(project_root),
             "TSUNAGOU_STATE_DIR": str(output_dir),
             **({"TSUNAGOU_HOST_META_KEY": HOST_META_KEYS[adapter]} if adapter in HOST_META_KEYS else {}),
+            **(dict(extra_env) if extra_env else {}),
         },
         "secret_fields": [],
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")

@@ -729,6 +729,9 @@ def _query_provider(
                     {**_agent_features(authority, item.agent_id),
                      "agent_id": item.agent_id, "status": item.status, "role": item.role,
                      "conversation_digest": item.conversation_digest,
+                     # 入席者自报的机器名（跨机器导入时由远端报上来的那一个）：页面据此画
+                     # "远端 · 机器名"。本机接入没有这一项，页面也就不画那个标记。
+                     **({"machine": item.machine} if item.machine else {}),
                      "session_status": next((s.status for s in authority.sessions.values()
                                              if s.agent_id == item.agent_id and s.active), "inactive"),
                      "current_task_ids": [task.task_id for task in tasks.tasks.values()

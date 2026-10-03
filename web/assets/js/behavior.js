@@ -251,6 +251,10 @@
         enrollment: '/console/enrollments/{enrollment}',
         enrollmentCurrent: '/console/enrollments/current',
         enrollmentCancel: '/console/enrollments/{enrollment}:cancel',
+        /* 宿主在自己聊天里接入时（`in_host`）没有票可查，只能问"名单里出现它了吗"。
+           判断在中间层：它拿接入材料（bridges / onboarding 里的 host-identity.json）
+           当证据，页面只负责每 2 秒问一次。见 connectInHostAgent。*/
+        enrollmentObserve: '/projects/{project}/enrollments:observe',
         /* —— 一屏要读好几个出口的，走中间层的聚合视图 ——
            /console/views/* 只负责把几个出口的原样回答装进 sources，不解释；
            解释全在 §7 适配层（BACKEND_SHAPE）。view 取值：overview /
@@ -323,7 +327,11 @@
                     vendor: toText(body.vendor),
                     nickname: toText(body.nickname || body.name).trim(),
                     role: toText(body.role) || 'worker',
-                    start_daemon: body.start_daemon !== false
+                    start_daemon: body.start_daemon !== false,
+                    /* 跨机器那条路：place=network 请中间层签一张邀请；编号是"会话名由宿主
+                       自己生成"的那两个宿主报上来的号（OpenCode 不用）。*/
+                    place: toText(body.place) === 'network' ? 'network' : 'local',
+                    conversation_id: toText(body.conversation_id).trim()
                 };
             }
         },
@@ -1386,6 +1394,10 @@
 
     function findCsPanel(box) {
         if (!box) return null;
+        /* 有人直接递面板过来（`ui.choosebox.setValue('某个面板的 id', …)` 就是这种）：
+           那就别再去找"它的面板"了 —— 同一个容器里有第二个选择框时，找下去的答案会是
+           第一个面板，于是值写到了别的框上。*/
+        if (box.classList && box.classList.contains('chooseboxOpen')) return box;
         const targetId = box.dataset.target;
         if (targetId) {
             const panel = byId(targetId);
@@ -1828,6 +1840,7 @@
        这一段人可以放弃）。点一下先问一次，确认后由当前等待者自己收尾：
        作废票据 + 注销宿主登记。遮罩由收尾的一方关。*/
     let cancelWait = null;        /* 当前等待的“取消”动作（null = 这段等待不能取消）*/
+    let cancelWaitCopy = null;    /* 这段等待自己的确认框文案（没有就用下面那套等票的说法）*/
     let cancelAsking = false;     /* 「取消等待」的确认框正开着（防止重点）*/
 
     notify.loading = function (text, options) {
@@ -1838,6 +1851,7 @@
         const shown = toText(text) || '正在处理';
         if (label) label.textContent = shown;
         cancelWait = (typeof opts.cancel === 'function') ? opts.cancel : null;
+        cancelWaitCopy = (cancelWait && isPlainObject(opts.cancelDialog)) ? opts.cancelDialog : null;
         cancelAsking = false;
         /* 先摆好入口再开窗：遮罩出现时就是它最后的样子，不会闪一下。*/
         setCancelEntry(!!cancelWait);
@@ -1847,6 +1861,7 @@
 
     notify.loadingEnd = function () {
         cancelWait = null;
+        cancelWaitCopy = null;
         cancelAsking = false;
         setCancelEntry(false);
         ui.window.close(LOADING_ID);
@@ -1860,14 +1875,17 @@
         const task = cancelWait;
         if (!task || cancelAsking) return Promise.resolve(false);
         cancelAsking = true;
+        /* 这段等待自己有没有说法（等票那段是"作废票据"，等宿主自己接入那段只是"不看了"）。
+           没有就照旧用等票那套。*/
+        const copy = cancelWaitCopy || {};
         /* 确认框本来就是最上面一层（见 init() 把 #delPmt 移到 body 末尾），
            所以不用把遮罩收起来，遮罩就在背后接着转。*/
         return dialog.confirm({
-            title: '取消等待接入？',
-            text: '要停止等待这个 Agent 连接吗？',
-            description: '系统会核对这次接入是否仍可取消；已经开始接入时会说明原因，' +
-                '不会移除已接入的 Agent。',
-            okText: '取消接入'
+            title: toText(copy.title) || '取消等待接入？',
+            text: toText(copy.text) || '要停止等待这个 Agent 连接吗？',
+            description: toText(copy.description) || ('系统会核对这次接入是否仍可取消；已经开始接入时会说明原因，' +
+                '不会移除已接入的 Agent。'),
+            okText: toText(copy.okText) || '取消接入'
         }).then(function (ok) {
             cancelAsking = false;
             /* 确认框开着的时候这次等待可能已经结束了（例如那边正好连上了）*/
@@ -2715,14 +2733,22 @@
     /* 卡片的样子。selected 由 render.list 统一判定后传进来 ——
        这里不自己算：否则条目一旦自称 selected、或 id 为空又刚好赶上"没选项目"，
        整列标题就全变成蓝色了（一列里最多只能有一张选中）。*/
+    /* 子 Agent 头像一行最多摆 3 个，多出来的收进 `+N` 那个小圆圈里，N 是**没摆出来的**数量。
+       别把总数写进去：只有 2 个子 Agent 时会画成"2 个头像 +2"，看起来像有 4 个。*/
+    const OTHERS_SHOWN = 3;
+
     function projectCardHtml(project, selected) {
         const status = PROJECT_STATUS[project.status] || PROJECT_STATUS.working;
         const agents = toArray(project.agents).map(cardAgent);
         const mainAgent = cardAgent(project.mainAgent) || { name: '', icon: TSUNAGOU_CARD_ICON };
-        const extra = project.extra === undefined ? agents.length : Number(project.extra);
-        const others = agents.slice(0, extra > 5 ? 4 : agents.length).map(function (agent) {
+        /* 名单可能比中间层报的总数短（它才是权威），所以两者取大的那个当总数。*/
+        const declared = Number(project.extra);
+        const total = Number.isFinite(declared) ? Math.max(declared, agents.length) : agents.length;
+        const shown = Math.min(OTHERS_SHOWN, agents.length);
+        const hidden = Math.max(0, total - shown);
+        const others = agents.slice(0, shown).map(function (agent) {
             return '<img src="' + esc(iconOf(agent)) + '" />';
-        }).join('') + (extra > 0 ? '<span class="plus">' + esc(extra) + '</span>' : '');
+        }).join('') + (hidden > 0 ? '<span class="plus">' + esc(hidden) + '</span>' : '');
         return '<div class="projItem' + (selected ? ' projItemSelected' : '') + '" data-project-id="' + esc(project.id) + '">' +
             '<div class="inner">' +
             /* 删除入口：与 .title / .content 平级的 .edit。
@@ -2899,24 +2925,34 @@
     function agentNetworkHtml(agent) {
         const info = agentNetworkOf(agent);
         if (!info.network) return '';
-        return '<p class="right">' + (info.online ? '网络在线' : '网络离线') +
+        /* 远端自己报的名字里没有，就还是原来那句「网络在线 / 网络离线」——
+           本机接入的 Agent 依旧什么都不画。*/
+        const where = info.machine ? ' · ' + info.machine : '';
+        return '<p class="right">' + (info.online ? '网络在线' : '网络离线') + where +
             '<i class="fa-solid fa-circle-nodes"></i></p>';
     }
 
-    /* 一个 Agent 的网络状态：{network, online}。
-       优先级：中间层推来的 > 数据里带的 > 两边都没有（= 本机接入，不画徽标）。*/
+    /* 一个 Agent 的网络状态：{network, online, machine}。
+       优先级：中间层推来的 > 数据里带的 > 两边都没有（= 本机接入，不画徽标）。
+       「自报的机器名」是远端的证据：本机接入那条路从来不写它（见 `agent import`）。*/
     function agentNetworkOf(agent) {
         const record = isPlainObject(agent) ? agent : {};
         /* 主 Agent 必须和 daemon 同机 —— 它永远不是网络接入（中间层推了也不画）*/
-        if (record.isMain === true) return { network: false, online: false };
+        if (record.isMain === true) return { network: false, online: false, machine: '' };
+        const machine = toText(record.machine);
         const id = toText(record.agent_id || record.id);
         const pushed = state.get('agentNetwork', {}) || {};
         const known = id ? pushed[id] : undefined;
         /* 推来的布尔值就是“在不在线”；有键 = 这个 Agent 是网络接入的 */
-        if (known === true || known === false) return { network: true, online: known };
-        if (isPlainObject(known)) return { network: known.network === true, online: known.network === true && known.online === true };
-        const network = record.network === true;
-        return { network: network, online: network && record.online === true };
+        if (known === true || known === false) return { network: true, online: known, machine: machine };
+        if (isPlainObject(known)) {
+            return {
+                network: known.network === true, machine: machine,
+                online: known.network === true && known.online === true
+            };
+        }
+        const network = record.network === true || Boolean(machine);
+        return { network: network, online: network && record.online === true, machine: machine };
     }
 
     /* 徽标重绘：中间层刚推来网络状态时调它（卡片与 Agent 列表两处都画这个标记）。*/
@@ -4460,11 +4496,17 @@
                 resetCsBox(subAgentPlaceBox());
                 syncSubAgentPlace();
             };
-            return connectAgent({
-                host: host, nickname: name, role: 'worker',
-                waiting: openWindowHint(host, '作为子 Agent '),
-                profile: data.profile || null
-            }).then(function (outcome) {
+            /* 「位置＝网络」走跨机器那条路：主机签一张邀请，人把它交给那台机器。
+               其余（本机）照旧：中间层准备、等那条会话来兑换。两条路返回同一个形状，
+               下面的收尾因此共用一份。*/
+            const connecting = (data.place === 'network')
+                ? connectNetworkAgent({ host: host, nickname: name, role: 'worker', number: toText(data.number).trim() })
+                : connectAgent({
+                    host: host, nickname: name, role: 'worker',
+                    waiting: openWindowHint(host, '作为子 Agent '),
+                    profile: data.profile || null
+                });
+            return connecting.then(function (outcome) {
                 const reached = toText(outcome && outcome.status);
                 if (reached !== 'arrived' && reached !== 'manual') {
                     const trouble = connectTrouble(reached, host);
@@ -5061,6 +5103,23 @@
             });
         },
 
+        /* 邀请窗口的两个出口：确认＝内容已转交，开始等；取消＝这次邀请作废（撤掉那条申请）。
+           窗口上的 × 与「取消」都走 cancelNetworkInvite，行为一致。*/
+        confirmNetworkInvite: function () {
+            const pending = networkInvite;
+            networkInvite = null;
+            ui.window.close('netInvite');
+            if (pending) pending.resolve(true);
+            return true;
+        },
+        cancelNetworkInvite: function () {
+            const pending = networkInvite;
+            networkInvite = null;
+            ui.window.close('netInvite');
+            if (pending) pending.resolve(false);
+            return true;
+        },
+
         /* 新建协作向导 */
         createProject: function () { ui.wizard.open(); return true; },
         /* 卡片右上角的删除块（.edit）走这里，也可以从宿主脚本调 */
@@ -5176,28 +5235,42 @@
     function subAgentVendorBox() { return qs('#addSubAgent .choosebox.TOG1'); }
     function subAgentPlaceBox() { return qs('#addSubAgent .choosebox.TOG0'); }
 
-    /* 位置选"网络"时才要那个网络地址输入框（跨机器接入用，先只做显示与取值入口）。
+    /* 需要"远端报号"的宿主：它们的会话名只有自己知道，主机签票前必须先拿到那个号。
+       OpenCode 的会话名由主机起（ses_<名字>），所以它不用这一格 —— 主机直接发邀请即可。*/
+    const NETWORK_NUMBER_VENDORS = ['Codex', 'DeepSeek Harness'];
+
+    function networkNeedsNumber(vendor) {
+        return NETWORK_NUMBER_VENDORS.indexOf(toText(vendor).trim()) >= 0;
+    }
+
+    /* 位置选"网络"**并且**厂商是"会话名自己说了算"的那两个时，才要那个号。
        显示/隐藏只动 display：显示清成空串交回 CSS，隐藏写 none —— 不往元素上写布局样式。
        比对的是选项文字：选择框的值本来就是选项文字（见 selectCsOption），没有 data-value。*/
     function syncSubAgentPlace() {
         const field = byId('addSubAgentAddr');
         if (!field) return;
         const network = toText(ui.choosebox.value(subAgentPlaceBox())).trim() === '网络';
-        field.style.display = network ? '' : 'none';
+        const vendor = ui.choosebox.value(subAgentVendorBox());
+        field.style.display = (network && networkNeedsNumber(vendor)) ? '' : 'none';
     }
 
     /* ---- 静态窗口里的按钮 ------------------------------------------------ */
 
     function bindStaticWindowButtons() {
-        /* 位置选择框一变，网络地址输入框跟着显/隐 */
+        /* 位置或厂商一变，那个"网络 Agent 编号"输入框跟着显/隐 */
         const place = subAgentPlaceBox();
         if (place) place.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
+        const vendor = subAgentVendorBox();
+        if (vendor) vendor.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
         delegateClick(['#addSubAgent .options .buttonbox2active'], function () {
-            /* 窗口里有一个名称输入框 + 厂商/位置两个选择框（选"网络"时多一个地址输入框）*/
+            /* 窗口里有一个名称输入框 + 厂商/位置两个选择框（网络+那两个厂商时多一个编号输入框）*/
             const input = qs('#addSubAgent input');
+            const number = qs('#addSubAgentAddr input', byId('addSubAgent'));
             actions.addSubAgent({
                 name: toText(input && input.value).trim(),
-                vendor: ui.choosebox.value(subAgentVendorBox())
+                vendor: ui.choosebox.value(subAgentVendorBox()),
+                place: toText(ui.choosebox.value(subAgentPlaceBox())).trim() === '网络' ? 'network' : 'local',
+                number: toText(number && number.value).trim()
             });
         });
         /* 向导第 3 步子 Agent 胶囊上的「×」是 CSS 画的（.itemC::before，hover 才滑出来）：
@@ -5483,6 +5556,39 @@
         return toText(table[token]) || token;
     }
 
+    /* 同一次查表，但"表里没有"返回空串 —— 调用方要靠这个区别决定要不要退回原样。
+       （glossText 兜底返回原 token，适合"查不到就直接显示"，不适合"查到了才改写"。）*/
+    function glossWord(domain, value) {
+        const token = toText(value);
+        if (!token) return '';
+        const table = state.get('glossary.domains.' + toText(domain), {}) || {};
+        return toText(table[token]);
+    }
+
+    /* 总路径的「操作」列：命令名 → 短中文。
+       被拒的写操作在账本里叫 `command.<命令>.denied`，先剥掉这层壳再查表，
+       查到就补一句「（被拒）」；查不到仍旧原样印（词表的规矩：不编）。*/
+    function actionText(action) {
+        const raw = toText(action);
+        if (!raw) return '';
+        const denied = /\.denied$/.test(raw);
+        const kind = raw.replace(/^command\./, '').replace(/\.denied$/, '');
+        return (glossWord('command_kind', kind) || kind) + (denied ? '（被拒）' : '');
+    }
+
+    /* 引用（`task/<id>`、`ticket/0`、`session/<id>`…）→「种类 + 短号」。
+       以前是整串截 8 个字符，于是 `session/<uuid>` 显示成 "session/"、谁也不是。
+       前缀认不出来才退回原来的截法。短号必须留着：人要靠它跟别的屏对上。*/
+    function refText(ref) {
+        const text = toText(ref);
+        if (!text) return '';
+        const at = text.indexOf('/');
+        const noun = glossWord('ref_kind', at < 0 ? text : text.slice(0, at));
+        if (!noun) return shortId(text);
+        const key = at < 0 ? '' : text.slice(at + 1);
+        return key ? (noun + ' ' + shortId(key)) : noun;
+    }
+
     /* 词表里的**整张域** → 一组标签 {text, ok}。
        用在"这一栏有哪几项、每项叫什么"的地方，比如 Agent 管理的基础能力（4 项）
        与运营能力（7 项）：名字与顺序都跟着词表走，页面不自己维护一份名单。
@@ -5519,17 +5625,18 @@
         return '';
     }
 
-    /* 拒绝原因码 → 中文。码可能是 `resource_conflict:file:src/x.py`：
-       冒号前那截查词表（denial_reason），后面那截（资源键/参数）原样保留；
-       查不到就把整串原样返回 —— 宁可难看，也不编一个中文出来。*/
+    /* 事件后面那句括注（审计出口的 reason_code）→ 中文。两种来源同一栏：
+       写操作被拒的原因码（denial_reason），以及事件自己那句"为什么"
+       （event_reason：用户裁决、后台作业重试用尽…）。码可能带参数
+       （`resource_conflict:file:src/x.py`），所以只查冒号前那截、后面原样保留；
+       两张表都没命中就把整串原样返回 —— 宁可难看，也不编一个中文出来。*/
     function reasonText(code) {
         const text = toText(code);
         if (!text) return '';
         const at = text.indexOf(':');
         const head = at < 0 ? text : text.slice(0, at);
         const tail = at < 0 ? '' : text.slice(at);
-        const table = state.get('glossary.domains.denial_reason', {}) || {};
-        const word = toText(table[head]);
+        const word = glossWord('denial_reason', head) || glossWord('event_reason', head);
         return word ? (word + tail) : text;
     }
 
@@ -5670,18 +5777,20 @@
         })[0] || null;
     }
 
-    /* 这个厂商点了"下一步"会怎样：页面能办完（console）就往下走；
-       "去宿主自己的聊天里接入"（in_host）是给人指路，照说；还没做的（unsupported）才算报错。
-       一句话：能接入的只有 console 这一种，其余一律不发准备请求、不假装排队。*/
+    /* 这个厂商点了"下一步"会怎样：
+         · console —— 页面能办完：签票、写配置，然后等那条会话来兑换；
+         · in_host —— 页面办不完，但**等得起**：开同一块等待遮罩，看名单里它什么时候
+           出现（中间层拿接入材料当证据，见 connectInHostAgent）—— 所以这里不挡；
+         · unsupported —— 连宿主动作都还没有，只能红字说明。
+       能签票的只有 console 一种：别的模式一律不发准备请求、不假装排队。*/
     function hostEnrollBlocker(host) {
         const mode = toText((host || {}).mode) || 'unsupported';
-        if (mode === 'console') return null;
+        if (mode === 'console' || mode === 'in_host') return null;
         const label = toText((host || {}).label) || toText((host || {}).adapter) || '这个宿主';
         return {
             mode: mode,
-            note: toText((host || {}).note) || (mode === 'in_host'
-                ? (label + ' 要在它自己的聊天里接入，页面不需要先准备')
-                : (label + ' 的 MCP 注册还没实现，暂时不能从网页接入'))
+            note: toText((host || {}).note)
+                || (label + ' 的 MCP 注册还没实现，暂时不能从网页接入')
         };
     }
 
@@ -5817,9 +5926,105 @@
         return '项目「' + (toText(project.name) || id || '原项目') + '」的' + role + '：';
     }
 
+    /* 宿主自己接入（`in_host`）时遮罩上那句话：中间层给的那句指路（"在目标聊天里让它
+       接入 Tsunagou"）+ 这次要接的身份 + 一句"我在这儿看着"。页面不自己编步骤 ——
+       去哪条聊天、说什么，都是宿主表里写好的那一句。有项目目录就带上：那条聊天得开在
+       这个项目里才最省事（工作目录不是项目时，由机器上那条待接入记录兜底，见
+       connectInHostAgent）。身份要写出来：那条聊天把它交给 `tsunagou_connect` 的 `role`，
+       而机器上那条记录会压过任何不一致的说法（冲突直接拒绝）。*/
+    function inHostHint(host, role) {
+        const label = toText((host || {}).label) || '这个宿主';
+        const note = toText((host || {}).note)
+            || ('请在 ' + label + ' 自己的项目聊天里让它接入 Tsunagou。');
+        const path = currentProjectPath();
+        const as = toText(role) === 'main' ? '以主 Agent 身份接入' : '以子 Agent 身份接入';
+        return (path ? ('请在「' + path + '」下：') : '') + note +
+            '（本次' + as + '）正在等待它出现';
+    }
+
+    /* 等一个"在自己聊天里接入"的宿主出现：没有票可问，所以每 2 秒问一次中间层
+       "名单里出现它了吗"。三种收场和等票那套一样（到了 / 人不看了 / 等太久），
+       只是没有"票过期"——因为这里根本没有票。*/
+    const HOST_ARRIVAL_TIMEOUT_MS = 15 * 60 * 1000;
+
+    function waitForHostArrival(host, baseline, onWaiting, enrollmentId) {
+        const adapter = toText((host || {}).adapter);
+        const startedAt = Date.now();
+        return new Promise(function (resolve) {
+            let stopped = false;
+            let timer = null;
+            const stop = function (outcome) {
+                if (stopped) return;
+                stopped = true;
+                if (timer) clearTimeout(timer);
+                resolve(outcome);
+            };
+            const tick = function () {
+                if (stopped) return;
+                /* 遮罩是"正在等"的可见信号：人把它关了就是不等了（确认框开着的那一下不算）。*/
+                if (!ui.window.isOpen('loadW') && !notify.cancelPending()) return stop({ status: 'dismissed' });
+                if (Date.now() - startedAt > HOST_ARRIVAL_TIMEOUT_MS) return stop({ status: 'timeout' });
+                api.get('enrollmentObserve', {
+                    adapter: adapter, baseline: baseline.join(','), enrollment_id: toText(enrollmentId)
+                }, { silent: true })
+                    .then(function (answer) {
+                        if (toText(answer && answer.status) === 'arrived') {
+                            return stop({ status: 'arrived', agent: answer.agent });
+                        }
+                        /* "还没到"里也可能带一句有用的（daemon 没起、名单读不到）：换到遮罩上。*/
+                        if (typeof onWaiting === 'function') onWaiting(answer || {});
+                        timer = setTimeout(tick, ENROLLMENT_POLL_MS);
+                    }, function () {
+                        /* 一次问不到不算失败：接着等下一次。*/
+                        timer = setTimeout(tick, ENROLLMENT_POLL_MS);
+                    });
+            };
+            timer = setTimeout(tick, ENROLLMENT_POLL_MS);
+        });
+    }
+
+    /* 撤销一次接入申请（路径里的 {enrollment} 换成编号）。等票那条路作废票据，
+       宿主自己接入那条路撤掉机器级记录，跨机器这条路撤掉刚记下的那条申请 ——
+       都是同一扇门、同一个编号。*/
+    function cancelEnrollment(enrollmentId) {
+        const template = pathTemplate('enrollmentCancel');
+        const id = toText(enrollmentId);
+        const path = (template && id) ? template.split('{enrollment}').join(encodeURIComponent(id)) : '';
+        if (!path) return Promise.resolve({});
+        return api.post(path, {}, { silent: true });
+    }
+
+    /* 人不想等了：把这次申请撤掉，并收掉遮罩。撤不掉也照旧收场（人已经决定不等了），
+       但要说清"没撤掉"，不能让人以为服务器那边也干净了。*/
+    function withdrawEnrollment(enrollmentId, done) {
+        const id = toText(enrollmentId);
+        if (!id) {
+            notify.loadingEnd();
+            notify.info('已停止等待');
+            if (done) done();
+            return Promise.resolve({ status: 'dismissed' });
+        }
+        notify.loading('正在撤销这次接入申请 …');
+        return cancelEnrollment(id).then(function (answer) {
+            notify.loadingEnd();
+            notify.info(toText((answer || {}).note) || '已停止等待：这次接入申请已撤掉，可以重新接入');
+            if (done) done();
+            return answer || { status: 'cancelled' };
+        }, function (error) {
+            notify.loadingEnd();
+            notify.info('已停止等待（这次申请没能撤掉：' + ((error && error.message) || '原因未知') + '）');
+            if (done) done();
+            return { status: 'failed' };
+        });
+    }
+
     function connectAgent(options) {
         const opts = options || {};
         const host = opts.host || {};
+        /* 宿主自己接入的那条路（in_host，例如 DeepSeek Harness）：中间层不签票、
+           不写配置，页面也不发准备请求 —— 只开同一块等待遮罩，等中间层从接入材料 +
+           名单里确认"它到了"。能不能算到了由中间层判，页面不拿"名单多了一个人"当成功。*/
+        if (toText(host.mode) === 'in_host') return connectInHostAgent(opts);
         if (enrollmentFlowActive) {
             notify.info('已有接入正在等待，请先处理当前接入申请');
             return Promise.resolve({ status: 'failed' });
@@ -5953,6 +6158,192 @@
         });
     }
 
+    /* 宿主在自己聊天里接入（DeepSeek Harness 这一种）：控制台不签票、不写宿主配置，
+       但**要记下"谁要接哪个项目、什么角色"**—— 那条聊天里说"请接入 Tsunagou"时只有自己的
+       会话 id 和工作目录，而工作目录常常不是协调仓库，唯一说得清的就是这条机器级记录
+       （`agent pending` 读它）。所以这里先 prepare（只写记录），再开同一块等待遮罩等名单里
+       出现它。判断"到了"在中间层，页面不数人头。*/
+    /* 跨机器接入（「位置＝网络」）：主机签一张一次性票，产出一段可复制的内容交给人；
+       那台机器上的 `agent import` 收下它就完成接入。这里做三件事 —— 请中间层签票并给内容、
+       把内容摆在窗口里让人转交、确认后等那个席位出现（判断仍在中间层，与其它等待同一套）。
+
+       为什么"确认"是必须的一步：内容得由人送过去，页面无从知道人有没有送到。*/
+    let networkInvite = null;
+
+    function networkWaitHint(host) {
+        const label = toText((host || {}).label) || '那台机器';
+        return '邀请已经生成。请把它交给 ' + label + ' 那台机器上的人，让他在那边跑一次导入命令；' +
+            '他接入后这里会自动出现。（本次以子 Agent 身份接入）';
+    }
+
+    function askForInvite(prepared, host) {
+        const node = byId('netInvite');
+        if (!node) return Promise.resolve(false);
+        const input = qs('.textbox2 input', node);
+        const shown = qsa('.dspText', node);
+        if (input) input.value = toText(prepared.invite);
+        if (shown[1]) {
+            const minutes = Math.max(1, Math.round(Number(prepared.expires_in_seconds || 0) / 60));
+            shown[1].textContent = '一次性、约 ' + minutes + ' 分钟内有效（到 ' +
+                formatTime(toText(prepared.expires_at)) + '）；过期就回来重新生成一张。';
+        }
+        return new Promise(function (resolve) {
+            networkInvite = {
+                resolve: resolve, enrollment_id: toText(prepared.enrollment_id),
+                label: toText((host || {}).label) || '远端'
+            };
+            notify.loadingEnd();
+            ui.window.open('netInvite');
+        });
+    }
+
+    function connectNetworkAgent(opts) {
+        const host = (opts || {}).host || {};
+        if (enrollmentFlowActive) {
+            notify.info('已有接入正在等待，请先处理当前接入申请');
+            return Promise.resolve({ status: 'failed' });
+        }
+        enrollmentFlowActive = true;
+        const nickname = toText((opts || {}).nickname).trim();
+        const vendor = toText(host.adapter || (opts || {}).vendor);
+        const baseline = toArray(state.get('agents', [])).map(function (agent) {
+            return toText(agent.id);
+        }).filter(Boolean);
+        notify.loading('正在生成邀请 …');
+        return api.post('agentPrepare', {
+            vendor: vendor, nickname: nickname, role: 'worker', profile: null,
+            start_daemon: true, place: 'network', conversation_id: toText((opts || {}).number)
+        }, { silent: true }).then(function (prepared) {
+            const answer = prepared || {};
+            return askForInvite(answer, host).then(function (confirmed) {
+                if (!confirmed) {
+                    return withdrawEnrollment(toText(answer.enrollment_id)).then(function () {
+                        return { status: 'cancelled', nickname: nickname };
+                    });
+                }
+                let waiting = true;
+                const cancel = function () {
+                    if (!waiting) return;
+                    waiting = false;
+                    withdrawEnrollment(toText(answer.enrollment_id));
+                };
+                notify.loading(networkWaitHint(host), { cancel: cancel });
+                return waitForHostArrival(host, baseline, function (note) {
+                    if (note && waiting) notify.loading(note + '（本次以子 Agent 身份接入）', { cancel: cancel });
+                }, toText(answer.enrollment_id)).then(function (outcome) {
+                    waiting = false;
+                    return outcome;
+                });
+            }).then(function (outcome) {
+                enrollmentFlowActive = false;
+                notify.loadingEnd();
+                const reached = toText(outcome.status);
+                if (reached === 'arrived') {
+                    rememberAgentProfile(
+                        toText((outcome.agent || {}).agent_id), nickname,
+                        toText(host.label) || vendor);
+                }
+                return {
+                    status: reached, agent: outcome.agent, nickname: nickname, profile: '',
+                    registration: {}, enrollment_id: toText(answer.enrollment_id)
+                };
+            });
+        }, function (error) {
+            enrollmentFlowActive = false;
+            notify.loadingEnd();
+            const detail = error && error.raw && error.raw.detail;
+            if (isPlainObject(detail)) {
+                notify.info(toText(detail.note) || toText(detail.code) || '这次邀请没能生成');
+            } else {
+                notify.error((error && error.message) || '生成邀请失败');
+            }
+            return { status: 'failed' };
+        });
+    }
+
+    function connectInHostAgent(opts) {
+        const host = (opts || {}).host || {};
+        if (enrollmentFlowActive) {
+            notify.info('已有接入正在等待，请先处理当前接入申请');
+            return Promise.resolve({ status: 'failed' });
+        }
+        enrollmentFlowActive = true;
+        const nickname = toText((opts || {}).nickname).trim();
+        const vendor = toText(host.adapter || (opts || {}).vendor);
+        /* 角色写进记录（中间层），页面上也说出来：那条聊天把它交给 tsunagou_connect 的
+           `role`；就算它不说，CLI 也会以记录里的角色签票（不一致的说法会被直接拒绝）。*/
+        const role = toText((opts || {}).role) || 'worker';
+        /* 开等之前名单里已经有谁 —— 中间层只回答"有没有出现这份名单之外的席位"，
+           这一串就是我们告诉它"我来的时候看到了谁"。*/
+        const baseline = toArray(state.get('agents', [])).map(function (agent) {
+            return toText(agent.id);
+        }).filter(Boolean);
+        let prepared = null;
+        let askedToStop = false;
+        let cancelInFlight = false;
+        const cancelDialog = {
+            title: '停止等待它出现？',
+            text: '要停止等待这个 Agent 接入吗？',
+            description: '这一步会撤掉刚记下的那条接入申请（它只写着"哪个项目、什么角色"，没有票）。' +
+                '宿主里那次接入如果已经在进行，会照常完成，之后它仍会出现在 Agent 名单里。',
+            okText: '停止等待'
+        };
+        const cancel = function () {
+            /* 没有票要作废，但有一条机器级记录要撤：那条聊天可能正靠它找项目。*/
+            askedToStop = true;
+            if (cancelInFlight) return;
+            cancelInFlight = true;
+            withdrawEnrollment(toText((prepared || {}).enrollment_id), function () { cancelInFlight = false; });
+        };
+        notify.loading('正在准备接入 …', { cancel: cancel });
+        return api.post('agentPrepare', {
+            vendor: vendor, nickname: nickname, role: role,
+            profile: null, start_daemon: false
+        }, { silent: true }).then(function (result) {
+            prepared = result || {};
+            if (askedToStop) {
+                /* 人在准备完成前就点了停止：现在有编号了，把记录撤掉再收场。*/
+                cancel();
+                return { status: 'stopped' };
+            }
+            notify.loading(inHostHint(host, role), { cancel: cancel, cancelDialog: cancelDialog });
+            const rolePhrase = '（本次' + (toText(role) === 'main' ? '以主 Agent 身份接入' : '以子 Agent 身份接入') + '）';
+            return waitForHostArrival(
+                host, baseline,
+                function (answer) {
+                    /* 中间层的说法更具体（还没到 / 到了但角色不对）：换成它那句，身份照旧带上。*/
+                    const note = toText((answer || {}).note);
+                    if (note && !askedToStop) notify.loading(note + rolePhrase, { cancel: cancel });
+                },
+                toText(prepared.enrollment_id)
+            );
+        }, function (error) {
+            enrollmentFlowActive = false;
+            notify.loadingEnd();
+            const detail = error && error.raw && error.raw.detail;
+            if (isPlainObject(detail) && detail.code === 'enrollment_already_pending') {
+                notify.info(enrollmentSelectionNote(detail.enrollment) +
+                    (toText(detail.note) || '已有待接入申请，请先处理当前申请'));
+            } else {
+                notify.error((error && error.message) || '准备接入失败');
+            }
+            return { status: 'failed' };
+        }).then(function (outcome) {
+            enrollmentFlowActive = false;
+            notify.loadingEnd();
+            const reached = askedToStop ? 'stopped' : toText(outcome.status);
+            if (reached === 'arrived') {
+                rememberAgentProfile(
+                    toText((outcome.agent || {}).agent_id), nickname,
+                    toText(host.label) || toText(host.adapter));
+            }
+            return {
+                status: reached, agent: outcome.agent, nickname: nickname, profile: '',
+                registration: {}, enrollment_id: toText((prepared || {}).enrollment_id)
+            };
+        });
+    }
+
     /* 刷新后恢复唯一申请的等待/取消，不重建申请、不恢复未知的旧向导步骤，
        也不因申请属于另一个项目而切换当前项目。*/
     function resumeConsoleEnrollment() {
@@ -5981,6 +6372,20 @@
     /* 等待/失败时给人一句能读懂的话（两个入口共用，免得文案两处跑偏）*/
     function connectTrouble(status, host) {
         const label = toText((host || {}).label) || '宿主';
+        /* 在宿主自己聊天里接入的那条路没有票：这里不能说"票过期/票据作废"。*/
+        if (toText((host || {}).mode) === 'in_host') {
+            if (status === 'timeout') {
+                return '还没看到它出现在名单里：确认那条聊天里已经说了「接入 Tsunagou」，' +
+                    '或者让它把那边的报错说出来';
+            }
+            if (status === 'cancelled' || status === 'stopped') {
+                return '已停止等待：这次接入申请已撤掉，可以重新接入';
+            }
+            if (status === 'dismissed') {
+                return '已停止等待显示；那条申请还在，它接上时仍会作为新席位出现在名单里';
+            }
+            return '';
+        }
         if (toText((host || {}).adapter).toLowerCase() === 'codex') {
             if (status === 'expired') return '待接入申请已过期，请在前端重新准备接入';
             if (status === 'cancelled') return '已取消这次待接入申请，可以重新接入';
@@ -6115,7 +6520,9 @@
        第一屏就会是一串 id 缩写。*/
     function timelineActor(actorRef) {
         const ref = toText(actorRef);
-        if (ref === 'user_control') return { ref: ref, name: '用户', user: true };
+        /* 先认"这不是 Agent"的那几个主体（用户 / 后台 / 协调中心…），词表说了算。*/
+        const known = glossWord('actor_kind', ref);
+        if (known) return { ref: ref, name: known, user: ref === 'user_control' };
         const agent = toArray(state.get('agents', [])).filter(function (item) {
             return toText(item.id) === ref;
         })[0];
@@ -6128,7 +6535,7 @@
                 mainAgent: !!(agent && agent.isMain)
             };
         }
-        return { ref: ref, name: shortId(ref), user: ref.indexOf('user') === 0 };
+        return { ref: ref, name: refText(ref), user: ref.indexOf('user') === 0 };
     }
 
     /* 行里的 actor 是**适配那一刻**算的，而 agents / 用户档案是并发拉的，谁先回来不定。
@@ -6168,7 +6575,10 @@
                         : (running ? '进行中' : '未启动'),
                     /* 卡片右下角那行小字：就说 daemon 起没起。*/
                     time: running ? 'daemon 运行中' : (daemon ? 'daemon 无响应' : 'daemon 未启动'),
-                    group: p.lifecycle === 'archived' ? 'done' : undefined,
+                    /* 分组与状态文字用同一个判据：确认完工（completed）的项目就该和已归档的
+                       一起落到「已完成的协作」那一组 —— 否则卡片写着"已完成"却留在上面那一组，
+                       而控制台里没有归档入口，它会一直混在"进行中"里。*/
+                    group: done ? 'done' : undefined,
                     selected: false,
                     /* 卡片上不用，但别的面板要：项目目录、daemon 端点 */
                     path: p.path,
@@ -6197,9 +6607,12 @@
                     project: toText(item.project_name) || shortId(item.project_id),
                     task: toText(item.task),
                     /* 是不是从网络接进来的（本机接入不画徽标）、此刻在不在线。
-                       中间层不给这两个字段就一律当本机 —— 不编造“网络离线”。*/
-                    network: item.network === true,
-                    online: item.online === true
+                       中间层不给这两个字段就一律当本机 —— 不编造“网络离线”。
+                       远端还会自报一个机器名（`machine`）：有它就知道是哪台机器，
+                       也等于"这是远端"（本机接入那条路从来不写它）。*/
+                    network: item.network === true || Boolean(toText(item.machine)),
+                    online: item.online === true,
+                    machine: toText(item.machine)
                 };
             });
         },
@@ -6442,8 +6855,9 @@
                        子 Agent 看后端有没有说它是从网络接进来的；说了还得再给它一个
                        `online` 才画「网络在线」，否则是「网络离线」。两边都没说
                        就是这个 Agent 在本机 —— 那就不画徽标。*/
-                    network: a.role !== 'main' && a.network === true,
+                    network: a.role !== 'main' && (a.network === true || Boolean(a.machine)),
                     online: a.online === true,
+                    machine: toText(a.machine),
                     name: nickname || codename,
                     /* 厂商已知就给厂商的 logo，认不出来由 agentIconFor 统一摆 Tsunagou 小标
                        （见"图标"那一节；这里不再自己写第二份规则）。*/
@@ -6589,12 +7003,18 @@
                     };
                 }),
                 messages: sourceItems(sources, 'messages').map(function (m) {
-                    const sender = agents[toText(m.sender_agent_id)];
-                    const recipient = agents[toText(m.recipient_agent_id)];
+                    /* 收发两侧都按"这是谁"来称呼：名单里的 Agent 用昵称；用户/后台这类
+                       主体走中间层词表（`user_control` → 用户），其余退回「前缀 + 短号」。
+                       以前直接把 `user_control` 截 8 个字符，页面上就写成了 user_con。*/
+                    const chipName = function (agentId) {
+                        const ref = toText(agentId);
+                        const known = agents[ref];
+                        return known ? agentDisplayName(known) : timelineActor(ref).name;
+                    };
                     return {
                         id: m.message_id,
-                        from: sender ? agentDisplayName(sender) : shortId(m.sender_agent_id),
-                        to: recipient ? agentDisplayName(recipient) : shortId(m.recipient_agent_id),
+                        from: chipName(m.sender_agent_id),
+                        to: chipName(m.recipient_agent_id),
                         content: toText(m.summary) || toText(m.topic),
                         answered: glossText('message_status', m.status) || '未知',
                         answeredOk: toText(m.status) === 'answered',
@@ -6725,9 +7145,13 @@
                     time: formatTime(at),
                     timePrecise: formatTime(at, { precise: true }),
                     actor: timelineActor(event.actor_ref),
-                    /* 能对上当前名单就写标题（任务是任务名、项目是项目名），对不上退回 id 缩写 */
-                    task: ref ? (subjectLabel(ref) || shortId(ref)) : '',
-                    action: toText(event.action) + (reason ? ('（' + reason + '）') : '')
+                    /* 「任务」列：能对上当前名单就写名字（任务是任务名、项目是项目名）；
+                       对不上就按 ref 的前缀写成「任务 b71」「接入码 0」这种，
+                       而不是把 `task/b71…` 整串截 8 个字符。*/
+                    task: ref ? (subjectLabel(ref) || refText(ref)) : '',
+                    /* 「操作」列：命令名走词表（被拒的写操作会多一句「（被拒）」），
+                       后面再挂上原因码与那次会话的判定。*/
+                    action: actionText(event.action) + (reason ? ('（' + reason + '）') : '')
                         + (note ? ('（' + note + '）') : '')
                 });
             });

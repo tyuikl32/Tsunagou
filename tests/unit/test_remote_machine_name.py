@@ -1,0 +1,65 @@
+"""远端自报的机器名：只是**显示**，不是权限。
+
+跨机器导入时（`agent import --machine`），那台机器的桥会在入席时把名字放在 `descriptor_ref`
+里带上来；协调中心把它记在 Agent 上，名单出口原样公布，页面据此画「远端 · 机器名」。
+
+这里要守住两件事：
+* 本机接入从来不报这个名 —— 没有它，页面就不画那个标记（"没有"是有意义的值）；
+* 它只是入席者**说自己是谁**，所以既不能影响状态/角色，也不能因为乱填就把入席弄失败。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from tests.unit.test_trace_audit import Runtime
+from tests.unit.test_trace_audit import runtime as runtime  # noqa: F401  (夹具按名字取用)
+
+
+def _enroll(runtime: Runtime, conversation: str, *, descriptor: Any = None) -> dict[str, Any]:
+    identity = {
+        "installation_id": conversation,
+        "conversation_evidence": {"conversation_id": conversation},
+    }
+    ticket = runtime.call("agent.ticket.create.user", identity)["secret"]
+    payload = {**identity, "probe_payload": {"baseline": {}}}
+    if descriptor is not None:
+        payload["descriptor_ref"] = descriptor
+    return runtime.call("agent.enroll", payload, ticket=ticket)
+
+
+def _row(runtime: Runtime, agent_id: str) -> dict[str, Any]:
+    endpoint = runtime.endpoint("/api/v1/projects/{project_id}/agents")
+    return next(item for item in endpoint(runtime.project_id)["items"] if item["agent_id"] == agent_id)
+
+
+def test_a_remote_names_its_machine_and_the_roster_says_so(runtime: Runtime) -> None:
+    receipt = _enroll(runtime, "远端会话", descriptor="工位-七")
+
+    row = _row(runtime, receipt["agent_id"])
+
+    assert row["machine"] == "工位-七"
+    # 报了个名字什么都不换：角色还是 worker，会话该缺的东西照样缺（这里基线是空的，
+    # 所以它仍在 provisioning —— 名字不是准入证据）。
+    assert row["role"] == "worker" and row["status"] == "provisioning"
+
+
+def test_a_local_enrollment_has_no_machine_at_all(runtime: Runtime) -> None:
+    """本机接入没有这一项 —— 页面正是靠"没有"来判断不需要画远端标记。"""
+
+    receipt = _enroll(runtime, "本机会话")
+
+    assert "machine" not in _row(runtime, receipt["agent_id"])
+
+
+def test_a_useless_descriptor_is_ignored_rather_than_failing_the_enrollment(runtime: Runtime) -> None:
+    """乱填不该让入席失败：它只是显示用，拿不准就当没报。"""
+
+    for descriptor in ("", "   ", "x" * 200, "两行\r\n名字", {"machine": "工位-七"}, ["工位-七"]):
+        receipt = _enroll(runtime, f"会话-{len(str(descriptor))}-{type(descriptor).__name__}", descriptor=descriptor)
+        row = _row(runtime, receipt["agent_id"])
+        assert row["role"] == "worker", "入席本身照常成立"
+        assert "machine" not in row or row["machine"] == "", f"{descriptor!r} 不该变成一个名字"
+
+    named = _enroll(runtime, "清理空白", descriptor="  工位-八  ")
+    assert _row(runtime, named["agent_id"])["machine"] == "工位-八"

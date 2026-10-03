@@ -72,11 +72,15 @@ HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)�
 
 | mode | 含义 | 页面行为 |
 |---|---|---|
-| `console` | 页面能替这个宿主办完接入 | 发准备请求，进等待 |
-| `in_host` | 只能在这个宿主自己的聊天里接入（DeepSeek Harness） | 不发请求，照实说那一句人话 |
+| `console` | 页面能替这个宿主办完接入 | 发准备请求，进等待（等票被兑换） |
+| `in_host` | 只能在这个宿主自己的聊天里接入（DeepSeek Harness） | 发准备请求**只为记下"接哪个项目、什么角色"**（不签票、不写宿主配置），然后进同一块等待遮罩：盯着名单里出现它（`enrollments:observe`，判断在中间层） |
 | `unsupported` | 还没做（Claude Code、ZCode） | 不发请求，照实说"还没做" |
 
-只有 `console` 才签票：`prepare` 对另外两种直接拒绝（`host_enroll_not_available`），不产生票据文件——给一个兑不了的宿主签票，看起来像有进展，最后只会等到"票过期"。
+只有 `console` 才签票：另外两种都不产生票据文件——给一个兑不了的宿主签票，看起来像有进展，最后只会等到"票过期"。`in_host` 那边的票是宿主聊天里的 CLI 以用户身份自己签的（身份来自宿主给的会话 id），页面既不签也不作废。
+
+**三种宿主现在都写同一条机器级待接入记录**（`platform/enrollment_store.py`，每个 OS 用户同时一条）：`{adapter, project_id, project_root, role, nickname, 过期时间}`，不含任何凭据。它回答的是"聊天里被要求接入时，我该接哪个项目、什么角色"——聊天手上只有自己的会话 id 和工作目录，而工作目录常常不是协调仓库。读它有三个入口：Codex 的 `agent join`（认领后签票）、连接路径的解析回退（`agent connect`，工作目录推不出项目时用它）、以及只读的 `tsunagou agent pending --adapter <adapter>`。到达后由 `observe` / `status` 关掉这条记录，让下一个 Agent 接得上；页面的「停止等待」也会撤掉它。技术决定见 [接入时的项目从哪来](../decisions/2026-10-02-enrollment-record.md)。
+
+**记录里的角色就是最终角色。** 页面上选主 Agent，那条聊天就只能以主 Agent 接入：`agent connect` 在没给 `--role` 时用记录里的角色，给了**冲突**的角色直接拒绝（`enrollment_role_conflict`，且在写任何桥材料之前）；`observe` 的到达判定也核对角色，席位角色不符时只报"连上了但角色不对"，绝不报"主 Agent 已接入"，且**不收掉记录**（真正该来的那个还能用它）。daemon 那层本来就保证了"角色只认票"。
 
 两种 `console` 形态：
 
@@ -84,6 +88,22 @@ HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)�
 - **OpenCode**：控制台发一个会话名 `ses_<profile>` 并绑进票；页面把"用这个名字开会话"说给人，人用同一个名字打开会话，身份就对得上（此前控制台编的 id 与真实会话 id 对不上，bridge 会把票丢掉）。名字记在 bridge 目录的 `host-identity.json` 里，重试沿用同一个。
 
 控制台**照抄**中间层给的 `next` 作为等待提示，不自己编文案。技术决定见 [控制台接入](../decisions/2026-10-02-console-enroll-modes.md)。
+
+## 跨机器：主机发邀请（第四种"形态"）
+
+除了上面三种本机接入，页面还能发一张**给另一台机器**的邀请（`位置＝网络`）。这一条与前三种的区别只有一句：
+**主机这边什么都不写** —— 不写桥材料、不登记宿主，只签一张一次性票并把内容交给人转递；票、身份与桥配置
+都由远端在自己的机器上写（`tsunagou agent import`），项目仍然只有主机上那一份。
+
+- 入口：`agents:prepare` 带 `place=network`（以及 Codex/DSH 需要的 `conversation_id`），走
+  `enrollment.py::_prepare_network()`；回答 `{status:'invited', invite, enrollment_id, url, expires_in_seconds}`。
+- 身份：OpenCode 的会话名由主机起（`ses_<profile>`）；Codex / DeepSeek Harness 的会话名只有宿主自己知道，
+  必须先由远端 `agent whoami` 报号（页面为这一格只在"网络 + 这两个厂商"时显示）。
+- 等待：仍然复用 `enrollments:observe` 与那条机器级记录（角色核对也照旧），所以"到了"的判定与 `in_host`
+  完全同一套；取消邀请会撤掉记录。
+- 主 Agent 不跨机器（必须与 daemon 同机），所以 `place=network` 一律子 Agent。
+- 与既有约定的一处**有意**例外：票的明文本来"永不进页面"，而邀请必须以内容形式交给人。缓解手段是票本身的
+  限制（一次性、10 分钟、只能子 Agent）。技术决定见 [跨机器邀请](../decisions/2026-10-03-cross-machine-invite.md)。
 
 ## 已知边界
 

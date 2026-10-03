@@ -128,6 +128,8 @@ def daemon_state(root: Path, *, probe: bool = True) -> dict[str, Any] | None:
         "started_at": endpoint.get("started_at"),
         "state_dir": endpoint.get("state_dir"),
         "project_id": endpoint.get("project_id"),
+        # "别人该拨哪个号"：邀请走的就是它，没有就用本机这个 url（只有本机能连）。
+        "advertised_url": endpoint.get("advertised_url") or "",
     }
     if probe:
         state["running"] = daemon_alive(str(endpoint["url"]))

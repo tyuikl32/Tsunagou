@@ -146,6 +146,145 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect([...rows].map((row) => row.getAttribute("data-row-id"))).toEqual(["row-1", "row-2"]);
   });
 
+  /* 总路径的三列以前直接印机器话（`task.begin`、`session/`、`runtime`），人读不动。
+     现在原始 token 走中间层词表（GET /console/glossary）：命令名、引用前缀、操作人
+     各查一次表；表里没有的**原样印**，不许猜。*/
+  it("总路径三列走中间层词表，表里没有的原样印", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/glossary", {
+        version: 5,
+        domains: {
+          command_kind: { "task.begin": "开工", "user_decision.resolve": "用户已决定" },
+          ref_kind: { task: "任务", session: "会话", ticket: "接入码", decision: "用户决定" },
+          actor_kind: { runtime: "后台" },
+          denial_reason: { resource_conflict: "资源被占用" },
+          event_reason: { user_decision: "用户决定" },
+        },
+      }],
+      ["/history", { items: [
+        {
+          event_id: "e-1", action: "task.begin", actor_ref: "worker2",
+          subject_ref: "task/b71c0d3e-4a5f-4c6d-8e7f-000000000000",
+          occurred_at: "2026-10-02T10:16:52.000Z",
+        },
+        {
+          event_id: "e-2", action: "command.task.begin.denied", actor_ref: "runtime",
+          subject_ref: "session/", reason_code: "resource_conflict:file:src/x.py",
+          occurred_at: "2026-10-02T10:16:53.000Z",
+        },
+        {
+          event_id: "e-3", action: "some.new.thing", actor_ref: "ticket/0",
+          subject_ref: "ticket/0", occurred_at: "2026-10-02T10:16:54.000Z",
+        },
+        {
+          event_id: "e-4", action: "user_decision.resolve", actor_ref: "user_control",
+          subject_ref: "decision", reason_code: "user_decision",
+          occurred_at: "2026-10-02T10:16:55.000Z",
+        },
+      ] }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    /* 词表先到（启动时就拉了），再拉历史 —— 顺序与真页面一致。*/
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["timeline"]);
+
+    const rows = [...page.querySelectorAll("#pane-path .taskFlow > .inner > .item")];
+    expect(rows).toHaveLength(4);
+    const rowText = (index: number): string => rows[index]!.textContent ?? "";
+
+    // ① 命令名 → 中文；`task/<id>` → 「任务 + 短号」；没登记的 Agent 名字原样留着。
+    expect(rowText(0)).toContain("开工");
+    expect(rowText(0)).toContain("任务 b71c0d3e");
+    expect(rowText(0)).toContain("worker2");
+
+    // ② 账本里的被拒条目：剥掉 command./.denied 之后查表，再补原因码。
+    expect(rowText(1)).toContain("后台");
+    expect(rowText(1)).toContain("会话");
+    expect(rowText(1)).toContain("开工（被拒）");
+    expect(rowText(1)).toContain("资源被占用");
+
+    // ③ 表里没有的：原样印，并让前缀词汇把 `ticket/0` 说成人话。
+    expect(rowText(2)).toContain("some.new.thing");
+    expect(rowText(2)).toContain("接入码 0");
+
+    // ④ 括注里的 `user_decision` 不是拒绝码，走 event_reason 那张表；
+    //    任务列的 `decision` 也靠 ref_kind 说成人话。
+    expect(rowText(3)).toContain("用户已决定（用户决定）");
+    expect(rowText(3)).toContain("用户决定");
+  });
+
+  /* 「冲突与协商 → Agent 间协商」那张表的收发两侧，以前是把 id 直接截 8 个字符，
+     于是 `user_control` 在页面上写成 user_con。现在与总路径共用同一套"这是谁"：
+     名单里的 Agent 用昵称，用户/后台这类主体走中间层词表。*/
+  it("消息表的收发两侧把 user_control 说成「用户」", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/glossary", {
+        version: 5,
+        domains: { actor_kind: { user_control: "用户" }, ref_kind: { ticket: "接入码" } },
+      }],
+      ["/console/views/collaboration", { sources: {
+        agents: { items: [{ agent_id: "a-1", status: "active", role: "worker" }] },
+        messages: { items: [
+          {
+            message_id: "m-1", sender_agent_id: "user_control", recipient_agent_id: "a-1",
+            summary: "用户已裁决：确认：按此目标执行", status: "none", obligations: [],
+          },
+          {
+            message_id: "m-2", sender_agent_id: "a-1", recipient_agent_id: "user_control",
+            summary: "有结果待评审", status: "pending", obligations: [{ status: "open" }],
+          },
+        ] },
+      } }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const block = page.querySelector("#block-conflict");
+    expect(block).not.toBeNull();
+    const shown = block!.textContent ?? "";
+    expect(shown).toContain("用户");
+    expect(shown).not.toContain("user_con");
+    // 后端自己发的通知也已经是中文（模板改了源头，不是页面替换正文）。
+    expect(shown).toContain("有结果待评审");
+  });
+
   it("「验收结果」格里的多行内容套在 .colu-t 里（200px 宽的格子靠它竖排）", () => {
     api.dispatch("checkpoint.list", { latest: [], history: [] });
     const result = api.dispatch("acceptance.data", {
@@ -310,6 +449,105 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(chip()!.getAttribute("src")).toMatch(/codex-[ld]\.png/);
   });
 
+  /* 已确认完工（lifecycle=completed）的协作必须离开"进行中的协作"那一组。
+     控制台没有归档入口，分组若只认 archived，卡片会写着"已完成"却永远混在上面那一组。*/
+  it("确认完工的协作归到「已完成的协作」组，状态文字与分组同一个判据", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/api/v1/projects", {
+        items: [
+          { project_id: "p-1", name: "还在进行", lifecycle: "active", available: true, main_agent_id: "a-1" },
+          { project_id: "p-2", name: "已经完工", lifecycle: "completed", available: true, main_agent_id: "a-1" },
+        ],
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["settings"]);
+    await win.Tsunagou.refresh(["projects"]);
+
+    const rail = page.querySelector("#projList")!;
+    const layout = [...rail.children].map((node) => node.classList.contains("wkTitle")
+      ? node.textContent!.trim()
+      : node.getAttribute("data-project-id"));
+    expect(layout).toEqual(["进行中的协作", "p-1", "已完成的协作", "p-2"]);
+    expect(rail.querySelector('.projItem[data-project-id="p-2"] .right p')!.textContent).toBe("已完成");
+  });
+
+  /* 子 Agent 头像一行最多 3 个，多出来的用 `+N` 说明——N 是**没摆出来的**数量。
+     以前 N 写的是总数：2 个成员会画成"2 个头像 +2"，看起来像有 4 个。*/
+  it("子 Agent 头像最多 3 个，`+N` 只数没摆出来的那些", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const others = (count: number): Record<string, unknown>[] =>
+      Array.from({ length: count }, (_, index) => ({
+        agent_id: "a-" + index, status: "active", role: "worker",
+      }));
+    let members: Record<string, unknown>[] = [];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const body = path.indexOf("/console/profile") >= 0
+        ? { version: 1, nickname: "", theme: "", agents: {} }
+        : path.indexOf("/api/v1/projects") >= 0
+          ? { items: [{
+              project_id: "p-1", name: "示例协作", lifecycle: "active", available: true,
+              main_agent_id: "a-main", agents: members,
+            }] }
+          : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    const cardFaces = (): { icons: number; plus: string } => {
+      const row = page.querySelector('#projList .projItem .anotherAgent')!;
+      return {
+        icons: row.querySelectorAll("img").length,
+        plus: row.querySelector(".plus")?.textContent ?? "",
+      };
+    };
+
+    members = others(6);
+    await win.Tsunagou.refresh(["settings"]);
+    await win.Tsunagou.refresh(["projects"]);
+    expect(cardFaces()).toEqual({ icons: 3, plus: "3" });
+
+    // 刚好 3 个：全摆出来，没有 `+N`。
+    members = others(3);
+    await win.Tsunagou.refresh(["projects"]);
+    expect(cardFaces()).toEqual({ icons: 3, plus: "" });
+
+    // 2 个：以前这里会写"+2"（总数），现在什么都不加。
+    members = others(2);
+    await win.Tsunagou.refresh(["projects"]);
+    expect(cardFaces()).toEqual({ icons: 2, plus: "" });
+  });
+
   /* 2026-10-02：Agent 的「网络接入」标记（跨机器协作）——
      **本机接入的 Agent 什么都不画**（连右侧那个 <i> 图标都不出现），
      只有中间层说它是从网络接进来的才画「网络在线 / 网络离线」。
@@ -376,6 +614,51 @@ describe("控制台页面（web/）结构冒烟", () => {
     // 撤回 → 回到本机（不画）。
     expect(win.Tsunagou.dispatch("agent.network.clear", { agent_id: "a-2" }).ok).toBe(true);
     expect(badge(1)).toBeNull();
+  });
+
+  /* 2026-10-03：远端**自报**的机器名跟着一起显示 —— 名单里要能看出是哪台机器。
+     名字是"入席者说自己是谁"，不是系统认证出来的，所以它只影响这一句话。*/
+  it("远端自报的机器名写在同一个标记里，本机接入仍然什么都不画", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/projects/p-1/agents", {
+        items: [
+          { agent_id: "a-1", role: "main", status: "active" },
+          { agent_id: "a-2", role: "worker", status: "active", machine: "工位-七", online: true },
+          { agent_id: "a-3", role: "worker", status: "active", machine: "NAS" },
+        ],
+        main_agent_id: "a-1",
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["agents", "settings"]);
+
+    const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
+    const badge = (index: number) => cards()[index]!.querySelector(".header .right");
+    /* 有机器名 = 远端：在线与否照旧由 online 说，名字跟在后面。*/
+    expect(badge(1)!.textContent).toBe("网络在线 · 工位-七");
+    expect(badge(1)!.querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
+    expect(badge(2)!.textContent).toBe("网络离线 · NAS");
+    /* 本机接入没有这一项 —— 连标记都不出现。*/
+    expect(badge(0)).toBeNull();
   });
 
   it("DAG：有节点但彼此没依赖时，不再往画布上摆一块会压住节点的 .empty", () => {
@@ -501,6 +784,8 @@ type EnrollmentApi = ConsoleApi & {
   };
   notify: { loadingEnd: () => boolean; cancelWaiting: () => Promise<boolean> };
   dialog: { confirm: () => Promise<boolean> };
+  actions: { addSubAgent: (payload: Record<string, unknown>) => Promise<unknown> };
+  app: { confirmNetworkInvite: () => boolean; cancelNetworkInvite: () => boolean };
 };
 
 describe("控制台接入等待与取消", () => {
@@ -509,6 +794,7 @@ describe("控制台接入等待与取消", () => {
   let enrollmentPage: Document;
   let prepareBody: Record<string, unknown>;
   let statusBody: Record<string, unknown>;
+  let observeBody: Record<string, unknown>;
   let cancelBody: Record<string, unknown>;
   let cancelStatus: number;
   let prepareStatus: number;
@@ -533,6 +819,7 @@ describe("控制台接入等待与取消", () => {
       let status = 200;
       if (url.includes("agents:prepare")) { await prepareGate; body = prepareBody; status = prepareStatus; }
       else if (url.includes(":cancel")) { await cancelGate; body = cancelBody; status = cancelStatus; }
+      else if (url.includes("enrollments:observe")) body = observeBody;
       else if (url.endsWith("/enrollments/current")) body = current;
       else if (url.includes("/enrollments/")) body = statusBody;
       else if (url.includes("/projects?agents=1")) body = { items: [
@@ -560,6 +847,7 @@ describe("控制台接入等待与取消", () => {
       host_registration: { status: "deferred" },
     };
     statusBody = { status: "waiting", phase: "pending", enrollment_id: "e-1" };
+    observeBody = { status: "waiting", adapter: "deepseek" };
     cancelBody = { status: "cancelled", note: "已取消这次待接入申请" };
     cancelStatus = 200;
     prepareStatus = 200;
@@ -644,15 +932,174 @@ describe("控制台接入等待与取消", () => {
     await pending;
   });
 
-  it("办不完的厂商点了下一步只给一句话，绝不发准备请求", async () => {
+  /* 「位置＝网络」这条路：主机签一张邀请，人把它交给另一台机器；确认后才开始等席位。
+     编号那一格只在"网络 + 会话名自己说了算的厂商"（Codex / DeepSeek Harness）出现 ——
+     OpenCode 的会话名由主机起，所以不用问。*/
+  it("网络接入：要编号、给邀请、确认后等席位，OpenCode 不需要编号", async () => {
+    const field = () => enrollmentPage.querySelector<HTMLElement>("#addSubAgentAddr");
+    const place = () => enrollmentPage.querySelector<HTMLElement>("#addSubAgent .choosebox.TOG0");
+    const vendor = () => enrollmentPage.querySelector<HTMLElement>("#addSubAgent .choosebox.TOG1");
+    const shown = (node: HTMLElement | null) => Boolean(node && node.style.display !== "none");
+    /* 让"选择框变了"这件事真的发生：silent 会吞掉 choosebox:change。*/
+    const choose = (id: string, value: string) => {
+      enrollmentApi.ui.choosebox.setValue(id, value, { silent: false });
+    };
+
+    choose("addSubAgentVendor", "Codex");
+    choose("addSubAgentPlace", "网络");
+    expect(shown(field())).toBe(true);
+    expect(field()?.querySelector("input")?.getAttribute("placeholder")).toBe("网络 Agent 编号");
+    expect(shown(place())).toBe(true);
+    expect(enrollmentPage.querySelector("#addSubAgent .choosebox.TOG1")?.textContent).toContain("Codex");
+
+    /* OpenCode：名字我们起，不需要编号这一格 */
+    choose("addSubAgentVendor", "OpenCode");
+    expect(shown(field())).toBe(false);
+    /* 本机接入：更不需要 */
+    choose("addSubAgentVendor", "Codex");
+    choose("addSubAgentPlace", "本机");
+    expect(shown(field())).toBe(false);
+
+    /* 回到网络 + Codex，走一遍：确定 → 邀请窗口 → 开始等待 → 席位出现 */
+    choose("addSubAgentPlace", "网络");
+    expect(shown(field())).toBe(true);
+    prepareBody = {
+      status: "invited", invite: "tsunagou-invite-v1:AAAA", enrollment_id: "e-net",
+      expires_in_seconds: 600, expires_at: "2026-10-02T14:10:00.000Z",
+      url: "http://10.0.0.5:2810", conversation_id: "thread-abc",
+    };
+    const done = enrollmentApi.actions.addSubAgent({
+      name: "小三", vendor: "Codex", place: "network", number: "thread-abc",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const prepared = calls.filter((call) => call.url.includes("agents:prepare"));
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]!.body).toMatchObject({
+      vendor: "codex", place: "network", conversation_id: "thread-abc", role: "worker",
+    });
+    /* 邀请摆在一个窗口里，内容原样放在只读输入框里等人复制 */
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
+    const inviteInput = enrollmentPage.querySelector<HTMLInputElement>("#netInvite .textbox2 input");
+    expect(inviteInput?.value).toBe("tsunagou-invite-v1:AAAA");
+    expect(inviteInput?.hasAttribute("readonly")).toBe(true);
+
+    /* 确认（人已把内容转交）→ 加载框 → 席位出现。
+       jsdom 不跑行内 onclick，所以直接调那个动作（页面上是按钮，行为一致）。*/
+    expect(enrollmentApi.app.confirmNetworkInvite()).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(false);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(true);
+    expect(text()).toContain("交给");
+
+    /* 等待是每 2 秒问一次中间层"名单里出现它了吗"（与其它等待同一套） */
+    await vi.advanceTimersByTimeAsync(2000);
+    const asked = calls.filter((call) => call.url.includes("enrollments:observe"));
+    expect(asked.length).toBeGreaterThanOrEqual(1);
+    expect(decodeURIComponent(asked[0]!.url)).toContain("enrollment_id=e-net");
+    observeBody = { status: "arrived", adapter: "codex", agent: { agent_id: "a-net" } };
+    await vi.advanceTimersByTimeAsync(2000);
+    await done;
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+    expect(enrollmentApi.ui.window.isOpen("addSubAgent")).toBe(false);
+    expect(vendor()).not.toBeNull();
+  });
+
+  it("网络接入点「取消」：邀请作废（撤掉那条申请），不进等待", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "codex", label: "Codex", mode: "console" },
+    ]);
+    prepareBody = {
+      status: "invited", invite: "tsunagou-invite-v1:BBBB", enrollment_id: "e-cancel",
+      expires_in_seconds: 600, expires_at: "2026-10-02T14:10:00.000Z", url: "http://10.0.0.5:2810",
+    };
+    const done = enrollmentApi.actions.addSubAgent({
+      name: "小三", vendor: "Codex", place: "network", number: "thread-abc",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
+
+    enrollmentApi.app.cancelNetworkInvite();
+    await vi.advanceTimersByTimeAsync(0);
+    await done;
+
+    const cancelled = calls.filter((call) => call.url.includes(":cancel"));
+    expect(cancelled).toHaveLength(1);
+    expect(decodeURIComponent(cancelled[0]!.url)).toContain("e-cancel");
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(false);
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+  });
+
+  /* 宿主自己在聊天里接入的那一种（DeepSeek Harness）：控制台不签票，但**必须把
+     "谁要接哪个项目、什么角色"记在机器上** —— 那条聊天里说"请接入 Tsunagou"时只有自己的
+     会话 id 和工作目录，工作目录常常不是协调仓库。然后开同一块遮罩等名单里出现它，
+     判断在中间层（它拿接入材料当证据），页面不数人头。*/
+  it("宿主自己接入的厂商：先记下接哪个项目，再开等待遮罩等它出现在名单里", async () => {
     enrollmentApi.state.set("hosts", [
       { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在 DeepSeek Harness 自己的桌面聊天里接入。" },
       { adapter: "claudecode", label: "Claude Code", mode: "unsupported", note: "Claude Code 的 MCP 注册还没实现。" },
     ]);
     enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "DeepSeek Harness", { silent: true });
-    await enrollmentApi.ui.wizard.next();
+    const pending = enrollmentApi.ui.wizard.next();
     await vi.advanceTimersByTimeAsync(0);
-    expect(tip()).toContain("自己的桌面聊天里接入");
+    /* 先写记录：那条聊天靠它才查得到项目与角色（命令只能是 prepare 这条写门） */
+    const prepared = calls.filter((call) => call.url.includes("agents:prepare"));
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]!.body).toMatchObject({ vendor: "deepseek", role: "main" });
+    /* 遮罩上是中间层那句指路（页面不自己编步骤）+ 项目目录 + 这次的身份 + "正在等待" */
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(true);
+    expect(text()).toContain("自己的桌面聊天里接入");
+    expect(text()).toContain(projectPath);
+    expect(text()).toContain("正在等待它出现");
+    /* 身份必须写出来：那条聊天把它交给 tsunagou_connect 的 role */
+    expect(text()).toContain("以主 Agent 身份接入");
+    await vi.advanceTimersByTimeAsync(2000);
+    const asked = calls.filter((call) => call.url.includes("enrollments:observe"));
+    expect(asked).toHaveLength(1);
+    expect(decodeURIComponent(asked[0]!.url)).toContain("adapter=deepseek");
+    expect(decodeURIComponent(asked[0]!.url)).toContain("enrollment_id=e-1");
+    /* 中间层说"连上了但角色不对"：照它的话说，并且身份照旧带上，不报成功 */
+    observeBody = {
+      status: "waiting",
+      note: "有个席位连上了，但它的角色是子 Agent，不是这次申请的主 Agent。",
+    };
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(text()).toContain("角色是子 Agent");
+    expect(text()).toContain("以主 Agent 身份接入");
+    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    /* 中间层说到了：遮罩收起、主 Agent 落到第 3 步 */
+    observeBody = { status: "arrived", adapter: "deepseek", agent: { agent_id: "a-own" } };
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ agent_id: "a-own", status: "arrived" });
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+  });
+
+  it("宿主自己接入时点「取消」撤掉刚记下的那条申请，并停止等待", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在它自己的聊天里接入。" },
+    ]);
+    enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "DeepSeek Harness", { silent: true });
+    const pending = enrollmentApi.ui.wizard.next();
+    await vi.advanceTimersByTimeAsync(0);
+    enrollmentApi.dialog.confirm = async () => true;
+    expect(await enrollmentApi.notify.cancelWaiting()).toBe(true);
+    await vi.advanceTimersByTimeAsync(2000);
+    await pending;
+    /* 没有票要作废，但记录得撤：那条聊天可能正靠它找项目 */
+    const cancelled = calls.filter((call) => call.url.includes(":cancel"));
+    expect(cancelled).toHaveLength(1);
+    expect(decodeURIComponent(cancelled[0]!.url)).toContain("e-1");
+    expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
+    expect(tip()).toContain("已撤掉");
+  });
+
+  it("还没做的厂商点了下一步只给一句话，绝不发准备请求", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "deepseek", label: "DeepSeek Harness", mode: "in_host", note: "在 DeepSeek Harness 自己的桌面聊天里接入。" },
+      { adapter: "claudecode", label: "Claude Code", mode: "unsupported", note: "Claude Code 的 MCP 注册还没实现。" },
+    ]);
     enrollmentApi.ui.choosebox.setValue("newXz2Vendor", "Claude Code", { silent: true });
     await enrollmentApi.ui.wizard.next();
     await vi.advanceTimersByTimeAsync(0);

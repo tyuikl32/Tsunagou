@@ -294,12 +294,9 @@ def test_the_page_can_ask_what_happens_if_it_picks_this_vendor() -> None:
     assert {host["adapter"] for host in enrollment.known_hosts()} == set(host_registration.HOSTS)
 
 
-@pytest.mark.parametrize(
-    ("vendor", "mode"),
-    [("deepseek", enrollment.IN_HOST_MODE), ("claudecode", enrollment.UNSUPPORTED_MODE)],
-)
+@pytest.mark.parametrize("vendor", ["claudecode", "zcode"])
 def test_a_host_this_console_cannot_finish_is_refused_before_a_ticket_exists(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, vendor: str, mode: str,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, vendor: str,
 ) -> None:
     """A ticket only a person could redeem looks like progress and ends in "票过期了"."""
 
@@ -314,10 +311,173 @@ def test_a_host_this_console_cannot_finish_is_refused_before_a_ticket_exists(
         )
 
     assert refusal.value.code == "host_enroll_not_available"
-    assert refusal.value.detail["enroll_mode"] == mode
+    assert refusal.value.detail["enroll_mode"] == enrollment.UNSUPPORTED_MODE
     assert refusal.value.detail["note"], "the refusal has to say where to go instead"
     assert daemon.calls == [], "no ticket is asked for a host we cannot finish"
     assert not (entry.path / ".tsunagou" / "bridges").exists(), "a refusal leaves nothing behind"
+    assert EnrollmentStore().active() is None, "nothing is recorded either"
+
+
+def test_the_host_that_enrolls_itself_only_leaves_the_decision_in_the_machine_slot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """DeepSeek Harness 那条路：控制台不签票、不写宿主配置，只记下"谁要接哪个项目"。
+
+    那条聊天里的 ``tsunagou_connect`` 只有自己的会话 id 和工作目录，而工作目录常常不是
+    协调仓库 —— 这条机器级记录是它唯一能查出"接哪个项目、什么角色"的地方。
+    """
+
+    entry = _entry(tmp_path)
+    daemon = Daemon()
+    monkeypatch.setattr(enrollment, "forward", daemon)
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+
+    answer = enrollment.prepare(
+        entry, dict(entry.daemon or {}), vendor="deepseek", role="main",
+        nickname="熊猫", directory=Rosters(),
+    )
+
+    assert answer["status"] == "prepared"
+    assert answer["role"] == "main" and answer["nickname"] == "熊猫"
+    assert "DeepSeek Harness" in answer["next"], "那句指路照实来自宿主表"
+    assert daemon.calls == [], "这条路没有票要签"
+    assert not (entry.path / ".tsunagou" / "bridges").exists(), "也不往项目里写任何桥材料"
+    recorded = EnrollmentStore().active_for("deepseek")
+    assert recorded is not None, "决定留在机器级记录里"
+    assert recorded["requested_role"] == "main"
+    assert Path(recorded["project_root"]).resolve() == entry.path.resolve()
+    assert recorded["enrollment_id"] == answer["enrollment_id"]
+    # 到达之后这条记录要自己让位：同一时刻只允许一条，下一个人还得接得上。
+    _host_profile(tmp_path, {"a-1": "DeepSeek Harness", "a-2": "DeepSeek Harness"})
+    monkeypatch.setattr(enrollment, "daemon_state", lambda root, probe=True: {
+        "running": True, "url": "http://127.0.0.1:59999", "project_id": PROJECT_ID,
+    })
+    arrived = enrollment.observe(
+        settings=_config(tmp_path), directory=Rosters(("a-1", "a-2"), role="main"), project_id=PROJECT_ID,
+        adapter="deepseek", baseline={"a-1"}, enrollment_id=answer["enrollment_id"],
+    )
+    assert arrived["status"] == "arrived"
+    assert EnrollmentStore().active() is None
+
+
+def test_a_seat_with_the_wrong_role_does_not_finish_this_enrollment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """页面选主 Agent，那边却以子 Agent 接入：如实说没到位，绝不报"主 Agent 已接入"。
+
+    记录也不收 —— 真正该来的那个还能用它；这正是"页面上选什么角色，就只能以什么角色接入"
+    在显示这一侧的保证（票那一侧由 daemon 保证：票里的角色就是席位角色）。
+    """
+
+    entry = _entry(tmp_path)
+    daemon = Daemon()
+    monkeypatch.setattr(enrollment, "forward", daemon)
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+    prepared = enrollment.prepare(
+        entry, dict(entry.daemon or {}), vendor="deepseek", role="main", nickname="熊猫",
+        directory=Rosters(),
+    )
+    _host_profile(tmp_path, {"a-1": "DeepSeek Harness", "a-2": "DeepSeek Harness"})
+    monkeypatch.setattr(enrollment, "daemon_state", lambda root, probe=True: {
+        "running": True, "url": "http://127.0.0.1:59999", "project_id": PROJECT_ID,
+    })
+
+    answer = enrollment.observe(
+        settings=_config(tmp_path), directory=Rosters(("a-1", "a-2"), role="worker"), project_id=PROJECT_ID,
+        adapter="deepseek", baseline={"a-1"}, enrollment_id=prepared["enrollment_id"],
+    )
+
+    assert answer["status"] == "waiting"
+    assert answer["pending"]["role"] == "worker"
+    assert "子 Agent" in answer["note"] and "主 Agent" in answer["note"]
+    assert EnrollmentStore().active_for("deepseek") is not None, "记录留着等真正该来的那个"
+
+    # 同一个席位换成正确身份回来时，才算到了。
+    settled = enrollment.observe(
+        settings=_config(tmp_path), directory=Rosters(("a-1", "a-2"), role="main"), project_id=PROJECT_ID,
+        adapter="deepseek", baseline={"a-1"}, enrollment_id=prepared["enrollment_id"],
+    )
+    assert settled["status"] == "arrived"
+    assert EnrollmentStore().active() is None
+
+
+def test_a_network_invitation_is_signed_here_and_written_nowhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """跨机器那张邀请：主机只签票、只给出一段内容；票和身份都由远端写自己的机器。"""
+
+    import tsunagou.platform.remote_invite as remote_invite
+
+    entry = _entry(tmp_path)
+    daemon = Daemon()
+    monkeypatch.setattr(enrollment, "forward", daemon)
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+
+    answer = enrollment.prepare(
+        entry, {**dict(entry.daemon or {}), "url": "http://127.0.0.1:2810",
+                "advertised_url": "http://10.0.0.5:2810"},
+        vendor="opencode", role="worker", nickname="小三",
+        token="control-token", directory=Rosters(), place="network",
+    )
+
+    assert answer["status"] == "invited"
+    assert answer["url"] == "http://10.0.0.5:2810", "邀请里写的是对外可达地址"
+    assert answer["conversation_id"] == "ses_小三", "会话名由主机起"
+    decoded = remote_invite.decode(answer["invite"])
+    assert decoded["project_id"] == PROJECT_ID and decoded["role"] == "worker"
+    assert decoded["secret"] == SECRET and decoded["installation_id"] == "opencode:小三"
+    remote_invite.check(decoded)
+    assert daemon.calls == ["/api/v1/commands/agent.ticket.create.user"], "只问一次票"
+    assert not (entry.path / ".tsunagou" / "bridges").exists(), "主机这边不写桥材料"
+    assert not (entry.path / ".tsunagou" / "checkpoints").exists()
+    # 机器级记录还是要写：页面靠它等那个席位出现，并且核对角色。
+    recorded = EnrollmentStore().active_for("opencode")
+    assert recorded is not None and recorded["requested_role"] == "worker"
+    assert recorded["enrollment_id"] == answer["enrollment_id"]
+
+
+def test_a_network_invitation_needs_the_number_for_hosts_that_own_their_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Codex / DSH 的会话名只有它自己知道：没报号就不发邀请，报了号就照号签票。"""
+
+    import tsunagou.platform.remote_invite as remote_invite
+
+    entry = _entry(tmp_path)
+    monkeypatch.setattr(enrollment, "forward", Daemon())
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+    endpoint = {**dict(entry.daemon or {}), "advertised_url": "http://10.0.0.5:2810"}
+
+    with pytest.raises(ConsoleError) as refused:
+        enrollment.prepare(
+            entry, endpoint, vendor="codex", role="worker", nickname="小三",
+            token="control-token", directory=Rosters(), place="network",
+        )
+    assert refused.value.code == "conversation_id_required_for_this_host"
+    assert EnrollmentStore().active() is None, "拒绝了就不留记录"
+
+    answer = enrollment.prepare(
+        entry, endpoint, vendor="codex", role="worker", nickname="小三", token="control-token",
+        directory=Rosters(), place="network", conversation_id="thread-abc",
+    )
+    assert remote_invite.decode(answer["invite"])["conversation_id"] == "thread-abc"
+
+
+def test_a_network_invitation_is_worker_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """主 Agent 必须和协调中心同机：跨机器那张邀请只能是子 Agent。"""
+
+    entry = _entry(tmp_path)
+    monkeypatch.setattr(enrollment, "forward", Daemon())
+    monkeypatch.setattr(enrollment, "bridge_entry_path", lambda: _built_bridge(tmp_path))
+
+    with pytest.raises(ConsoleError) as refused:
+        enrollment.prepare(
+            entry, {**dict(entry.daemon or {}), "advertised_url": "http://10.0.0.5:2810"},
+            vendor="opencode", role="main", token="control-token", directory=Rosters(), place="network",
+        )
+    assert refused.value.code == "main_agent_must_be_local"
 
 
 def test_opencode_gets_one_session_name_the_ticket_and_the_person_both_use(
@@ -842,6 +1002,74 @@ def test_daemon_epoch_survives_console_roster_projection(monkeypatch: pytest.Mon
     roster = AgentDirectory().roster(PROJECT_ID, entry.path, entry.daemon, require_fresh=True)
     assert roster is not None and roster.agents[0]["connection_epoch"] == 7
 
+
+
+def _host_profile(tmp_path: Path, vendors: dict[str, str]) -> None:
+    """The user profile as `reconcile_vendors` would have left it: proven vendor per Agent."""
+
+    (tmp_path / "profile.json").write_text(
+        json.dumps({"agents": {agent: {"vendor": vendor} for agent, vendor in vendors.items()}}),
+        encoding="utf-8",
+    )
+
+
+def _observing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, roster: Rosters) -> dict[str, Any]:
+    _discoverable(tmp_path)          # 项目得先在磁盘上，find() 才找得到它
+    monkeypatch.setattr(enrollment, "daemon_state", lambda root, probe=True: {
+        "running": True, "url": "http://127.0.0.1:59999", "project_id": PROJECT_ID,
+    })
+    return enrollment.observe(
+        settings=_config(tmp_path), directory=roster, project_id=PROJECT_ID,
+        adapter="deepseek", baseline={"a-1"},
+    )
+
+
+def test_in_host_observe_waits_until_a_proven_seat_appears(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """宿主自己接入时没有票可问：等的是"名单里多了一个能证明来自它的席位"。
+
+    证明材料不是页面给的，是 `agent connect` 写下的接入材料 —— 读名单那条路会把它变成
+    档案里的厂商（见 agents.reconcile_vendors），所以这里用档案模拟那一步的结果。
+    """
+
+    _host_profile(tmp_path, {"a-1": "DeepSeek Harness"})
+    assert _observing(monkeypatch, tmp_path, Rosters(("a-1",)))["status"] == "waiting"
+
+    _host_profile(tmp_path, {"a-1": "DeepSeek Harness", "a-2": "DeepSeek Harness"})
+    arrived = _observing(monkeypatch, tmp_path, Rosters(("a-1", "a-2")))
+    assert arrived["status"] == "arrived"
+    assert arrived["agent"]["agent_id"] == "a-2"
+
+
+def test_a_seat_nobody_can_attribute_is_not_this_host_arrival(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """认不出来历的新席位不算到了：宁可继续等，也不替别家认领一次接入。"""
+
+    _host_profile(tmp_path, {"a-1": "DeepSeek Harness"})
+    assert _observing(monkeypatch, tmp_path, Rosters(("a-1", "a-2")))["status"] == "waiting"
+
+    _host_profile(tmp_path, {"a-1": "DeepSeek Harness", "a-2": "Codex"})
+    assert _observing(monkeypatch, tmp_path, Rosters(("a-1", "a-2")))["status"] == "waiting"
+
+
+def test_observe_refuses_without_an_adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _discoverable(tmp_path)
+    with pytest.raises(ConsoleError, match="adapter_required") as refused:
+        enrollment.observe(
+            settings=_config(tmp_path), directory=Rosters(()), project_id=PROJECT_ID,
+            adapter="", baseline=set(),
+        )
+    assert refused.value.status == 400
+
+
+def test_observe_keeps_waiting_when_the_daemon_is_not_up(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """daemon 没起来不是"没连上"：接入会在那条聊天里自己把它带起来，所以照旧等。"""
+
+    monkeypatch.setattr(enrollment, "daemon_state", lambda root, probe=True: {"running": False})
+    _discoverable(tmp_path)
+    answer = enrollment.observe(
+        settings=_config(tmp_path), directory=Rosters(("a-1", "a-2")), project_id=PROJECT_ID,
+        adapter="deepseek", baseline={"a-1"},
+    )
+    assert answer["status"] == "waiting" and answer["note"]
 
 
 def test_codex_reprepare_reuses_matching_selection_and_keeps_original_nickname(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

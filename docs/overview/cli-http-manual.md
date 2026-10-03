@@ -105,6 +105,66 @@ tsunagou agent join
 
 `GET /api/v1/console/enrollments/current` 返回唯一当前申请的公共状态，无申请时为 `status=none`。页面刷新会自动恢复它的等待/取消入口并标明原项目和角色，不改变当前项目或推进旧向导。相同项目/角色重复准备复用原申请与昵称，其他选择返回含公共申请引用和说明的 409。升级本功能前已在运行的旧 bridge 需要重载一次才能支持原聊天回执。
 
+### 接入时"我该接哪个项目"（三种宿主共用）
+
+一句"请接入 Tsunagou"到达聊天时，它只有宿主给的会话标识和工作目录。协调根推不出来：项目可以协调多个文件夹，控制台也把项目建在自己的根下。答案在机器上 —— 控制台点接入时写下的那条待接入记录，每个 OS 用户同时只有一条：
+
+```powershell
+tsunagou agent pending --adapter deepseek
+```
+
+返回 `{status: pending, state, adapter, role, nickname, project_id, project_root, expires_in_seconds}`（不含凭据）；没有申请时返回 `{status: none, note}`，提示用户去控制台准备。`state` 是记录自己的状态：`claimed`/`enrolled` 表示已经有别的聊天认领或已经接入，不要试图接手。命令只读，不改状态。
+
+**角色由记录决定。** 只要该 adapter 有一条待接入记录，`agent connect` 就用记录里的 `requested_role`：显式传的 `--role` 与它冲突时直接失败（`enrollment_role_conflict`，在写任何桥材料之前就拒绝），不会静默照做。没有记录时才回到"`--role` 优先，否则保留已有角色 / 新登记为 worker"的手动接入规则。这样"页面上选主 Agent"就等于"那条聊天只能以主 Agent 接入"；而且 daemon 本身也不可能被接入方要求角色 —— `agent.enroll` 的 payload 没有角色字段，席位角色只来自票，票里是 main 时由 daemon 在就绪那一刻自行任命。
+
+连接那条路在**工作目录推不出项目**时才读它：`--project-root`、`TSUNAGOU_PROJECT_ROOT` 与工作目录里真正的项目永远优先（三者都没有、也没有记录时，`project_root` 就是当前目录，而它没有 `project_id`）。Codex 的 `agent join` 一直是这样——它先读记录再设置解析根；OpenCode 与 DeepSeek Harness 现在同样如此。
+
+### 跨机器接入：主机发邀请，远端一条命令（1a / 1b / 1c）
+
+跨机器只有一条路：**主机发一张邀请，远端把邀请收下**（没有"远端敲门、主机点同意"那一条）。邀请是一段
+可复制的内容，里面带着那张一次性票，所以它像密码一样递过去 —— 一次性、10 分钟、只能签子 Agent。
+
+主机这边（在项目里跑，或先给 `--project-root`）：
+
+```powershell
+tsunagou agent invite --adapter opencode --nickname 小三          # OpenCode：会话名由主机起（ses_小三）
+tsunagou agent invite --adapter codex --conversation-id <远端报来的号> --nickname 小三
+```
+
+返回 `{status: invited, invite, project_id, adapter, role, conversation_id, url, expires_at, expires_in_seconds}`。
+`url` 取的是**对外可达地址**（见下）；主 Agent 不跨机器，`--role main` 直接拒绝（`main_agent_must_be_local`）。
+控制台页面同一条路：添加子 Agent 里把「位置」选成**网络**，如果厂商是 Codex / DeepSeek Harness，
+页面会多要一格「网络 Agent 编号」（这两家的会话名只有它们自己知道），确定后弹出邀请内容，确认即开始等待。
+
+远端这边（在**那台机器**上跑）：
+
+```powershell
+tsunagou agent whoami --adapter codex      # 报号：把"我这条会话在宿主眼里的编号"打出来（Codex / DSH 才需要）
+tsunagou agent import <邀请>               # 收下邀请：写自己的票/身份/桥配置，接进本机宿主，然后核对连通
+```
+
+`agent import` 可选 `--daemon-url`（走 SSH 隧道等场景，远端能连到的地址与邀请里写的不一样时用）、
+`--workdir`（这台机器的代码副本，缺省当前目录）、`--machine`（这台机器叫什么，缺省取本机主机名）、
+`--state-dir`。它**只写这台机器自己的东西**（`~/.tsunagou/remote/<adapter>-<hash>`），项目仍然只有主机上那一份。
+它能自检的是"网络通不通、项目对不对、票过没过期"；"工具在不在、身份对不对"要等本机宿主真的加载一次 MCP，
+在那条会话里调一次 `context__project_read` 才算数。DeepSeek Harness 的聊天只能通过插件动手，所以那里用
+`tsunagou_remote`（`action=whoami` / `action=import`）。
+
+`--machine` 报出来的名字会显示在名单里（「网络在线 · 工位-七」）。它是**自报**：不参与任何权限判断，
+填坏了只当没报。
+
+**地址与端口**（主机侧 `daemon start`）：端口固定 **2810**；被占用时打印一条警告并改用随机空闲端口，
+最终真正使用的端口才是写进邀请的那一个。`--host/--port` 决定"在哪些网卡上听"，`--advertised-url`
+决定"远端该拨哪个号"——绑 `0.0.0.0` 时两者必然不同，所以 `0.0.0.0` 不能当对外地址（直接拒绝）：
+
+```powershell
+tsunagou daemon start --host 0.0.0.0 --advertised-url http://10.0.0.5:2810
+```
+
+加密不自研也不自动配置：本机多 Agent 走回环（无需加密），跨机器请自己套一层现成通道
+（内网 / WireGuard / Tailscale / SSH 转发），**不要把 daemon 端口开到公网**（会话令牌是 Bearer，
+明文通道上可被嗅探冒用）。
+
 ### 显式项目与角色的手动入口
 
 没有前端申请且用户已明确指定项目和角色时，Agent 在原 Codex 对话内执行：
@@ -114,6 +174,8 @@ tsunagou agent prepare --adapter codex --role worker
 ```
 
 用户指定主 Agent 时使用 --role main。不要在控制台 `agent join` 失败时自动退回此入口。prepare 自动核对真实宿主会话并保存私有 request，返回一条已填好实际 Python/project/request 路径的 PowerShell connect 命令。已有加入授权时 Agent 执行该命令；确需用户时原样交给用户复制。不要让用户填写 conversation_id、agent_id、pipe、token 或再运行 appoint。
+
+这条入口是"没有前端申请"时的路：若此刻恰好存在该 adapter 的待接入记录，手动 `--role` 与记录里的角色**冲突会被拒绝**（`enrollment_role_conflict`，在写任何桥材料之前）—— 请先处理那条申请，或改用记录里的角色。记录里的角色是用户在控制台的选择，不能被这条入口绕过去。
 
 connect 自动兑换 ticket、登记原对话的 host binding，配置服务名 tsunagou 的共享 MCP，返回 enrolled、project_id、agent_id、role、session、host_binding、source_root、version 和 connected_at。profile 是显示标签，不决定身份；不同对话/subagent 拥有不同 Agent，同会话重复接入不增身份。注册共享 MCP 后，connect 还会移除同一项目、同一 bridge 程序且仍固定指向旧 session 的早期 Tsunagou MCP 条目；不会删除其他项目、其他程序或正在运行的 Desktop bridge。
 

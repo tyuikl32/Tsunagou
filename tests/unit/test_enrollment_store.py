@@ -169,3 +169,36 @@ def test_late_failure_preserves_enrolled_and_arrived(tmp_path: Path) -> None:
     arrived = store.mark_arrived(record["enrollment_id"])
     assert store.fail(record["enrollment_id"], "a", "host_timeout") == arrived
     assert store.active() is None
+
+
+def test_the_slot_is_not_codex_only_and_is_read_per_adapter(tmp_path: Path) -> None:
+    """宿主自己接入那条路也要记下"接哪个项目"，但只有它自己的聊天读得到这条。"""
+
+    store = EnrollmentStore(tmp_path / "store")
+    record = store.create(
+        project_id="project-a", project_root=tmp_path / "project", role="main", adapter="deepseek",
+    )
+    assert record["adapter"] == "deepseek"
+    assert store.active_for("deepseek") == record
+    assert store.active_for("codex") is None
+    assert store.active_for("") is None
+    with pytest.raises(RuntimeError, match="^enrollment_selection_invalid$"):
+        store.create(project_id="project-a", project_root=tmp_path / "project", role="main", adapter="Deep Seek")
+
+
+def test_a_watched_arrival_closes_the_slot_but_a_bound_record_belongs_to_its_chat(tmp_path: Path) -> None:
+    """控制台看着名单确认到达 = Codex 的 mark_arrived；有主的记录不许别人替它收尾。"""
+
+    store = EnrollmentStore(tmp_path / "store")
+    watched = store.create(
+        project_id="project-a", project_root=tmp_path / "project", role="worker", adapter="opencode",
+    )
+    arrived = store.observe_arrival(watched["enrollment_id"], agent_id="agent-a")
+    assert arrived["status"] == "arrived" and arrived["agent_id"] == "agent-a"
+    assert store.active() is None, "下一个人得接得上"
+
+    bound = _new(store, tmp_path)
+    store.claim(bound["enrollment_id"], "chat-a", expected_revision=1)
+    with pytest.raises(RuntimeError, match="^enrollment_claimed_by_another_chat$"):
+        store.observe_arrival(bound["enrollment_id"], agent_id="agent-b")
+    assert store.active() == store.get(bound["enrollment_id"])

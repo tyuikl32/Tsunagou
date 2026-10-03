@@ -123,6 +123,10 @@ class AgentPrepareRequest(BaseModel):
     profile: str | None = None
     mode: str = "attach"
     start_daemon: bool = False
+    #: ``local`` 是本机接入；``network`` 是"发一张邀请给另一台机器"（那段内容由人转交）。
+    place: str = "local"
+    #: 只有"会话名由宿主自己生成"的宿主（Codex、DeepSeek Harness）才需要：远端报上来的号。
+    conversation_id: str = ""
 
 
 class ForgetProjectRequest(BaseModel):
@@ -284,6 +288,27 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
 
         return enrollment.status(enrollment_id, settings=settings, directory=directory)
 
+    @app.get("/api/v1/console/projects/{project_id}/enrollments:observe")
+    def observe_project_enrollment(
+        project_id: str, adapter: str = "", baseline: str = "", enrollment_id: str = "",
+    ) -> dict[str, Any]:
+        """Watch for a host that enrolls inside its own chat (``in_host``).
+
+        Nothing is signed, queued or remembered here — that is the whole point of this
+        mode: the host's own chat signs its ticket with the identity the host gave it.
+        The answer is derived from what the project can prove (a seat new to this caller
+        whose vendor came out of an enrollment file), so asking twice is harmless and a
+        page that lost its loop can ask again with the same ``baseline``.
+        ``enrollment_id`` is the machine-level record this attempt wrote; on arrival it
+        is closed, so the single slot frees up for the next Agent.
+        """
+
+        return enrollment.observe(
+            settings=settings, directory=directory, project_id=project_id, adapter=adapter,
+            baseline={item.strip() for item in baseline.split(",") if item.strip()},
+            enrollment_id=enrollment_id.strip(),
+        )
+
     @app.post("/api/v1/console/enrollments/{enrollment_id}:cancel")
     def cancel_enrollment(enrollment_id: str) -> dict[str, Any]:
         """Stop an enrollment the person decided not to finish (see console/enrollment.py).
@@ -307,13 +332,14 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
         """
 
         entry = find(settings, project_id)
-        if payload.vendor.strip().lower() == "codex":
+        if payload.vendor.strip().lower() == "codex" and payload.place != "network":
             # A refreshed page may have stopped polling after the chat completed.
             # Verify that receipt before reusing the slot or starting another one.
             enrollment.current_status(settings=settings, directory=directory)
             return enrollment.prepare(
                 entry, dict(entry.daemon or {}), vendor=payload.vendor, role=payload.role,
                 nickname=payload.nickname, profile=payload.profile, mode=payload.mode, directory=directory,
+                place=payload.place, conversation_id=payload.conversation_id,
             )
         endpoint = ensure_daemon(entry, autostart=settings.daemon_autostart or payload.start_daemon)
         ensure_matching_project(endpoint, project_id)
@@ -321,6 +347,7 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
             entry, endpoint, vendor=payload.vendor, role=payload.role, nickname=payload.nickname,
             profile=payload.profile, mode=payload.mode, directory=directory,
             token=project_token(entry.path, endpoint),
+            place=payload.place, conversation_id=payload.conversation_id,
         )
 
     @app.post("/api/v1/console/projects/{project_id}/agents:refresh")

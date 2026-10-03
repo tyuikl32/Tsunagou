@@ -8,6 +8,9 @@ table before shipping a value.
 
 from __future__ import annotations
 
+import json
+from importlib.resources import files
+
 from tsunagou.console.glossary import GLOSSARY, GLOSSARY_VERSION, public
 from tsunagou.shared_kernel.baseline import (
     ADMISSION_CAPABILITIES,
@@ -70,3 +73,29 @@ def test_a_denial_code_is_keyed_by_its_head_only() -> None:
     """拒绝码可以带参数（`resource_conflict:file:src/x.py`），页面只查冒号前那截。"""
     for code in GLOSSARY["denial_reason"]:
         assert ":" not in code, code
+
+
+def test_every_registered_command_has_a_word() -> None:
+    """总路径的「操作」列印的就是命令名 —— 漏一个，人就又得读机器话。
+
+    命令清单是唯一事实源：新增一条命令就必须同时想好它对人怎么说。词表里多出来的
+    条目（框架事件）不受影响，因为这里只查"清单里的命令是否都有词"。
+    """
+
+    raw = files("tsunagou.protocol_data").joinpath("registry", "commands.json").read_text(encoding="utf-8")
+    commands = set(json.loads(raw)["commands"])
+
+    missing = sorted(commands - set(GLOSSARY["command_kind"]))
+    assert not missing, f"这些命令还没有中文说法：{missing}"
+
+
+def test_the_framework_events_that_land_on_the_timeline_have_words_too() -> None:
+    """它们不是命令，但会出现在总路径上（后台作业、存档点落盘、服务重启、凭据迁移）。"""
+
+    framework = {
+        "operation.created", "job.queued", "job.started", "job.finished", "job.exhausted",
+        "job.lease_expired", "checkpoint.materialize", "checkpoint.retry_requested",
+        "runtime.recovery", "credential.migrate",
+    }
+
+    assert framework <= set(GLOSSARY["command_kind"]), sorted(framework - set(GLOSSARY["command_kind"]))

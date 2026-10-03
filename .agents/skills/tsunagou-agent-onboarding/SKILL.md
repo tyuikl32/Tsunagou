@@ -9,6 +9,29 @@ Use the user's selected project and role. An instruction to install/join authori
 
 Enrolling a **new** Agent is the user's decision, not ordinary setup: never invite, ticket or enroll another conversation on your own initiative — only when the user asked for it or allowed it. If the work needs another Agent, ask the user and let them choose the host and the role; do not grow the team yourself.
 
+## Which project and role? — ask the machine before asking the user
+
+A conversation that has just been asked to join knows only its own host-provided
+conversation id and its working directory. The coordination root is **not** derivable from
+either one: a project may coordinate several folders, and the console creates projects
+under its own root, so the working directory is often a business workspace rather than the
+project. The machine holds the answer — the person's console decision, at most one active
+request per local OS user.
+
+1. Run the installed CLI's `agent pending --adapter <this host's adapter>` (for example
+   `deepseek`). It answers with `project_root`, `project_id`, `role` and `nickname` — no
+   credentials — or `status: none` plus the next action.
+2. Join **that** project with **that** role. Do not pick a project out of a machine-wide
+   list, do not `project init` to compensate, and do not treat the current working
+   directory as the coordination root.
+3. The role on that record is the user's choice and outranks anything you ask for: a
+   connect that requests the other role is refused (`enrollment_role_conflict`) before any
+   bridge material is written. Pass the record's role when the host tool takes one; never
+   ask to be main on your own initiative.
+4. `status: none` means nobody is waiting for this host: report it and ask the user to
+   prepare the Agent in the console for the intended project. Enrolling is the user's call,
+   so never invent a project just to have something to join.
+
 ## Console Codex join: the default for “请接入 Tsunagou”
 
 When the user asks the current Codex Desktop conversation to join Tsunagou, or says the console has already prepared an Agent, use `tsunagou agent join` with no project or role arguments. Do this before any project initialization, cwd-based project selection, or default worker preparation. This applies to the one active console request for the same local OS user, including when the current conversation's working directory is outside the selected project.
@@ -49,9 +72,50 @@ If tools are missing after first configuration, use a documented host reload ope
 
 Use the ordinary Desktop conversation opened in the selected project. When `tsunagou_connect` is available, call it directly. Otherwise run the installed CLI's `agent prepare --adapter deepseek` to register the existing provider in the actual Desktop profile; this step does not enroll an Agent or start the daemon. Let native profile reload load the tool. If necessary, fully quit/reopen Desktop once and return to the same conversation; investigate a persistent failure instead of requesting repeated restarts or an external terminal command.
 
+If that conversation's working directory is not the coordination root (common: the console creates projects under its own root, and a project may coordinate a business workspace), the project still resolves: `tsunagou_connect` invokes the installed CLI, which falls back to the pending console request for the `deepseek` adapter when the working directory names no project. Check it with `agent pending --adapter deepseek` if the join result looks unexpected, and ask the user to prepare that project's Agent in the console when it answers `status: none`.
+
 Call `tsunagou_connect` without a role to preserve an existing role or join as worker. Pass main only when the user explicitly chose main. The tool reads the real conversation and working directory inside the host and invokes the fixed installed CLI. Never supply or copy session IDs, credentials, commands or another conversation's overlay. The shared profile contains no Agent credential; each tool call chooses its own private route using host metadata.
 
 An enrolled result is only preparation. This same conversation must call `mcp__tsunagou__context__project_read` and verify the expected project, its own Agent, selected role and ready session before reporting success. DeepSeek does not claim Codex's original-chat automatic wake. If service startup, provider loading or enrollment fails, report that specific stage and preserve the existing identity.
+
+## Cross-machine (this machine is the remote one)
+
+The project and its daemon live on the **host** machine; this machine only joins as a worker. The
+host issues one invitation (a single copy-pasteable line that *is* the one-time ticket, handed over
+like a password: one use, ten minutes, worker only). There is no knock/approve step and no short
+code.
+
+1. **Report this conversation's number** (Codex, DeepSeek Harness — hosts whose conversation name
+   only the host itself knows; OpenCode's name is chosen by the host, so skip this):
+   `agent whoami --adapter <adapter>` — run it **inside this conversation**, because the number
+   comes from the host's own context. It is not a credential; it is half of the identity the
+   invitation has to be bound to. Send the number to the person on the host.
+   On DeepSeek Harness the conversation cannot run arbitrary commands: use the `tsunagou_remote`
+   tool with `action=whoami` (same answer, same host-provided identity).
+2. **Import the invitation** the host sends back:
+   `agent import '<invitation>'` (add `--daemon-url <url>` when this side reaches the host through a
+   tunnel and the address differs, `--workdir <code copy>` when not in this conversation's directory,
+   `--machine <name>` to name this machine; the default is this machine's own host name).
+   This writes **only this machine's own material** (private state, ticket, bridge config, and for
+   Codex/DSH the private route) and registers the bridge with this machine's host product. The
+   project does not get a second copy here.
+   On DeepSeek Harness: `tsunagou_remote` with `action=import` and the invitation text.
+3. **Reload this window**, then call `mcp__tsunagou__context__project_read` in this conversation. The
+   import checked reachability, project and ticket; only this call proves the tools loaded and the
+   identity is right.
+
+Plain-language readings of what the import and the first calls can answer:
+
+| code | what it means | what to do |
+|---|---|---|
+| `invite_malformed` / `invite_incomplete:*` | the line was copied incompletely or edited | ask the host for the whole line again |
+| `invite_expired` | more than ten minutes passed | ask the host to issue a new invitation |
+| `invite_address_is_loopback` | the invitation points at the host's own loopback, which this machine cannot reach | start the tunnel, then re-run with `--daemon-url <address this machine can reach>` |
+| `invite_project_not_served_by_that_daemon` | something is listening there, but it is not that project's daemon | check which daemon/tunnel that address reaches |
+| `conversation_id_required_for_this_host` (host side) | Codex/DSH still owe their number | run step 1 and send the number |
+| `not_enrolled:run_agent_connect` | the bridge ran without a route for this conversation | the import did not finish, or the window was not reloaded |
+
+Never put the invitation text into commits, logs or shared documents; a ticket is a credential.
 
 ## Other adapters
 
