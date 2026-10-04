@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from tsunagou.application.host_wake_runner import sanitize_diagnostics
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.messaging import MessageStore
 from tsunagou.platform.private_files import write_private_bytes
@@ -298,10 +299,13 @@ class WakeAssistance:
             prior = self.records.get(message_id)
             if wake and prior is not None:
                 base.update({key: prior[key] for key in ("state", "result", "error_code", "evidence") if key in prior})
+                if diagnostics := sanitize_diagnostics(prior.get("diagnostics")):
+                    base["diagnostics"] = diagnostics
+                base["retry_allowed"] = False
                 base["progress"]["host_turn_started"] = bool(prior.get("turn_started"))
                 return base
             observed = self._host("status", target, target_route, message_id)
-            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at"):
+            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at", "diagnostics"):
                 if key in observed:
                     base[key] = observed[key]
             target["version"] = observed.get("version")
@@ -310,9 +314,15 @@ class WakeAssistance:
                 # Fresh host facts do not erase a previous possibly accepted
                 # request. Advertise inspection only, never an unusable retry.
                 base["prior_result"] = prior.get("result", "unknown")
+                if diagnostics := sanitize_diagnostics(prior.get("diagnostics")):
+                    base["prior_diagnostics"] = diagnostics
                 base["retry_allowed"] = False
                 base["error_code"] = base.get("error_code") or "wake_already_attempted"
                 return base
+            if observed.get("error_code") or observed.get("result") in {"failed", "unknown"}:
+                # This status-only precheck never invoked the wake operation.
+                # Do not infer this from runner stages after a wake was attempted.
+                base["preflight_failed"] = True
             if observed.get("request_associated") and observed.get("turn_started") and observed.get("state") == "running":
                 base.update(result="same_request_running", error_code=None)
                 return base
@@ -350,7 +360,7 @@ class WakeAssistance:
                     )
             outcome = self._host("wake", target, target_route, message_id)
             self._save(message_id, outcome)
-            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at"):
+            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at", "diagnostics"):
                 if key in outcome:
                     base[key] = outcome[key]
             base["progress"]["host_turn_started"] = bool(outcome.get("turn_started") and outcome.get("request_associated"))
@@ -361,8 +371,12 @@ class WakeAssistance:
         if self.runner is None:
             return {"state": "unknown", "result": "unsupported", "error_code": "host_runner_unavailable"}
         try:
-            return self.runner(action, adapter=target["host"], conversation_id=route["conversation_id"],
-                               project_root=str(self.project_root), message_id=message_id)
+            result = dict(self.runner(action, adapter=target["host"], conversation_id=route["conversation_id"],
+                                      project_root=str(self.project_root), message_id=message_id))
+            diagnostics = sanitize_diagnostics(result.pop("diagnostics", None))
+            if diagnostics:
+                result["diagnostics"] = diagnostics
+            return result
         except Exception:
             return {"state": "unknown", "result": "unknown" if action == "wake" else "failed",
                     "error_code": "host_operation_failed", "observed_at": format_timestamp(now_ms())}

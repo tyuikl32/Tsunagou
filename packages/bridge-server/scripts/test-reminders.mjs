@@ -152,6 +152,35 @@ for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessio
       assert.ok(!guarded.content[1].text.includes('显式调用 coordination__wake '));
       assert.ok(guarded.content[1].text.includes("host_test_failure"));
     }
+    const diagnostics = {stage:"process",interpreter:"powershell",interpreter_version:"5.1.19041.1",
+      exit_code:1,error_class:"powershell_parse_error"};
+    f.state.wake = {...f.state.wake,result:"unknown",error_code:"host_runner_failed",diagnostics};
+    f.state.result = {message_id:"submitted-message"};
+    const failure = await f.call("message.send", "agent-a", required);
+    assert.equal(failure.content[0].text, JSON.stringify(f.state.result));
+    assert.ok(failure.content[1].text.includes("停止重复尝试同一失败路径"));
+    assert.ok(failure.content[1].text.includes("仅调用一次 coordination__wake_status"));
+    assert.ok(failure.content[1].text.includes("解释器=powershell"));
+    assert.ok(failure.content[1].text.includes("错误类别=powershell_parse_error"));
+    check(await f.call("message.send", "agent-a", required), f.state.result, []);
+    const inspected = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
+    assert.equal(inspected.content[0].text, JSON.stringify(f.state.wake));
+    assert.ok(inspected.content[1].text.includes("本次已查询"));
+    assert.ok(inspected.content[1].text.includes("不循环查询或再次唤醒"));
+    assert.ok(inspected.content[1].text.includes("worker 向 main 升级一次"));
+    assert.ok(inspected.content[1].text.includes("main 自己记录阻塞"));
+    assert.ok(!inspected.content[1].text.includes("先调用 coordination__wake_status"));
+    assert.ok(!inspected.content[1].text.includes("尚未执行唤醒操作"));
+    f.state.wake = {...f.state.wake,preflight_failed:true};
+    const preflight = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
+    assert.ok(preflight.content[1].text.includes("本次前置检查失败，尚未执行唤醒操作"));
+    assert.ok(!preflight.content[1].text.includes("本次已查询"));
+    assert.ok(!preflight.content[1].text.includes("核实是否已启动"));
+    f.state.wake = {...f.state.wake,state:"idle",result:"observed",error_code:"wake_already_attempted",
+      prior_result:"unknown",retry_allowed:false,diagnostics:undefined,prior_diagnostics:diagnostics,preflight_failed:undefined};
+    const prior = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
+    assert.ok(prior.content[1].text.includes("上次执行诊断：阶段=process"));
+    assert.ok(prior.content[1].text.includes("不循环查询或再次唤醒"));
     for (const invalid of [{}, {agent_id:"",main_agent_id:""}, {agent_id:1,main_agent_id:1}]) {
       f.state.context = invalid;
       check(await f.call("context.project_read"), invalid, []);

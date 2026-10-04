@@ -20,6 +20,7 @@ Native status includes a safe `native` summary of effective `enabled`, `outbox_s
 - Explicit wake authenticates and checks message/target, then fixed PowerShell runner. DSH unsupported form is honest supported downgrade; OpenCode must prove original session exists and omit --auto.
 - OpenCode 2.0.18 managed service authentication belongs to installed `opencode api`; direct HTTP and explicit --server are not interchangeable. Verify CLI and service versions, resolve the bound original session and distinguish its directory from project coordination root. No credentials in script args. A queued/delivered input does not prove an associated turn.
 - Failure self-check host/vendor/session/entry first; no request for user manual wake. Stop unsupported path, escalate main once with evidence, no configure/rebind loops.
+- Packaged PowerShell entry must parse and execute under both supported launcher choices (Windows PowerShell 5.1 fallback and PowerShell 7). Runner `diagnostics` allows only stage/interpreter/interpreter_version/exit_code/error_class with fixed vocabulary and numeric versions/codes; never pass through raw stderr or paths. Preserve safe diagnostics across status, explicit wake and replay. An uncertain outcome permits inspection, not blind resend; a failed inspection must advise stopping/escalating instead of an endless query loop.
 - Existing main-only completion hint uses fresh authenticated agent_id == main_agent_id. Internal identity reads must not create original-host arrival receipts. Optional hint failure does not invalidate successful business operation.
 
 ## 4. Validation / Error Matrix
@@ -38,6 +39,8 @@ Native status includes a safe `native` summary of effective `enabled`, `outbox_s
 Good: worker sends required-response message, checks target, explicitly wakes verified idle peer. Base: DSH unsupported response records a blocker. Bad: raw shell takes sender credentials, duplicate native/fallback dispatch, metadata caches misidentify vendor, CLI --session silently creates replacement.
 
 ## 6. Tests Required
+Windows runner regression must cross the native executable argv boundary (an npm-style PowerShell shim alone is insufficient). Assert JSON survives Windows PowerShell 5.1 and PowerShell 7, including spaces and Unicode paths. `preflight_failed=true` is service-owned evidence that the current status precheck failed without any prior attempt; it must never be inferred from a generic process/response error or attached to an uncertain admission/replay. Its hint says wake was not executed and does not ask whether that nonexistent attempt started.
+
 Real stdio tests for persistent first-guide dedup across restart, per-Agent isolation, compact trigger selection, explicit fresh lookup and completion regression. Authenticated backend tests for sender/system actor, stale session, foreign project, status distinctions, native fencing, concurrency/crash unknown and no secret leakage. Host fixtures cover versions/missing session/idle/busy/timeout/unsupported. Controlled real OpenCode original-session evidence must be distinguished from domain-auth fixtures; DSH unverified paths remain downgrade.
 
 ## 7. Wrong vs Correct

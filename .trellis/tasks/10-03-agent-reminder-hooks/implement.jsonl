@@ -5,3 +5,4 @@
 {"file": ".trellis/spec/adapters/reminder-hooks.md", "reason": "Approved reminder-only presentation contract"}
 {"file": ".trellis/tasks/10-03-agent-reminder-hooks/approved-v2.md", "reason": "Approved v2 requirements override v1"}
 {"file": ".trellis/tasks/10-03-agent-reminder-hooks/default-wake-followup.md", "reason": "User-approved default-on wake and honest native hook guidance supersede old absent-setting policy"}
+{"file": ".trellis/tasks/10-03-agent-reminder-hooks/windows-runner-followup.md", "reason": "Real acceptance exposed PS5.1 compatibility and opaque failing-runner guidance"}

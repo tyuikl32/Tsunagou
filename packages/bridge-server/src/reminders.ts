@@ -4,7 +4,7 @@ import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
 
 /** Presentation-only guidance. Explicit wake tools alone execute host operations. */
-export const GUIDE_VERSION = "wake-v3-default-on-2026-10-04";
+export const GUIDE_VERSION = "wake-v4-failure-guidance-2026-10-04";
 export const WAKE_INSTRUCTIONS = "首次 context__project_read 提供宿主协作指南；使用 coordination__peer_hosts 核对真实宿主，按消息调用 coordination__wake_status / coordination__wake。不要凭模型品牌判断宿主或重复唤醒。";
 export const WAKE_REMINDER = "先调用 coordination__peer_hosts 读取并记住项目成员的真实 Agent ID、宿主类型/版本/机器与证据；模型品牌、昵称和发起方宿主不能代替目标宿主。每次执行前复核当前消息与原会话绑定。Codex → Codex 只走现有 Tsunagou Codex 通道，不追加后备命令；未配置的项目默认启用，尊重用户明确关闭。路由不代表已派发，按实际执行证据继续既有流程；其他已验证的同机宿主通过 coordination__wake_status {message_id} 检查，再显式 coordination__wake {message_id}，由认证后的固定 PowerShell 入口执行。main 和 worker 同样可在已有权限内直接唤醒协作者；未知宿主只查询，跨机器后备不支持。已处理或排队的同一请求不要重复唤醒；消息入队、宿主回合、收件人呈现、业务回复是四件事。失败先自行核对是否认错目标宿主/厂商、版本、原会话与入口，不要反复配置/探测/重绑未完整实现的自动唤醒，不要求用户手动唤醒；真实阻塞记录证据并升级 main。操作指南：优先当前安装源码 docs/overview/agent-wake-guide.md；在线 https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md（未发布内容以本机源码为准）。";
 export const COMPLETION_REMINDER = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
@@ -33,7 +33,7 @@ export function needsWakeContext(kind: string, result: unknown, args: Row): bool
     || kind === "coordination.wake_status" || kind === "coordination.wake";
 }
 
-function compactHint(status: Row): string {
+function compactHint(status: Row, kind: string): string {
   const target = row(status.target);
   const messageId = text(status.message_id);
   const reference = JSON.stringify({ message_id: messageId });
@@ -53,10 +53,29 @@ function compactHint(status: Row): string {
   else if (status.result === "queued" || status.result === "request_already_delivered" || status.result === "pending"
     || status.result === "same_request_running" || status.result === "already_delivered"
     || (status.state === "running" && status.request_associated === true)) next = "该请求已在处理或排队，先检查结果，不追加回合。";
+  else if (status.result === "failed" || status.result === "unknown" || status.retry_allowed === false
+    || (typeof status.error_code === "string" && status.error_code.length > 0)) {
+    next = "停止重复尝试同一失败路径；先核对目标宿主/厂商、版本、机器、原会话与入口。";
+    const uncertain = status.preflight_failed !== true
+      && (status.result === "unknown" || status.prior_result === "unknown" || status.prior_result === "starting");
+    if (uncertain) next += kind === "coordination.wake_status"
+      ? "本次已查询，仍无确定启动证据时保留未知，不循环查询或再次唤醒。"
+      : `结果不明时仅调用一次 coordination__wake_status ${reference} 核实是否已启动，不重发。`;
+    next += "保留脱敏错误，worker 向 main 升级一次；main 自己记录阻塞，不自发消息。不要求用户手动唤醒。";
+  }
   else if (row(status.entry).tool === "coordination__wake") {
     next = `需要继续时显式调用 coordination__wake ${reference}；认证后内部执行固定 PowerShell 入口，保留原权限。`;
   }
-  return `协作消息 ${messageId}：${identity}；状态=${text(status.state)}，排队能力=${String(status.can_queue ?? "unknown")}，结果=${text(status.result)}，错误=${text(status.error_code)}。${facts}。${next}`;
+  const diagnostic = (value: unknown): string => {
+    const info = row(value);
+    if (!Object.keys(info).length) return "";
+    return `阶段=${text(info.stage)}，解释器=${text(info.interpreter)}，解释器版本=${text(info.interpreter_version)}，退出码=${String(info.exit_code ?? "unknown")}，错误类别=${text(info.error_class)}`;
+  };
+  const current = diagnostic(status.diagnostics);
+  const prior = diagnostic(status.prior_diagnostics);
+  const preflight = status.preflight_failed === true ? "本次前置检查失败，尚未执行唤醒操作；这不代表对方历史上未运行。" : "";
+  const details = `${preflight}${current ? `诊断：${current}。` : ""}${prior ? `上次执行诊断：${prior}。` : ""}`;
+  return `协作消息 ${messageId}：${identity}；状态=${text(status.state)}，排队能力=${String(status.can_queue ?? "unknown")}，结果=${text(status.result)}，错误=${text(status.error_code)}。${facts}。${details}${next}`;
 }
 
 export async function reminderContent(
@@ -82,7 +101,7 @@ export async function reminderContent(
         if (typeof status.message_id !== "string") continue;
         const messageKey = digest(status.message_id);
         // Observation timestamps are deliberately excluded: unchanged evidence is quiet.
-        const hint = compactHint(status);
+        const hint = compactHint(status, kind);
         const fingerprint = digest(hint);
         const explicit = kind === "coordination.wake_status" || kind === "coordination.wake";
         if (explicit || messages[messageKey] !== fingerprint) content.push({ type: "text", text: hint });

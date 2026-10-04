@@ -1,5 +1,16 @@
 # 按需唤醒补位实测记录 — 2026-10-04
 
+## 最新真实项目验收（用户转交）
+
+项目 `50d7610d-46d4-493e-8a49-70497a4a7909`，任务 `1369e8e8-dfec-40ea-8f48-afe133a4cb2a`。main/worker3 为 Codex，worker1 为 OpenCode，worker2 为 DSH；以下是用户转交的真实协作报告，不是下文的受控夹具测试。
+
+- Codex 原生唤醒已通过：用户开启原有显式关闭的项目设置后，原通知由 daemon_delivery 经 wake_requested、host_accepted、turn_started 到 turn_completed；worker3 领取原任务并联系 worker1，没有重复派发。
+- Worker→OpenCode 未通过：消息 `ecca5749-7683-4b80-bc7f-599735fda7f7` 的两次尝试均返回 host_runner_failed，没有业务回应。不能据此认定宿主不支持唤醒，也不能确定历史失败所用解释器。
+- DSH 按约定返回 unsupported；worker3 未收到 main 完工提案提醒；main 接受结果时的提醒及最终待用户确认流程尚未实测。
+- 旧 wake_status 未反映 Codex 已执行证据。只读检查发现当时 daemon 启动于本地时间 16:10，早于默认开启与原生证据投影修复提交 `7b57214`（17:14）。该旧进程返回不能作为新代码回归结果。
+
+随后针对 Windows 执行器兼容性、脱敏错误诊断及失败提示停止循环进行源码修复。修复测试与真实宿主业务闭环分开记录；当前不宣称整体验收通过，不提交项目完工提案。
+
 ## 环境与范围
 
 Windows，本机已安装 OpenCode **2.0.18**，原有后台服务。只创建了一个隔离临时目录中的受控宿主会话，权限为 deny-all，要求测试回复且禁止工具/入组/其他项目操作。没有接入新的真实 Tsunagou 项目成员，没有修改用户既有会话或宿主审批模式。

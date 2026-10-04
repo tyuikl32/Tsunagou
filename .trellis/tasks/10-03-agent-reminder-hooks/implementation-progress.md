@@ -1,3 +1,9 @@
+# Windows runner follow-up — 2026-10-04
+
+Real user acceptance proves Codex native wake, but OpenCode peer wake remains blocked by host_runner_failed. See [windows-runner-followup.md](windows-runner-followup.md). Fixed BOM-less PS5.1 parsing, native stderr handling and native JSON argv quote/space loss; added safe interpreter/stage/error diagnostics and preflight-only not-executed hints. Unknown admission/replay remains unknown, with no blind retry.
+
+Runner 36 tests passed, including 12 native child-process scenarios per actual PowerShell 5.1.26100.6584 and 7.6.5 interpreter against a mock API. Service 30 tests and 3 real stdio bridge suites passed. Targeted Ruff/mypy, all workspace type checks, docs validation and wheel payload byte comparison passed. These are regression checks, not a successful real OpenCode business response. Runtime was not reloaded and no live wake was sent. Task remains open pending minimal live recheck and completion acceptance.
+
 # Default-on follow-up — 2026-10-04
 
 Implemented and independently reviewed; see [default-wake-followup.md](default-wake-followup.md) for behavior and test evidence. This supersedes the earlier absent-setting default. Explicit false is preserved. Live collaboration acceptance is still pending; runtime was not restarted.

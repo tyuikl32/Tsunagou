@@ -56,6 +56,10 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 
 先核对是否认错目标厂商/宿主，再核对版本、所在机器、原会话和入口。根据新证据纠正；超时或结果不明时先查目标是否已经开始处理，避免重复回合。明确不支持时停止当前路径，保留具体错误。
 
+执行器错误附带脱敏 `diagnostics`：`stage`（失败阶段）、`interpreter`、`interpreter_version`、`exit_code`、`error_class`。它们用于区分进程启动、PowerShell 解析、输出 JSON 和宿主操作失败，不含命令正文、私有路径、会话内容或凭据。`host_runner_failed` 不代表 OpenCode 不支持唤醒。`preflight_failed=true` 表示没有历史执行记录且本次前置状态检查失败，尚未调用唤醒；不应循环查询是否启动。真正执行结果不明时查一次实际状态；若查询本身仍失败，停止同一路径并保留诊断，不反复查询或重发。
+
+固定脚本兼容已安装的 PowerShell 7 和 Windows PowerShell 5.1；解释器取决于 daemon 的环境，不能用另一个终端的 `pwsh` 可用性推断。更新源码后必须让 daemon 和 bridge 加载新版，旧进程不会自动获得新的 Python 状态投影或提醒规则。
+
 Worker 无法解决时向 main 升级一次，附消息 ID、已核实宿主、尝试入口和失败原因；main 无法解决则记录阻塞，不循环给自己发消息。**不要要求用户手动唤醒，不反复配置、探测、重绑 Tsunagou 自动唤醒，不伪造成功或扩大权限。** 唤醒本身不授权接入新 Agent、读取对方私有收件箱或代用户确认项目完成。
 
 长指引保留在本文；安装更新后重载 bridge，已有项目通过 `tsunagou project bootstrap --refresh` 更新常驻上下文。当前支持和实测证据以本机安装版本为准；未发布修改不能由在线文档证明。

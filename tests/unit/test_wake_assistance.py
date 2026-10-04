@@ -264,6 +264,49 @@ def test_uncertain_then_fresh_idle_observation_still_does_not_redrive(tmp_path: 
     assert f.calls.count("wake") == 1
 
 
+def test_runner_diagnostics_are_sanitized_in_status_and_do_not_drive(tmp_path: Path) -> None:
+    f = Fixture(tmp_path)
+    message = f.message()
+    assert f.invoke(message)["state"] == "idle"
+    f.host_state.update(result="unknown", error_code="host_runner_failed", diagnostics={
+        "stage": "process", "interpreter": "powershell", "interpreter_version": "5.1.19041.1",
+        "exit_code": 1, "error_class": "powershell_parse_error",
+        "stderr": "private endpoint token session body", "command": "private command",
+    })
+    result = f.invoke(message, wake=True)
+    assert result["preflight_failed"] is True
+    assert result["diagnostics"] == {
+        "stage": "process", "interpreter": "powershell", "interpreter_version": "5.1.19041.1",
+        "exit_code": 1, "error_class": "powershell_parse_error",
+    }
+    assert "private" not in json.dumps(result)
+    assert f.calls == ["status", "status"]
+
+
+def test_unknown_wake_diagnostics_survive_replay_restart_and_fresh_inspection(tmp_path: Path) -> None:
+    f = Fixture(tmp_path)
+    diagnostics = {"stage": "response", "interpreter": "pwsh", "interpreter_version": "7.5.1",
+                   "exit_code": 0, "error_class": "invalid_json"}
+    f.outcome.update(result="unknown", error_code="host_runner_failed",
+                     diagnostics={**diagnostics, "stdout": "private credential"})
+    message = f.message()
+    first = f.invoke(message, wake=True)
+    assert first["diagnostics"] == diagnostics
+    assert "preflight_failed" not in first
+    f.service = f.restart()
+    replay = f.invoke(message, wake=True)
+    assert replay["diagnostics"] == diagnostics
+    assert replay["retry_allowed"] is False
+    assert "preflight_failed" not in replay
+    inspected = f.invoke(message)
+    assert inspected["prior_diagnostics"] == diagnostics
+    assert inspected["prior_result"] == "unknown"
+    assert inspected["retry_allowed"] is False
+    assert "preflight_failed" not in inspected
+    assert "private credential" not in f.service.path.read_text()
+    assert f.calls.count("wake") == 1
+
+
 def test_corrupt_journal_cannot_forget_an_accepted_request(tmp_path: Path) -> None:
     f = Fixture(tmp_path)
     f.invoke(f.message(), wake=True)
