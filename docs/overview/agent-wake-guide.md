@@ -1,5 +1,7 @@
 # 按需提醒与同机宿主唤醒补位
 
+hook 只提醒发送方核对宿主和处理待办。**当前工具返回 unsupported 或执行器报错，不等于宿主无法唤醒。** main 和 Worker 都可以在已有授权内使用现场核实的宿主入口；不得绕过项目身份、原生通道或重复执行保护。
+
 协作时先通过项目上下文读取其他 Agent 的真实宿主资料：Agent ID、宿主类型、版本、机器与证据。宿主不是模型品牌，OpenCode 使用 DeepSeek 模型仍然是 OpenCode。记住这些资料供判断；执行前由系统重新核对当前会话绑定，不能把旧资料当永久授权。
 
 ## 先选通道
@@ -27,7 +29,7 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 2. 返回补位执行入口且状态允许时，发送方自行调用 `coordination__wake`，使用同一个消息 ID。
 3. 结果不明时回到状态查询。不要重复执行，不用 main 代办每一次 Worker 间唤醒。
 
-这两个入口通过 MCP 认证原发送方。补位执行内部调用固定 PowerShell 脚本，并私下解析已核实的原会话与已安装宿主；**不要从终端伪造 sender、复制 bridge session 或使用用户 control token 代替 Agent**。返回的工具调用就是稳定执行入口，不需要每次查源码、拼私有端点或 UI 自动化。
+这两个入口通过 MCP 认证原发送方，补位执行内部调用固定 PowerShell 脚本。**不要从终端伪造 sender、复制 bridge session 或使用用户 control token 代替 Agent**。当前入口不适用时，参照下方已实测宿主操作；先确认没有同一请求正在派发或执行、没有未查清的执行结果。权限拒绝、身份不明或跨机器限制不能通过换入口绕过。
 
 ## 如何理解状态
 
@@ -52,11 +54,19 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 
 **Codex**：双方均为 Codex 时继续使用 [已有通道](../implementation/codex-host-wake.md)，补位脚本不调用它。其他宿主发往 Codex 时，也只能使用已有验证路径或明确返回未覆盖，不猜测 Desktop 通用恢复命令。
 
+## 已有宿主操作经验
+
+用户提供的本机只读记录 `D:\AB\测试文档记录\跨厂商唤醒.txt` 证明另一轮协作中 main 成功驱动 OpenCode 和 DSH Desktop，且 Worker 自己读件并业务回应。以下是该记录的操作摘要，不是当前固定执行器的验收结果；未证明 Worker 互相唤醒或任意版本通用支持。原记录保持不变，历史 ID、目录、PID 和窗口句柄均不能照抄。
+
+**OpenCode 2.0.18**：在现场核实的原会话工作目录中，先用 `opencode api session.get --param sessionID=<原会话ID>` 验证原会话，再用 `opencode run --session <原会话ID> --format json '<读取自己上下文和收件箱的提示>'` 驱动。通过 PowerShell 执行，不加 `--auto`、不更换模型或审批模式。先检查已安装版本的帮助；不要用 run 探测会话是否存在。该命令可能长时间运行，读取同一进程输出，不重复启动。业务目录下列表为空、旧 idle 时间都不能单独证明会话不存在或当前空闲。
+
+**DSH Desktop**：该轮成功使用已核实原窗口的“编辑→粘贴→发送” UI 操作，不是 Web prompt API。精确调用与失败经验见上述本机记录的第五节；本项目不新增 UI 自动化脚本。只有当前交互式桌面、目标原会话、控件和已有授权都可核实时才适用，保护已有草稿及剪贴板。发送按钮调用返回不等于唤醒成功，仍需原会话新回合及 Worker 自身回应证明。当前固定执行器对 DSH 的 unsupported 仅说明它未覆盖这一操作方式。
+
 ## 失败时自行核实并收口
 
 先核对是否认错目标厂商/宿主，再核对版本、所在机器、原会话和入口。根据新证据纠正；超时或结果不明时先查目标是否已经开始处理，避免重复回合。明确不支持时停止当前路径，保留具体错误。
 
-执行器错误附带脱敏 `diagnostics`：`stage`（失败阶段）、`interpreter`、`interpreter_version`、`exit_code`、`error_class`。它们用于区分进程启动、PowerShell 解析、输出 JSON 和宿主操作失败，不含命令正文、私有路径、会话内容或凭据。`host_runner_failed` 不代表 OpenCode 不支持唤醒。`preflight_failed=true` 表示没有历史执行记录且本次前置状态检查失败，尚未调用唤醒；不应循环查询是否启动。真正执行结果不明时查一次实际状态；若查询本身仍失败，停止同一路径并保留诊断，不反复查询或重发。
+执行器错误附带脱敏 `diagnostics`：`stage`（失败阶段）、`interpreter`、`interpreter_version`、`exit_code`、`error_class`。它们用于区分进程启动、PowerShell 解析、输出 JSON 和宿主操作失败，不含命令正文、私有路径、会话内容或凭据。`host_runner_failed` 不代表 OpenCode 不支持唤醒。`preflight_failed=true` 表示没有历史执行记录且本次前置状态检查失败，尚未调用唤醒；不应循环查询是否启动。真正执行结果不明时先核实实际状态；没有新证据时不循环查询或重发。查询仍失败则保留诊断，按已核实的宿主资料排查。
 
 固定脚本兼容已安装的 PowerShell 7 和 Windows PowerShell 5.1；解释器取决于 daemon 的环境，不能用另一个终端的 `pwsh` 可用性推断。更新源码后必须让 daemon 和 bridge 加载新版，旧进程不会自动获得新的 Python 状态投影或提醒规则。
 

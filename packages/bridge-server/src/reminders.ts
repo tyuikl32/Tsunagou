@@ -4,9 +4,9 @@ import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
 
 /** Presentation-only guidance. Explicit wake tools alone execute host operations. */
-export const GUIDE_VERSION = "wake-v4-failure-guidance-2026-10-04";
-export const WAKE_INSTRUCTIONS = "首次 context__project_read 提供宿主协作指南；使用 coordination__peer_hosts 核对真实宿主，按消息调用 coordination__wake_status / coordination__wake。不要凭模型品牌判断宿主或重复唤醒。";
-export const WAKE_REMINDER = "先调用 coordination__peer_hosts 读取并记住项目成员的真实 Agent ID、宿主类型/版本/机器与证据；模型品牌、昵称和发起方宿主不能代替目标宿主。每次执行前复核当前消息与原会话绑定。Codex → Codex 只走现有 Tsunagou Codex 通道，不追加后备命令；未配置的项目默认启用，尊重用户明确关闭。路由不代表已派发，按实际执行证据继续既有流程；其他已验证的同机宿主通过 coordination__wake_status {message_id} 检查，再显式 coordination__wake {message_id}，由认证后的固定 PowerShell 入口执行。main 和 worker 同样可在已有权限内直接唤醒协作者；未知宿主只查询，跨机器后备不支持。已处理或排队的同一请求不要重复唤醒；消息入队、宿主回合、收件人呈现、业务回复是四件事。失败先自行核对是否认错目标宿主/厂商、版本、原会话与入口，不要反复配置/探测/重绑未完整实现的自动唤醒，不要求用户手动唤醒；真实阻塞记录证据并升级 main。操作指南：优先当前安装源码 docs/overview/agent-wake-guide.md；在线 https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md（未发布内容以本机源码为准）。";
+export const GUIDE_VERSION = "wake-v5-compact-guidance-2026-10-04";
+export const WAKE_INSTRUCTIONS = "使用 coordination__peer_hosts 核对真实宿主；Codex 双方沿用原生通道，其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。";
+export const WAKE_REMINDER = "main 和 worker 均可在已有权限内唤醒协作者。先用 coordination__peer_hosts 核实并记住宿主、版本和机器，不凭模型品牌猜测。Codex → Codex 只走现有 Tsunagou Codex 通道（默认开启，尊重明确关闭）；其他宿主先查 coordination__wake_status {message_id}，按返回入口操作。当前工具不支持不等于宿主不能唤醒；独立宿主操作须核实原会话、授权及同一消息无在途或结果未知的执行，不绕过认证。入队不等于已处理；失败核对宿主与错误，勿循环重试，不要求用户手动唤醒。操作指南：docs/overview/agent-wake-guide.md（本机安装源码优先）；https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md。";
 export const COMPLETION_REMINDER = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
 
 type Row = Record<string, unknown>;
@@ -43,28 +43,30 @@ function compactHint(status: Row, kind: string): string {
   let next = `先调用 coordination__wake_status ${reference} 核对状态。`;
   if (status.lane === "native") {
     const native = row(status.native);
-    next = `沿用现有 Tsunagou Codex 原生通道；路由不代表已派发。开关=${String(native.enabled ?? "unknown")}，投递记录=${text(native.outbox_status)}，尝试次数=${String(native.attempt_count ?? "unknown")}，尝试状态=${text(native.attempt_state)}。`;
+    next = `沿用 Tsunagou Codex 原生通道，不切换补位；路由不代表已派发。开关=${String(native.enabled ?? "unknown")}，投递=${text(native.outbox_status)}，尝试=${String(native.attempt_count ?? "unknown")}/${text(native.attempt_state)}。`;
     next += native.enabled === false
-      ? "项目已明确关闭自动唤醒，保留该设置并报告阻塞。"
-      : "继续依据原生通道执行记录推进；仅在确认已有派发或处理时避免重复，不切换后备路径。";
-    next += "宿主回合 unknown 表示缺少证据，不代表确定未运行。";
+      ? "项目已明确关闭自动唤醒，尊重设置并报告阻塞。"
+      : "按原生执行记录推进；unknown 不代表未运行。";
   }
-  else if (status.lane === "unsupported" || status.result === "unsupported") next = "当前路径不支持；先核对目标宿主/原会话，记录证据并向 main 升级一次；main 自己记录阻塞，不自发消息。不要求用户手动唤醒。";
+  else if (status.lane === "unsupported" || status.result === "unsupported") {
+    next = "当前工具路径不支持，不等于宿主不能唤醒。核对宿主和原因，按 docs/overview/agent-wake-guide.md 判断已有授权的同机操作；须确认同一消息无在途或结果未知的执行，不绕过认证。无法解决时 worker 向 main 升级一次，main 记录阻塞。";
+  }
   else if (status.result === "queued" || status.result === "request_already_delivered" || status.result === "pending"
     || status.result === "same_request_running" || status.result === "already_delivered"
-    || (status.state === "running" && status.request_associated === true)) next = "该请求已在处理或排队，先检查结果，不追加回合。";
+    || (status.state === "running" && status.request_associated === true)) next = "该请求已受理或正在处理，等待对应结果，不追加回合。";
   else if (status.result === "failed" || status.result === "unknown" || status.retry_allowed === false
     || (typeof status.error_code === "string" && status.error_code.length > 0)) {
-    next = "停止重复尝试同一失败路径；先核对目标宿主/厂商、版本、机器、原会话与入口。";
     const uncertain = status.preflight_failed !== true
       && (status.result === "unknown" || status.prior_result === "unknown" || status.prior_result === "starting");
-    if (uncertain) next += kind === "coordination.wake_status"
-      ? "本次已查询，仍无确定启动证据时保留未知，不循环查询或再次唤醒。"
-      : `结果不明时仅调用一次 coordination__wake_status ${reference} 核实是否已启动，不重发。`;
-    next += "保留脱敏错误，worker 向 main 升级一次；main 自己记录阻塞，不自发消息。不要求用户手动唤醒。";
+    next = uncertain
+      ? kind === "coordination.wake_status"
+        ? "本次已查询；无新证据不循环查询，结果未知不再次唤醒。"
+        : `结果未知，调用 coordination__wake_status ${reference} 核实，不重发。`
+      : "核对宿主与错误，参考 docs/overview/agent-wake-guide.md；独立操作须确认同一消息无在途或结果未知的执行，不绕过认证。";
+    next += "无法解决时保留错误，worker 向 main 升级一次，main 记录阻塞。";
   }
   else if (row(status.entry).tool === "coordination__wake") {
-    next = `需要继续时显式调用 coordination__wake ${reference}；认证后内部执行固定 PowerShell 入口，保留原权限。`;
+    next = `需唤醒时调用 coordination__wake ${reference}（内部通过 PowerShell 执行）。`;
   }
   const diagnostic = (value: unknown): string => {
     const info = row(value);
@@ -73,7 +75,7 @@ function compactHint(status: Row, kind: string): string {
   };
   const current = diagnostic(status.diagnostics);
   const prior = diagnostic(status.prior_diagnostics);
-  const preflight = status.preflight_failed === true ? "本次前置检查失败，尚未执行唤醒操作；这不代表对方历史上未运行。" : "";
+  const preflight = status.preflight_failed === true ? "本次前置检查失败，尚未执行唤醒操作。" : "";
   const details = `${preflight}${current ? `诊断：${current}。` : ""}${prior ? `上次执行诊断：${prior}。` : ""}`;
   return `协作消息 ${messageId}：${identity}；状态=${text(status.state)}，排队能力=${String(status.can_queue ?? "unknown")}，结果=${text(status.result)}，错误=${text(status.error_code)}。${facts}。${details}${next}`;
 }

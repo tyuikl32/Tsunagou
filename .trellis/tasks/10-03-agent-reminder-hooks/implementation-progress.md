@@ -1,3 +1,7 @@
+# Guidance simplification — 2026-10-04
+
+Based on the user's read-only historical cross-host wake record, shortened shared reminders and synchronized generated context. Unsupported now describes the current tool path, not a host-wide impossibility. Guide includes verified historical OpenCode CLI shapes and DSH original-window evidence with current-verification conditions; no executor/UI automation or permission changes. Native lane, unknown-result fences, diagnostic facts and main completion reminder preserved. Source record SHA256 unchanged. Existing 3 stdio suites, 9 project integration tests, bridge type check, targeted Ruff and docs validation passed. No runtime reload or live wake; prior live acceptance limits remain.
+
 # Windows runner follow-up — 2026-10-04
 
 Real user acceptance proves Codex native wake, but OpenCode peer wake remains blocked by host_runner_failed. See [windows-runner-followup.md](windows-runner-followup.md). Fixed BOM-less PS5.1 parsing, native stderr handling and native JSON argv quote/space loss; added safe interpreter/stage/error diagnostics and preflight-only not-executed hints. Unknown admission/replay remains unknown, with no blind retry.

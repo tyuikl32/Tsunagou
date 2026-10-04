@@ -22,8 +22,8 @@ GENERATOR_VERSION = "project-bootstrap-v4"
 START_MARKER = "<!-- TSUNAGOU:START -->"
 END_MARKER = "<!-- TSUNAGOU:END -->"
 WAKE_REMINDER = (
-    "首次 context__project_read 提供宿主协作指南；使用 coordination__peer_hosts 核对真实宿主，"
-    "按消息调用 coordination__wake_status / coordination__wake。不要凭模型品牌判断宿主或重复唤醒。"
+    "使用 coordination__peer_hosts 核对真实宿主；Codex 双方沿用原生通道，"
+    "其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。"
 )
 
 
