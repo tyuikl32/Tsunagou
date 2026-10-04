@@ -92,7 +92,7 @@ describe("控制台页面（web/）结构冒烟", () => {
       name: "main",
       status: "working",
       statusText: "进行中",
-      time: "daemon 运行中",
+      time: "服务运行中",
     });
     const result = api.dispatch("project.list", [card("p-1"), card("p-2"), card("p-3")]);
     expect(result.ok).toBe(true);
@@ -256,7 +256,7 @@ describe("控制台页面（web/）结构冒烟", () => {
           },
           {
             message_id: "m-2", sender_agent_id: "a-1", recipient_agent_id: "user_control",
-            summary: "有结果待评审", status: "pending", obligations: [{ status: "open" }],
+            summary: "有结果待验收", status: "pending", obligations: [{ status: "open" }],
           },
         ] },
       } }],
@@ -282,7 +282,7 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(shown).toContain("用户");
     expect(shown).not.toContain("user_con");
     // 后端自己发的通知也已经是中文（模板改了源头，不是页面替换正文）。
-    expect(shown).toContain("有结果待评审");
+    expect(shown).toContain("有结果待验收");
   });
 
   it("「验收结果」格里的多行内容套在 .colu-t 里（200px 宽的格子靠它竖排）", () => {
@@ -484,12 +484,29 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["projects"]);
 
     const rail = page.querySelector("#projList")!;
-    /* 左栏的结构：分组标题 → 搜索条（挂在第一个标题下面）→ 卡片 → 下一个标题 → 卡片。
-       搜索条那一段写成 "搜索条"：它是新加的一层，但位置固定，写清楚比跳过它更能说明结构。*/
-    const layout = [...rail.children].map((node) => node.classList.contains("wkTitle")
-      ? node.textContent!.trim()
-      : (node.classList.contains("searchBar") ? "搜索条" : node.getAttribute("data-project-id")));
-    expect(layout).toEqual(["进行中的协作", "搜索条", "p-1", "已完成的协作", "p-2"]);
+    /* 左栏结构：两组各自「标题（带本组自己的放大镜与齿轮）→ 本组搜索条 → 本组卡片 →
+       本组那句『没有协作』」，全都画在 #projList 里；空文案是一行真实元素（.title2），
+       不借 .emptybox（那句话写死在 CSS 的 content 里，两组换不了字）。
+       本组有卡片时那句空文案只是被 display:none 藏着 —— 元素一直在，才能按组切换显隐。*/
+    const label = (node: Element) => node.classList.contains("wkTitle")
+      ? `${node.getAttribute("data-proj-group")}:${node.textContent!.trim()}`
+      : (node.classList.contains("searchBar")
+        ? `搜索条(${node.getAttribute("data-proj-group")})`
+        : (node.hasAttribute("data-proj-blank")
+          ? `没有协作(${node.getAttribute("data-proj-blank")})`
+          : node.getAttribute("data-project-id")));
+    expect(page.querySelector("#projHead")).toBeNull();
+    expect([...rail.children].map(label)).toEqual([
+      "active:进行中的协作", "搜索条(active)", "p-1", "没有协作(active)",
+      "done:已完成的协作", "搜索条(done)", "p-2", "没有协作(done)",
+    ]);
+    // 每张卡片自己带着分组属性；卡片外面**没有**多包一层容器（那会把卡片样式弄没）。
+    expect([...rail.querySelectorAll(".projItem")].map((node) => node.getAttribute("data-proj-group")))
+      .toEqual(["active", "done"]);
+    expect(rail.querySelectorAll(".projItem .projItem")).toHaveLength(0);
+    // 两组各自的放大镜与齿轮都在（顺序就是那一组标题右边的两个键）。
+    expect([...rail.querySelectorAll(".wkTbtn")].map((node) => node.getAttribute("data-tg-role")))
+      .toEqual(["project-search", "project-sort", "project-search", "project-sort"]);
     expect(rail.querySelector('.projItem[data-project-id="p-2"] .right p')!.textContent).toBe("已完成");
   });
 
@@ -597,7 +614,7 @@ describe("控制台页面（web/）结构冒烟", () => {
 
     const card = page.querySelector('.projItem[data-project-id="p-1"]')!;
     // 端点文件还在、进程已经没了 —— 中间层如实说"无响应"，并补上"上次记录"。
-    expect(card.textContent).toContain("daemon 无响应");
+    expect(card.textContent).toContain("服务无响应");
     expect(card.textContent).toContain("上次记录（记录到 2026-10-03 06:14）");
   });
 
@@ -609,7 +626,7 @@ describe("控制台页面（web/）结构冒烟", () => {
     // 抬头是「上次记录」，正文写清记录到什么时候、以及 daemon 已经不在。
     expect(pane.textContent).toContain("上次记录");
     expect(pane.textContent).toContain("记录到 2026-10-03 06:15");
-    expect(pane.textContent).toContain("daemon 已经不在");
+    expect(pane.textContent).toContain("服务已经不在");
   });
 
   /* 子 Agent 头像一行最多 3 个，多出来的用 `+N` 说明——N 是**没摆出来的**数量。
@@ -1175,7 +1192,7 @@ describe("控制台接入等待与取消", () => {
     expect(shown(field())).toBe(true);
     prepareBody = {
       status: "invited", invite: "tsunagou-invite-v1:AAAA", enrollment_id: "e-net",
-      expires_in_seconds: 600, expires_at: "2026-10-02T14:10:00.000Z",
+      expires_in_seconds: 600, expires_at: new Date(Date.now() + 600000).toISOString(),
       url: "http://10.0.0.5:2810", conversation_id: "thread-abc",
     };
     const done = enrollmentApi.actions.addSubAgent({
@@ -1224,7 +1241,7 @@ describe("控制台接入等待与取消", () => {
     ]);
     prepareBody = {
       status: "invited", invite: "tsunagou-invite-v1:BBBB", enrollment_id: "e-cancel",
-      expires_in_seconds: 600, expires_at: "2026-10-02T14:10:00.000Z", url: "http://10.0.0.5:2810",
+      expires_in_seconds: 600, expires_at: new Date(Date.now() + 600000).toISOString(), url: "http://10.0.0.5:2810",
     };
     const done = enrollmentApi.actions.addSubAgent({
       name: "小三", vendor: "Codex", place: "network", number: "thread-abc",
@@ -1307,7 +1324,11 @@ describe("控制台接入等待与取消", () => {
     expect(cancelled).toHaveLength(1);
     expect(decodeURIComponent(cancelled[0]!.url)).toContain("e-1");
     expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
-    expect(tip()).toContain("已撤掉");
+    /* 只留**一条**结论，而且以取消接口的答案为准（这里就是后端那句 note）；
+       不再另外补一句"这次接入申请已撤掉"—— 两条消息一个说"撤掉了"、另一个说"还在"，
+       是待改清单阶段 2 第 3 条要清的矛盾。*/
+    expect(tip()).toContain("已取消这次待接入申请");
+    expect(tip()).not.toContain("已撤掉");
   });
 
   it("还没做的厂商点了下一步只给一句话，绝不发准备请求", async () => {
@@ -1511,5 +1532,606 @@ describe("控制台接入等待与取消", () => {
       .find((node) => (node.textContent ?? "").includes("OpenCode"))!;
     click(opencode);
     expect(enrollmentApi.ui.choosebox.value(box)).toBe("OpenCode");
+  });
+});
+
+/* ---- 左栏两组各自独立：搜索 / 排序 -------------------------------------------
+   盯的是"两组分家"这件事本身：一组的放大镜、搜索条、齿轮只作用在自己那一组，另一组照旧。
+   走真页面 + 真 DOM（runScripts: 'dangerously'）：内联 onclick 也真的被编译过，
+   不会拿"事件压根没绑上"当成通过。排序偏好存在 localStorage 里，所以每一条用例自己起一份
+   页面（互不串味），也能顺手钉住"按组分开存"与"旧格式能迁移"。*/
+describe("左栏两组各自独立（搜索 / 排序）", () => {
+  type RailApi = {
+    dispatch: (type: string, payload?: unknown) => { ok: boolean };
+    stopPolling?: () => void;
+    /* 页面那套「失焦即提交」的判据：搜索框必须不在里面（data-tg-commit="manual"） */
+    form: { isAutoCommit: (node: Element) => boolean };
+  };
+
+  let railDom: JSDOM;
+  let railPage: Document;
+  let railApi: RailApi;
+
+  const PROJECTS = [
+    { id: "a-1", name: "甲组-接口对齐", group: "active", lifecycle: "active", history: { captured_at: "2026-01-01T10:00:00Z" } },
+    { id: "a-2", name: "乙组-联调", group: "active", lifecycle: "active", history: { captured_at: "2026-01-02T10:00:00Z" } },
+    { id: "a-3", name: "甲组-回归", group: "active", lifecycle: "active", history: { captured_at: "2026-01-03T10:00:00Z" } },
+    { id: "d-1", name: "甲组已完工", group: "done", lifecycle: "completed", history: { captured_at: "2026-01-04T10:00:00Z" } },
+    { id: "d-2", name: "丙组已完工", group: "done", lifecycle: "completed", history: { captured_at: "2026-01-05T10:00:00Z" } },
+  ];
+
+  const rail = () => railPage.querySelector("#projList")!;
+  /* 这一组**没有被 display:none 藏起来**的卡片，按 DOM 顺序（也就是这一组自己的排序）。*/
+  const visible = (group: string) => [...rail().querySelectorAll(`.projItem[data-proj-group="${group}"]`)]
+    .filter((node) => (node as HTMLElement).style.display !== "none")
+    .map((node) => node.getAttribute("data-project-id"));
+  const all = (group: string) => [...rail().querySelectorAll(`.projItem[data-proj-group="${group}"]`)]
+    .map((node) => node.getAttribute("data-project-id"));
+  const bar = (group: string) => rail().querySelector(`.searchBar[data-proj-group="${group}"]`) as HTMLElement;
+  const blank = (group: string) => rail().querySelector(`[data-proj-blank="${group}"]`) as HTMLElement;
+  const titleBtn = (group: string, role: string) =>
+    rail().querySelector(`.wkTitle[data-proj-group="${group}"] .wkTbtn[data-tg-role="${role}"]`)!;
+  /* 这一组那个分组标题（里面有这一组的放大镜与齿轮） */
+  const titleOf = (group: string) => rail().querySelector(`.wkTitle[data-proj-group="${group}"]`) as HTMLElement;
+  const click = (node: Element) => node.dispatchEvent(new railDom.window.MouseEvent("click", { bubbles: true }));
+  /* 点某一组的齿轮、在菜单里选一项（"按什么排"或"怎么排"） */
+  const chooseSort = (group: string, attr: "data-sort-by" | "data-sort-order", value: string) => {
+    click(titleBtn(group, "project-sort"));
+    click(railPage.querySelector(`#sortMenu .item[${attr}="${value}"]`)!);
+  };
+  const type = (input: HTMLInputElement, value: string) => {
+    input.value = value;
+    input.dispatchEvent(new railDom.window.Event("input", { bubbles: true }));
+  };
+  const inputOf = (group: string) => bar(group).querySelector("input.left") as HTMLInputElement;
+  /* 菜单里某一项右边有没有那个对勾 */
+  const checked = (attr: string, value: string) => {
+    const item = railPage.querySelector(`#sortMenu .item[${attr}="${value}"]`)!;
+    return (item.querySelector(".right")?.innerHTML ?? "").includes("fa-check");
+  };
+  const storedSort = () => JSON.parse(railDom.window.localStorage.getItem("tsunagou.console.projSort") ?? "null");
+
+  /* 页面发过的每一次请求（url + 方法）。测"点一下会不会偷偷发写请求"要看的就是这个：
+     没记下来就没法断言"一条都没有"，只能断言"没崩"。默认那一份 fetch 只 reject、
+     不留痕迹，所以这里换成会记账的桩。 */
+  const sent: Array<{ url: string; method: string }> = [];
+  const writes = () => sent.filter((call) => call.method !== "GET");
+  /* 空抓的 promise 也要消费掉它的 rejection —— 不消费会在用例里冒出一条没人管的告警。 */
+  const quiet = () => { const p = Promise.reject(new Error("smoke: no backend")); p.catch(() => undefined); return p; };
+
+  async function loadRail(seededSort?: unknown) {
+    railDom = new JSDOM(readWeb("index.html"), {
+      url: "http://127.0.0.1:55862/?poll_ms=0", runScripts: "dangerously", pretendToBeVisual: true,
+    });
+    const win = railDom.window as unknown as Window & typeof globalThis;
+    if (seededSort !== undefined) {
+      win.localStorage.setItem("tsunagou.console.projSort", JSON.stringify(seededSort));
+    }
+    sent.length = 0;
+    (win as unknown as { fetch: unknown }).fetch = (input: unknown, init?: { method?: string }) => {
+      const url = typeof input === "string" ? input : String((input as { url?: string })?.url ?? input);
+      const method = String(init?.method ?? (input as { method?: string })?.method ?? "GET").toUpperCase();
+      sent.push({ url, method });
+      return quiet();
+    };
+    win.eval(readWeb("console.config.js"));
+    win.eval(readWeb("assets/js/behavior.js"));
+    /* behavior.js 是在 readyState 还是 'loading' 时被 eval 的：它把 init 挂在 DOMContentLoaded 上，
+       所以要等一个宏任务页面才真的起来（少了这一步，点击委托一个都还没绑）。*/
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    railPage = win.document;
+    railApi = (win as unknown as { Tsunagou: RailApi }).Tsunagou;
+    return win;
+  }
+
+  beforeEach(() => {
+    /* 上面那组用例用过假时钟，这里要真的等 DOMContentLoaded。*/
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    railApi?.stopPolling?.();
+    railDom?.window.close();
+  });
+
+  it("搜索按组独立：只开本组搜索条、只滤本组卡片，另一组一个都不少", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    expect(visible("active")).toEqual(["a-3", "a-2", "a-1"]);
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+    expect(bar("active").style.display).toBe("none");
+    expect(bar("done").style.display).toBe("none");
+
+    // 点【进行中】那组的放大镜：只有这一组的搜索条出来、并拿到焦点。
+    click(titleBtn("active", "project-search"));
+    expect(bar("active").style.display).toBe("");
+    expect(bar("done").style.display).toBe("none");
+    expect(railPage.activeElement).toBe(inputOf("active"));
+
+    // 打「甲」：本组只剩两张，另一组连名字里有「甲」的 d-1 也照旧显示。
+    type(inputOf("active"), "甲");
+    expect(visible("active")).toEqual(["a-3", "a-1"]);
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+    expect(all("done")).toHaveLength(2);
+    expect(blank("active").style.display).toBe("none");
+    expect(blank("done").style.display).toBe("none");
+
+    // 打一个本组谁都不匹配的词：本组那句「没有协作」露出来，另一组照旧。
+    type(inputOf("active"), "查无此项");
+    expect(visible("active")).toEqual([]);
+    expect(blank("active").style.display).toBe("");
+    expect(blank("done").style.display).toBe("none");
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+
+    // 点本组的 iconB：只收本组、只清本组，另一组始终没被碰过。
+    click(bar("active").querySelector(".iconB")!);
+    expect(inputOf("active").value).toBe("");
+    expect(bar("active").style.display).toBe("none");
+    expect(visible("active")).toEqual(["a-3", "a-2", "a-1"]);
+    expect(blank("active").style.display).toBe("none");
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+  });
+
+  it("搜索条关闭时不发写请求（失焦即提交不再把搜索词当档案字段）", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    expect(writes()).toEqual([]);
+
+    // 打开【进行中】的搜索条、打一个字，再点 iconB 关掉：输入框会失焦、随即被移除。
+    click(titleBtn("active", "project-search"));
+    type(inputOf("active"), "甲");
+    // 手动补一次 blur：关搜索条时输入框正在失焦，这条路径不能把搜索词提交出去。
+    inputOf("active").dispatchEvent(new railDom.window.Event("blur"));
+    click(bar("active").querySelector(".iconB")!);
+    expect(inputOf("active").value).toBe("");
+    expect(bar("active").style.display).toBe("none");
+
+    // 一条非 GET 的 fetch 都不能有（搜索词不是档案字段，关一次搜索不该写一次档案）。
+    expect(writes()).toEqual([]);
+    // 真的记了请求才算数（否则上面那条断言可能只是"页面压根没发过任何请求"）。
+    expect(sent.every((call) => call.method === "GET")).toBe(true);
+    expect(sent.length).toBeGreaterThan(0);
+    /* 这条行为断言**拦不住**"把逃生门删掉"：在这份页面里 `isAutoCommitInput` 的
+       `inputScope` 回落到 document，而 document 里有 `.buttonbox`，所以搜索框本来
+       就不会被 form.watch 装上失焦提交（实测去掉 data-tg-commit 后同样一个写请求都没有）。
+       真正钉住"这个框永远不参与失焦提交"的是下面这条，与输入框当前落在哪个容器无关。 */
+    expect(inputOf("active").dataset.tgCommit).toBe("manual");
+    expect(railApi.form.isAutoCommit(inputOf("active"))).toBe(false);
+  });
+
+  it("在搜的那一组把标题让给搜索条，另一组的标题照旧", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    expect(titleOf("active").style.display).toBe("");
+    expect(titleOf("done").style.display).toBe("");
+
+    // 打开【进行中】的搜索条：本组标题收起（放大镜与齿轮就在标题里，让位给搜索条）。
+    click(titleBtn("active", "project-search"));
+    expect(titleOf("active").style.display).toBe("none");
+    expect(titleOf("done").style.display).toBe("");
+
+    // 打字期间同样收着；【已完成】那一组一个都没动 —— 更没被跟着藏。
+    type(inputOf("active"), "甲");
+    expect(titleOf("active").style.display).toBe("none");
+    expect(titleOf("done").style.display).toBe("");
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+
+    // 关掉搜索条、字也清空：本组标题交回 CSS（清成空串，不是写个 display:flex 盖住）。
+    click(bar("active").querySelector(".iconB")!);
+    expect(titleOf("active").style.display).toBe("");
+    expect(titleOf("done").style.display).toBe("");
+  });
+
+  it("按名称：order=new 是拼音升序（A→Z），order=old 是降序（Z→A）", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+
+    // 先切成按名称。【进行中】这一组是：乙组-联调 / 甲组-接口对齐 / 甲组-回归。
+    chooseSort("active", "data-sort-by", "name");
+    // order 还是默认的 new → 拼音升序 A→Z：甲组-回归（jiǎ）→ 甲组-接口对齐（jiē）→ 乙组-联调（yǐ）。
+    expect(visible("active")).toEqual(["a-3", "a-1", "a-2"]);
+
+    // 换成 old → 同一批名字倒过来（Z→A）。菜单上写的就是 A→Z / Z→A，实际顺序要跟它一致。
+    chooseSort("active", "data-sort-order", "old");
+    expect(visible("active")).toEqual(["a-2", "a-1", "a-3"]);
+    // 只是换了顺序，没有藏卡片。
+    expect(all("active")).toEqual(visible("active"));
+    // 另一组没被这次改动碰到。
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+    expect(storedSort()).toEqual({ active: { order: "old", by: "name" }, done: { order: "new", by: "viewed" } });
+  });
+
+  it("排序按组独立：改一组不动另一组，对勾跟着打开菜单的那一组，并按组存进本地", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    const activeBefore = visible("active");
+    expect(activeBefore).toEqual(["a-3", "a-2", "a-1"]);
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+
+    // 点【已完成】那组的齿轮：菜单画的是**这一组**的偏好（默认 按查看时间 / 新的在前）。
+    click(titleBtn("done", "project-sort"));
+    expect((railPage.querySelector("#sortMenu") as HTMLElement).style.display).toBe("flex");
+    expect(checked("data-sort-by", "viewed")).toBe(true);
+    expect(checked("data-sort-order", "new")).toBe(true);
+
+    click(railPage.querySelector('#sortMenu .item[data-sort-by="created"]')!);
+    click(railPage.querySelector('#sortMenu .item[data-sort-order="old"]')!);
+    expect(visible("done")).toEqual(["d-1", "d-2"]);   // 按登记时间、旧的在前
+    expect(visible("active")).toEqual(activeBefore);   // 进行中那一组一个都没动
+    expect(checked("data-sort-by", "created")).toBe(true);
+    expect(checked("data-sort-order", "old")).toBe(true);
+
+    // 再点【进行中】那组的齿轮：同一个菜单，对勾立刻换回这一组的偏好。
+    click(titleBtn("active", "project-sort"));
+    expect(checked("data-sort-by", "viewed")).toBe(true);
+    expect(checked("data-sort-order", "new")).toBe(true);
+    click(railPage.querySelector('#sortMenu .item[data-sort-by="name"]')!);
+    expect(visible("active")).not.toEqual(activeBefore);   // 这一组换了排法
+    expect(all("active")).toEqual(visible("active"));       // 换了排法也不是"藏卡片"
+    expect(visible("done")).toEqual(["d-1", "d-2"]);        // 完成组仍是它自己那份
+
+    // 存进本地的是按组分开的一份。
+    expect(storedSort()).toEqual({ active: { order: "new", by: "name" }, done: { order: "old", by: "created" } });
+  });
+
+  it("旧格式（扁平的 {order,by}）能迁移：两组都按它排，再改一组只写这一组", async () => {
+    await loadRail({ order: "old", by: "name" });
+    railApi.dispatch("project.list", PROJECTS);
+    // 名称降序（order=old 就是 Z→A）：乙组-联调 / 甲组-接口对齐 / 甲组-回归；完成组：甲组已完工 / 丙组已完工。
+    expect(visible("active")).toEqual(["a-2", "a-1", "a-3"]);
+    expect(visible("done")).toEqual(["d-1", "d-2"]);
+
+    click(titleBtn("done", "project-sort"));
+    expect(checked("data-sort-by", "name")).toBe(true);
+    expect(checked("data-sort-order", "old")).toBe(true);
+
+    click(railPage.querySelector('#sortMenu .item[data-sort-order="new"]')!);
+    expect(storedSort()).toEqual({ active: { order: "old", by: "name" }, done: { order: "new", by: "name" } });
+    expect(visible("active")).toEqual(["a-2", "a-1", "a-3"]);   // 还是旧偏好（old 就是 Z→A）
+    expect(visible("done")).toEqual(["d-2", "d-1"]);            // 这一组换成 new，名称升序 A→Z
+  });
+});
+
+/* ---- 这一轮修掉的三条 --------------------------------------------------------
+   每条都钉住一个**真出过问题**的行为，注释里写了"没修之前会怎样" ——
+   免得以后有人看它长得像冗余用例就删掉。*/
+describe("回归：本轮修掉的若干条（失焦提交 / 原型链 / 机器名 / 窗口 / 静默成功）", () => {
+  type FixApi = {
+    ready: boolean;
+    dispatch: (type: string, payload?: unknown) => { ok: boolean; error?: string };
+    stopPolling?: () => void;
+    form: {
+      isAutoCommit: (node: Element) => boolean;
+      commit: (node: Element, options?: unknown) => Promise<unknown>;
+    };
+    state: {
+      patch: (partial: unknown) => unknown;
+      set: (path: string, value: unknown) => unknown;
+      get: (path: string, fallback?: unknown) => unknown;
+    };
+    api: { get: (path: string, query?: unknown, options?: unknown) => Promise<unknown> };
+    render: { wizardSubAgents: (list: unknown[]) => unknown };
+    app: {
+      saveAgentInfo: () => Promise<unknown>;
+      renameProject: (id: string) => unknown;
+      submitRename: () => Promise<unknown>;
+    };
+    actions: { addSubAgent: (payload: unknown) => Promise<unknown> };
+    ui: { window: { isOpen: (id: string) => boolean; open: (id: string) => unknown } };
+    config: { get: () => Record<string, unknown> };
+  };
+
+  let fixDom: JSDOM;
+  let fixPage: Document;
+  let fixApi: FixApi;
+
+  /* 记下页面发过的每一次请求：要断言的是"一条写请求都没有"，
+     不记账就只能断言"没崩"。默认那份 fetch 只 reject、不留痕迹。*/
+  const sent: Array<{ url: string; method: string }> = [];
+  const writes = () => sent.filter((call) => call.method !== "GET");
+  const quiet = () => { const p = Promise.reject(new Error("smoke: no backend")); p.catch(() => undefined); return p; };
+
+  /* reply 给了一条"假应答"，用来造 4xx/5xx；不给就让请求失败（网络错误）。*/
+  type Reply = { ok: boolean; status: number; text: () => Promise<string> };
+
+  async function loadFix(setup?: {
+    query?: string;
+    config?: unknown;
+    reply?: (url: string, method: string) => Reply;
+  }) {
+    const opts = setup || {};
+    fixDom = new JSDOM(readWeb("index.html"), {
+      url: "http://127.0.0.1:55862/" + (opts.query === undefined ? "?poll_ms=0" : opts.query),
+      runScripts: "dangerously", pretendToBeVisual: true,
+    });
+    const win = fixDom.window as unknown as Window & typeof globalThis;
+    sent.length = 0;
+    (win as unknown as { fetch: unknown }).fetch = (input: unknown, init?: { method?: string }) => {
+      const url = typeof input === "string" ? input : String((input as { url?: string })?.url ?? input);
+      const method = String(init?.method ?? (input as { method?: string })?.method ?? "GET").toUpperCase();
+      sent.push({ url, method });
+      if (opts.reply) return Promise.resolve(opts.reply(url, method));
+      return quiet();
+    };
+    if (opts.config === undefined) win.eval(readWeb("console.config.js"));
+    else win.eval("window.TSUNAGOU_CONSOLE_CONFIG = " + JSON.stringify(opts.config) + ";");
+    win.eval(readWeb("assets/js/behavior.js"));
+    /* behavior.js 被 eval 时 readyState 可能还是 'loading'，init 挂在 DOMContentLoaded 上，
+       所以要等一个宏任务页面才真的起来（少了这一步，失焦提交一个都还没绑上）。*/
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixPage = win.document;
+    fixApi = (win as unknown as { Tsunagou: FixApi }).Tsunagou;
+  }
+
+  afterEach(() => {
+    fixApi?.stopPolling?.();
+    fixDom?.window.close();
+  });
+
+  it("BUG-22：#netInvite 的只读邀请票不参与失焦提交（票据不会被当档案字段发出去）", async () => {
+    await loadFix();
+    const ticket = fixPage.querySelector<HTMLInputElement>("#netInvite .textbox2 input")!;
+    // 前提：它就是那个只读展示框。
+    expect(ticket.readOnly).toBe(true);
+
+    /* 判据层：不管它落在哪个容器里（它的按钮在兄弟节点 .options 里，所以"所在块里有按钮"
+       这条判据够不到它），都不许被判成"可自动提交"。
+       没修之前这里返回 true —— #netInvite 不在排除名单里，而只读不挡失焦。*/
+    expect(fixApi.form.isAutoCommit(ticket)).toBe(false);
+
+    // 行为层：把票填上、聚焦再失焦，一个写请求都不许有。
+    ticket.value = "invite-ticket-secret-abc";
+    ticket.dispatchEvent(new fixDom.window.Event("focus"));
+    ticket.dispatchEvent(new fixDom.window.Event("blur"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    /* 没修之前这条路会 POST settingSave → PUT /console/profile，
+       请求体里带着票的全文 —— 所以这条断言是这条 bug 的正面钉子。*/
+    expect(writes()).toEqual([]);
+    // 页面确实起过请求（否则上面那条可能只是"压根没发过任何请求"）。
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent.every((call) => call.method === "GET")).toBe(true);
+  });
+
+  it("BUG-1：state.patch / state.set 都写不进原型链", async () => {
+    await loadFix();
+    const winObject = (fixDom.window as unknown as { Object: { prototype: object } }).Object;
+    const proto = winObject.prototype;
+
+    /* JSON.parse 造出来的 __proto__ 是**自有可枚举**属性（Object.keys 会把它列出来），
+       这正是 deepAssign 最容易踩的那条路：不挡的话等价于改 Object.prototype。
+       注意要查 jsdom 那个 realm 的原型（页面代码跑在里面），不是测试自己这个 realm 的。*/
+    fixApi.state.patch(JSON.parse('{"__proto__":{"polluted":"yes"}}'));
+    expect(Object.prototype.hasOwnProperty.call(proto, "polluted")).toBe(false);
+
+    // 路径写法是同一个洞：setPath 会顺着 '__proto__' 走到 Object.prototype 上。
+    fixApi.state.set("__proto__.polluted2", "yes");
+    expect(Object.prototype.hasOwnProperty.call(proto, "polluted2")).toBe(false);
+    fixApi.state.set("constructor.prototype.polluted3", "yes");
+    expect(Object.prototype.hasOwnProperty.call(proto, "polluted3")).toBe(false);
+
+    /* 正常字段照旧：写得进、也照样深合并 —— 守卫不许把正常路径也挡了。*/
+    fixApi.state.patch({ demo: { a: 1 } });
+    fixApi.state.patch({ demo: { b: 2 } });
+    fixApi.state.set("demo.c", 3);
+    expect(fixApi.state.get("demo")).toEqual({ a: 1, b: 2, c: 3 });
+  });
+
+  it("BUG-5：远端自报的机器名会被转义（塞不进 HTML）", async () => {
+    await loadFix();
+    /* 机器名是远端 `agent import --machine` 自报的，中间层原样透出 —— 属外部输入。*/
+    const machine = 'x<img src="x" onerror="window.__pwned=1">';
+    fixApi.dispatch("agent.list", [{
+      id: "a-9", isMain: false, role: "子 Agent", name: "远端甲",
+      network: true, online: true, machine: machine,
+      icon: "", statusText: "已领取", statusOk: true,
+      desc: "", currentTask: "", basic: [], ops: [], actions: [],
+    }]);
+
+    /* 机器名就拼在这张卡片的 .header 里：转义了就不会多出一个元素。
+       没修之前这台机器上会真的多出一个 <img src="x" onerror=…>。*/
+    const header = fixPage.querySelector("#pane-agents .header")!;
+    expect(header.querySelector("img")).toBeNull();
+    expect((fixDom.window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+    // 转义不是"吞掉"：字面量照旧显示给人看。
+    expect(header.textContent).toContain("网络在线");
+    expect(header.textContent).toContain('x<img src="x"');
+  });
+
+  /* ---- 下面这几条钉的是同一轮修掉的另外一批 -------------------------------- */
+
+  const tip = () => fixPage.getElementById("AnnounceMent2")!;
+  const tipText = () => tip().querySelector(".aText")!.textContent ?? "";
+  const agentOf = (over: Record<string, unknown>) => Object.assign({
+    id: "a-1", isMain: false, role: "子 Agent", name: "甲",
+    network: false, online: false, machine: "",
+    icon: "", statusText: "已领取", statusOk: true,
+    desc: "", currentTask: "", basic: [], ops: [], actions: [],
+  }, over);
+  const replyWith = (status: number, body: string) =>
+    ({ ok: false, status: status, text: () => Promise.resolve(body) });
+
+  it("BUG-23 + BUG-2：拒绝码真的被翻成中文，而且落在「警告」档", async () => {
+    /* 词表的形状是 {version, domains:{…}}。以前查的是 glossary.denial_reason（永远空），
+       而且失败提示走 notify.info —— 那一档不翻译。两条都得对，这句才说得上人话。*/
+    await loadFix({ reply: () => replyWith(409, '{"detail":{"code":"ready_session_required"}}') });
+    fixApi.state.set("glossary", {
+      version: 1, domains: { denial_reason: { ready_session_required: "会话未就绪" } },
+    });
+
+    await fixApi.api.get("/whatever").catch(() => undefined);
+
+    expect(tipText()).toBe("会话未就绪");
+    expect(tip().classList.contains("secAnnounce2Warning")).toBe(true);
+    expect(tip().classList.contains("secAnnounce2Error")).toBe(false);
+  });
+
+  it("BUG-2：连不上（没有 HTTP 状态）落在「错误」档，而不是「提示」档", async () => {
+    await loadFix();   // 默认那份 fetch 直接 reject = 网络错误
+    await fixApi.api.get("/whatever").catch(() => undefined);
+    expect(tip().classList.contains("secAnnounce2Error")).toBe(true);
+  });
+
+  it("BUG-3：提交失败不记「已提交值」，同一个值再失焦还会重发", async () => {
+    await loadFix({ reply: () => replyWith(500, '{"detail":"boom"}') });
+    const box = fixPage.createElement("input");
+    fixPage.body.appendChild(box);
+    box.value = "同一个值";
+
+    await fixApi.form.commit(box, { path: "/x", silent: true }).catch(() => undefined);
+    const first = writes().length;
+    expect(first).toBeGreaterThan(0);
+
+    /* 修好之前 committedValues 在发请求**之前**就记下了这个值，
+       于是这一次 value === previous 成立、直接 return —— 一次请求都不会多。*/
+    await fixApi.form.commit(box, { path: "/x", silent: true }).catch(() => undefined);
+    expect(writes().length).toBeGreaterThan(first);
+  });
+
+  it("BUG-25：icon 是 constructor / toString 这类键时回落到 Tsunagou 小标", async () => {
+    await loadFix();
+    /* 对象字面量当映射表时，这些键会命中原型链拿到函数（真值）→ 回退不到小标，
+       最后把一个函数源码塞进 img.src（图裂，属性值荒谬）。*/
+    for (const bad of ["constructor", "toString", "__proto__"]) {
+      fixApi.dispatch("agent.list", [agentOf({ icon: bad })]);
+      const img = fixPage.querySelector("#pane-agents img")!;
+      expect(img.getAttribute("src")).toContain("logo-little");
+    }
+  });
+
+  it("BUG-26：向导第 3 步的「×」不再发那条注定被拒的删除请求", async () => {
+    await loadFix();
+    fixApi.render.wizardSubAgents([{ name: "甲", vendor: "codex", icon: "", status: "manual" }]);
+    const chip = fixPage.querySelector("#newXz3 .listfieldbox .itemC")!;
+    chip.dispatchEvent(new fixDom.window.MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    /* 以前这里会弹「确定要让这个 Agent 退役吗？」再发一次 agentRemove ——
+       而 agent_id 是必填、这个入口又没传，必然被拒，胶囊还留在原地。*/
+    expect(writes()).toEqual([]);
+    expect(tipText()).toContain("还没接通");
+    // 胶囊没被删掉（前端也没有假装删掉）。
+    expect(fixPage.querySelectorAll("#newXz3 .listfieldbox .itemC").length).toBe(1);
+  });
+
+  it("BUG-4：点卡片本体就能开详情，而且窗口里真有内容", async () => {
+    await loadFix();
+    fixApi.state.set("currentProjectId", "p-1");
+    fixApi.dispatch("agent.list", [agentOf({ id: "a-7", name: "远端甲" })]);
+    fixApi.dispatch("agent.window", [{
+      id: "p-1/a-7", agent_id: "a-7", project: "示例", task: "对齐接口",
+      network: true, online: true, machine: "工位-七", copy_path: "", copy_baseline: "",
+    }]);
+
+    /* 卡片本体（不是里面那个头像胶囊）。修好之前卡片上没有 data-agent-id，
+       点它什么都不发生。*/
+    const card = fixPage.querySelector("#pane-agents .boxerbox > .item")!;
+    expect(card.getAttribute("data-agent-id")).toBe("a-7");
+    card.dispatchEvent(new fixDom.window.MouseEvent("click", { bubbles: true }));
+
+    const info = fixPage.getElementById("mgrAgentInfo")!;
+    expect(info.style.display).toBe("flex");            // 窗口真的被打开了
+    expect(info.getAttribute("data-agent-id")).toBe("a-7");
+    /* 而且不是空壳：协作与任务两行填上了。管理页给的是裸 agent_id，而 agentsWindow
+       的 id 是「协作/Agent」—— 只按一种形状查的话这里全是空的。*/
+    const shown = [...info.querySelectorAll(".dspText2")].map((node) => node.textContent);
+    expect(shown[0]).toBe("示例");
+    expect(shown[1]).toBe("对齐接口");
+  });
+
+  it("BUG-9：poll_ms 是 null 或空串时不要当成 0（0 = 关掉自动重拉）", async () => {
+    /* null / '' / false 经 Number() 都是 0，而 0 是"不自动重拉"的合法值 ——
+       于是"没写这个字段"被静默当成"明确要求不轮询"。*/
+    /* 这条要一个**干净的地址**：默认那份 loadFix 的地址带 ?poll_ms=0（开发开关），
+       那会把配置顶掉，测的就不是配置这条路了。*/
+    await loadFix({ query: "", config: { baseUrl: "/api/v1", poll_ms: null } });
+    expect(Number(fixApi.config.get().pollMs)).not.toBe(0);
+
+    // 地址栏上的 ?poll_ms=（空值）同理，不能顶掉配置里的 5000。
+    await loadFix({ query: "?poll_ms=", config: { baseUrl: "/api/v1", poll_ms: 5000 } });
+    expect(Number(fixApi.config.get().pollMs)).toBe(5000);
+
+    // 但明确的 0 仍然是"不自动重拉"：这条语义不能被我改坏。
+    await loadFix({ query: "?poll_ms=0", config: { baseUrl: "/api/v1", poll_ms: 5000 } });
+    expect(Number(fixApi.config.get().pollMs)).toBe(0);
+  });
+
+  /* ---- 窗口政策：黑遮罩不做反应 ------------------------------------------ */
+
+  it("窗口政策：点黑遮罩什么都不做（普通窗口与加载遮罩都一样）", async () => {
+    await loadFix();
+    const backdrop = (id: string) => {
+      const node = fixPage.getElementById(id)!;
+      /* 黑遮罩就是 .secWindow 自己那一层：点在它身上（不是窗口盒子里）。*/
+      node.dispatchEvent(new fixDom.window.MouseEvent("click", { bubbles: true }));
+      return node.style.display;
+    };
+    fixApi.ui.window.open("renamePmt");
+    expect(backdrop("renamePmt")).toBe("flex");
+    /* 加载遮罩尤其重要：它只由窗口里的按钮（或流程自己）收场，
+       点黑边不再等于"我不等了"。*/
+    fixApi.ui.window.open("loadW");
+    expect(backdrop("loadW")).toBe("flex");
+  });
+
+  /* ---- 阶段 2 第 8 条：几处静默成功 -------------------------------------- */
+
+  it("阶段2-8：详情窗昵称没改就如实说一句，不静默关窗、也不发请求", async () => {
+    await loadFix();
+    const info = fixPage.getElementById("mgrAgentInfo")!;
+    info.setAttribute("data-agent-id", "a-7");
+    info.setAttribute("data-nickname", "熊猫");
+    info.querySelector("input")!.value = "熊猫";
+
+    await fixApi.app.saveAgentInfo();
+    expect(tipText()).toContain("昵称没有改动");
+    expect(writes()).toEqual([]);
+  });
+
+  it("阶段2-8：协作名字没变就不发重命名请求，也不报「已重命名」", async () => {
+    await loadFix();
+    fixApi.state.set("projects", [{ id: "p-1", name: "示例协作" }]);
+    fixApi.app.renameProject("p-1");
+    fixPage.querySelector<HTMLInputElement>("#renamePmtInput")!.value = "示例协作";
+
+    await fixApi.app.submitRename();
+    expect(tipText()).toContain("名字没有改动");
+    expect(writes()).toEqual([]);
+  });
+
+  it("阶段2-8：主题存不上要说出来（否则重开又变回去）", async () => {
+    await loadFix({ reply: () => replyWith(500, '{"detail":"boom"}') });
+    const box = fixPage.getElementById("uSetCol1")!;
+    box.dispatchEvent(new fixDom.window.CustomEvent("choosebox:change", {
+      bubbles: true, detail: { value: "浅色", panel: box, box: box },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(tipText()).toContain("主题没能保存");
+    expect(writes().map((call) => call.method)).toEqual(["PUT"]);
+  });
+
+  it("阶段2-8：位置＝网络而编号空着时，不发那条注定失败的准备请求", async () => {
+    await loadFix();
+    fixApi.state.set("hosts", [{ adapter: "codex", label: "Codex", mode: "console" }]);
+    /* 这家宿主需要"远端自己报的编号"（NETWORK_NUMBER_VENDORS 里有 Codex）。*/
+    await fixApi.actions.addSubAgent({ name: "远端甲", vendor: "Codex", place: "network", number: "" });
+    expect(tipText()).toContain("会话编号");
+    expect(writes()).toEqual([]);
+  });
+
+  /* ---- 阶段 2 第 7 条：没有遮罩的那次提交要自己防连点 -------------------- */
+
+  it("阶段2-7：昵称保存没有加载遮罩，连点两次也只发一次请求", async () => {
+    await loadFix({ reply: () => ({ ok: true, status: 200, text: () => Promise.resolve('{"status":"saved"}') }) });
+    const info = fixPage.getElementById("mgrAgentInfo")!;
+    info.setAttribute("data-agent-id", "a-7");
+    info.setAttribute("data-nickname", "旧名字");
+    info.querySelector("input")!.value = "新名字";
+
+    const first = fixApi.app.saveAgentInfo();
+    const second = fixApi.app.saveAgentInfo();
+    await Promise.all([first, second]);
+    expect(writes().length).toBe(1);
   });
 });

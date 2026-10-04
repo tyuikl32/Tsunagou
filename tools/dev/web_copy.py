@@ -162,11 +162,53 @@ def _template_parts(source: str, start: int, end: int) -> tuple[list[str], list[
     return parts, expressions, spans
 
 
+#: A ``/`` right after one of these can only start a regular expression, never divide.
+_REGEX_AFTER = set("(,=:[!&|?{};+-*%^~<>")
+
+
+def _skip_regex(source: str, index: int, previous: str) -> int | None:
+    """Where a regular-expression literal ends, if one starts at ``index``.
+
+    ``esc()`` in behavior.js contains ``/"/g`` and ``/'/g``. Without this, the quote
+    inside such a regex opens a phantom string that runs on for thousands of
+    characters and swallows every real literal in between -- those come back looking
+    multi-line, get dropped, and their Chinese never reaches the copy file. Worse, the
+    entries that *do* survive are renumbered whenever anything before them changes, so
+    adding a comment silently invalidates every ``path#n`` in 文案.txt.
+
+    Returns ``None`` when the ``/`` is really a division.
+    """
+
+    if previous and previous not in _REGEX_AFTER:
+        return None
+    cursor, size = index + 1, len(source)
+    in_class = False
+    while cursor < size:
+        char = source[cursor]
+        if char == "\\":
+            cursor += 2
+            continue
+        if char == "\n":
+            return None  # 换行了还没收尾：那是除号，不是正则
+        if char == "[":
+            in_class = True
+        elif char == "]":
+            in_class = False
+        elif char == "/" and not in_class:
+            cursor += 1
+            while cursor < size and source[cursor].isalpha():
+                cursor += 1
+            return cursor
+        cursor += 1
+    return None
+
+
 def _js_entries(source: str, relative: str) -> list[Entry]:
     """String literals with Chinese, runs of them joined across ``+`` expressions."""
 
     literals: list[tuple[int, int, str]] = []
     index, size = 0, len(source)
+    previous = ""  # 最近一个"有意义的"字符：判断 '/' 是正则还是除号
     while index < size:
         skipped = _skip_js(source, index)
         if skipped is not None:
@@ -177,7 +219,16 @@ def _js_entries(source: str, relative: str) -> list[Entry]:
             end = _literal_end(source, index, char)
             literals.append((index, end, char))
             index = end
+            previous = char
             continue
+        if char == "/":
+            regex_end = _skip_regex(source, index, previous)
+            if regex_end is not None:
+                index = regex_end
+                previous = "/"
+                continue
+        if not char.isspace():
+            previous = char
         index += 1
 
     entries: list[Entry] = []
@@ -212,7 +263,16 @@ def _js_entries(source: str, relative: str) -> list[Entry]:
             if any(TAG.search(body) for body in bodies):
                 # 拼串拼出来的页面：只把标签之间的中文抽出来，标签和变量一个都别动。
                 for span, body in zip(spans, bodies, strict=True):
-                    entries.extend(_tagged_entries(relative, "js", quote, span, body))
+                    if TAG.search(body):
+                        entries.extend(_tagged_entries(relative, "js", quote, span, body))
+                    elif HAN.search(body):
+                        # 同一段拼串里既有标签又有**纯文本**（`… + '">' + '选项 ' + …`）：
+                        # 纯文本那段没有标签可依，上面那条会把它整个丢掉 —— 可它是给人看的字。
+                        text = body.strip()
+                        if text:
+                            head = body.index(text)
+                            start = span[0] + head
+                            entries.append(Entry(relative, "js", quote, [(start, start + len(text))], [text]))
             else:
                 entries.append(Entry(relative, "js", quote, spans, bodies, between))
         position = cursor + 1

@@ -18,17 +18,17 @@
 }
 
 .dagArea .st-2::after {
-  content: "已就绪";
+  content: "待发布";
   color: var(--brand-col-2);
 }
 
 .dagArea .st-3::after {
-  content: "待认领";
+  content: "待领取";
   color: var(--brand-col-2);
 }
 
 .dagArea .st-4::after {
-  content: "已认领";
+  content: "已领取";
   color: var(--brand-col-2);
 }
 
@@ -38,7 +38,7 @@
 }
 
 .dagArea .st-6::after {
-  content: "卡住了";
+  content: "受阻";
   color: var(--active-col);
 }
 
@@ -48,17 +48,17 @@
 }
 
 .dagArea .st-8::after {
-  content: "被打回";
+  content: "待返工";
   color: var(--active-col);
 }
 
 .dagArea .st-9::after {
-  content: "取消中";
+  content: "待取消";
   color: var(--active-col);
 }
 
 .dagArea .st-10::after {
-  content: "执行者丢失";
+  content: "已失联";
   color: var(--active-col);
 }
 

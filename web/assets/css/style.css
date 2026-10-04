@@ -46,6 +46,7 @@ Tsunagou 项目 前端 Web UI - CSS 文件
     --active-col-0: #b75b32;
     --active-col: #ff793d;
     --active-col-2: #ffcc41;
+    --error-col: #90180b;
     interpolate-size: allow-keywords;
 }
 
@@ -86,8 +87,13 @@ body {
 
             >img {
                 width: 180px;
-                pointer-events: none;
+                /* pointer-events: none; */
                 flex-grow: 0;
+                transition:transform 0.15s;
+            }
+
+            >img:hover {
+                transform:translateX(10px);
             }
 
             .sdBtn {
@@ -174,12 +180,12 @@ body {
         padding: 8px 10px;
         font-size: 14px;
         /* display:none; */
-
+        
         .inner {
-            height:30px;
-            border-radius:6px;
-            background-color:var(--col-3);
-            border:1px solid var(--col-4-5);
+            height: 30px;
+            border-radius: 6px;
+            background-color: var(--col-3);
+            border: 1px solid var(--col-4-5);
             display: flex;
             flex-direction: row;
             flex-wrap: nowrap;
@@ -187,7 +193,7 @@ body {
             align-items: center;
             padding: 0 2px;
             gap: 2px;
-            
+
             .left {
                 outline: none;
                 border: none;
@@ -199,19 +205,19 @@ body {
 
             .icon {
                 width: 24px;
-                height:24px;
+                height: 24px;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                transition:background-color 0.15s,color 0.15s;
-                border-radius:6px;
+                transition: background-color 0.15s, color 0.15s;
+                border-radius: 6px;
             }
-    
+
             .iconA::before {
                 content: "\f002";
                 font-family: "Font Awesome 6 Free";
                 font-weight: 900;
-                font-size:13px;
+                font-size: 13px;
             }
 
             .iconB::before {
@@ -222,15 +228,15 @@ body {
             }
 
             .iconB:hover {
-                background-color:var(--col-4-5);
+                background-color: var(--col-4-5);
             }
 
             .iconB:active {
-                background-color:var(--col-4);
+                background-color: var(--col-4);
             }
         }
     }
-    
+
     .subMgr {
         flex: 1;
         display: flex;
@@ -245,6 +251,25 @@ body {
         flex-basis: 0;
         flex-grow: 0;
         width: 100%;
+
+        .inner:hover {
+            background-color: var(--col-4-5);
+
+            .title {
+                border: 2px solid var(--brand-col);
+                border-bottom: none;
+            }
+
+            .content {
+                border: 2px solid var(--brand-col);
+                border-top: none;
+            }
+
+            .edit {
+                right: 4px;
+                top: 4px;
+            }
+        }
 
         .inner {
             margin: 8px 10px 8px 10px;
@@ -356,6 +381,7 @@ body {
                     .time {
                         color: var(--col-6);
                         font-size: 13px;
+                        text-align: justify;
                     }
 
                     .wking {
@@ -393,49 +419,37 @@ body {
 
             .edit {
                 position: absolute;
-                top: -40px;
+                top: 4px;
                 right: -40px;
                 width: 30px;
                 height: 30px;
-                background: var(--brand-col-2);
-                border-bottom-left-radius: 10px;
+                background-color:var(--col-4-5);
+                border-radius: 6px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 user-select: none;
-                transition: right 0.1s, top 0.1s, background-color 0.1s;
-                color: white;
+                transition: right 0.1s, top 0.1s, background-color 0.1s, background-color 0.15s;
+                color: var(--col-8);
             }
 
             .edit::before {
                 font-family: "Font Awesome 6 Free";
                 font-weight: 900;
-                content: "\f304";
+                content: "\f141";
+            }
+
+            .edit:hover {
+                background: var(--brand-col-2);
+                color:white;
             }
 
             .edit:active {
                 background-color: var(--brand-col);
+                color:white;
             }
         }
 
-        .inner:hover {
-            background-color: var(--col-4-5);
-
-            .title {
-                border: 2px solid var(--brand-col);
-                border-bottom: none;
-            }
-
-            .content {
-                border: 2px solid var(--brand-col);
-                border-top: none;
-            }
-
-            .edit {
-                right: 0;
-                top: 0;
-            }
-        }
     }
 
     .projItemSelected {
@@ -452,6 +466,11 @@ body {
             .content {
                 border: 2px solid var(--col-3);
                 border-top: none;
+            }
+
+            .edit {
+                background-color:var(--brand-col);
+                color: white;
             }
         }
 
@@ -526,9 +545,20 @@ body {
         width: 50px;
         height: 50px;
         padding: 7px;
-        pointer-events: none;
+        /* pointer-events: none; */
+        border-radius: 10px;
+        transition: background-color 0.15s;
     }
 
+    .foldImg:hover {
+        background-color: var(--col-4);
+        color: var(--col-8);
+    }
+
+    .foldImg:active {
+        background-color: var(--col-2);
+    }
+    
     .foldBtn {
         width: 50px;
         height: 50px;
@@ -547,6 +577,10 @@ body {
     .foldBtn:hover {
         background-color: var(--col-4);
         color: var(--col-8);
+    }
+
+    .foldBtn:active {
+        background-color: var(--col-2);
     }
 
     .topArea {
@@ -599,11 +633,11 @@ body {
             flex-wrap: nowrap;
             align-items: center;
             user-select: none;
-            
-            
-            
-            
-            
+
+
+
+
+
 
             >img {
                 width: 56px;
@@ -622,17 +656,6 @@ body {
             border-top: 2px solid var(--col-3);
             padding-top: 35px;
             gap: 26px;
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
 
             .bigBtn {
                 width: 140px;
@@ -651,7 +674,7 @@ body {
             }
 
             .bigBtn:hover {
-                background-color:var(--col-4-5);
+                background-color: var(--col-4-5);
             }
 
             .bigBtnIcon {
@@ -706,15 +729,15 @@ body {
 }
 
 .secHome::before {
-    content:"";
-    position:absolute;
-    background-color: rgba(255,255,255,0.05);
-    height:2000px;
-    width:120px;
+    content: "";
+    position: absolute;
+    background-color: rgba(255, 255, 255, 0.05);
+    height: 2000px;
+    width: 120px;
     left: 50%;
-    transform:rotate(55deg);
-    user-select:none;
-    z-index:0;
+    transform: rotate(55deg);
+    user-select: none;
+    z-index: 0;
 }
 
 /* 项目工作区 */
@@ -777,7 +800,7 @@ body {
         background-color: var(--col-2);
         border-bottom: 1px solid var(--col-4);
         color: var(--col-7);
-        /* gap: 6px; */
+        gap: 4px;
         user-select: none;
 
         .tabS {
@@ -785,6 +808,9 @@ body {
             border-bottom: 4px solid var(--col-2);
             transition: border-color 0.15s, background-color 0.15s;
             font-size: 14px;
+            border-radius: 8px;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
         }
 
         .tabS:hover {
@@ -827,7 +853,7 @@ body {
                 display: flex;
                 justify-content: space-between;
                 width: 100%;
-                
+
                 >.left {
                     color: white;
                     font-size: 30px;
@@ -837,9 +863,10 @@ body {
                     border-radius: 0 20px 20px 0;
                     margin: 0;
                 }
+
                 >.right {
-                    display:flex;
-                    gap:10px;
+                    display: flex;
+                    gap: 10px;
                     align-items: center;
                     margin-right: 50px;
                 }
@@ -991,8 +1018,6 @@ body {
     display: none;
     opacity: 0;
     transition: opacity 0.15s, display 0.15s allow-discrete;
-    
-    
 
     /* 大型窗口（如系统设置） */
 
@@ -1144,7 +1169,7 @@ body {
                         box-shadow: 0 0 6px 0px var(--col-1-5);
                         position: relative;
                         transition: background-color 0.15s;
-                        
+
                         .title {
                             color: var(--col-8);
                             font-size: 16px;
@@ -1158,12 +1183,12 @@ body {
                             border-bottom: none;
                             transition: border-color 0.15s;
                             justify-content: space-between;
-                            
+
                             >.left {
-                                display:flex;
+                                display: flex;
                                 align-items: center;
                                 gap: 10px;
-                                
+
                                 img {
                                     height: 18px;
                                 }
@@ -1189,7 +1214,7 @@ body {
                             border-radius: 0 0 12px 12px;
                             border-top: none;
                             transition: border-color 0.15s;
-                            
+
                             .txtBlock {
                                 display: flex;
                                 flex: 1;
@@ -1254,8 +1279,8 @@ body {
         flex-wrap: nowrap;
         /* box-shadow: 0 0 4px 1px var(--col-1); */
         justify-content: space-between;
-        
-        
+
+
         .titleBar {
             color: var(--col-7-5);
             display: flex;
@@ -1284,6 +1309,7 @@ body {
                 border-radius: 10px;
                 transition: background-color 0.1s;
                 user-select: none;
+                transform: translateX(10px);
             }
 
             .button:hover {
@@ -1297,26 +1323,9 @@ body {
             padding-top: 0;
             display: flex;
             align-items: center;
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
+
             .uiBlock {
-                gap:12px;
+                gap: 12px;
             }
         }
 
@@ -1340,9 +1349,6 @@ body {
         flex-wrap: nowrap;
         /* box-shadow: 0 0 4px 1px var(--col-1); */
         justify-content: space-between;
-        
-        
-
 
         .titleBar {
             color: var(--col-7-5);
@@ -1372,6 +1378,7 @@ body {
                 border-radius: 10px;
                 transition: background-color 0.1s;
                 user-select: none;
+                transform: translateX(10px);
             }
 
             .button:hover {
@@ -1465,6 +1472,7 @@ body {
                 border-radius: 10px;
                 transition: background-color 0.1s;
                 user-select: none;
+                transform: translateX(10px);
             }
 
             .button:hover {
@@ -1536,28 +1544,6 @@ body {
         padding: 0 20px;
         transform: translateX(50%) translateY(-50%);
         /* box-shadow: 0 0 4px 1px var(--col-1); */
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
 
         .textW {
             color: var(--col-7-5);
@@ -1584,7 +1570,7 @@ body {
     user-select: none;
     transition: right 0.25s cubic-bezier(0, 0, 0, 0.93);
     overflow: hidden;
-    
+
 
     .top {
         display: flex;
@@ -1651,17 +1637,12 @@ body {
     flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
-    user-select: none;
+    /* user-select: none; */
     transition: top 0.25s cubic-bezier(0, 0, 0, 0.93);
     overflow: hidden;
     gap: 12px;
     padding: 5px 20px;
     transform: translateX(50%);
-    
-    
-    
-    
-    
 
     .aIcon {
         flex-grow: 0;
@@ -1682,6 +1663,14 @@ body {
         padding-left: 3px;
         font-size: 16px;
     }
+}
+
+.secAnnounce2Warning {
+    background-color: var(--active-col-0);
+}
+
+.secAnnounce2Error {
+    background-color: var(--error-col);
 }
 
 /* 审计通知窗口 */
@@ -1707,16 +1696,6 @@ body {
     color: var(--col-8);
     padding: 16px;
     gap: 16px;
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
 
     .title {
         width: 100%;
@@ -1781,7 +1760,7 @@ body {
         text-align: justify;
         /* word-break: break-all; */
     }
-    
+
     .items {
         background-color: var(--col-4-5);
         /* margin-top: 20px; */
@@ -1797,7 +1776,7 @@ body {
             display: flex;
             flex-direction: row;
             flex-wrap: nowrap;
-            
+
             >.left {
                 flex-grow: 1;
                 display: flex;
@@ -1864,12 +1843,13 @@ body {
         min-width: 106px;
         padding: 0 14px;
         transition: color 0.2s;
-        user-select:none;
+        user-select: none;
+
         >img {
-            height:20px;
-            margin-right:10px;
-            pointer-events:none;
-            user-select:none;
+            height: 20px;
+            margin-right: 10px;
+            pointer-events: none;
+            user-select: none;
         }
     }
 
@@ -1886,6 +1866,7 @@ body {
         content: "\f107";
         color: var(--col-6);
         font-weight: 900;
+        transition: color 0.15s;
     }
 }
 
@@ -1895,7 +1876,7 @@ body {
 }
 
 .chooseboxD {
-    background-color:var(--col-3);
+    background-color: var(--col-3);
 }
 
 .choosebox:hover {
@@ -1904,6 +1885,14 @@ body {
     .left {
         color: white;
     }
+
+    .right::before {
+        color: white;
+    }
+}
+
+.choosebox:active {
+    background-color: var(--brand-col-0);
 }
 
 .chooseboxOpen {
@@ -1912,7 +1901,7 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: space-around;
-    border-radius: 6px;
+    border-radius: 8px;
     min-width: 130px;
     color: var(--col-8);
     overflow: hidden;
@@ -1921,21 +1910,25 @@ body {
     display: none;
     z-index: 10;
     /* box-shadow: 0 0 6px 1px var(--col-2); */
-    border: 1.5px solid var(--col-5);
-    
+    border: 1px solid var(--col-5);
+    padding: 5px;
+    gap: 2px;
+    /* box-shadow: 0 0 3px 0px var(--col-5); */
+
     >p>img {
-            height:20px;
-            margin-right:10px;
-            pointer-events:none;
-            user-select:none;
+        height: 20px;
+        margin-right: 10px;
+        pointer-events: none;
+        user-select: none;
     }
 
     p {
-        padding: 8px 14px;
+        padding: 6px 14px;
         transition: background-color 0.2s, color 0.2s;
-        user-select:none;
+        user-select: none;
         display: flex;
         align-items: center;
+        border-radius: 6px;
     }
 
     p:hover {
@@ -1945,16 +1938,16 @@ body {
 }
 
 .chooseboxTOG {
-    display:flex;
+    display: flex;
     justify-content: space-between;
-    gap: 20px;
-    
+    gap: 14px;
+
     .TOG0 {
-        flex-grow:0;
+        flex-grow: 0;
     }
-    
+
     .TOG1 {
-        flex-grow:1;
+        flex-grow: 1;
     }
 }
 
@@ -1964,8 +1957,6 @@ body {
     color: var(--col-8);
     display: flex;
     overflow: hidden;
-    
-    
 
     .left {
         outline: none;
@@ -2296,8 +2287,8 @@ body {
     padding: 0 10px 10px 0;
     overflow-x: auto;
     min-height: fit-content;
-    
-    
+
+
 
     .colu {
         width: 100px;
@@ -2347,18 +2338,6 @@ body {
         width: 100%;
         user-select: none;
         border-radius: 10px;
-
-
-
-
-
-
-
-
-
-
-
-
 
         .colu,
         .colu-l {
@@ -2436,7 +2415,7 @@ body {
     }
 
     .st-2::after {
-        content: "已就绪";
+        content: "待发布";
     }
 
     .st-3 {
@@ -2444,7 +2423,7 @@ body {
     }
 
     .st-3::after {
-        content: "待认领";
+        content: "待领取";
     }
 
     .st-4 {
@@ -2452,7 +2431,7 @@ body {
     }
 
     .st-4::after {
-        content: "已认领";
+        content: "已领取";
     }
 
     .st-5 {
@@ -2468,7 +2447,7 @@ body {
     }
 
     .st-6::after {
-        content: "卡住了";
+        content: "受阻";
     }
 
     .st-7 {
@@ -2484,7 +2463,7 @@ body {
     }
 
     .st-8::after {
-        content: "被打回";
+        content: "待返工";
     }
 
     .st-9 {
@@ -2492,7 +2471,7 @@ body {
     }
 
     .st-9::after {
-        content: "取消中";
+        content: "待取消";
     }
 
     .st-10 {
@@ -2500,7 +2479,7 @@ body {
     }
 
     .st-10::after {
-        content: "执行者丢失";
+        content: "已失联";
     }
 
     .st-11 {
@@ -2556,7 +2535,7 @@ body {
         gap: 10px;
         user-select: none;
         justify-content: space-between;
-        
+
         >.header {
             color: var(--col-8);
             font-size: 20px;
@@ -2566,14 +2545,16 @@ body {
             display: flex;
             justify-content: space-between;
             align-items: center;
+
             >.right {
-                font-size:16px;
+                font-size: 16px;
                 display: flex;
                 align-items: center;
                 gap: 10px;
-                color:var(--col-6);
+                color: var(--col-6);
+
                 i {
-                    font-size:18px;
+                    font-size: 18px;
                 }
             }
         }
@@ -2633,14 +2614,6 @@ body {
         transition: background-color 0.15s;
         gap: 10px;
         user-select: none;
-        
-        
-        
-
-
-
-
-
 
         >.header {
             color: var(--col-8);
@@ -2875,9 +2848,12 @@ body {
     >.tabPlace {
         display: flex;
         flex-direction: row;
-        gap: 10px;
+        gap: 4px;
         flex-wrap: nowrap;
         border-bottom: 1px solid var(--col-4);
+        
+        
+        
 
         .tabItem {
             padding: 12px;
@@ -2886,6 +2862,9 @@ body {
             user-select: none;
             color: var(--col-7);
             transition: border-color 0.15s, background-color 0.15s;
+            border-radius: 8px;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
         }
 
         .tabItem:hover {
@@ -2921,103 +2900,103 @@ body {
     color: var(--col-8);
     padding: 0 10px 10px 0;
     flex-grow: 1;
-    overflow:scroll;
+    overflow: scroll;
 
     >.inner {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: max-content;
-
-    >.header {
         display: flex;
-        flex-direction: row;
-        user-select: none;
-        padding: 0 10px 0 10PX;
-        font-size: 12px;
-        gap: 5px;
-    }
+        flex-direction: column;
+        gap: 6px;
+        min-width: max-content;
 
-    >.eraTitle {
-        font-size: 12px;
-        display: flex;
-        justify-content: center;
-        padding: 4px;
-        background: var(--brand-col);
-        border-radius: 10px;
-        color: white;
-    }
+        >.header {
+            display: flex;
+            flex-direction: row;
+            user-select: none;
+            padding: 0 10px 0 10PX;
+            font-size: 12px;
+            gap: 5px;
+        }
 
-    >.item {
-        display: flex;
-        flex-direction: row;
-        background-color: var(--col-2);
-        padding: 3px 10px;
-        border: 1px solid var(--col-4);
-        border-radius: 10px;
-        font-size: 12px !important;
-        gap: 5px;
-        transition: background-color 0.15s;
-    }
+        >.eraTitle {
+            font-size: 12px;
+            display: flex;
+            justify-content: center;
+            padding: 4px;
+            background: var(--brand-col);
+            border-radius: 10px;
+            color: white;
+        }
 
-    >.item:hover {
-        background-color: var(--col-3);
-    }
+        >.item {
+            display: flex;
+            flex-direction: row;
+            background-color: var(--col-2);
+            padding: 3px 10px;
+            border: 1px solid var(--col-4);
+            border-radius: 10px;
+            font-size: 12px !important;
+            gap: 5px;
+            transition: background-color 0.15s;
+        }
 
-    .Cit1 {
-        min-width: 80px;
-        flex-grow: 0;
-        display: flex;
-        align-items: center;
-        max-width: 80px;
-    }
+        >.item:hover {
+            background-color: var(--col-3);
+        }
 
-    .Cit2 {
-        flex-grow: 0;
-        min-width: 120px;
-        display: flex;
-        align-items: center;
-        user-select: none;
-        pointer-events: none;
-        max-width: 120px;
-    }
+        .Cit1 {
+            min-width: 80px;
+            flex-grow: 0;
+            display: flex;
+            align-items: center;
+            max-width: 80px;
+        }
 
-    .Cit3 {
-        flex-grow: 1;
-        display: flex;
-        align-items: flex-start;
-        max-height: 50px;
-        margin: auto 0;
-        overflow: hidden;
-    }
+        .Cit2 {
+            flex-grow: 0;
+            min-width: 120px;
+            display: flex;
+            align-items: center;
+            user-select: none;
+            pointer-events: none;
+            max-width: 120px;
+        }
+
+        .Cit3 {
+            flex-grow: 1;
+            display: flex;
+            align-items: flex-start;
+            max-height: 50px;
+            margin: auto 0;
+            overflow: hidden;
+        }
 
     }
 }
 
 .emptybox {
-    display:flex;
-    width:100%;
-    height:240px;
-    color:var(--col-6);
+    display: flex;
+    width: 100%;
+    height: 240px;
+    color: var(--col-6);
     font-size: 18px;
     align-items: center;
     justify-content: center;
 }
 
 .emptybox::before {
-    content:"这里暂时还没有内容";
+    content: "这里暂时还没有内容";
 }
 
 .selection {
-    display:none;
-    position:fixed;
+    display: none;
+    position: fixed;
     min-width: 130px;
-    z-index:10;
+    z-index: 10;
     background-color: var(--col-4);
-    border-radius:10px;
+    border-radius: 10px;
     flex-direction: column;
-    padding:4px;
-    font-size:14px;
+    padding: 4px;
+    font-size: 14px;
     /* box-shadow: 0 0 2px 2px var(--col-1-5); */
     /* gap: 4px; */
     
@@ -3026,42 +3005,45 @@ body {
         color: var(--col-6);
         user-select: none;
     }
-        
+
     >.item {
-        border-radius:8px;
+        border-radius: 8px;
         padding: 6px 10px;
-        color:var(--col-8);
-        user-select:none;
-        transition:background-color 0.15s;
-        display:flex;
+        color: var(--col-8);
+        user-select: none;
+        transition: background-color 0.15s,color 0.15s;
+        display: flex;
         align-items: center;
         gap: 10px;
         justify-content: space-between;
-        
+
 
         .left {
             gap: 10px;
-            display:flex;
+            display: flex;
             align-items: center;
         }
 
         .right {
-            width:20px;
+            width: 20px;
             display: flex;
             justify-content: center;
         }
-        
+
         i {
-            width:16px;
-            text-align:center;
+            width: 16px;
+            text-align: center;
         }
     }
+
     >.item:hover {
-        background-color:var(--brand-col);
+        background-color: var(--brand-col);
+        color:white;
     }
 
     >.item:active {
-        background-color:var(--brand-col-0);
+        background-color: var(--brand-col-0);
+        color:white;
     }
 
 }

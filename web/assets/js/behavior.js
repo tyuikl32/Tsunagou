@@ -139,9 +139,19 @@
         return (value === null || value === undefined) ? [] : [value];
     }
 
+    /* 这三个键名不能当普通字段写 —— 它们落在原型链上。
+       patch / set 的键名可能来自外部（后端 push、宿主脚本），所以统一在这里挡掉：
+       否则 JSON 里的 "__proto__" 会把 Object.prototype 改掉，全页对象凭空多出字段。*/
+    const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+    function isUnsafeKey(key) {
+        return UNSAFE_KEYS.indexOf(key) >= 0;
+    }
+
     /* 深合并：把 patch 里的字段并进 target（数组整体替换，不逐项合并） */
     function deepAssign(target, patch) {
         Object.keys(patch || {}).forEach(function (key) {
+            if (isUnsafeKey(key)) return;
             const value = patch[key];
             if (isPlainObject(value) && isPlainObject(target[key])) {
                 deepAssign(target[key], value);
@@ -164,16 +174,20 @@
         return cursor === undefined ? fallback : cursor;
     }
 
-    /* 按 'a.b.c' 路径写，中间缺对象就补一个空对象 */
+    /* 按 'a.b.c' 路径写，中间缺对象就补一个空对象。
+       路径上的任何一段是原型链上的键就整条不写（`state.set('__proto__.x', v)` 同样是污染）。*/
     function setPath(obj, path, value) {
         const parts = String(path).split('.');
         let cursor = obj;
         for (let i = 0; i < parts.length - 1; i++) {
             const key = parts[i];
+            if (isUnsafeKey(key)) return value;
             if (!isPlainObject(cursor[key])) cursor[key] = {};
             cursor = cursor[key];
         }
-        cursor[parts[parts.length - 1]] = value;
+        const last = parts[parts.length - 1];
+        if (isUnsafeKey(last)) return value;
+        cursor[last] = value;
         return value;
     }
 
@@ -222,15 +236,15 @@
 
     const DEFAULT_PATHS = {
         /* 读取类：GET {baseUrl}{path}
-           带 {project} 的表示"属于某个协作项目"，请求时用当前项目 id 替换；
-           没选项目时这些请求会被直接跳过（见 Tsunagou.refresh）。
+           带 {project} 的表示"属于某个协作"，请求时用当前协作 id 替换；
+           没选协作时这些请求会被直接跳过（见 Tsunagou.refresh）。
            路径为空字符串 = 后端尚未提供这个接口：refresh 会跳过它，界面保留空状态，
            不会拼出坏地址去打扰后端。见 method.md 的"后端缺口"清单。*/
         /* —— 已与 Tsunagou 后端对齐（路径即后端真实路由） —— */
-        /* 左栏列表由中间层提供：一个 daemon 只服务一个项目，回答不了
-           "本机有哪些项目"；接口形状见中间层 console/projects.py 的 /projects。
-           agents=1 让中间层顺便回答"每个项目由谁负责"—— 它自己维护这份名单，
-           只在首次读到与 daemon 存储变动时去问项目（见 console/agents.py）。*/
+        /* 左栏列表由中间层提供：一个 daemon 只服务一个协作，回答不了
+           "本机有哪些协作"；接口形状见中间层 console/projects.py 的 /projects。
+           agents=1 让中间层顺便回答"每个协作由谁负责"—— 它自己维护这份名单，
+           只在首次读到与 daemon 存储变动时去问协作（见 console/agents.py）。*/
         projects: '/projects?agents=1',
         agents: '/projects/{project}/agents',
         tasks: '/console/views/tasks?project_id={project}',
@@ -265,18 +279,18 @@
         audits: '/console/views/audit?project_id={project}',
         conflicts: '/console/views/collaboration?project_id={project}',
         acceptance: '/console/views/acceptance?project_id={project}',
-        /* Agent 列表窗口是**跨项目**的汇总：一个 Agent 属于哪个项目，只有中间层答得上来
-           （daemon 只管自己那一个项目）。中间层顺带回答"它现在在做什么"，
+        /* Agent 列表窗口是**跨协作**的汇总：一个 Agent 属于哪个协作，只有中间层答得上来
+           （daemon 只管自己那一个协作）。中间层顺带回答"它现在在做什么"，
            那部分要问 daemon，所以只在窗口被打开时取一次，不跟着左栏轮询走。*/
         agentsWindow: '/console/agents',
         /* 写入类不在这里。真后端的写入口只有一个：
            POST {baseUrl}/commands/{command_kind}，见 WRITE_COMMANDS 与 api.command()。
-           少数几个由中间层掌管的写入口（用户档案 / 登记已有项目）直接写路径。*/
+           少数几个由中间层掌管的写入口（用户档案 / 登记已有协作）直接写路径。*/
     };
 
     /* 写入动作 → 两种去向：
        · 带 kind：真 daemon 的命令通道 POST {baseUrl}/commands/{kind}（envelope，payload 走服务端白名单）；
-       · 带 path：**中间层掌管的写入口**（用户档案 / 登记项目），直接按路径发一个普通 JSON 补丁。
+       · 带 path：**中间层掌管的写入口**（用户档案 / 登记协作），直接按路径发一个普通 JSON 补丁。
        值为 null = 后端没有这个能力：api.command 会明确拒绝并说明原因，不会拼出坏地址。
 
        ⚠️ daemon 命令那几条（agentSetMain / checkpointRetry / acceptanceConfirm）的 payload
@@ -316,10 +330,10 @@
                 };
             }
         },
-        /* 准备一个 Agent 接入（Codex 保存待认领申请；其他宿主签票并登记）。
+        /* 准备一个 Agent 接入（Codex 保存待领取申请；其他宿主签票并登记）。
            票据密钥只落在服务端写的私有文件里，答应里回的是路径与状态。
            nickname 是人写的名字（存在用户档案里），profile 由中间层生成 —— 名字改了不会挪目录。
-           start_daemon：签票要 daemon 活着，而这是用户明确的一次动作，允许它顺手把项目起起来。*/
+           start_daemon：签票要 daemon 活着，而这是用户明确的一次动作，允许它顺手把协作起起来。*/
         agentPrepare: {
             path: '/console/projects/{project}/agents:prepare', method: 'POST',
             payload: function (b) {
@@ -447,7 +461,13 @@
         const provided = window.TSUNAGOU_CONSOLE_CONFIG;
         if (!isPlainObject(provided)) return null;
         if (provided.baseUrl) config.baseUrl = toText(provided.baseUrl).replace(/\/+$/, '');
-        const interval = Number(provided.poll_ms);
+        /* null / '' / false / [] 经 Number() 都会变成 0，而 0 是"不自动重拉"的**合法值** ——
+           于是"没写这个字段"被当成"明确要求不轮询"，页面静默地再也不刷了。
+           所以先要求它真的是个数字（或非空数字串），再看 isFinite。*/
+        const rawInterval = provided.poll_ms;
+        const interval = (typeof rawInterval === 'number'
+            || (typeof rawInterval === 'string' && rawInterval.trim() !== ''))
+            ? Number(rawInterval) : NaN;
         if (isFinite(interval)) config.pollMs = interval;
         emit('config:change', configSnapshot());
         return provided;
@@ -457,13 +477,16 @@
        ?poll_ms=0   不自动重拉（改 CSS / 调界面时用；与 console.config.js 里写 0 / 负数一个意思）
        ?shape=dag   一进来就停在总路径的「DAG路径图」，省得每次刷新都点一下那个选择框
 
-       只挡**定时**重拉：开项目、点标签、写操作后的即时重拉该刷还是刷 —— 那些都是你自己的操作。
+       只挡**定时**重拉：开协作、点标签、写操作后的即时重拉该刷还是刷 —— 那些都是你自己的操作。
        正常地址带上它们才生效，去掉就恢复原状。*/
     function applyUrlOverrides() {
         const params = new URLSearchParams(toText(window.location.search));
         const notes = [];
         if (params.has('poll_ms')) {
-            const interval = Number(params.get('poll_ms'));
+            /* 空串（?poll_ms=）不是"关掉重拉"，是"这个开关没写值"—— Number('') 是 0，
+               不挡的话它会被当成明确要求 0。*/
+            const rawText = toText(params.get('poll_ms')).trim();
+            const interval = rawText === '' ? NaN : Number(rawText);
             if (isFinite(interval)) {
                 config.pollMs = interval;
                 notes.push('poll_ms=' + interval + (interval > 0 ? '' : '（不自动重拉）'));
@@ -492,11 +515,17 @@
     function on(name, handler) {
         if (typeof handler !== 'function') return function () {};
         const list = listenerMap[name] || (listenerMap[name] = []);
-        list.push(handler);
+        /* 同一个 handler 不重复登记：重复登记只会让一次 emit 把它调两遍，
+           而 off 只摘得掉一个，剩下的越攒越多（点击次数随注册次数放大）。*/
+        if (list.indexOf(handler) < 0) list.push(handler);
         return function offOne() { off(name, handler); };
     }
 
     function once(name, handler) {
+        /* 和 on 一样的兜底：非函数的话 unbind 是空操作，但 handler(detail) 会抛
+           TypeError；而 emit 的 try/catch 只会把它吞成一条 console 记录，
+           调用方永远等不到回调、也拿不到任何失败信号。*/
+        if (typeof handler !== 'function') return function () {};
         const unbind = on(name, function (detail) {
             unbind();
             handler(detail);
@@ -695,11 +724,11 @@
      * 业务含义在 §6 的 actions / app 里。
      * ====================================================================== */
 
-    /* ---- 项目标签页索引表 ------------------------------------------------ */
+    /* ---- 协作标签页索引表 ------------------------------------------------ */
 
     /* 顺序必须与 index.html 里 .tabArea 的 .tabS 顺序、.inner 的 .tabMain 顺序一致。
        slug 用来拼 id：标签按钮 #tab-<slug>、主视图 #pane-<slug>、侧栏 #aside-<slug>。
-       「项目验收」与「存档点」已合并成一屏（slug 仍是 acceptance）：确认完成本来就会落成一个
+       「协作验收」与「存档点」已合并成一屏（slug 仍是 acceptance）：确认完成本来就会落成一个
        存档点，拆两栏反而让人在两张卡之间找关系 —— 见图下那条注释。*/
     const PROJECT_TABS = [
         { slug: 'overview', title: '主视图' },
@@ -742,9 +771,9 @@
         return hit ? hit.slug : '';
     }
 
-    /* ---- 工作区：初始页 / 项目页 ------------------------------------------ */
+    /* ---- 工作区：初始页 / 协作页 ------------------------------------------ */
 
-    /* 两块 <section> 只有 class 没有 id：.secHome（初始）与 .secProjPanel（项目）。
+    /* 两块 <section> 只有 class 没有 id：.secHome（初始）与 .secProjPanel（协作）。
        JS 只管显隐：隐藏方写行内 display:none，显示方清掉行内 display 交回 CSS。*/
     const WORKSPACE_NAMES = { home: 'secHome', project: 'secProjPanel' };
 
@@ -843,19 +872,18 @@
         }
     };
 
-    /* 点窗口背景（.secWindow 自己那层黑遮罩）：**不算提交、也不算取消**。
-       以前这里一律 close，而"关闭"对有些窗口就等于走它自己的那条路（向导、确认框……），
-       于是点一下黑边就把事情办了 —— 太容易误触。
-       唯一例外是加载遮罩 #loadW：把它关掉本来就是"我不等了"。*/
+    /* 点窗口背景（.secWindow 自己那层黑遮罩）：**一律不做任何反应**。
+       窗口怎么收场只由窗口里的按钮决定 —— 这样"点一下黑边"永远不会替人做决定。
+       以前这里给加载遮罩 #loadW 开过一个口子（点黑边 = "我不等了"），现在不需要了：
+       · **纯加载**的遮罩没有按钮，加载完自己关，本来也不该由人关；
+       · **等待 Agent 接入**那扇窗自己有「取消等待」按钮（#loadWCancel，只在能取消时露出来），
+         而且那条路会先问一次再收场。
+       这个函数保留成空实现，只为让 init 与宿主脚本的调用点继续成立。*/
     ui.window.bindBackdrop = function () {
-        delegateClick(['.secWindow'], function (node, event) {
-            if (event.target !== node) return;      /* 点在窗口盒子里不算 */
-            if (node.id !== 'loadW') return;        /* 其余窗口：点了不动 */
-            ui.window.close(node);
-        });
+        /* 有意为空：黑遮罩不接受点击。*/
     };
 
-    /* ---- 项目标签页 ------------------------------------------------------ */
+    /* ---- 协作标签页 ------------------------------------------------------ */
 
     let currentTabSlug = '';
 
@@ -1027,14 +1055,14 @@
 
        四步各自做一件真事，不再把"完成"当成唯一的提交点：
          1) 创建一个新的协作 —— 这一下就真的建（目录 + git init + 登记 + 起 daemon），
-            建完之后输入框只读、按钮变成"下一步"（项目已经落地，再改名字只是自欺欺人）。
+            建完之后输入框只读、按钮变成"下一步"（协作已经落地，再改名字只是自欺欺人）。
             这里只问名字：目标是用户和主 Agent 谈完、用户确认过之后才存在的东西，
-            建项目时问一句只会得到一个没人看的占位；
-         2) 连接到主 Agent  —— 真的准备接入申请并等原会话就绪；
-         3) 连接到子 Agent  —— 同上，可以接多个，也可以一个都不接；
+            建协作时问一句只会得到一个没人看的占位；
+         2) 接入主 Agent  —— 真的准备接入申请并等原会话就绪；
+         3) 接入子 Agent  —— 同上，可以接多个，也可以一个都不接；
          4) 接入结果        —— 只是把已经发生的事列出来给人看，不再发任何请求。
        第 2/3 步要人打开或重载宿主的窗口（宿主只在自己启动时读配置），
-       遮罩上给了「取消等待」：确认后请求中间层取消，已认领时按服务端拒绝继续等。*/
+       遮罩上给了「取消等待」：确认后请求中间层取消，已领取时按服务端拒绝继续等。*/
 
     /* 结构约定：#newXz1..4 是每步的正文，#xz1..4 是每步的按钮组。*/
     const WIZARD_STEPS = 4;
@@ -1065,24 +1093,24 @@
         return null;
     }
 
-    /* 第 1 步的输入框在项目建好之后只读：那一行已经变成"这个协作的名字"了 */
+    /* 第 1 步的输入框在协作建好之后只读：那一行已经变成"这个协作的名字"了 */
     function freezeWizardStepOne(frozen) {
         wizardInputs(1).forEach(function (input) { input.readOnly = !!frozen; });
     }
 
-    /* 第 1 步的「创建」：真建项目。建过一次就不再建第二个（按钮从此只是"下一步"）*/
+    /* 第 1 步的「创建」：真建协作。建过一次就不再建第二个（按钮从此只是"下一步"）*/
     function wizardCreateProject() {
         const done = state.get('wizard.project', null);
         if (done && toText(done.id)) { ui.wizard.go(2); return Promise.resolve(true); }
         const draft = ui.wizard.collect();
-        /* 这一步确实往磁盘上写（中间层建项目目录 + 登记索引），但**不弹二次确认**
+        /* 这一步确实往磁盘上写（中间层建协作目录 + 登记索引），但**不弹二次确认**
            （2026-09-29 你定的）：向导本身就是多步表单，"下一步"已经是一次明确动作，
            再叠一个确认框只会多一次点击。见 §4.6 的确认分工表。*/
         return Promise.resolve(actions.createProject({ name: draft.name }))
             .then(function (project) {
                 const id = toText(project && project.project_id);
                 if (!project || !id) return false;
-                /* 描述从后端那份项目里回读，不用草稿里的值：没有目标时它就是后端写的占位，
+                /* 描述从后端那份协作里回读，不用草稿里的值：没有目标时它就是后端写的占位，
                    第 4 步看到的就是磁盘上真正那句话。*/
                 state.set('wizard.project', {
                     id: id,
@@ -1090,7 +1118,7 @@
                     objective: toText(project.objective)
                 });
                 freezeWizardStepOne(true);
-                /* 建完就切进这个协作：第 2/3 步的接入请求是项目作用域的，必须要"当前项目" */
+                /* 建完就切进这个协作：第 2/3 步的接入请求是协作作用域的，必须要"当前协作" */
                 app.openProject(id);
                 ui.wizard.go(2);
                 return true;
@@ -1113,7 +1141,7 @@
         const blocked = hostEnrollBlocker(host);
         if (blocked) {
             if (blocked.mode === 'in_host') notify.info(blocked.note);
-            else notify.error(blocked.note);
+            else notify.warn(blocked.note);
             return Promise.resolve(false);
         }
         const previous = state.get('wizard.main', null);
@@ -1160,9 +1188,9 @@
         current: function () { return wizardStep; },
         next: function () {
             const error = wizardValidate(wizardStep);
-            if (error) { notify.error(error); return wizardStep; }
-            /* 第 1 步要先把项目建出来，第 2 步要把主 Agent 接上：这两步都可能失败，
-               失败就停在原地（项目已经建好了，不会白费）。*/
+            if (error) { notify.info(error); return wizardStep; }
+            /* 第 1 步要先把协作建出来，第 2 步要把主 Agent 接上：这两步都可能失败，
+               失败就停在原地（协作已经建好了，不会白费）。*/
             if (wizardStep === 1) return wizardCreateProject();
             if (wizardStep === 2) return wizardConnectMain();
             return ui.wizard.go(wizardStep + 1);
@@ -1206,7 +1234,7 @@
                 subAgents: toArray(state.get('wizard.draftSubAgents', [])).slice()
             };
         },
-        /* 完成：什么都不用再发（项目和 Agent 在各自的步骤里已经落地了），
+        /* 完成：什么都不用再发（协作和 Agent 在各自的步骤里已经落地了），
            收起窗口、把向导复位，再把当前协作的数据重拉一遍。*/
         finish: function () {
             ui.window.close('addProj');
@@ -1223,7 +1251,7 @@
         }
     };
 
-    /* ---- 项目侧栏面板（默认隐藏，点内容才出现） --------------------------- */
+    /* ---- 协作侧栏面板（默认隐藏，点内容才出现） --------------------------- */
 
     const ASIDE_SLUGS = ['tasks', 'conflict', 'audit', 'workspace', 'path'];
 
@@ -1388,11 +1416,20 @@
             });
             document.addEventListener('pointermove', function (event) {
                 if (!asideDrag) { updateAsideCursor(event); return; }
+                /* 键已经松开了却还收到 pointermove（在窗口外松手、指针被整屏遮罩抢走、
+                   alt-tab 切走）—— 就地收尾。否则 asideDrag 永远不复位，
+                   此后**不按任何键**移动鼠标都会一直改侧栏宽度，只能刷新页面恢复。*/
+                if (event.buttons === 0) { endAsideDrag(); return; }
                 const width = asideDrag.startWidth + (asideDrag.startX - event.clientX);
                 asideDrag.el.style.width = clampNum(width, asideDrag.min, asideDrag.max) + 'px';
             });
             document.addEventListener('pointerup', endAsideDrag);
             document.addEventListener('pointercancel', endAsideDrag);
+            /* 另外两道兜底：窗口失焦、页面被藏起来时，pointerup 可能永远不来。*/
+            window.addEventListener('blur', endAsideDrag);
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) endAsideDrag();
+            });
         }
     };
 
@@ -1516,8 +1553,13 @@
 
     function settleCsPanel(panel, expanded) {
         clearTimeout(panel.csAnimTimer);
+        /* 上一次那次收尾的监听也要摘掉：下面的 clearTimeout 会让它自己的兜底定时器再也
+           不跑，于是那个闭包就永远留在元素上（开关几次积几个），而且它还会在之后某次
+           height 过渡结束时去动面板的 height / display。*/
+        if (panel.csOnEnd) panel.removeEventListener('transitionend', panel.csOnEnd);
         const finish = function () {
             panel.removeEventListener('transitionend', onEnd);
+            if (panel.csOnEnd === onEnd) panel.csOnEnd = null;
             clearTimeout(panel.csAnimTimer);
             if (panel.dataset.csState === 'open' && expanded) {
                 panel.style.height = 'auto';
@@ -1530,6 +1572,7 @@
         const onEnd = function (event) {
             if (event.target === panel && event.propertyName === 'height') finish();
         };
+        panel.csOnEnd = onEnd;
         panel.addEventListener('transitionend', onEnd);
         panel.csAnimTimer = setTimeout(finish, CSBOX_ANIM_TIMEOUT);
     }
@@ -1742,6 +1785,8 @@
      *     所以 error 靠图标与文案区分，颜色由 CSS 决定，JS 不插手。
      * ====================================================================== */
 
+    /* 两位数补零。**全文件只有这一个**（§6 的时间格式化也用它）——
+       以前 §6 里另有一份同名实现，靠"后声明的赢"把它整个盖住，改哪一份都不生效。*/
     function pad2(value) { return value < 10 ? '0' + value : '' + value; }
 
     function todayText() {
@@ -1798,14 +1843,73 @@
     const INFO_DEFAULT_DURATION = 2500;
     let infoTimer = null;
 
+    /* 提示的三种口气靠**叠加类名**区分：底色永远是 .secAnnounce2，
+       error 再叠 .secAnnounce2Error、warn 再叠 .secAnnounce2Warning（CSS 里就是这么定的）。
+       每次显示前先把两个变体摘掉，免得上一次的口气留在这一句上。*/
+    /* 拒绝码说人话：后端拒绝时往往只给一串码（ready_session_required 之类），
+       直接上屏没人看得懂。词表里本来就有这些码的中文（denial_reason 那一张），
+       先按它翻；翻不到就**原样显示** —— 宁可露出码，也不要编一句可能不准的话。
+       整句替换而不是只认"整串就是码"：像 credential_command_failed:xxx 这种带前缀的也一起换。*/
+    function humanizeDenial(text) {
+        const raw = toText(text);
+        /* 词表的形状是 {version, domains:{…}}（见 EMPTY_STATE 与 glossText），
+           这一张在 glossary.domains.denial_reason。以前写成 glossary.denial_reason，
+           拿到的永远是 undefined → words 恒为 {} → 整张表一次都没用上。*/
+        const words = state.get('glossary.domains.denial_reason', {}) || {};
+        let out = raw;
+        Object.keys(words).forEach(function (code) {
+            if (out.indexOf(code) >= 0) out = out.split(code).join(toText(words[code]));
+        });
+        out = humanizePrefix(out);
+        /* 只有**整句就是一串代号**时才包成「（代号 …）」：它是给机器看的东西。
+           句子里夹着的普通英文词（例如"有 3 项拉取失败：projects、glossary"里列出的键名）
+           是信息、不是码，不要动 —— 上一版就是这里收得太宽，把好好的句子也包了。*/
+        const trimmed = out.trim();
+        if (/^[a-z][a-z0-9_]{6,}$/.test(trimmed)) out = '（代号 ' + trimmed + '）';
+        /* 两边都翻成中文的 "X:Y"：冒号改全角，读起来才像一句话 */
+        out = out.replace(/([\u4e00-\u9fff]):(?=[\u4e00-\u9fff])/g, '$1：');
+        return out;
+    }
+
+    /* 前缀/整串码的补充表：**写在页面里**，不进词表 —— 词表有 6 字上限与三条测试钉着，
+       而这些是"给用户看的解释"，本来就该在页面这一层。认不出来的一律留给上面那条兜底。*/
+    const DENIAL_PREFIX_WORDS = {
+        credential_command_failed: '凭据没通过',
+        schema_bundle_digest_mismatch: '协议版本对不上',
+        invalid_or_consumed_enrollment_ticket: '这张接入票已经用过或过期了',
+        enrollment_expired: '这次接入已经过期',
+        host_unreachable: '连不上那台机器'
+    };
+
+    function humanizePrefix(text) {
+        let out = toText(text);
+        Object.keys(DENIAL_PREFIX_WORDS).forEach(function (code) {
+            if (out.indexOf(code) >= 0) out = out.split(code).join(DENIAL_PREFIX_WORDS[code]);
+        });
+        return out;
+    }
+
+    const TIP_VARIANT_BY_KIND = {
+        error: 'secAnnounce2Error',
+        warn: 'secAnnounce2Warning'
+    };
+
     function showTip(text, options) {
         const node = byId(INFO_ID);
         if (!node) return false;
         const opts = options || {};
         const icon = qs('.aIcon i', node);
+        const wanted = TIP_VARIANT_BY_KIND[toText(opts.kind)] || '';
+        Object.keys(TIP_VARIANT_BY_KIND).forEach(function (kind) {
+            const cls = TIP_VARIANT_BY_KIND[kind];
+            if (cls !== wanted) node.classList.remove(cls);
+        });
+        /* .secAnnounce2 本身不动：变体是叠上去的，不是替掉它 */
+        if (wanted) node.classList.add(wanted);
         const label = qs('.aText', node);
         if (icon) icon.className = opts.icon || 'fa-solid fa-circle-info';
-        if (label) label.textContent = toText(text);
+        /* 警告与错误这两档才翻译（提示那档是人写的引导句，不含码）*/
+        if (label) label.textContent = wanted ? humanizeDenial(text) : toText(text);
         node.style.top = '30px';
 
         clearTimeout(infoTimer);
@@ -1897,11 +2001,14 @@
         /* 确认框本来就是最上面一层（见 init() 把 #delPmt 移到 body 末尾），
            所以不用把遮罩收起来，遮罩就在背后接着转。*/
         return dialog.confirm({
-            title: toText(copy.title) || '取消等待接入？',
-            text: toText(copy.text) || '要停止等待这个 Agent 连接吗？',
+            /* 全流程只留「取消等待 / 已取消等待」这一套说法：按钮叫「取消等待」，
+               问一句也叫「取消等待？」，确认键还是「取消等待」。路径差异交给后果句说
+               （description 那句），不再另造"取消等待接入"这类半截话。*/
+            title: toText(copy.title) || '取消等待？',
+            text: toText(copy.text) || '要取消等待这个 Agent 接入吗？',
             description: toText(copy.description) || ('系统会核对这次接入是否仍可取消；已经开始接入时会说明原因，' +
                 '不会移除已接入的 Agent。'),
-            okText: toText(copy.okText) || '取消接入'
+            okText: toText(copy.okText) || '取消等待'
         }).then(function (ok) {
             cancelAsking = false;
             /* 确认框开着的时候这次等待可能已经结束了（例如那边正好连上了）*/
@@ -2146,7 +2253,7 @@
     }
 
     /* 允许传配置键（'tasks'）或真实路径（'/x/y'）；
-       模板里的 {project} 用当前项目 id 替换。*/
+       模板里的 {project} 用当前协作 id 替换。*/
     const PROJECT_PLACEHOLDER = '{project}';
 
     /* 中间层认这个请求头（见 console/app.py 的 PROJECT_HEADER）。daemon 会忽略它。*/
@@ -2170,6 +2277,17 @@
 
     /* ---- 请求 ------------------------------------------------------------ */
 
+    /* 失败的档位与口气：后端**明确拒绝**（4xx）是"条件不满足" → 警告；
+       连不上 / 超时 / 服务端 5xx 才是"真失败" → 错误。
+       这两种都会走"拒绝码说人话"（showTip 只对 warn / error 两档调 humanizeDenial），
+       所以失败绝不能用 notify.info —— 那样码会原样上屏，而且是最低那一档。*/
+    function notifyFailure(error) {
+        const status = Number(error && error.status) || 0;
+        const text = toText(error && error.message);
+        if (status >= 400 && status < 500) notify.warn(text);
+        else notify.error(text);
+    }
+
     api.ApiError = ApiError;
 
     api.request = function (options) {
@@ -2177,14 +2295,14 @@
         const method = toText(opts.method || 'GET').toUpperCase();
         const pathKey = opts.path || opts.url;
 
-        /* 项目作用域的接口：没选项目就不发请求，报一个说得清的错，
+        /* 协作作用域的接口：没选协作就不发请求，报一个说得清的错，
            免得拼出 /projects//tasks 这种地址去打扰后端。*/
         if (pathNeedsProject(pathKey) && !toText(state.get('currentProjectId'))) {
-            const noProject = new ApiError('还没有选择协作项目，无法请求 ' + toText(pathKey), {
+            const noProject = new ApiError('还没有选择协作，无法请求 ' + toText(pathKey), {
                 method: method,
                 url: toText(pathKey)
             });
-            if (!opts.silent) notify.error(noProject.message);
+            if (!opts.silent) notify.info(noProject.message);
             emit('api:error', { method: method, url: toText(pathKey), error: noProject });
             return Promise.reject(noProject);
         }
@@ -2199,7 +2317,7 @@
 
         const headers = Object.assign({}, config.headers, opts.headers || {});
         if (config.token && !headers.Authorization) headers.Authorization = 'Bearer ' + config.token;
-        /* 中间层靠这个头知道这次请求属于哪个项目：项目作用域的路径里已经有 id，
+        /* 中间层靠这个头知道这次请求属于哪个协作：协作作用域的路径里已经有 id，
            但 /commands/*、/decisions、/checkpoints 这类路由没有，daemon 自己会忽略它。*/
         const current = toText(state.get('currentProjectId'));
         if (current && !headers[PROJECT_HEADER]) headers[PROJECT_HEADER] = current;
@@ -2257,7 +2375,7 @@
                 (error && error.name === 'AbortError') ? ('请求超时（' + timeout + 'ms）') : ('网络错误：' + ((error && error.message) || '未知')),
                 { url: url, method: method, raw: error }
             );
-            if (!opts.silent) notify.error(normalized.message);
+            if (!opts.silent) notifyFailure(normalized);
             emit('api:error', { method: method, url: url, error: normalized });
             throw normalized;
         });
@@ -2295,7 +2413,7 @@
             return Promise.reject(error);
         }
         const payload = spec.payload ? spec.payload(body || {}) : (body || {});
-        /* 少数写入口由中间层掌管（用户档案、登记已有项目）：它们不是 daemon 命令，
+        /* 少数写入口由中间层掌管（用户档案、登记已有协作）：它们不是 daemon 命令，
            直接按路径发；只有带 kind 的才走命令通道 envelope。*/
         if (spec.path) {
             return api.request(Object.assign({
@@ -2336,12 +2454,17 @@
     /* ---- 表单 ------------------------------------------------------------ */
 
     /* 自动提交（失焦即提交）的判定规则：
-       1) 命中 .textbox / .textbox2 里的 input；
-       2) 不在"按钮提交"的窗口里（向导、添加子 Agent —— 它们有明确的提交按钮；
-          Agent 详情窗口的两个输入是只读展示，更没有东西可提交）；
-       3) 自己所在的 .item / .uiBlock 里没有按钮。 */
+       1) 不是明确标了"手动提交"的（`data-tg-commit="manual"` 是第一道逃生门）；
+       2) 不是只读 / 禁用的展示框；
+       3) 不在"按钮提交"的窗口里（向导、添加子 Agent、重命名 —— 它们有明确的提交按钮）；
+       4) 自己所在的 .item / .uiBlock 里没有按钮。
+       注：AUTOCOMMIT_SELECTOR 只给 form.fields 用，form.watch 收的是页面上**全部** input，
+       所以上面四条是唯一的把关处。*/
     const AUTOCOMMIT_SELECTOR = '.textbox input, .textbox2 input';
-    const AUTOCOMMIT_EXCLUDE = ['#addProj', '#addSubAgent', '#mgrAgentInfo'];
+    /* 重命名窗口也在这里：它有明确的「确定」按钮（onclick 指向 submitRename），
+         没有理由失焦就提交 —— 手滑点到旁边一下，输入框的内容就被当档案字段提交了。
+       #netInvite 同理：那段"邀请内容"是只读展示，更不该被当成档案字段。*/
+    const AUTOCOMMIT_EXCLUDE = ['#addProj', '#addSubAgent', '#mgrAgentInfo', '#renamePmt', '#netInvite'];
 
     function inputScope(input) {
         return closest(input, '.item') || closest(input, '.uiBlock') || closest(input, '.secWindow');
@@ -2349,6 +2472,10 @@
 
     function isAutoCommitInput(input) {
         if (!input || input.dataset.tgCommit === 'manual') return false;
+        /* 只读 / 禁用的框是**展示**用的（典型就是 #netInvite 里那段一次性邀请票）。
+           它们照样能聚焦、照样会失焦，所以必须在这里挡 —— 否则点一下框、再点到别处，
+           票的内容就被当档案字段发去 PUT /console/profile 了。*/
+        if (input.readOnly || input.disabled) return false;
         for (let i = 0; i < AUTOCOMMIT_EXCLUDE.length; i++) {
             if (closest(input, AUTOCOMMIT_EXCLUDE[i])) return false;
         }
@@ -2427,16 +2554,20 @@
             window: (closest(node, '.secWindow') || {}).id || '',
             label: opts.label || ''
         };
-        committedValues[key] = value;
         emit('form:commit', detail);
 
         /* 后端可以用 events.on('form:commit') 接管；默认按配置里的地址提交 */
         if (opts.local) {
+            committedValues[key] = value;
             if (opts.toast !== false) notify.success({ title: opts.title || '改动已成功保存' });
             return Promise.resolve(value);
         }
+        /* 只有**提交成功**才记"已提交值"。记早了的话，一次失败就会让同一个值再也发不出去：
+           下次失焦时 value === previous 成立，直接 return，界面上看着像"怎么点都没反应"，
+           而后端其实还是旧值。*/
         return api.post(opts.path || 'settingSave', { key: key, value: value }, { silent: opts.silent })
             .then(function (result) {
+                committedValues[key] = value;
                 if (opts.toast !== false) notify.success({ title: opts.title || '改动已成功保存' });
                 return result;
             });
@@ -2501,7 +2632,7 @@
     };
 
     /* 厂商未知（或压根没有 Agent）时摆的图标：Tsunagou 自己的小标（本来就是 1:1，
-       跟头像位一样高）。不拿某个厂商图标冒充 —— 那会让人以为项目里真有个那家的
+       跟头像位一样高）。不拿某个厂商图标冒充 —— 那会让人以为协作里真有个那家的
        Agent。它有 -l/-d 两版，主题切换会跟着换。*/
     const TSUNAGOU_CARD_ICON = './assets/img/logo-little-l.png';
 
@@ -2518,7 +2649,12 @@
         const source = isPlainObject(agent) ? agent.icon : agent;
         const text = toText(source);
         if (/\.(png|jpe?g|svg|webp)$/i.test(text)) return themedIconPath(text);
-        return themedIconPath(AGENT_ICONS[text.toLowerCase()] || TSUNAGOU_CARD_ICON);
+        /* 用 hasOwnProperty 查表：icon 可以是后端/档案带上来的任意字符串，
+           而 "constructor" / "toString" / "__proto__" 这种键会命中原型链拿到函数（真值），
+           于是回退不到小标，最后把一个函数源码塞进 img.src。*/
+        const key = text.toLowerCase();
+        const hit = Object.prototype.hasOwnProperty.call(AGENT_ICONS, key) ? AGENT_ICONS[key] : '';
+        return themedIconPath(hit || TSUNAGOU_CARD_ICON);
     }
 
     /* 选择框里的厂商文字（"DeepSeek Harness" / "Claude Code（待实现）" / "OpenCode" …）→ 图标。
@@ -2542,18 +2678,16 @@
     /* 同上，给 .boxerbox 用（卡片组里它得冒充一张卡片的宽高占位）*/
     const EMPTY_CARD = { cls: 'emptybox', parts: [] };
 
-    /* 空状态居中：容器里只剩"这里暂时还没有内容"时，那行字贴左看着很孤单。
-       做法：容器临时变成"一行、水平居中"，并让那个空盒子**独占一整行**
-       （flex-basis 100%）。只加必要的几条，有内容了全部清掉、交回 CSS。
-       为什么还要管空盒子本身：它 CSS 里是 width:100%，但在换行的 flex 行里
-       一旦被压成内容宽度，容器再居中也没有用 —— 两边一起写才稳。 */
-    function centerEmptyState(container, empty) {
-        if (!container) return null;
-        const box = qs('.emptybox', container);
-        container.style.display = empty ? 'flex' : '';
-        container.style.justifyContent = empty ? 'center' : '';
-        if (box) box.style.flex = empty ? '1 1 100%' : '';
-        return container;
+    /* 空状态居中：窗口里只剩"这里暂时还没有内容"时，那行字贴左看着很孤单。
+       做法（用户定的口径）：**临时**给窗口那一层 `.main` 写行内 `justify-content:center`。
+       它 CSS 里本来就是 `display:flex; flex-direction:row`，所以这一条就够：中间的 `.inner`
+       宽由内容决定，会被推到水平中间 —— 而给 `.table`/`.emptybox` 各写几条那套补丁没用
+       （实测空盒子仍只有内容宽 162px），已经撤掉。
+       有内容时必须清掉：否则整片卡片网格也会被收成内容宽并居中。*/
+    function centerEmptyState(mainBox, empty) {
+        if (!mainBox) return null;
+        mainBox.style.justifyContent = empty ? 'center' : '';
+        return mainBox;
     }
 
     /* Agent 胶囊：<div class="item [cls]"><img class="left"><div class="right">名字</div></div>
@@ -2734,7 +2868,7 @@
         asideFields: asideFieldsHtml
     });
 
-    /* ---- 左栏：协作项目列表 ---------------------------------------------- */
+    /* ---- 左栏：协作列表 -------------------------------------------------- */
 
     const PROJECT_STATUS = {
         working: { cls: 'wking', text: '工作中' },
@@ -2742,13 +2876,8 @@
         finished: { cls: 'finished', text: '已完成' }
     };
 
-    /* 左栏列表是否已经收到过后端的数据。
-       用途：区分“还没拉到”和“后端确实说一个协作都没有”——
-       前者不要出空状态，否则页面刚打开的一瞬间会闪一下“这里暂时还没有内容”。*/
-    let projectListLoaded = false;
-
     /* 卡片上的 Agent 胶囊按 id **现算**名字与图标：
-       项目列表与用户档案（昵称/厂商）是启动时并发拉的，谁先回来不定 ——
+       协作列表与用户档案（昵称/厂商）是启动时并发拉的，谁先回来不定 ——
        烘焙进数据的话，先到的名单会一路显示成 id 缩写。*/
     function cardAgent(agent) {
         const ref = toText(agent && (agent.id || agent.agent_id));
@@ -2760,13 +2889,15 @@
     /* 卡片上没有主 Agent 时摆的就是 TSUNAGOU_CARD_ICON（见上面"图标"那一节）*/
 
     /* 卡片的样子。selected 由 render.list 统一判定后传进来 ——
-       这里不自己算：否则条目一旦自称 selected、或 id 为空又刚好赶上"没选项目"，
-       整列标题就全变成蓝色了（一列里最多只能有一张选中）。*/
+       这里不自己算：否则条目一旦自称 selected、或 id 为空又刚好赶上"没选协作"，
+       整列标题就全变成蓝色了（一列里最多只能有一张选中）。
+       group（'active' / 'done'）只写成 data-proj-group：卡片靠这个属性跟两组的搜索、
+       排序对齐，卡片外面**不包容器**（理由见 render.list 里那段）。*/
     /* 子 Agent 头像一行最多摆 3 个，多出来的收进 `+N` 那个小圆圈里，N 是**没摆出来的**数量。
        别把总数写进去：只有 2 个子 Agent 时会画成"2 个头像 +2"，看起来像有 4 个。*/
     const OTHERS_SHOWN = 3;
 
-    function projectCardHtml(project, selected) {
+    function projectCardHtml(project, selected, group) {
         const status = PROJECT_STATUS[project.status] || PROJECT_STATUS.working;
         const agents = toArray(project.agents).map(cardAgent);
         const mainAgent = cardAgent(project.mainAgent) || { name: '', icon: TSUNAGOU_CARD_ICON };
@@ -2778,7 +2909,8 @@
         const others = agents.slice(0, shown).map(function (agent) {
             return '<img src="' + esc(iconOf(agent)) + '" />';
         }).join('') + (hidden > 0 ? '<span class="plus">' + esc(hidden) + '</span>' : '');
-        return '<div class="projItem' + (selected ? ' projItemSelected' : '') + '" data-project-id="' + esc(project.id) + '">' +
+        return '<div class="projItem' + (selected ? ' projItemSelected' : '') + '" data-project-id="' + esc(project.id) + '"' +
+            ' data-proj-group="' + esc(group) + '">' +
             '<div class="inner">' +
             /* 删除入口：与 .title / .content 平级的 .edit。
                它默认在右上角外面，鼠标落到这张卡片上（.inner:hover）才滑进来 ——
@@ -2800,12 +2932,15 @@
             /* 最后这一层是 .projItem 自己的收尾，不能省：少了它，浏览器会把后面每张
                卡片都嵌进前一张里。那样 `.projItemSelected .inner .title` 这条**后代**
                选择器会把选中卡片内部所有卡片的标题一起点亮 —— 表现就是"点一张，下面
-               一片跟着高亮"。卡片必须是兄弟节点（同名的几个项目一样适用）。*/
+               一片跟着高亮"。卡片必须是兄弟节点（同名的几个协作一样适用）。*/
             '</div>';
     }
 
-    /* ---- 左栏排序：偏好记在浏览器本地 -------------------------------------
-       “我这台机器想怎么看这个列表”是本机偏好，不占项目里的任何事实，所以存 localStorage。
+    /* ---- 左栏排序：偏好**按组**记在浏览器本地 -------------------------------
+       “我这台机器想怎么看这个列表”是本机偏好，不占协作里的任何事实，所以存 localStorage。
+       两组各存各的一份（`{active: {order, by}, done: {order, by}}`）：点某一组的齿轮只改
+       那一组的顺序，另一组一个都不动。老版本存的是一份扁平的 {order, by}，读到它要能迁移
+       （见下面 projSort 初始化里的 legacy）。
        三种排序方式里：**名称**是后端给的事实；**查看时间**是"我上次打开它是几点"——
        这是本机记录（后端没有这个概念），没打开过的退回卡片上那个"上次记录"时刻；
        **创建时间**后端目前也没有给这个字段，同样先用记录时刻顶上：等中间层在列表行里
@@ -2813,6 +2948,12 @@
     const PROJ_SORT_KEY = 'tsunagou.console.projSort';
     const PROJ_VIEWED_KEY = 'tsunagou.console.projViewedAt';
     const PROJ_SORT_DEFAULT = { order: 'new', by: 'viewed' };
+    /* 左栏的两个分组。组的身份认 data-proj-group 这个属性（两组的标题、搜索条、
+       以及每张卡片都带它），不认节点位置 —— 两组的那几个节点长得一模一样，
+       按"第几个"去找，结构一挪就认错组。*/
+    const PROJ_GROUPS = ['active', 'done'];
+    const PROJ_GROUP_TITLE = { active: '进行中的协作', done: '已完成的协作' };
+    const PROJ_GROUP_ATTR = 'data-proj-group';
 
     function readStoredJson(key, fallback) {
         try {
@@ -2823,11 +2964,24 @@
         }
     }
 
+    /* 一份排序偏好。字段不认识（旧数据、被手改过的数据）就退回默认。*/
+    function normalizeProjSort(raw) {
+        const stored = isPlainObject(raw) ? raw : {};
+        return {
+            order: stored.order === 'old' ? 'old' : (stored.order === 'new' ? 'new' : PROJ_SORT_DEFAULT.order),
+            by: ['viewed', 'created', 'name'].indexOf(stored.by) >= 0 ? stored.by : PROJ_SORT_DEFAULT.by
+        };
+    }
+
     let projSort = (function () {
         const stored = readStoredJson(PROJ_SORT_KEY, {});
-        const order = stored.order === 'old' ? 'old' : (stored.order === 'new' ? 'new' : PROJ_SORT_DEFAULT.order);
-        const by = ['viewed', 'created', 'name'].indexOf(stored.by) >= 0 ? stored.by : PROJ_SORT_DEFAULT.by;
-        return { order: order, by: by };
+        /* 两组分家之前存的是一份扁平的 {order, by}（那时左栏只有一组）。认出来就两组都按它
+           迁移：老用户打开页面看到的顺序跟他昨天看到的一样，不因为改版被悄悄重置。*/
+        const legacy = (isPlainObject(stored.active) || isPlainObject(stored.done)) ? null : stored;
+        return {
+            active: normalizeProjSort(isPlainObject(stored.active) ? stored.active : legacy),
+            done: normalizeProjSort(isPlainObject(stored.done) ? stored.done : legacy)
+        };
     })();
     let projViewedAt = readStoredJson(PROJ_VIEWED_KEY, {});
 
@@ -2835,7 +2989,15 @@
         try { window.localStorage.setItem(PROJ_SORT_KEY, JSON.stringify(projSort)); } catch (error) { /* 存不下就只在这次会话里生效 */ }
     }
 
-    /* 打开一个项目时记一笔：排序用的"查看时间"就是这么来的（只在本机、只在这台浏览器）。*/
+    /* 从一个节点认出它属于哪一组：放大镜/齿轮在标题里、iconB 与输入框在搜索条里、
+       卡片自己也带着这个属性。认不出来返回空串，调用方就什么都不做。*/
+    function projGroupOf(node) {
+        const host = closest(node, '[' + PROJ_GROUP_ATTR + ']');
+        const group = host ? toText(host.getAttribute(PROJ_GROUP_ATTR)) : '';
+        return PROJ_GROUPS.indexOf(group) >= 0 ? group : '';
+    }
+
+    /* 打开一个协作时记一笔：排序用的"查看时间"就是这么来的（只在本机、只在这台浏览器）。*/
     function rememberProjViewed(projectId) {
         const id = toText(projectId);
         if (!id) return;
@@ -2848,12 +3010,13 @@
         return Number.isFinite(ms) ? ms : 0;
     }
 
-    function projStamp(row) {
+    /* 时间戳按**这一组自己**的"按什么排"来取（pref 就是那一组的那份偏好）。*/
+    function projStamp(row, pref) {
         const data = row || {};
         const id = toText(data.project_id) || toText(data.id);
-        /* 按创建时间：用后端给的 created_at（项目索引里"第一次登记"的时刻）。
+        /* 按创建时间：用后端给的 created_at（协作索引里"第一次登记"的时刻）。
            后端没给就退回记录时刻 —— 那时它和"按查看时间"的回退值同源，两种排序结果一样。*/
-        if (projSort.by === 'created') {
+        if ((pref || PROJ_SORT_DEFAULT).by === 'created') {
             return stampOf(data.created_at) || stampOf((data.history || {}).captured_at);
         }
         const local = Number(projViewedAt[id]);
@@ -2861,21 +3024,28 @@
         return stampOf((data.history || {}).captured_at);
     }
 
-    function sortProjects(rows) {
-        const list = toArray(rows).slice();
-        const newestFirst = projSort.order !== 'old';
-        list.sort(function (a, b) {
-            if (projSort.by === 'name') {
-                const diff = toText(a.name).localeCompare(toText(b.name), 'zh-Hans-CN');
-                return newestFirst ? -diff : diff;
-            }
-            const diff = projStamp(a) - projStamp(b);
-            return newestFirst ? -diff : diff;
+    /* 一组内部排序：只拿**这一组**的偏好来比，另一组排成什么样与它无关
+       （"哪一组在前"由 render.list 摆 DOM 顺序决定，不再靠排序把 done 甩到最后）。
+       方向按"按什么排"分开，不共用一套：
+         · 按名称 —— 名称没有新旧，菜单上写的是拼音 A→Z / Z→A，那就照这个来：
+           `new` = 升序（A→Z）、`old` = 降序（Z→A）；
+         · 按时间 —— 保持"`new` = 新的在前"。 */
+    function sortProjectGroup(rows, group) {
+        const pref = projSort[group] || PROJ_SORT_DEFAULT;
+        const byName = pref.by === 'name';
+        /* 名称与时间的方向**不是一套**：名称是 A→Z / Z→A 的字面方向（`new` → A→Z），
+           时间是"新的在前 / 旧的在前"（`new` → 新的在前）。所以先算出这一对的差值，
+           再按各自的规矩定正负 —— 别让名称借用时间那套 newestFirst。*/
+        const ascending = byName ? pref.order === 'new' : pref.order === 'old';
+        return toArray(rows).slice().sort(function (a, b) {
+            const diff = byName
+                ? toText(a.name).localeCompare(toText(b.name), 'zh-Hans-CN')
+                : projStamp(a, pref) - projStamp(b, pref);
+            return ascending ? diff : -diff;
         });
-        return list;
     }
 
-    /* ---- 左栏的两个弹出菜单（项目操作 / 排序）-----------------------------
+    /* ---- 左栏的两个弹出菜单（协作操作 / 排序）-----------------------------
        菜单本身写在 index.html 里（`<section class="selection">`）：CSS 是
        display:none + position:fixed。JS 只做两件事 —— 写 display 开/收，以及把它贴到
        触发它的那个按钮旁边。贴位置要写 left/top：fixed 的弹层脱离文档流，没有别的写法
@@ -2885,11 +3055,16 @@
     let openSelectionId = '';
     let openSelectionAnchor = null;   /* 是哪个键把它打开的：再点同一个键就是收起 */
     let selectionProjectId = '';
-    /* 重命名窗口正在改哪个项目（窗口开着的时候记着，确定时用它）。*/
+    /* 重命名窗口正在改哪个协作（窗口开着的时候记着，确定时用它）。*/
     let renameTargetId = '';
 
     function closeSelections() {
         SELECTION_IDS.forEach(function (id) { hideEl(byId(id)); });
+        /* 收菜单时把钉住那支笔的行内值清掉，交回 CSS 的 hover 行为 */
+        if (openSelectionAnchor && openSelectionAnchor.style) {
+            openSelectionAnchor.style.top = '';
+            openSelectionAnchor.style.right = '';
+        }
         openSelectionId = '';
         openSelectionAnchor = null;
     }
@@ -2931,8 +3106,19 @@
         displayEl(menu, 'flex');
         openSelectionId = id;
         openSelectionAnchor = anchor || null;
+        /* 菜单开着的时候把那支笔**钉在原地**（写行内 right/top，值跟 hover 时一样）：
+           菜单是浮层，鼠标一离开卡片 hover 就没了，笔会先滑出去再滑回来，看着很跳。*/
+        if (anchor && anchor.classList && anchor.classList.contains('edit')) {
+            anchor.style.top = '4px';
+            anchor.style.right = '4px';
+        }
         syncSortMenu();                       /* 先摆对勾（会改变宽高）… */
         positionSelection(menu, anchor);      /* …再量、再贴 */
+        /* 笔自己带 0.1s 的滑动动画：点下去那一刻量到的位置可能还在半路，
+           下一帧再量一次，菜单就贴得准（重复摆一次是无害的）。*/
+        if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(function () { positionSelection(menu, anchor); });
+        }
         return menu;
     }
 
@@ -2945,10 +3131,30 @@
         return openSelection(id, anchor, projectId);
     }
 
-    /* 排序菜单里那个对勾：挪到当前选择上（HTML 里初始标在哪不重要，以这里为准）。*/
+    /* 排序菜单：① 把对勾挪到**刚点开它的那一组**的当前选择上（HTML 里初始标在哪不重要）；
+       ② 把「怎么排」那两项的字按那一组的「按什么排」改写 —— 名字没有新旧可言，所以按名称时
+       那两项要变成"拼音 A→Z / Z→A"，否则菜单会自相矛盾（"按名称 · 旧的在前"读不通）。
+       菜单只有一个（写在 index.html 里，跟着点它的那个齿轮浮出来），所以"这次在给哪一组排"
+       得记在 sortMenuGroup 上：打开菜单的入口负责写它，下面的对勾只照它画。*/
+    let sortMenuGroup = 'active';
+
     function syncSortMenu() {
         const menu = byId('sortMenu');
         if (!menu) return;
+        const pref = projSort[sortMenuGroup] || PROJ_SORT_DEFAULT;
+        const byName = pref.by === 'name';
+        const words = byName
+            ? { new: { icon: 'fa-arrow-down-a-z', text: 'A→Z' },
+                old: { icon: 'fa-arrow-down-z-a', text: 'Z→A' } }
+            : { new: { icon: 'fa-arrow-up', text: '新的在前' },
+                old: { icon: 'fa-arrow-down', text: '旧的在前' } };
+        qsa('.item[data-sort-order]', menu).forEach(function (item) {
+            const left = qs('.left', item);
+            const word = words[toText(item.getAttribute('data-sort-order'))];
+            if (left && word) {
+                fill(left, '<i class="fa-solid ' + word.icon + '"></i>' + esc(word.text));
+            }
+        });
         qsa('.item[data-sort-order], .item[data-sort-by]', menu).forEach(function (item) {
             let right = qs('.right', item);
             if (!right) {
@@ -2956,106 +3162,138 @@
                 right.className = 'right';
                 item.appendChild(right);
             }
-            const active = toText(item.getAttribute('data-sort-order')) === projSort.order
-                || toText(item.getAttribute('data-sort-by')) === projSort.by;
+            const active = toText(item.getAttribute('data-sort-order')) === pref.order
+                || toText(item.getAttribute('data-sort-by')) === pref.by;
             fill(right, active ? '<i class="fa-solid fa-check"></i>' : '');
         });
     }
 
-    /* ---- 项目搜索（左栏那个搜索条）----------------------------------------
-       HTML 挂在**第一个**分组标题下面（见 render.list 里的 titleWithSearch）。CSS 里
-       `display:none` 那行是注释掉的，所以它默认可见 —— 初始由这里写 display:none，
-       打开时清成空串、交回 CSS。
+    /* ---- 协作搜索（左栏**每组各一条**）------------------------------------
+       两组各有一份 {query, open}：放大镜只开本组那条搜索条并聚焦它，iconB 只关、只清本组，
+       在本组输入框打字只滤本组卡片，并且只切换本组那句「没有协作」的显隐 ——
+       一边在搜，另一边照旧显示全部。
+       CSS 里 `.searchBar` 的 `display:none` 那行是注释掉的，所以它默认可见 ——
+       初始由这里写 display:none，打开时清成空串、交回 CSS。
        打字只做"过滤已经画出来的卡片"，不重画整列：重画会把输入框连同光标一起换掉。
-       过滤期间分组标题收起来；一张都不匹配时复用同一个空状态占位符。*/
-    const PROJECT_SEARCH_BAR = '<div class="searchBar">' +
-        '<div class="inner">' +
-        '<div class="icon iconA"></div><input class="left" placeholder="搜索你的项目">' +
-        '<div class="icon iconB"></div>' +
-        '</div></div>';
-    let projQuery = '';
-    let projSearchOpen = false;
+       输入框上的 `data-tg-commit="manual"` 是页面那套「失焦即提交」的现成逃生门
+       （`isAutoCommitInput` 里那一条）：搜索词不是用户档案字段，点 iconB 关搜索条时
+       输入框失焦、随即被移除，不拦住就会把它当档案字段往 /console/profile 写一次。*/
+    const projectSearchBarHtml = function (group) {
+        return '<div class="searchBar" ' + PROJ_GROUP_ATTR + '="' + group + '">' +
+            '<div class="inner">' +
+            '<div class="icon iconA"></div><input class="left" data-tg-commit="manual" placeholder="搜索你的协作">' +
+            '<div class="icon iconB"></div>' +
+            '</div></div>';
+    };
+    /* 本组一句空文案：**真实元素**，用现成的 .title2。不借 .emptybox ——
+       那句"这里暂时还没有内容"写死在 CSS 的 content 里，两组只能同一句话，按组换不了字。*/
+    const projectBlankRowHtml = function (group) {
+        return '<p class="title2" data-proj-blank="' + group + '">没有协作</p>';
+    };
+    let projSearch = { active: { query: '', open: false }, done: { query: '', open: false } };
 
     function applyProjectFilter() {
         const container = byId('projList') || qs('.secAside .subMgr');
         if (!container) return null;
-        const bar = qs('.searchBar', container);
-        if (bar) {
-            displayEl(bar, projSearchOpen ? '' : 'none');
-            const input = qs('.left', bar);
-            /* 只在"和状态不一致"时回填（重画之后要补回来）；打字过程中两者一致，不动光标 */
-            if (input && toText(input.value) !== toText(projQuery)) input.value = toText(projQuery);
-        }
-        const query = toText(projQuery).trim().toLowerCase();
-        /* 搜索条一打开，分组标题就收起来（不只是"输了字之后"）：位置让给搜索条。*/
-        qsa('.wkTitle', container).forEach(function (node) {
-            displayEl(node, (projSearchOpen || query) ? 'none' : '');
+        PROJ_GROUPS.forEach(function (group) {
+            const own = projSearch[group];
+            /* 本组自己那条搜索条（按属性认，不按"第几条"认）*/
+            const bar = qs('.searchBar[' + PROJ_GROUP_ATTR + '="' + group + '"]', container);
+            if (bar) {
+                displayEl(bar, own.open ? '' : 'none');
+                const input = qs('.left', bar);
+                /* 只在"和状态不一致"时回填（重画之后要补回来）；打字过程中两者一致，不动光标 */
+                if (input && toText(input.value) !== toText(own.query)) input.value = toText(own.query);
+            }
+            /* 在搜的**这一组**把标题让给搜索条：搜索条开着、或这组的关键字还在，就藏本组标题
+               （标题里就是这一组的放大镜与齿轮 —— 用户要的正是"搜索条顶掉标题"这个视觉）。
+               另一组照旧，所以这里只写**本组**那个 .wkTitle 的行内 display；收起来、字清空了
+               就清成空串，交回 CSS。 */
+            const title = qs('.wkTitle[' + PROJ_GROUP_ATTR + '="' + group + '"]', container);
+            if (title) displayEl(title, (own.open || toText(own.query)) ? 'none' : '');
+            const query = toText(own.query).trim().toLowerCase();
+            /* 只数本组的卡片：另一组的卡片这一轮根本不在这个列表里，不会被碰到。*/
+            let matches = 0;
+            qsa('.projItem[' + PROJ_GROUP_ATTR + '="' + group + '"]', container).forEach(function (card) {
+                const name = toText(qs('.title', card) && qs('.title', card).textContent).toLowerCase();
+                const hit = !query || name.indexOf(query) >= 0;
+                if (hit) matches += 1;
+                displayEl(card, hit ? '' : 'none');
+            });
+            /* 本组一句「没有协作」：本组一张可看的卡片都没有就露出来 ——
+               这个协作组本来就空着时它在，本组搜索把卡片全滤掉时它也在。另一组不受影响。*/
+            const blank = qs('[data-proj-blank="' + group + '"]', container);
+            if (blank) displayEl(blank, matches ? 'none' : '');
         });
-        let matches = 0;
-        qsa('.projItem', container).forEach(function (card) {
-            const name = toText(qs('.title', card) && qs('.title', card).textContent).toLowerCase();
-            const hit = !query || name.indexOf(query) >= 0;
-            if (hit) matches += 1;
-            displayEl(card, hit ? '' : 'none');
-        });
-        /* 一张都不匹配时用同一个空状态占位符；列表自己已经带着一个（真的没有项目）就不再加 */
-        const own = qs('.emptybox[data-search-blank]', container);
-        const listed = qs('.emptybox:not([data-search-blank])', container);
-        if (query && matches === 0 && !listed) {
-            if (!own) container.insertAdjacentHTML('beforeend', '<div class="emptybox" data-search-blank="1"></div>');
-        } else if (own) {
-            own.remove();
-        }
         return container;
     }
 
+    /* 上一次画出来的卡片长什么样（比较时把"选中"那个类名抠掉）：一样就不重建 DOM。*/
+    let lastCardsSignature = '';
+
+    /* 一组的标题：标题里带着**自己那一组**的放大镜与齿轮（靠 data-proj-group 认领）。
+       标题跟着组走，永远在 —— 列表为空、还没拉回来、拉取失败时两个标题与四个键都在，
+       否则人连一个可点的齿轮都找不到，只会以为排序坏了。*/
+    function projectGroupTitleHtml(group) {
+        return '<div class="wkTitle" ' + PROJ_GROUP_ATTR + '="' + group + '">' +
+            '<div class="wkTleft">' + esc(PROJ_GROUP_TITLE[group]) + '</div>' +
+            '<div class="wkTright">' +
+            '<div class="wkTbtn" data-tg-role="project-search"><i class="fa-solid fa-search"></i></div>' +
+            '<div class="wkTbtn" data-tg-role="project-sort"><i class="fa-solid fa-cog"></i></div>' +
+            '</div></div>';
+    }
+
     render.list = function (projects) {
-        const list = sortProjects(toArray(projects));
-        const active = list.filter(function (item) { return item.group !== 'done'; });
-        const done = list.filter(function (item) { return item.group === 'done'; });
+        const rows = toArray(projects);
+        /* 分组：两张表各排各的、各画各的。卡片只加一个 data-proj-group 属性来分家，
+           **不在外面包一层容器** —— 卡片样式是按 .subMgr 的子节点那套从属关系写的，
+           中间多一层 div 会把样式弄没（这个坑本项目踩过两次）。*/
+        const grouped = { active: [], done: [] };
+        rows.forEach(function (item) {
+            grouped[item && item.group === 'done' ? 'done' : 'active'].push(item);
+        });
+        PROJ_GROUPS.forEach(function (group) {
+            grouped[group] = sortProjectGroup(grouped[group], group);
+        });
         /* 哪一张是"选中"的：整列一次算清，**最多一张**。
-           优先"当前项目"（currentProjectId），没有再看第一条自称 selected 的
-           （id 为空的条目一律不算 —— 空 id 对上空的"当前项目"会把整列都点亮）。*/
+           优先"当前协作"（currentProjectId），没有再看第一条自称 selected 的
+           （id 为空的条目一律不算 —— 空 id 对上空的"当前协作"会把整列都点亮）。*/
         const currentId = toText(state.get('currentProjectId'));
-        let selectedAt = -1;
+        let selected = null;
         if (currentId) {
-            list.forEach(function (item, index) {
-                if (selectedAt < 0 && toText(item.id) === currentId) selectedAt = index;
-            });
+            selected = rows.filter(function (item) { return toText(item.id) === currentId; })[0] || null;
         }
-        if (selectedAt < 0) {
-            list.forEach(function (item, index) {
-                if (selectedAt < 0 && item.selected === true && toText(item.id) !== '') selectedAt = index;
-            });
+        if (!selected) {
+            selected = rows.filter(function (item) {
+                return item.selected === true && toText(item.id) !== '';
+            })[0] || null;
         }
-        const card = function (item) {
-            return projectCardHtml(item, list.indexOf(item) === selectedAt);
-        };
-        const groupTitle = function (text) {
-            return '<div class="wkTitle"><div class="wkTleft">' + esc(text) + '</div>' +
-                '<div class="wkTright">' +
-                '<div class="wkTbtn" data-tg-role="project-search"><i class="fa-solid fa-search"></i></div>' +
-                '<div class="wkTbtn" data-tg-role="project-sort"><i class="fa-solid fa-cog"></i></div>' +
-                '</div></div>';
-        };
-        /* 空的分组不显示标题，免得出现只有标题没有卡片的空段；
-           一个协作都没有时给一个空状态（但数据还没来过就先空着，见 projectListLoaded）。*/
-        /* 搜索条挂在**第一个**分组标题下面（"进行中的协作"通常就是第一个）。
-           两个分组都为空时不画标题，也就没有搜索条 —— 没有项目可搜。*/
-        let searchPlaced = false;
-        const titleWithSearch = function (text) {
-            const block = groupTitle(text);
-            if (searchPlaced) return block;
-            searchPlaced = true;
-            return block + PROJECT_SEARCH_BAR;
-        };
-        const html = list.length ?
-            (active.length ? titleWithSearch('进行中的协作') + active.map(card).join('') : '') +
-            (done.length ? titleWithSearch('已完成的协作') + done.map(card).join('') : '')
-            : (projectListLoaded ? EMPTY_BOX : '');
+        /* 一组一段：标题（带本组的两个键）→ 本组搜索条（默认藏着）→ 本组卡片 → 本组那句
+           「没有协作」。两段都画，不论这一组有没有卡片。*/
+        const html = PROJ_GROUPS.map(function (group) {
+            const cards = grouped[group].map(function (item) {
+                return projectCardHtml(item, item === selected, group);
+            }).join('');
+            return projectGroupTitleHtml(group) + projectSearchBarHtml(group) + cards +
+                projectBlankRowHtml(group);
+        }).join('');
         const container = byId('projList') || qs('.secAside .subMgr');
-        fill(container, html);
-        /* 重画之后把"正在搜索"的状态贴回去：搜索条显隐、标题显隐、卡片过滤、输入框里的字 */
+        /* 卡片本身没变就**别重建 DOM**：选中只是换一个类名，而重建会把 hover 打断 ——
+           卡片一换，鼠标下的那张就"重新进入"一次，那支笔于是又滑进来一次，
+           人看到的就是"hover 与选中之间跳一下"。所以只在签名变了时才重画。*/
+        const signature = html.replace(/ projItemSelected/g, '');
+        if (signature === lastCardsSignature) {
+            const selectedId = toText(state.get('currentProjectId'));
+            qsa('.projItem', container).forEach(function (node) {
+                node.classList.toggle('projItemSelected',
+                    toText(node.getAttribute('data-project-id')) === selectedId);
+            });
+        } else {
+            fill(container, html);
+            lastCardsSignature = signature;
+        }
+        /* 重画之后把"正在搜索"的状态贴回去：两组各自的搜索条显隐、两组各自的卡片过滤、
+           两句「没有协作」、两个输入框里的字 */
         applyProjectFilter();
         return container;
     };
@@ -3093,7 +3331,9 @@
         return target;
     }
 
-    window.addEventListener('resize', function () { syncTitleMask(); });
+    /* 缩放时把标题渐隐重算一遍；开着的选择菜单顺手收起 —— 它是 fixed 定位，位置只在
+       打开时算过一次并在下一帧补一次，窗口一缩放就停在旧坐标（缩小后可能跑到视口外）。*/
+    window.addEventListener('resize', function () { syncTitleMask(); closeSelections(); });
     if (document.fonts && document.fonts.ready) {
         /* 字体晚一步到齐时文字宽度会变（图标字体尤其）：到齐后重量一次 */
         document.fonts.ready.then(function () { syncTitleMask(); }, function () { /* 忽略 */ });
@@ -3129,10 +3369,10 @@
         /* 整页一个字都没有时只留一个空状态：否则五个小节会各占一个 240px 的占位块（
            小节的空状态交给 keyValueTableHtml 处理，那是“某个小节单独为空”的情形）。*/
         const hasAny = !!(toText(data.name) || toText(data.description) || basics.length || plan.length ||
-            toArray(data.versions).length || toArray(data.stats).length || toArray(data.storage).length ||
+            toArray(data.stats).length || toArray(data.storage).length ||
             toArray(data.pending).length);
         if (!hasAny) {
-            const blank = pageTitleHtml('主视图') + '<p class="title2">项目名称/描述</p>' + EMPTY_BOX;
+            const blank = pageTitleHtml('主视图') + '<p class="title2">协作名称/描述</p>' + EMPTY_BOX;
             fill(byId('pane-overview'), blank);
             return blank;
         }
@@ -3153,8 +3393,11 @@
                         optionHtml(item.completion
                             ? [{ text: '查看详情', kind: 'active', action: 'ui.tab:acceptance' }]
                             : [
-                                { text: '决定', kind: 'active', action: 'decision.resolve:' + esc(item.id) },
-                                { text: '稍后', action: 'decision.later:' + esc(item.id) }
+                                /* id 交 toText，**不要**在这里 esc：buttonsHtml 会把整个
+                                   action 再 esc 一次写进 data-tg-action，预先转义就变成二次转义，
+                                   属性读回来是被破坏的 id（含 & " ' 时查不到那条待决）。*/
+                                { text: '决定', kind: 'active', action: 'decision.resolve:' + toText(item.id) },
+                                { text: '稍后', action: 'decision.later:' + toText(item.id) }
                             ])
                     ]
                 };
@@ -3162,18 +3405,17 @@
             : '';
         const html =
             pageTitleHtml('主视图') +
-            '<p class="title2">项目名称/描述</p>' +
+            '<p class="title2">协作名称/描述</p>' +
             '<div class="bgTxt">' + esc(data.name) + '</div>' +
             '<p class="textArea">' + esc(data.description) + '</p>' +
             pendingSection +
             section('基本信息', '<div class="dataArea">' + keyValueTableHtml(basics) + '</div>') +
-            section('项目进度', '<div class="dataArea"><div class="statbox">' +
+            section('协作进度', '<div class="dataArea"><div class="statbox">' +
                 '<div class="left"><p class="title">总进度</p>' + esc(progress.total) + '</div>' +
                 '<div class="right"><p class="title">计划进度</p><div class="inner">' + plan + '</div></div>' +
                 '</div></div>') +
-            section('项目版本', '<div class="dataArea">' + keyValueTableHtml(data.versions) + '</div>') +
-            section('项目统计信息', '<div class="dataArea">' + keyValueTableHtml(data.stats) + '</div>') +
-            section('项目数据存储', '<div class="dataArea">' + keyValueTableHtml(data.storage) + '</div>');
+            section('协作统计信息', '<div class="dataArea">' + keyValueTableHtml(data.stats) + '</div>') +
+            section('协作数据存储', '<div class="dataArea">' + keyValueTableHtml(data.storage) + '</div>');
         fill(byId('pane-overview'), html);
         return html;
     };
@@ -3207,8 +3449,10 @@
         const info = agentNetworkOf(agent);
         if (!info.network) return '';
         /* 远端自己报的名字里没有，就还是原来那句「网络在线 / 网络离线」——
-           本机接入的 Agent 依旧什么都不画。*/
-        const where = info.machine ? ' · ' + info.machine : '';
+           本机接入的 Agent 依旧什么都不画。
+           机器名是**远端自报**的（`agent import --machine`），中间层原样透出，所以这里是
+           外部输入，必须过 esc —— 它是拼进 HTML 的。*/
+        const where = info.machine ? ' · ' + esc(info.machine) : '';
         return '<p class="right">' + (info.online ? '网络在线' : '网络离线') + where +
             '<i class="fa-solid fa-circle-nodes"></i></p>';
     }
@@ -3240,6 +3484,15 @@
     function renderNetworkBadges() {
         render.agents(state.get('agents', []));
         render.agentWindow(state.get('agentsWindow', []));
+        /* 详情窗口开着时也要跟着刷：它那三行（在哪台机器 / 这台机器的限制）是从**当前这份
+           数据**算出来的，不刷就得关掉重开才更新。找不到对应记录就**不重画** —— 那说明这个
+           窗口不是从这两份名单开出来的（例如后端直接 dispatch 了 agent.info），重画只会清空它。*/
+        const info = byId('mgrAgentInfo');
+        const wanted = toText(info && info.getAttribute('data-agent-id'));
+        const open = wanted
+            ? (findById(state.get('agents', []), wanted) || findById(state.get('agentsWindow', []), wanted))
+            : null;
+        if (open) render.agentInfoWindow(open);
     }
 
     function agentCardHtml(agent) {
@@ -3249,6 +3502,9 @@
         };
         return {
             cls: 'item',
+            /* 卡片本体也要带身份标记：点卡片（不只是点里面那个头像胶囊）就该能开详情。
+               这是 JS 生成的节点，允许挂 data-*（见 §5 开头那条约定）。*/
+            attrs: ' data-agent-id="' + esc(agent.id) + '"',
             parts: [
                 '<div class="header">' + esc(agent.role) + agentNetworkHtml(agent) + '</div>',
                 listFieldHtml([{ name: agent.name, icon: agent.icon, id: agent.id }]),
@@ -3268,12 +3524,17 @@
     render.agents = function (agents) {
         const list = toArray(agents);
         /* 末尾那个大加号是"添加子 Agent"的入口；一个 Agent 都没有时先放个空状态（加号留着）。
-           项目确认完成之后不再画它：往一个已经收尾的协作里再接入 Agent 没有意义。*/
-        const cards = list.length ? list.map(agentCardHtml) : [EMPTY_CARD];
+           协作确认完成之后不再画它：往一个已经收尾的协作里再接入 Agent 没有意义。*/
+        /* 一个 Agent 都没有时**不放空状态**：下面那个加号卡片本身就说明了"这儿还没有人，点我加一个"，
+           再摆一句"这里暂时还没有内容"是重复的。*/
+        const cards = list.length ? list.map(agentCardHtml) : [];
         if (!projectFinished()) cards.push({ cls: 'itemAdd', parts: [] });
         const html = pageTitleHtml('Agent 管理') +
             '<p class="title2">管理现有的 Agent</p>' +
-            boxerHtml(cards);
+            /* 收尾之后不再往协作里接 Agent，所以那时连加号卡片都不画；
+               要是这样一个 Agent 也没接入过，整页会一片空白 —— 用一句话说清楚。*/
+            (cards.length ? boxerHtml(cards)
+                : '<p class="title2">这个协作已经收尾，没有接入过 Agent。</p>');
         fill(byId('pane-agents'), html);
         return html;
     };
@@ -3504,13 +3765,13 @@
 
     /* ---- 验收与存档点（slug 仍是 acceptance）------------------------------ */
 
-    /* 这一屏原来是两块：「项目验收」和「存档点」。合并的理由是一条因果链 ——
+    /* 这一屏原来是两块：「协作验收」和「存档点」。合并的理由是一条因果链 ——
        主 Agent 提收尾（段 1）、任务级的交与验（段 2）、收尾一确认就落成一个存档点（段 3）；
        拆成两栏反而要人在两张卡之间自己找关系。所以它同时要三份数据：
        `acceptance` / `checkpoints` / `checkpointFailures`（后两份从 state 里取，
        谁先到谁先重绘一次，见 dispatch 表）。*/
 
-    /* 存档卡：摘要 + 时间 + 取档原因 + 校验态，外加「校验」。
+    /* 存档卡：摘要 + 时间 + 存档原因 + 校验态，外加「校验」。
        `校验` 是 daemon 的真校验（会比对 manifest 与 git 锚点，失败是 409）。*/
     function checkpointCardHtml(item) {
         return {
@@ -3518,14 +3779,15 @@
             parts: [
                 headerHtml(item.title),
                 item.time ? timeHtml(item.time) : '',
-                item.reason ? titleHtml('取档原因') + textZHtml(item.reason) : '',
-                optionHtml([{ text: '校验', action: 'checkpoint.verify:' + esc(item.id) }])
+                item.reason ? titleHtml('存档原因') + textZHtml(item.reason) : '',
+                /* id 不要预先 esc：buttonsHtml 会把 action 整体再转义一次（同上）。*/
+                optionHtml([{ text: '校验', action: 'checkpoint.verify:' + toText(item.id) }])
             ]
         };
     }
 
     /* 失败卡：说的是**记账**（那次存档没成），不是存档点。
-       错误码是后端的原话，取档原因是当初谁要的 —— 两者都要，否则"没成"没法定位。*/
+       错误码是后端的原话，存档原因是当初谁要的 —— 两者都要，否则"没成"没法定位。*/
     function checkpointFailureCardHtml(item) {
         return {
             cls: 'item',
@@ -3534,7 +3796,7 @@
                 item.time ? timeHtml(item.time) : '',
                 titleHtml('失败原因') + textZHtml(item.error + (item.reason ? '（' + item.reason + '）' : '')),
                 item.attempts ? textZHtml('已试 ' + item.attempts + ' 次') : '',
-                optionHtml([{ text: '重试', kind: 'active', action: 'checkpoint.retry:' + esc(item.id) }])
+                optionHtml([{ text: '重试', kind: 'active', action: 'checkpoint.retry:' + toText(item.id) }])
             ]
         };
     }
@@ -3572,7 +3834,7 @@
             (data.recordDetail ? boxerHtml([{
                 cls: 'item', parts: [headerHtml('上次记录'), textZHtml(data.recordDetail)]
             }]) : '') +
-            '<p class="title2">项目完成提案</p>' +
+            '<p class="title2">协作完成提案</p>' +
             /* 提案与它的答复是一件事的两半：正文是"还差什么"，按钮是「确认完成」。
                没有待决定的提案时整段空 —— 没有对象可确认（后端也要 proposal_id）。*/
             boxerHtml((proposal.title || proposal.text) ? [{
@@ -3600,8 +3862,8 @@
             '<p class="title2">最新存档点</p>' +
             boxerHtml(toArray(store.latest).map(checkpointCardHtml).concat(
                 /* 主动存档也是一张卡：不摆标题与说明的话，那张卡里只剩一个悬空按钮。
-                   项目确认完成之后**不再画这张卡** —— 完工本来就会落一个存档点，
-                   再"立即存档"属于只该在做项目时用的动作。*/
+                   协作确认完成之后**不再画这张卡** —— 完工本来就会落一个存档点，
+                   再"立即存档"属于只该在做协作时用的动作。*/
                 projectFinished() ? [] : [{
                     cls: 'item',
                     parts: [
@@ -3632,7 +3894,7 @@
        —— 等设计定了再接（到时候读 pathChoice 就行）。
        ────────────────────────────────────────────────────────────────── */
     const PATH_CHOICES = [
-        /* 「看法」的选项是**现算**的（总视角 + 这个项目的每个 Agent），所以这里不写死；
+        /* 「看法」的选项是**现算**的（总视角 + 这个协作的每个 Agent），所以这里不写死；
            见 pathViewOptions()。*/
         { key: 'view', box: 'pathViewBox', panel: 'pathViewPanel' },
         { key: 'shape', box: 'pathShapeBox', panel: 'pathShapePanel',
@@ -3642,7 +3904,7 @@
     /* 看法那一栏存的是 **agent id**（'all' = 总视角）；图形态那一栏存的是选项文字。*/
     const pathChoice = { view: 'all', shape: '线性时间图' };
 
-    /* 视角选项：总视角 + 当前项目里的每个 Agent（主 Agent 用角色名，其余用昵称）。
+    /* 视角选项：总视角 + 当前协作里的每个 Agent（主 Agent 用角色名，其余用昵称）。
        没读到时只剩「总视角」—— 不编一堆假 Agent 出来。*/
     function pathViewOptions() {
         const options = [{ key: 'all', text: '总视角' }];
@@ -3657,7 +3919,7 @@
         return options;
     }
 
-    /* 当前选中的那一项。选的那个 Agent 不在了（换了项目 / 名单变了）就静默退回总视角。*/
+    /* 当前选中的那一项。选的那个 Agent 不在了（换了协作 / 名单变了）就静默退回总视角。*/
     function pathViewOption() {
         const list = pathViewOptions();
         const found = list.filter(function (item) { return item.key === pathChoice.view; })[0];
@@ -3749,7 +4011,7 @@
             return box && ui.choosebox.isOpen(box);
         }).map(function (item) { return item.key; });
         /* 「看法」选到某个 Agent 时只留他这一路：行按操作人过滤，整段没他就不画那一段
-           （阶段是项目自己的，名字与起止不跟着某个 Agent 变）。*/
+           （阶段是协作自己的，名字与起止不跟着某个 Agent 变）。*/
         const only = pathViewAgent();
         const groups = toArray(timeline).map(function (group) {
             return {
@@ -3824,7 +4086,14 @@
 
     /* folded：被折叠起来的任务号（点标题左边那个圆点切换）—— 折叠时节点只剩标题条，
        摆位也跟着变矮（整张图跟着收，这就是那个"缩放"）。
-       点一下是**连锁**的：它下游连着的（递归到底）一起折/展 —— 一条链一起收。*/
+       点一下是**连锁**的：它下游连着的（递归到底）一起折/展 —— 一条链一起收。
+
+       dagOptions 里的 dir / focus / showIso 是**故意没有控件**的公开开关（见 method.md §12.4
+       与 §7 的"有接口没控件"那条）：宿主脚本改它再调 Tsunagou.dag.render() 即可。
+       · dir      'TB'（上→下）| 'LR'（左→右）
+       · focus    true 且选中了任务时，canvas 多一个 .focus —— 无关节点从 .35 再暗到 .22
+       · showIso  独立任务（没有上下游）显不显示
+       所以 focus 长年 false 不是死代码，别当垃圾删掉。*/
     const dagOptions = { dir: 'TB', focus: false, showIso: true, sel: null, folded: {} };
     let dagGraph = null;
     let dagBox = null;
@@ -3881,7 +4150,7 @@
         const byId = {};
         nodes.forEach(function (node) { byId[node.id] = node; });
 
-        let orphanEdges = 0;      /* 指向"不在本页任务名单里"的 id（跨代/别的项目）——如实计数，不硬画 */
+        let orphanEdges = 0;      /* 指向"不在本页任务名单里"的 id（跨代/别的协作）——如实计数，不硬画 */
         toArray(tasks).forEach(function (task) {
             toArray(task.blocks).forEach(function (targetId) {
                 const from = byId[toText(task.task_id)], to = byId[toText(targetId)];
@@ -4163,13 +4432,13 @@
         if (!hasNode || !shownCount) {
             const empty = document.createElement('div');
             empty.className = 'empty';
-            empty.textContent = !hasNode ? '这个项目还没有任务。'
+            empty.textContent = !hasNode ? '这个协作还没有任务。'
                 : ('这个视角没有任务：' + pathViewLabel() + ' 没有负责的任务。');
             canvas.appendChild(empty);
         }
         /* 图已经画出来了，其余的就用通知说，不往画布上再摆字。
            成环/跨名单是故障（warn），“任务之间本来就没有依赖”只是陈述（info）。*/
-        if (hasNode && shownCount && !anyEdge) notes.push('这个项目的任务之间还没有依赖（都是独立任务）。');
+        if (hasNode && shownCount && !anyEdge) notes.push('这个协作的任务之间还没有依赖（都是独立任务）。');
         const signature = notes.join(' | ');
         if (signature && signature !== dagWarned) {
             dagWarned = signature;
@@ -4236,13 +4505,17 @@
         };
         /* 轮询每几秒来一发，数据没变就别重画：重画会把节点全拆了重建 —— 会闪，
            也会打断 hover 与过渡。指纹一样就只把引用换掉，不动画面。*/
-        const signature = JSON.stringify(next);
+        /* 指纹还要带上**用户档案里的昵称**：节点上的负责人名字是建图时从 profile 烘焙进去的
+           （见 dagBuildGraph 里的 agentDisplayName），只按 tasks/attempts/agents 算指纹的话，
+           在系统设置里改完昵称，DAG 上的旧名字会一直留着不刷新 —— 而时间图与 Agent 管理页
+           早就更新了，两处对不上。*/
+        const signature = JSON.stringify({ data: next, names: state.get('profile.agents', {}) });
         if (signature === dagSignature) return dagGraph;
         dagSignature = signature;
         dagGraph = dagBuildGraph(next.tasks, next.attempts, next.agents);
         dagDirty = true;
         if (dagOptions.sel && !dagGraph.byId[dagOptions.sel]) dagOptions.sel = null;
-        /* 折叠状态也跟着名单清一遍：不在这个项目里的任务号留着只会越积越多 */
+        /* 折叠状态也跟着名单清一遍：不在这个协作里的任务号留着只会越积越多 */
         Object.keys(dagOptions.folded).forEach(function (id) {
             if (!dagGraph.byId[id]) delete dagOptions.folded[id];
         });
@@ -4328,12 +4601,12 @@
                 '<div class="txtBlock"><div class="left">任务</div><div class="right">' + esc(agent.task) + '</div></div>' +
                 '</div></div>';
         }).join('') : EMPTY_BOX) + '</div>');
-        /* 一个 Agent 都没有时，把那行"这里暂时还没有内容"水平居中（有内容就交回 CSS）*/
-        centerEmptyState(qs('.table', container), !list.length);
+        /* 一个 Agent 都没有时，把窗口那一层（.main）临时居中：见 centerEmptyState */
+        centerEmptyState(closest(container, '.main'), !list.length);
         return container;
     };
 
-    /* Agent 详情窗口：项目/任务是后端持有的协作事实（只读）；
+    /* Agent 详情窗口：协作/任务是后端持有的协作事实（只读）；
        **昵称可以改**（它是本机用户档案里的东西，不是协作事实）。
        厂商不单列一栏 —— 窗口标题与胶囊上的 logo 已经说明它来自哪个宿主，
        而且那个值是按 id 从用户档案现算的，不需要写出来让人改。
@@ -4352,7 +4625,7 @@
         node.setAttribute('data-nickname', nickname);
         /* 这个窗口的版式是「标签 + 值」自上而下排（.title2 / .textbox2 / .dspText2），
            没有 .item、也没有 .fword，所以按位置回填而不是按标签文字：
-           唯一那个输入框是昵称，四个 .dspText2 依次是项目、任务、在哪台机器、这台机器的限制。*/
+           唯一那个输入框是昵称，四个 .dspText2 依次是协作、任务、在哪台机器、这台机器的限制。*/
         form.fill(node, [nickname]);
         const shown = qsa('.dspText2', node);
         if (shown[0]) shown[0].textContent = toText(data.project);
@@ -4663,7 +4936,7 @@
     };
 
     /* 向导第 4 步的"接入结果"：已经发生的事，不是待确认的草稿 ——
-       项目名/描述来自第 1 步真建出来的那个项目，Agent 名单来自第 2/3 步真接上的那些。*/
+       协作名/描述来自第 1 步真建出来的那个协作，Agent 名单来自第 2/3 步真接上的那些。*/
     render.wizardReview = function (draft) {
         const data = draft || {};
         const box = qs('#newXz4 .freebox');
@@ -4672,9 +4945,9 @@
         const main = state.get('wizard.main', null);
         const subs = toArray(state.get('wizard.draftSubAgents', []));
         fill(box,
-            '<div class="descbox">项目名称</div>' +
+            '<div class="descbox">协作名称</div>' +
             '<div class="title">' + esc(toText(project.name) || data.name || '（还没创建）') + '</div>' +
-            '<div class="descbox">项目描述</div>' +
+            '<div class="descbox">协作描述</div>' +
             '<div class="descbox">' + esc(toText(project.objective) || '（没有填写）') + '</div>' +
             '<div class="descbox">主 Agent</div>' +
             (main && toText(main.name)
@@ -4722,24 +4995,24 @@
 
     const actionsApi = {
         /* 新建协作：向导第 1 步的「创建」按钮调用（app.registerProject 也走它）。
-           成功后返回后端那份项目（{project_id, name, ...}），失败返回 false ——
+           成功后返回后端那份协作（{project_id, name, ...}），失败返回 false ——
            向导要靠这个 id 才能把"当前协作"切过去、继续接入 Agent。
-           中间层接了这一下之后：建目录、git init、登记进索引，并顺手把这个项目的 daemon 起起来。*/
+           中间层接了这一下之后：建目录、git init、登记进索引，并顺手把这个协作的 daemon 起起来。*/
         createProject: function (draft) {
             const data = draft || {};
             if (!toText(data.name).trim()) {
-                notify.error('请填写协作的名字');
+                notify.info('请填写协作的名字');
                 return Promise.resolve(false);
             }
             return notify.track('正在创建协作', api.post('projectCreate', data)).then(function (result) {
                 const project = (result && result.project) || null;
-                /* 项目入口文件（AGENTS.md / .tsunagou/agent-context.md / 项目 skill）没写成就说一声：
-                   少了它们，接进来的 Agent 读不到"我在哪个项目、这次是为谁准备的"，只会照它自己的
-                   "安装并初始化"说明去别处新建一个项目。项目本身建好了，所以这只是提醒。*/
+                /* 协作入口文件（AGENTS.md / .tsunagou/agent-context.md / 协作 skill）没写成就说一声：
+                   少了它们，接进来的 Agent 读不到"我在哪个协作、这次是为谁准备的"，只会照它自己的
+                   "安装并初始化"说明去别处新建一个协作。协作本身建好了，所以这只是提醒。*/
                 const entry = (project && project.bootstrap) || {};
                 if (toText(entry.status) && toText(entry.status) !== 'bootstrapped') {
-                    notify.info('项目的 Agent 入口文件没写成功（' + (toText(entry.error) || '未知原因') +
-                        '）：接进来的 Agent 可能读不到这个项目的规矩。');
+                    notify.info('协作的 Agent 入口文件没写成功（' + (toText(entry.error) || '未知原因') +
+                        '）：接进来的 Agent 可能读不到这个协作的规矩。');
                 }
                 notify.success({ title: '协作已创建', sub: data.name });
                 /* 列表以后端为准：重新拉一次，别自己造一张卡片 */
@@ -4759,12 +5032,12 @@
             return dialog.confirm({
                 title: '删除这个协作？',
                 text: '“' + name + '”会被整个删掉，不能撤销。',
-                description: '它的 daemon 会停掉，宿主里为它注册的 bridge 会注销，' +
-                    '项目目录与里面的协作数据一并删除。',
+                description: '它的服务会停掉，宿主里为它注册的连接会注销，' +
+                    '协作目录与里面的协作数据一并删除。',
                 okText: '删除', danger: true
             }).then(function (ok) {
                 if (!ok) return false;
-                /* 路径里带的是**这张卡片**的 id，不是"当前项目"——
+                /* 路径里带的是**这张卡片**的 id，不是"当前协作"——
                    所以不用 WRITE_COMMANDS 的 {project} 模板，直接拼字面路径。*/
                 const path = '/console/projects/' + encodeURIComponent(id) + ':forget';
                 return notify.track('正在删除协作', api.post(path, { delete_files: true }))
@@ -4785,7 +5058,7 @@
         },
 
         /* 重命名一个协作（中间层 `POST /console/projects/{id}:rename`）。
-           名字是给人看的标签，不是项目的身份：id/路径都不动，所以不碰任何数据。
+           名字是给人看的标签，不是协作的身份：id/路径都不动，所以不碰任何数据。
            走窗口里那个输入框（#renamePmt），确定后交给 submitRename。*/
         renameProject: function (projectId) {
             const id = toText(projectId);
@@ -4811,7 +5084,13 @@
             const input = byId('renamePmtInput');
             const name = toText(input && input.value).trim();
             if (!id) return Promise.resolve(false);
-            if (!name) { notify.error('名字不能是空的'); return Promise.resolve(false); }
+            if (!name) { notify.info('名字不能是空的'); return Promise.resolve(false); }
+            /* 名字没变就别发那一次请求、更别报"已重命名" —— 那是在替后端宣布一件没发生的事。*/
+            const row = findById(state.get('projects', []), id);
+            if (row && toText(row.name) === name) {
+                notify.info('协作名字没有改动');
+                return Promise.resolve(false);
+            }
             const path = '/console/projects/' + encodeURIComponent(id) + ':rename';
             return notify.track('正在重命名协作', api.post(path, { name: name }))
                 .then(function () {
@@ -4833,7 +5112,7 @@
             /* 厂商从选择框来（原来是"API 地址"输入框）*/
             const vendor = toText(data.vendor).trim();
             if (!name || !vendor) {
-                notify.error('请填写子 Agent 名称并选择厂商');
+                notify.info('请填写子 Agent 名称并选择厂商');
                 return Promise.resolve(false);
             }
             const source = (data.source === 'wizard' || data.source === 'agents') ? data.source : addSubAgentSource;
@@ -4847,6 +5126,13 @@
             if (blocked) {
                 if (blocked.mode === 'in_host') notify.info(blocked.note);
                 else notify.error(blocked.note);
+                return Promise.resolve(false);
+            }
+            /* 位置＝网络、而这家宿主需要"远端自己报的编号"时，编号空着不该能确定：
+               空着只会发一条注定失败的准备请求，人还以为已经在等了。
+               放在"厂商办不办得完"之后：先报最根本的那个错。*/
+            if (data.place === 'network' && networkNeedsNumber(vendor) && !toText(data.number).trim()) {
+                notify.info('这家宿主需要远端报的会话编号，请先填上再确定');
                 return Promise.resolve(false);
             }
             const finishWindow = function () {
@@ -4869,7 +5155,8 @@
             return connecting.then(function (outcome) {
                 const reached = toText(outcome && outcome.status);
                 if (reached !== 'arrived' && reached !== 'manual') {
-                    const trouble = connectTrouble(reached, host);
+                    /* 把"这条路是跨机器"一起说出去：超时/过期的说法与宿主自己接入那条不同。*/
+                    const trouble = connectTrouble(reached, Object.assign({}, host, { place: data.place }));
                     if (trouble) notify.info(trouble);
                     return false;
                 }
@@ -4881,7 +5168,7 @@
                     status: reached
                 };
                 if (source === 'wizard') {
-                    /* 项目已经在第 1 步建好了，列表只是向导里的"接入结果" */
+                    /* 协作已经在第 1 步建好了，列表只是向导里的"接入结果" */
                     const list = toArray(state.get('wizard.draftSubAgents', [])).slice();
                     list.push(agent);
                     state.set('wizard.draftSubAgents', list);
@@ -4891,7 +5178,7 @@
                 if (manual) {
                     notify.info(manualNote(outcome.registration, host));
                 } else {
-                    notify.success({ title: '接入成功', sub: agent.name + ' 已加入这个协作' });
+                    notify.success({ title: '接入成功', sub: agent.name + ' 已接入这个协作' });
                 }
                 if (source === 'wizard') return true;
                 /* 名单、卡片上的胶囊、昵称显示都要跟着变 */
@@ -4964,16 +5251,16 @@
             })[0] || {};
             const machine = toText(agent.machine);
             return confirmThen({
-                title: '删除 Agent',
+                title: '退役这个 Agent？',
                 text: '确定要让这个 Agent 退役吗？他立刻不能再派活、接活。',
                 description: '他做过的任务和发过的消息仍然记他的名字，不会被改写。'
                     + (machine ? '那台机器（' + machine + '）上还留着一条登记，请去那台机器上清掉。' : ''),
-                okText: '删除',
+                okText: '退役',
                 danger: true
             }, function () {
-                return api.post('agentRemove', { id: id, reason: 'removed from console' })
+                return notify.track('正在退役 Agent', api.post('agentRemove', { id: id, reason: 'removed from console' }))
                     .then(function () {
-                        notify.success({ title: '已删除 Agent' });
+                        notify.success({ title: '已退役' });
                         Tsunagou.refresh(['agents', 'project', 'tasks']);
                         return true;
                     }, function (error) {
@@ -4983,7 +5270,7 @@
                             return toText(task.title) || toText(task.task_id);
                         });
                         if (held.length) {
-                            notify.error('他手上还有活，先处理：' + held.slice(0, 3).join('、')
+                            notify.warn('他手上还有活，先处理：' + held.slice(0, 3).join('、')
                                 + (held.length > 3 ? ' 等 ' + held.length + ' 个任务' : ''));
                         }
                         return false;
@@ -4999,7 +5286,7 @@
                 okText: '设为主 Agent'
             }, function () {
                 /* 不带代次：后端根本不读它（见上面 agentSetMain 的注释）。*/
-                return api.post('agentSetMain', { id: id })
+                return notify.track('正在设为主 Agent', api.post('agentSetMain', { id: id }))
                     .then(function () {
                         notify.success({ title: '已设为主 Agent' });
                         Tsunagou.refresh(['agents', 'project']);
@@ -5015,27 +5302,27 @@
             const acceptance = state.get('acceptance', {}) || {};
             const proposal = acceptance.proposal || {};
             if (!proposal.id) {
-                notify.error('还没有读到项目完成提案，无法确认——请先让主 Agent 提交完成提案');
+                notify.info('还没有读到协作完成提案，无法确认——请先让主 Agent 提交完成提案');
                 return Promise.resolve(false);
             }
             /* 后端拿它与**当前** policy_revision 比：提案时那个可能已经过期。*/
             const current = Number((state.get('project', {}) || {}).policyRevision);
             return confirmThen({
-                title: '确认完成项目',
-                text: '确定要确认项目完成吗？',
-                description: '项目会立即被标注为“已完成”，并新建一个存档点。',
+                title: '确认完成协作',
+                text: '确定要确认协作完成吗？',
+                description: '协作会立即被标注为“已完成”，并新建一个存档点。',
                 okText: '确认完成'
             }, function () {
-                return api.post('acceptanceConfirm', {
+                return notify.track('正在确认完成', api.post('acceptanceConfirm', {
                     proposal_id: proposal.proposal_id || proposal.id,
                     proposal_digest: proposal.digest,
                     expected_project_revision: isFinite(current) ? current : proposal.revision,
                     /* 后端只对 `expected_revisions.decision` 有读的地方（决策自身版本）；
-                       项目版本走上面那一项。*/
+                       协作自己的版本号（revision）走上面那一项 expected_project_revision。*/
                     expected_revisions: { decision: proposal.revision }
-                }).then(function () {
-                    notify.success({ title: '项目已完成', sub: '已新建存档点' });
-                    /* 本地乐观更新：顶部状态 + 基本信息里的"项目状态" */
+                })).then(function () {
+                    notify.success({ title: '协作已完成', sub: '已新建存档点' });
+                    /* 本地乐观更新：顶部状态 + 基本信息里的"协作状态" */
                     state.set('project.statusText', '已完成');
                     const basics = toArray(state.get('project.basics', []));
                     const lifecycleRow = basics.filter(function (row) {
@@ -5059,7 +5346,7 @@
                 okText: '重试'
             }, function () {
                 /* 重试的是那次失败的 Operation（卡片上的 data-row-id）。*/
-                return api.post('checkpointRetry', { operation_id: id }).then(function () {
+                return notify.track('正在重试存档', api.post('checkpointRetry', { operation_id: id })).then(function () {
                     notify.success({ title: '已重新发起存档' });
                     Tsunagou.refresh(['checkpoints', 'checkpointFailures']);
                     return true;
@@ -5089,7 +5376,7 @@
         },
 
         /* 「校验」一个存档点：daemon 会真去比对 manifest 与 git 锚点（失败是 409）。
-           路径里是**这一张卡**的 digest，不是当前项目 —— 项目头由 api.request 自己带上。*/
+           路径里是**这一张卡**的 digest，不是当前协作 —— 协作头由 api.request 自己带上。*/
         checkpointVerify: function (id) {
             const digest = toText(id);
             if (!digest) return Promise.resolve(false);
@@ -5099,7 +5386,7 @@
                     const anchors = toArray((result || {}).git_anchors).length;
                     notify.success({
                         title: '校验通过',
-                        sub: '封存到事件 ' + toText((result || {}).through_event_seq) +
+                        sub: '已随事件存档 ' + toText((result || {}).through_event_seq) +
                             (anchors ? ' · git 锚点 ' + anchors + ' 个' : ' · 本机没有对应的 git 锚点')
                     });
                     Tsunagou.refresh(['checkpoints']);
@@ -5116,7 +5403,7 @@
             })[0] || {};
             const choices = toArray(pending.choiceList);
             if (!choices.length) {
-                notify.error('这条决定没有可选答复，无法决定：' + (pending.title || id));
+                notify.warn('这条决定没有可选答复，无法决定：' + (pending.title || id));
                 return Promise.resolve(false);
             }
             return dialog.decision({
@@ -5128,13 +5415,13 @@
                 })
             }).then(function (choice) {
                 if (!choice) return false;
-                return api.post('decisionResolve', {
+                return notify.track('正在提交用户决定', api.post('decisionResolve', {
                     decision_id: pending.id,
                     choice: choice,
                     expected_revisions: { decision: pending.revision },
                     proposal_digest: pending.digest,
                     reason: 'resolved from console'
-                }).then(function () {
+                })).then(function () {
                     notify.success({ title: '已提交决定', sub: choice });
                     Tsunagou.refresh(['project', 'acceptance', 'audits']);
                     return true;
@@ -5348,7 +5635,7 @@
         });
     }
 
-    /* 上次打开的项目：只记 id，不存任何协作数据。
+    /* 上次打开的协作：只记 id，不存任何协作数据。
        localStorage 写不进去也不影响功能（隐私模式、file:// 等）。*/
     const LAST_PROJECT_KEY = 'tsunagou.console.lastProject';
 
@@ -5361,7 +5648,7 @@
         try { return toText(window.localStorage.getItem(LAST_PROJECT_KEY)); } catch (error) { return ''; }
     }
 
-    /* 项目没了，"上次打开的那个"也得忘掉，不然下次进来会白找一遍 */
+    /* 协作没了，"上次打开的那个"也得忘掉，不然下次进来会白找一遍 */
     function forgetLastProject() {
         try { window.localStorage.removeItem(LAST_PROJECT_KEY); } catch (error) { /* 忽略 */ }
     }
@@ -5369,7 +5656,7 @@
     /* ---- 页面级命令（index.html 的 onclick 指向这里） -------------------- */
 
     Object.assign(app, {
-        /* 工作区 —— openProject(id) 会顺带把"当前项目"切成 id，并拉这个项目的数据 */
+        /* 工作区 —— openProject(id) 会顺带把"当前协作"切成 id，并拉这个协作的数据 */
         openProject: function (id) {
             const projectId = toText(id);
             if (projectId) {
@@ -5377,8 +5664,8 @@
                 rememberProjectId(projectId);
                 /* 列表数据本来就在手上，直接重绘一次就能把选中态换过去，不用再请求 */
                 render.list(state.get('projects', []));
-                /* 换项目时统一回到主视图：上一个项目停在哪个标签页，不该带到新项目来。
-                   顺带会把所有侧栏收起来，正好是"刚进一个新项目"该有的初始状态。*/
+                /* 换协作时统一回到主视图：上一个协作停在哪个标签页，不该带到新协作来。
+                   顺带会把所有侧栏收起来，正好是"刚进一个新协作"该有的初始状态。*/
                 ui.tabs.project('overview');
             }
             ui.workspace.project();
@@ -5409,7 +5696,7 @@
         },
         settingTab: function (key) { return ui.settingTabs.select(key); },
 
-        /* Agent 列表窗口。先把手上有的名单铺上，再问一次最新 —— 跨项目汇总要逐个问
+        /* Agent 列表窗口。先把手上有的名单铺上，再问一次最新 —— 跨协作汇总要逐个问
            中间层，比左栏那两次请求贵，所以不放进轮询，只在人打开窗口时发生。*/
         openAgents: function () {
             render.agentWindow(state.get('agentsWindow', []));
@@ -5417,10 +5704,17 @@
             return Tsunagou.refresh(['agentsWindow']).then(function () { return true; },
                 function () { return false; });
         },
-        /* 点 Agent 列表里的某一条 → 打开详情 */
+        /* 点 Agent 列表里的某一条 → 打开详情。
+           两个入口给的 id 形状不一样：Agent 列表窗口是「协作/Agent」（同一个 Agent 在几个
+           协作里就几行），Agent 管理页的卡片是裸 agent_id（那个协作里的唯一一行）。两种都认 ——
+           只认前者的话，从管理页进来查到 null，详情窗口是个空壳。*/
         openAgentInfo: function (id) {
-            const agent = findById(state.get('agentsWindow', []), id);
-            render.agentInfoWindow(agent || {});
+            const wanted = toText(id);
+            const rows = state.get('agentsWindow', []);
+            const agent = findById(rows, wanted)
+                || findById(rows, toText(state.get('currentProjectId')) + '/' + wanted)
+                || {};
+            render.agentInfoWindow(agent);
             ui.window.open('mgrAgentInfo');
             return true;
         },
@@ -5458,12 +5752,16 @@
         editAgent: function (agentId) {
             const agent = findById(state.get('agents', []), agentId) || {};
             const project = findById(state.get('projects', []), state.get('currentProjectId')) || {};
-            render.agentInfoWindow({
+            /* 把 agent 整个透传下去：render.agentInfoWindow 只从**传进去的那个对象**算
+               "是不是远端"（machine / network / copy_path）。少这几个字段，同一个远端 Agent
+               从卡片「修改」进来时"在哪台机器 / 这台机器的限制"会被整片藏掉，
+               与从 Agent 列表窗口进来看到的自相矛盾。*/
+            render.agentInfoWindow(Object.assign({}, agent, {
                 agent_id: toText(agent.id || agentId),
                 nickname: toText(agent.name),
                 project: toText(state.get('project.name')) || toText(project.name),
                 task: toText(agent.currentTask)
-            });
+            }));
             ui.window.open('mgrAgentInfo');
             return true;
         },
@@ -5482,12 +5780,25 @@
                 notify.info('这条记录里没有 Agent 号，改不了昵称');
                 return Promise.resolve(false);
             }
-            if (!nickname) { notify.error('昵称不能为空'); return Promise.resolve(false); }
-            if (nickname === before) { ui.window.close(node); return Promise.resolve(true); }
+            if (!nickname) { notify.info('昵称不能为空'); return Promise.resolve(false); }
+            if (nickname === before) {
+                /* 没改就别说"已保存"、也别装作做了一件事：如实说一句，窗口留着
+                   （与下面"没存上就留在窗口里"同一个口径）。*/
+                notify.info('昵称没有改动');
+                return Promise.resolve(false);
+            }
+            /* 这条路上**没有**加载遮罩（saveAgentProfile 直接发请求），所以必须自己防连点：
+               网络慢时连点「确定」会重复写一次用户档案。*/
+            if (agentInfoSaving) return Promise.resolve(false);
+            agentInfoSaving = true;
             return actions.saveAgentProfile(agentId, { nickname: nickname }).then(function (ok) {
+                agentInfoSaving = false;
                 /* 没存上就留在窗口里，让人改完再试（提示已由 api 弹过）*/
                 if (ok) ui.window.close(node);
                 return ok;
+            }, function (error) {
+                agentInfoSaving = false;
+                throw error;
             });
         },
 
@@ -5515,9 +5826,9 @@
         /* 卡片菜单里的「重命名」与重命名窗口的「确定」（index.html 里那个按钮调的是 submitRename）*/
         renameProject: function (id) { return actions.renameProject(id); },
         submitRename: function () { return actions.submitRename(); },
-        /* 「登记已有项目」：向导已按决定 11 改成这个语义。
-           传本机项目目录（里面已经有 .tsunagou/project.json）就登记进项目索引，
-           其余参数（name/objective）则会在中间层配置的 projects_root 下新建一个项目。
+        /* 「登记已有协作」：向导已按决定 11 改成这个语义。
+           传本机协作目录（里面已经有 .tsunagou/project.json）就登记进协作索引，
+           其余参数（name/objective）则会在中间层配置的 projects_root 下新建一个协作。
            给宿主脚本用，界面上不新加控件。*/
         registerProject: function (pathOrDraft) {
             const draft = isPlainObject(pathOrDraft) ? pathOrDraft : { path: pathOrDraft };
@@ -5555,16 +5866,16 @@
            该页已删除，这里保留为程序化调用入口（app.demo.*）。*/
         demo: {
             success: function () { notify.success({ title: '改动已成功保存' }); return true; },
-            info: function () { notify.info('请至少选择一个Agent'); return true; },
+            info: function () { notify.info('请至少选择一个 Agent'); return true; },
             loading: function () {
-                notify.loading('正在连接 Agent');
+                notify.loading('正在接入 Agent');
                 setTimeout(function () { notify.loadingEnd(); }, 2000);
                 return true;
             },
             decision: function () {
                 return dialog.decision({
                     title: '需要用户确认/决定的信息',
-                    content: '项目"Hello World"的子 Agent（Claude Code 051）试图将 main() 函数的 printf("%d",a) ' +
+                    content: '协作"Hello World"的子 Agent（Claude Code 051）试图将 main() 函数的 printf("%d",a) ' +
                         '关键位置改为 printf("%f",a)，主 Agent 认为这一改动可能会影响整个程序的输出结果，需要人工裁定。',
                     actions: [
                         { label: '忽略', value: 'ignore' },
@@ -5584,7 +5895,7 @@
         app.addSubAgent({ source: closest(node, '#newXz3') ? 'wizard' : 'agents' });
     });
 
-    /* 左栏协作卡片：点卡片 = 选中它 + 进入项目工作区。 */
+    /* 左栏协作卡片：点卡片 = 选中它 + 进入协作工作区。 */
     function selectProjectCard(card) {
         qsa('#projList .projItem').forEach(function (node) {
             if (node === card) node.className = 'projItem projItemSelected';
@@ -5599,26 +5910,33 @@
     }
 
     function bindProjectCards() {
+        /* 守卫放在**最前面**：以前它只包住函数后半段那 4 个 document 监听，而上面这些
+           delegateClick 在守卫之外 —— 绑定函数被调第二次时它们照样再挂一遍，
+           于是单击一张协作卡片会开两次、写命令会提交两次。*/
+        if (bindProjectCards.bound) return;
+        bindProjectCards.bound = true;
         delegateClick(['#projList .projItem'], function (card, event) {
-            /* 点右上角那一块不属于"选这个项目" —— 它自己有一套（见下面的 .edit 绑定），
-               这里直接让路，不然会先把项目打开、再弹出菜单。*/
+            /* 点右上角那一块不属于"选这个协作" —— 它自己有一套（见下面的 .edit 绑定），
+               这里直接让路，不然会先把协作打开、再弹出菜单。*/
             if (closest(event.target, '.edit')) return;
             const id = selectProjectCard(card);
             rememberProjViewed(id);
             app.openProject(id);
         });
         /* 卡片右上角那一块（.edit，CSS 里 hover 才露出来；样式已改成"修改"的笔）。
-           点它不再直接删项目，而是弹出菜单：重命名 / 删除项目。再点一次收起。*/
+           点它不再直接删协作，而是弹出菜单：重命名 / 删除协作。再点一次收起。*/
         delegateClick(['#projList .projItem .edit'], function (node) {
             const card = closest(node, '.projItem');
             return toggleSelection('projMenu', node, card && card.getAttribute('data-project-id'));
         });
-        /* 「进行中的协作」右边那个设置按钮：排这个列表的序（搜索按钮先留着不动）。
+        /* 每组标题右边那个设置按钮：只排**这一组**的序（菜单里的对勾也照这一组画）。
            再点一次收起 —— 开着的时候点它必须能关掉。*/
         delegateClick(['#projList .wkTbtn[data-tg-role="project-sort"]'], function (node) {
+            const group = projGroupOf(node);
+            if (group) sortMenuGroup = group;
             return toggleSelection('sortMenu', node, '');
         });
-        /* 项目操作菜单里的两项 */
+        /* 协作操作菜单里的两项 */
         delegateClick(['#projMenu .item'], function (node) {
             const action = toText(node.getAttribute('data-proj-action'));
             const id = selectionProjectId;
@@ -5627,42 +5945,65 @@
             if (action === 'delete') return app.deleteProject(id);
             return null;
         });
-        /* 排序菜单：选规则或选方式，选完整列重排一次（并记住这个偏好）。*/
+        /* 排序菜单：选规则或选方式。菜单只有一个，但改的是**打开它的那一组**的偏好 ——
+           另一组的顺序一个都不动，存也是按组分开存。*/
         delegateClick(['#sortMenu .item'], function (node) {
+            const group = projSort[sortMenuGroup] ? sortMenuGroup : 'active';
+            const pref = projSort[group];
             const order = toText(node.getAttribute('data-sort-order'));
             const by = toText(node.getAttribute('data-sort-by'));
-            if (order) projSort = { order: order, by: projSort.by };
-            if (by) projSort = { order: projSort.order, by: by };
+            if (order) projSort[group] = { order: order, by: pref.by };
+            else if (by) projSort[group] = { order: pref.order, by: by };
+            else return null;
             saveProjSort();
             syncSortMenu();
             render.list(state.get('projects', []));
             return null;
         });
-        /* 搜索：点放大镜 → 收起分组标题、放出搜索条并聚焦输入框；
-           点搜索条里的 iconB → 收回去、清掉关键字（列表复原）。*/
-        delegateClick(['#projList .wkTbtn[data-tg-role="project-search"]'], function () {
+        /* 搜索：点某一组的放大镜 → 只放出**这一组**的搜索条并聚焦它的输入框（另一组不动）；
+           点本组搜索条里的 iconB → 只收本组、只清本组的关键字（本组列表复原）。*/
+        delegateClick(['#projList .wkTbtn[data-tg-role="project-search"]'], function (node) {
+            const group = projGroupOf(node);
+            if (!group) return null;
             closeSelections();
-            projSearchOpen = true;
+            projSearch[group].open = true;
             applyProjectFilter();
-            const input = qs('#projList .searchBar .left');
+            const input = qs('#projList .searchBar[' + PROJ_GROUP_ATTR + '="' + group + '"] .left');
             if (input && input.focus) input.focus();
             return null;
         });
-        delegateClick(['#projList .searchBar .iconB'], function () {
-            projSearchOpen = false;
-            projQuery = '';
+        delegateClick(['#projList .searchBar .iconB'], function (node) {
+            const group = projGroupOf(node);
+            if (!group) return null;
+            projSearch[group].open = false;
+            projSearch[group].query = '';
             applyProjectFilter();
             return null;
         });
-        /* 点菜单以外的地方 / 按 Esc 收起来。只绑一次：绑定函数可能被多次调用。*/
-        if (!bindProjectCards.bound) {
-            bindProjectCards.bound = true;
-            /* 打字实时过滤。挂在 document 上再按选择器认：列会重画，元素会被换掉。*/
+        /* 点菜单以外的地方 / 按 Esc 收起来。只绑一次：绑定函数可能被多次调用。
+           上面的 delegateClick 已经由函数最前面那道守卫挡住了。*/
+        {
+            /* 列表一滚动就把菜单收起来：菜单是 fixed 定位、贴在卡片旁边，卡片一挪它就错位，
+               看着像菜单飞走了。scroll 不冒泡，所以用捕获阶段听。*/
+            document.addEventListener('scroll', function () {
+                if (openSelectionId) closeSelections();
+            }, true);
+            /* 点 Agent 卡片本体 → 打开详情窗口（D196 说退役席位只剩「查看」，那就得真能看）。
+               Agent 管理页的卡片与左栏协作卡片是两套，这里只认前者；卡片里的按钮不拦。*/
+            document.addEventListener('click', function (event) {
+                const card = closest(event.target, '#pane-agents .item[data-agent-id]');
+                if (!card) return;
+                app.openAgentInfo(card.getAttribute('data-agent-id'));
+            });
+            /* 打字实时过滤（只滤它所在的那一组）。挂在 document 上再按选择器认：
+               列会重画，元素会被换掉。*/
             document.addEventListener('input', function (event) {
                 const input = closest(event.target, '#projList .searchBar .left');
                 if (!input) return;
-                projSearchOpen = true;
-                projQuery = toText(input.value);
+                const group = projGroupOf(input);
+                if (!group) return;
+                projSearch[group].open = true;
+                projSearch[group].query = toText(input.value);
                 applyProjectFilter();
             });
             document.addEventListener('click', function (event) {
@@ -5712,7 +6053,40 @@
 
     /* ---- 静态窗口里的按钮 ------------------------------------------------ */
 
+    /* ---- 提交类按钮：按下即禁用、防连点 ----------------------------------
+       「提交类」= 窗口页脚那排（取消 / 确定）与向导页脚那排（上一步 / 下一步 / 完成）。
+       点下去到加载遮罩收起之间给按钮挂 data-tg-busy，并且不再接受第二次点击 ——
+       网络慢时连点不会重复提交。
+       **只用属性，不写任何行内样式**：想画"禁用 + 转圈"就对着 [data-tg-busy] 写 CSS（样式归用户）。
+       只有真的开了加载遮罩的动作才会被标记 —— 不开遮罩的动作（例如"昵称没改动"）
+       不该把按钮锁死。*/
+    const SUBMIT_BUTTON_SELECTOR = '.options .buttonbox2, .buttonbox .buttonbox2';
+    /* 最近按下的那个提交键：内联 onclick 里拿不到自己那个节点，所以在捕获阶段先记下来。*/
+    let lastSubmitButton = null;
+    /* 用户档案那一次保存没有遮罩可依（见 saveAgentInfo），自己拿一个在途标记防连点。*/
+    let agentInfoSaving = false;
+
     function bindStaticWindowButtons() {
+        document.addEventListener('click', function (event) {
+            const node = closest(event.target, SUBMIT_BUTTON_SELECTOR);
+            if (!node) return;
+            if (node.getAttribute('data-tg-busy') === '1') {
+                /* 捕获阶段就拦掉：内联 onclick 不会再跑第二遍。*/
+                event.stopPropagation();
+                event.preventDefault();
+                return;
+            }
+            lastSubmitButton = node;
+        }, true);
+        events.on('ui:window', function (detail) {
+            if (!detail || detail.id !== 'loadW') return;
+            if (detail.open) {
+                if (lastSubmitButton) lastSubmitButton.setAttribute('data-tg-busy', '1');
+                return;
+            }
+            qsa('[data-tg-busy]').forEach(function (node) { node.removeAttribute('data-tg-busy'); });
+            lastSubmitButton = null;
+        });
         /* 位置或厂商一变，那个"网络 Agent 编号"输入框跟着显/隐 */
         const place = subAgentPlaceBox();
         if (place) place.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
@@ -5730,9 +6104,13 @@
             });
         });
         /* 向导第 3 步子 Agent 胶囊上的「×」是 CSS 画的（.itemC::before，hover 才滑出来）：
-           点它 = 删掉这个已接入的 Agent，后端还没装配 —— 如实说，不假装删掉。*/
+           点它 = 删掉这个已接入的 Agent，后端还没装配 —— 如实说，不假装删掉。
+           **不能调 actions.removeAgent()**：它要一个 agent_id，而这个入口一个参数都没传，
+           于是只会弹一个"确定要让这个 Agent 退役吗"的吓人确认框、再发一次注定被拒的写请求
+           （agent_id 是必填），而胶囊根本不会被删掉。*/
         delegateClick(['#newXz3 .listfieldbox .itemC'], function () {
-            return actions.removeAgent();
+            notify.info('从向导里移除已接入的 Agent 还没接通：要退役请到 Agent 管理页');
+            return Promise.resolve(false);
         });
         delegateClick(['#mgrAgent .inner .table .item'], function (node) {
             app.openAgentInfo(node.getAttribute('data-agent-id'));
@@ -5757,7 +6135,11 @@
             if (!panel || !closest(panel, '#setPanel')) return;
             if (panel.id === 'uSetCol1') {
                 app.setTheme(event.detail.value);
-                actions.saveSetting('theme', event.detail.value);
+                /* 主题当场就换了（改的是本机变量），但**存不上**必须说出来：
+                   否则重开设置面板又变回旧的那一套，人以为自己记错了。*/
+                actions.saveSetting('theme', event.detail.value).then(function (ok) {
+                    if (!ok) notify.error('主题没能保存：重开设置面板会变回原来的那一套');
+                });
             }
         });
     }
@@ -5822,7 +6204,7 @@
         'state.reset': function () { state.reset(); render.all(); },
         'render.all': function () { render.all(); },
 
-        'project.list': function (payload) { projectListLoaded = true; state.set('projects', payload); render.list(payload); },
+        'project.list': function (payload) { state.set('projects', payload); render.list(payload); },
         'project.current': function (payload) { state.set('project', payload); render.overview(payload); },
         'agent.list': function (payload) {
             state.set('agents', payload);
@@ -5865,7 +6247,7 @@
             state.set('profile', payload);
             state.set('settings', payload);
             render.settings(payload);
-            /* 改完昵称/厂商要立刻反映到总路径那一列操作人与左栏项目卡片上 */
+            /* 改完昵称/厂商要立刻反映到总路径那一列操作人与左栏协作卡片上 */
             render.timeline(state.get('timeline', []));
             render.list(state.get('projects', []));
             /* 存在中间层档案里的主题也是主题：拉回来就应用
@@ -5874,7 +6256,7 @@
         },
         'glossary.data': function (payload) {
             /* 后端参数值的中文对照表（中间层维护，见 console/glossary.py）。
-               它通常比项目数据先到，拿回来就整页重绘一次 —— 这样每个渲染器
+               它通常比协作数据先到，拿回来就整页重绘一次 —— 这样每个渲染器
                只管查表，不必自己盯着"词表到没到"。*/
             state.set('glossary', payload);
             render.all();
@@ -5954,8 +6336,8 @@
 
     /* ---- 从后端刷新 ------------------------------------------------------ */
 
-    /* 需要"当前项目"才能请求的数据键（路径里带 {project}）。
-       只有列在这里的键才会在 openProject 时一次性拉回；其余键不依赖项目。*/
+    /* 需要"当前协作"才能请求的数据键（路径里带 {project}）。
+       只有列在这里的键才会在 openProject 时一次性拉回；其余键不依赖协作。*/
     const PROJECT_SCOPED_KEYS = [
         'project', 'agents', 'tasks', 'audits', 'workspaces',
         'conflicts', 'acceptance', 'checkpoints', 'checkpointFailures', 'timeline'
@@ -5990,10 +6372,10 @@
 
     /* 后端任务状态（字符串） → CSS 的 .st-1…13（文案在 style.css 里，别在这里改）。
        顺序**照 style.css 的 ::after 文案**排，不是照后端自己的枚举顺序：
-       1 草稿 · 2 已就绪 · 3 待认领 · 4 已认领 · 5 执行中 · 6 卡住了 · 7 待验收 ·
-       8 被打回 · 9 取消中 · 10 执行者丢失 · 11 已完成 · 12 失败 · 13 已取消。
-       （原来这份表从 `submitted` 起就错位了：`submitted→6` 会显示成「卡住了」、
-       `blocked→9` 会显示成「取消中」……照 CSS 的文案逐个数一遍才是对的。）*/
+       1 草稿 · 2 待发布 · 3 待领取 · 4 已领取 · 5 执行中 · 6 受阻 · 7 待验收 ·
+       8 待返工 · 9 待取消 · 10 已失联 · 11 已完成 · 12 失败 · 13 已取消。
+       （原来这份表从 `submitted` 起就错位了：`submitted→6` 会显示成「受阻」、
+       `blocked→9` 会显示成「待取消」……照 CSS 的文案逐个数一遍才是对的。）*/
     const TASK_STATUS_NUMBER = {
         draft: 1, ready: 2, open: 3, claimed: 4, running: 5, blocked: 6, submitted: 7,
         changes_requested: 8, cancel_requested: 9, orphaned: 10, completed: 11,
@@ -6060,8 +6442,8 @@
     }
 
     /* 总路径/审计里的 subject_ref → 给人看的标题。
-       `task/<id>` 能在当前任务名单里找到就写标题，`project/<id>` 写项目名；
-       找不到（跨代、别的项目、任务已不在名单里）退回空串，调用方再用 id 缩写兑底 ——
+       `task/<id>` 能在当前任务名单里找到就写标题，`project/<id>` 写协作名；
+       找不到（跨代、别的协作、任务已不在名单里）退回空串，调用方再用 id 缩写兑底 ——
        历史不会因为指名道姓而变准，但能对上时就别拿 id 糊人。*/
     function subjectLabel(ref) {
         const text = toText(ref);
@@ -6117,8 +6499,8 @@
             return missing.length ? ('降级：缺 ' + missing.join('、')) : '降级';
         }
         if (status === 'ended') return '已结束';
-        /* 第一次入会话叫"已就绪"；重接/重连是先降级再修回来，所以叫"已恢复"。*/
-        return toText(event.action) === 'agent.enroll' ? '已就绪：能力全通过' : '已恢复：能力全通过';
+        /* 第一次入会话叫"待发布"；重接/重连是先降级再修回来，所以叫"已恢复"。*/
+        return toText(event.action) === 'agent.enroll' ? '待发布：能力全通过' : '已恢复：能力全通过';
     }
 
     function backendItems(raw) {
@@ -6143,10 +6525,6 @@
        表里只写"9月28日16:05:02"这种颗粒度：不带毫秒，本年不写年份，跨年才写；
        毫秒只在详情（侧栏）里给 —— formatTime(value, { precise: true })。
        解析不了的值原样返回：宁可难看，也不编一个时间出来。本地时区。*/
-
-    function pad2(value) {
-        return (value < 10 ? '0' : '') + value;
-    }
 
     function formatTime(value, options) {
         const text = toText(value);
@@ -6184,7 +6562,13 @@
         const status = toText(lease.status);
         const shown = glossText('lease_status', status) || '未知';
         if (!lease.expires_at) return { text: shown, ok: status === 'active' };
-        const left = Math.round(Number(lease.expires_at) - Date.now() / 1000);
+        /* expires_at 的口径是**记账毫秒**（与 operations.created_at 同一套），不是 epoch 秒 ——
+           这是本文件里唯一一处不先转 ISO 的时间处理。按数量级认，两种都吃得下：
+           把 1.7e12 当秒用的话 left 会恒为正且巨大，早已过期的租约会显示
+           「还剩 29000000 分钟」并被标成绿的。*/
+        const rawExpiry = Number(lease.expires_at);
+        const expiryMs = rawExpiry > 1e11 ? rawExpiry : rawExpiry * 1000;
+        const left = Math.round((expiryMs - Date.now()) / 1000);
         return {
             text: left > 0 ? (shown + '（还剩 ' + Math.round(left / 60) + ' 分钟）') : (shown + '（已到期）'),
             ok: status === 'active' && left > 0
@@ -6195,7 +6579,7 @@
 
        Agent 的昵称与厂商不是协作事实（协议里没有这个概念），它们存在中间层的
        用户档案里（GET /console/profile 的 agents 表）。所以这里一律：
-       档案里的昵称 > 演示数据里的昵称 > 项目里真实存在的 agent_id 缩写。*/
+       档案里的昵称 > 演示数据里的昵称 > 协作里真实存在的 agent_id 缩写。*/
 
     function agentProfileEntry(agent) {
         const agents = state.get('profile.agents', {}) || {};
@@ -6257,7 +6641,7 @@
     }
 
     /* 等宿主把 Agent 连上：每 2 秒问一次中间层"到了没有"，直到到了 / 票过期 /
-       人把加载遮罩关掉。中间层每次都会重读项目名单（指纹没变就复用缓存），
+       人把加载遮罩关掉。中间层每次都会重读协作名单（指纹没变就复用缓存），
        所以轮询很便宜，也不会因为网络抖一下就让人重新来一遍。*/
     const ENROLLMENT_POLL_MS = 2000;
 
@@ -6268,18 +6652,31 @@
             if (!enrollmentId || !template) return resolve({ status: 'unknown' });
             let stopped = false;
             let timer = null;
+            /* 人把加载遮罩关掉 = 不等了。以前只在每次 tick 的**顶部**检查遮罩还在不在，
+               于是"关遮罩"在两次 tick 之间（尤其正好有请求在飞行时）会被无声丢掉 ——
+               回包一到，onWaiting 会把遮罩重新拉开，循环照常继续。
+               所以直接订阅窗口事件，关的那一刻就下结论。*/
+            const onWindow = function (detail) {
+                if (!detail || detail.open || detail.id !== 'loadW') return;
+                if (notify.cancelPending()) return;   /* 「取消等待」的确认框会先收起遮罩 */
+                stop({ status: 'dismissed' });
+            };
             const stop = function (outcome) {
                 if (stopped) return;
                 stopped = true;
                 if (timer) clearTimeout(timer);
+                events.off('ui:window', onWindow);
                 resolve(outcome);
             };
+            events.on('ui:window', onWindow);
             const tick = function () {
                 if (stopped) return;
-                /* 遮罩是"正在等"的可见信号：人把它关了，就是不等了。
-                   但「取消等待」的确认框会先把遮罩收起来 —— 那一瞬间不算放弃。*/
+                /* 兜底：万一那次关窗事件没被这里听到。*/
                 if (!ui.window.isOpen('loadW') && !notify.cancelPending()) return stop({ status: 'dismissed' });
                 api.get(path, null, { silent: true }).then(function (answer) {
+                    /* 回包晚到、等待已经收尾了：什么都别再动 —— 尤其不能 onWaiting
+                       （那会 notify.loading 把刚关掉的遮罩重新拉开）。*/
+                    if (stopped) return;
                     const status = toText(answer && answer.status);
                     if (status === 'arrived') return stop({ status: 'arrived', agent: answer });
                     if (status === 'expired') return stop({ status: 'expired', agent: answer });
@@ -6288,6 +6685,7 @@
                     if (typeof onWaiting === 'function') onWaiting(answer || {});
                     timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                 }, function () {
+                    if (stopped) return;
                     /* 一次问不到不算失败：接着等下一次。*/
                     timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                 });
@@ -6309,12 +6707,12 @@
         const note = toText((registration || {}).note);
         if (note) return note;
         const command = firstCommand(registration);
-        if (command) return '这个宿主要人手工把 bridge 写进它的 MCP 配置：' + command;
+        if (command) return '这个宿主要人手工把连接写进它的 MCP 配置：' + command;
         return '还没能把这次接入写进 ' + (toText((host || {}).label) || '宿主') + ' 的配置';
     }
 
-    /* 当前项目的目录：中间层知道（一个 daemon 只服务一个项目，概况出口不含文件路径），
-       所以从项目列表里按 id 取。取不到就返回空串，由调用方换一句不含路径的说法。*/
+    /* 当前协作的目录：中间层知道（一个 daemon 只服务一个协作，概况出口不含文件路径），
+       所以从协作列表里按 id 取。取不到就返回空串，由调用方换一句不含路径的说法。*/
     function currentProjectPath() {
         const id = toText(state.get('currentProjectId'));
         if (!id) return '';
@@ -6322,10 +6720,10 @@
         return toText(known.path);
     }
 
-    /* 项目确认完成（或已归档）之后，"只能在做项目时用"的入口就该消失：再接一个 Agent、
-       再存一档、再任命主 Agent —— 都没有意义了。判据只有一处：项目自己那份
-       `.tsunagou/project.json` 里的 lifecycle（中间层随项目列表给过来），
-       所以 daemon 停着也判得出来。删项目、校验存档点、重试存档不受影响：
+    /* 协作确认完成（或已归档）之后，"只能在做协作时用"的入口就该消失：再接一个 Agent、
+       再存一档、再任命主 Agent —— 都没有意义了。判据只有一处：协作自己那份
+       `.tsunagou/project.json` 里的 lifecycle（中间层随协作列表给过来），
+       所以 daemon 停着也判得出来。删协作、校验存档点、重试存档不受影响：
        清理与"把没存成的那一档补上"恰恰是完工之后还需要做的事。*/
     function projectFinished() {
         const id = toText(state.get('currentProjectId'));
@@ -6335,7 +6733,7 @@
         return lifecycle === 'completed' || lifecycle === 'archived';
     }
 
-    /* 进度和下一步由中间层判断：已认领、登记、工具加载与原会话回执是不同阶段。
+    /* 进度和下一步由中间层判断：已领取、登记、工具加载与原会话回执是不同阶段。
        尤其不能把“再读一次上下文”描述成所有失败都能修好的保证。*/
     function joiningNote(answer, host) {
         const note = toText(answer.note);
@@ -6348,32 +6746,32 @@
         return '“' + label + '”那边的会话已经连上了，但还没就位' +
             (missing.length ? '（还缺：' + missing.join('、') + '）' : '') +
             '。请在' + (path ? '“' + path + '”下' : '那边') +
-            '让它检查接入状态，并确认原会话能读取项目上下文。正在等待连接';
+            '让它检查接入状态，并确认原会话能读取协作上下文。正在等待接入';
     }
 
-    /* 两个向导共用入口：Codex 项目和角色取自申请，只需在目标聊天说一句话；
-       其他宿主仍需要目录与加载提示来读取对应项目的规则。*/
+    /* 两个向导共用入口：Codex 协作和角色取自申请，只需在目标聊天说一句话；
+       其他宿主仍需要目录与加载提示来读取对应协作的规则。*/
     function openWindowHint(host, phrase) {
         const label = toText((host || {}).label) || '宿主';
         if (toText((host || {}).adapter).toLowerCase() === 'codex') {
-            return '请在要接入的 Codex 当前对话中说“请接入 Tsunagou”。正在等待连接';
+            return '请在要接入的 Codex 当前对话中说“请接入 Tsunagou”。正在等待接入';
         }
         const path = currentProjectPath();
-        return '请在“' + (path || '这个项目所在的目录') + '”下打开/重载 ' + label +
-            ' 窗口，让它' + (phrase || '') + '接入 Tsunagou。正在等待连接';
+        return '请在“' + (path || '这个协作所在的目录') + '”下打开/重载 ' + label +
+            ' 窗口，让它' + (phrase || '') + '接入 Tsunagou。正在等待接入';
     }
 
     /* ---- 接入一个 Agent：准备 → 等原宿主会话就绪 ----
 
-       Codex 准备的是唯一待认领申请（deferred），其余宿主保留签票/登记流程。
+       Codex 准备的是唯一待领取申请（deferred），其余宿主保留签票/登记流程。
        成功由中间层核验本次身份与原会话回执，页面不通过名单新增来猜测。
        取消是否成功也以中间层回答为准，409 仍继续等，不移除共享 MCP。
        回调得到的 status：
          arrived    —— 连上了（中间层已经把昵称写进档案）
          manual     —— 宿主没法自动注册（没装 CLI / 还没实现），票与配置已备好，要人手工接
          expired    —— 票过期，这次作废
-         cancelled  —— 人在确认框里选了取消接入
-         dismissed  —— 遮罩被别的操作收掉了，停止等待（票还有效）
+         cancelled  —— 人在确认框里选了取消等待
+         dismissed  —— 遮罩被别的操作收掉了，取消等待（票还有效）
          failed     —— 请求本身失败（提示已由 api 弹过）*/
     /* 把"这张票是给哪个厂商的、这个 Agent 叫什么"记进用户档案。
        卡片上的 logo 与昵称都是按 agent_id 从档案里现算的 —— 不记下来，
@@ -6398,19 +6796,19 @@
         const id = toText((enrollment || {}).project_id);
         const project = findById(state.get('projects', []), id) || {};
         const role = toText((enrollment || {}).role) === 'main' ? '主 Agent' : '子 Agent';
-        return '项目“' + (toText(project.name) || id || '原项目') + '”的' + role + '：';
+        return '协作“' + (toText(project.name) || id || '原协作') + '”的' + role + '：';
     }
 
     /* 宿主自己接入（`in_host`）时遮罩上那句话：中间层给的那句指路（"在目标聊天里让它
        接入 Tsunagou"）+ 这次要接的身份 + 一句"我在这儿看着"。页面不自己编步骤 ——
-       去哪条聊天、说什么，都是宿主表里写好的那一句。有项目目录就带上：那条聊天得开在
-       这个项目里才最省事（工作目录不是项目时，由机器上那条待接入记录兜底，见
+       去哪条聊天、说什么，都是宿主表里写好的那一句。有协作目录就带上：那条聊天得开在
+       这个协作里才最省事（工作目录不是协作时，由机器上那条待接入记录兜底，见
        connectInHostAgent）。身份要写出来：那条聊天把它交给 `tsunagou_connect` 的 `role`，
        而机器上那条记录会压过任何不一致的说法（冲突直接拒绝）。*/
     function inHostHint(host, role) {
         const label = toText((host || {}).label) || '这个宿主';
         const note = toText((host || {}).note)
-            || ('请在 ' + label + ' 自己的项目聊天里让它接入 Tsunagou。');
+            || ('请在 ' + label + ' 自己的协作聊天里让它接入 Tsunagou。');
         const path = currentProjectPath();
         const as = toText(role) === 'main' ? '以主 Agent 身份接入' : '以子 Agent 身份接入';
         return (path ? ('请在“' + path + '”下：') : '') + note +
@@ -6422,27 +6820,72 @@
        只是没有"票过期"——因为这里根本没有票。*/
     const HOST_ARRIVAL_TIMEOUT_MS = 15 * 60 * 1000;
 
-    function waitForHostArrival(host, baseline, onWaiting, enrollmentId) {
+    /* 邀请的有效期可能是 ISO 串，也可能是数字时间戳（秒或毫秒）—— 按数量级认。
+       认不出来就返回 0（= 不按有效期判定，退回轮询上限那一套）。*/
+    function expiresAtMs(value) {
+        const text = toText(value).trim();
+        if (!text) return 0;
+        if (/^\d+$/.test(text)) {
+            const num = Number(text);
+            return num > 1e11 ? num : num * 1000;
+        }
+        const parsed = Date.parse(text);
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    function waitForHostArrival(host, baseline, onWaiting, enrollmentId, expiresAt, onExpired) {
         const adapter = toText((host || {}).adapter);
         const startedAt = Date.now();
+        /* 邀请只有 10 分钟有效，而这里的轮询上限是 15 分钟。以前**只**判轮询上限，
+           于是 10~15 分钟窗口里一个迟到的 arrived 会被当成"接入成功"，
+           还会顺手把用户档案里的厂商/昵称覆盖掉。有有效期就按有效期判。*/
+        const expiry = expiresAtMs(expiresAt);
+        const expiredNow = function () { return !!expiry && Date.now() > expiry; };
+        const timedOut = function () { return Date.now() - startedAt > HOST_ARRIVAL_TIMEOUT_MS; };
         return new Promise(function (resolve) {
             let stopped = false;
             let timer = null;
+            /* 与 waitForEnrollment 同一处修补：关遮罩那一刻就下结论，别等下一次 tick ——
+               否则正有请求在飞行时"我不等了"会被无声丢掉，回包还会把遮罩重新拉开。*/
+            const onWindow = function (detail) {
+                if (!detail || detail.open || detail.id !== 'loadW') return;
+                if (notify.cancelPending()) return;
+                stop({ status: 'dismissed' });
+            };
             const stop = function (outcome) {
                 if (stopped) return;
                 stopped = true;
                 if (timer) clearTimeout(timer);
+                events.off('ui:window', onWindow);
                 resolve(outcome);
             };
+            /* 过期/超时怎么收场：给了 onExpired 就把"改口"交给调用方（它会把遮罩写成
+               "已过期，请重新生成"），这里只停轮询、**不收场** —— 窗口留在那儿等用户按按钮，
+               那时 onWindow 才让本 Promise 收场（用户的窗口政策：窗口只由按钮决定）。*/
+            const giveUp = function () {
+                if (expiredNow()) {
+                    if (typeof onExpired === 'function') { onExpired(); return true; }
+                    stop({ status: 'expired' });
+                    return true;
+                }
+                if (timedOut()) { stop({ status: 'timeout' }); return true; }
+                return false;
+            };
+            events.on('ui:window', onWindow);
             const tick = function () {
                 if (stopped) return;
-                /* 遮罩是"正在等"的可见信号：人把它关了就是不等了（确认框开着的那一下不算）。*/
+                /* 兜底：万一那次关窗事件没被这里听到。*/
                 if (!ui.window.isOpen('loadW') && !notify.cancelPending()) return stop({ status: 'dismissed' });
-                if (Date.now() - startedAt > HOST_ARRIVAL_TIMEOUT_MS) return stop({ status: 'timeout' });
+                if (giveUp()) return;
                 api.get('enrollmentObserve', {
                     adapter: adapter, baseline: baseline.join(','), enrollment_id: toText(enrollmentId)
                 }, { silent: true })
                     .then(function (answer) {
+                        if (stopped) return;
+                        /* 过期之后到达的**不算数**（邀请 10 分钟、轮询上限 15 分钟）：
+                           不挡住这 5 分钟的窗口，就会拿着一个已经作废的申请报"接入成功"，
+                           还会顺带把用户档案里的厂商/昵称覆盖掉。*/
+                        if (giveUp()) return;
                         if (toText(answer && answer.status) === 'arrived') {
                             return stop({ status: 'arrived', agent: answer.agent });
                         }
@@ -6450,6 +6893,7 @@
                         if (typeof onWaiting === 'function') onWaiting(answer || {});
                         timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                     }, function () {
+                        if (stopped) return;
                         /* 一次问不到不算失败：接着等下一次。*/
                         timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                     });
@@ -6475,19 +6919,19 @@
         const id = toText(enrollmentId);
         if (!id) {
             notify.loadingEnd();
-            notify.info('已停止等待');
+            notify.info('已取消等待');
             if (done) done();
             return Promise.resolve({ status: 'dismissed' });
         }
         notify.loading('正在撤销这次接入申请 …');
         return cancelEnrollment(id).then(function (answer) {
             notify.loadingEnd();
-            notify.info(toText((answer || {}).note) || '已停止等待：这次接入申请已撤掉，可以重新接入');
+            notify.info(toText((answer || {}).note) || '已取消等待：这次接入申请已撤掉，可以重新接入');
             if (done) done();
             return answer || { status: 'cancelled' };
         }, function (error) {
             notify.loadingEnd();
-            notify.info('已停止等待（这次申请没能撤掉：' + ((error && error.message) || '原因未知') + '）');
+            notify.info('已取消等待（这次申请没能撤掉：' + ((error && error.message) || '原因未知') + '）');
             if (done) done();
             return { status: 'failed' };
         });
@@ -6622,7 +7066,7 @@
                 return merged;
             });
         }, function (error) {
-            /* 申请冲突不能接着等另一项目或角色；说明原选择，当前向导保持原地。*/
+            /* 申请冲突不能接着等另一协作或角色；说明原选择，当前向导保持原地。*/
             finished = true;
             enrollmentFlowActive = false;
             notify.loadingEnd();
@@ -6638,13 +7082,13 @@
     }
 
     /* 宿主在自己聊天里接入（DeepSeek Harness 这一种）：控制台不签票、不写宿主配置，
-       但**要记下"谁要接哪个项目、什么角色"**—— 那条聊天里说"请接入 Tsunagou"时只有自己的
+       但**要记下"谁要接哪个协作、什么角色"**—— 那条聊天里说"请接入 Tsunagou"时只有自己的
        会话 id 和工作目录，而工作目录常常不是协调仓库，唯一说得清的就是这条机器级记录
        （`agent pending` 读它）。所以这里先 prepare（只写记录），再开同一块等待遮罩等名单里
        出现它。判断"到了"在中间层，页面不数人头。*/
     /* 跨机器接入（「位置＝网络」）：主机签一张一次性票，产出一段可复制的内容交给人；
        那台机器上的 `agent import` 收下它就完成接入。这里做三件事 —— 请中间层签票并给内容、
-       把内容摆在窗口里让人转交、确认后等那个席位出现（判断仍在中间层，与其它等待同一套）。
+       把内容摆在窗口里让人转交、确认后等那个Agent出现（判断仍在中间层，与其它等待同一套）。
 
        为什么"确认"是必须的一步：内容得由人送过去，页面无从知道人有没有送到。*/
     let networkInvite = null;
@@ -6694,6 +7138,14 @@
             start_daemon: true, place: 'network', conversation_id: toText((opts || {}).number)
         }, { silent: true }).then(function (prepared) {
             const answer = prepared || {};
+            /* 人在 POST 还没回来时把加载遮罩关掉了（= 不等了）：那就别再弹邀请窗口出来。
+               否则他刚取消，窗口自己回来，还会把 networkInvite 覆写成新的 resolve，
+               旧的那个 Promise 永远悬着。*/
+            if (!ui.window.isOpen('loadW') && !notify.cancelPending()) {
+                return withdrawEnrollment(toText(answer.enrollment_id)).then(function () {
+                    return { status: 'cancelled', nickname: nickname };
+                });
+            }
             return askForInvite(answer, host).then(function (confirmed) {
                 if (!confirmed) {
                     return withdrawEnrollment(toText(answer.enrollment_id)).then(function () {
@@ -6701,15 +7153,40 @@
                     });
                 }
                 let waiting = true;
+                /* 邀请的有效期写在遮罩上（"有效到 HH:MM（剩 X 分）"），每轮轮询顺手改写一次 ——
+                   ENROLLMENT_POLL_MS 是 2 秒，所以倒计时看着是活的。到点改口成
+                   "已过期，请重新生成"（见下面的 onExpired），并且不再轮询。*/
+                const expiry = expiresAtMs(answer.expires_at);
+                const waitText = function (note) {
+                    const body = toText(note) || networkWaitHint(host);
+                    if (!expiry) return body;
+                    const clock = formatTime(new Date(expiry).toISOString(), { second: false });
+                    if (Date.now() > expiry) {
+                        return '邀请已经过期（有效到 ' + clock + '），请重新生成一张';
+                    }
+                    const left = Math.max(0, Math.round((expiry - Date.now()) / 60000));
+                    return body + '｜邀请有效到 ' + clock + '（剩 ' + left + ' 分）';
+                };
                 const cancel = function () {
                     if (!waiting) return;
                     waiting = false;
                     withdrawEnrollment(toText(answer.enrollment_id));
                 };
-                notify.loading(networkWaitHint(host), { cancel: cancel });
+                /* 过期之后那张票已经作废，"取消等待"没有东西可撤 —— 那一下只是把窗口关掉。*/
+                const closeOnly = function () {
+                    waiting = false;
+                    notify.loadingEnd();
+                };
+                const show = function (note) { notify.loading(waitText(note), { cancel: cancel }); };
+                show('');
                 return waitForHostArrival(host, baseline, function (note) {
-                    if (note && waiting) notify.loading(note + '（本次以子 Agent 身份接入）', { cancel: cancel });
-                }, toText(answer.enrollment_id)).then(function (outcome) {
+                    if (waiting) show(note);
+                }, toText(answer.enrollment_id), answer.expires_at, function () {
+                    /* 到点了：改口 + 把按钮换成"只关窗"，窗口留在那儿等人按（见窗口政策）。*/
+                    if (!waiting) return;
+                    waiting = false;
+                    notify.loading(waitText(''), { cancel: closeOnly });
+                }).then(function (outcome) {
                     waiting = false;
                     return outcome;
                 });
@@ -6752,7 +7229,7 @@
         /* 角色写进记录（中间层），页面上也说出来：那条聊天把它交给 tsunagou_connect 的
            `role`；就算它不说，CLI 也会以记录里的角色签票（不一致的说法会被直接拒绝）。*/
         const role = toText((opts || {}).role) || 'worker';
-        /* 开等之前名单里已经有谁 —— 中间层只回答"有没有出现这份名单之外的席位"，
+        /* 开等之前名单里已经有谁 —— 中间层只回答"有没有出现这份名单之外的Agent"，
            这一串就是我们告诉它"我来的时候看到了谁"。*/
         const baseline = toArray(state.get('agents', [])).map(function (agent) {
             return toText(agent.id);
@@ -6761,14 +7238,14 @@
         let askedToStop = false;
         let cancelInFlight = false;
         const cancelDialog = {
-            title: '停止等待它出现？',
-            text: '要停止等待这个 Agent 接入吗？',
-            description: '这一步会撤掉刚记下的那条接入申请（它只写着"哪个项目、什么角色"，没有票）。' +
+            title: '取消等待？',
+            text: '要取消等待这个 Agent 接入吗？',
+            description: '这一步会撤掉刚记下的那条接入申请（它只写着"哪个协作、什么角色"，没有票）。' +
                 '宿主里那次接入如果已经在进行，会照常完成，之后它仍会出现在 Agent 名单里。',
-            okText: '停止等待'
+            okText: '取消等待'
         };
         const cancel = function () {
-            /* 没有票要作废，但有一条机器级记录要撤：那条聊天可能正靠它找项目。*/
+            /* 没有票要作废，但有一条机器级记录要撤：那条聊天可能正靠它找协作。*/
             askedToStop = true;
             if (cancelInFlight) return;
             cancelInFlight = true;
@@ -6824,7 +7301,7 @@
     }
 
     /* 刷新后恢复唯一申请的等待/取消，不重建申请、不恢复未知的旧向导步骤，
-       也不因申请属于另一个项目而切换当前项目。*/
+       也不因申请属于另一个协作而切换当前协作。*/
     function resumeConsoleEnrollment() {
         if (enrollmentFlowActive) return Promise.resolve(false);
         return api.get('enrollmentCurrent', null, { silent: true }).then(function (current) {
@@ -6833,11 +7310,12 @@
             /* 这条申请是哪个宿主的，就按哪个宿主继续等 —— 以前这里写死 Codex，于是一条 DSH
                的申请被当成 Codex 的申请去等一个它永远不会有的回执（等待框永远不翻绿）。
                中间层那边已经给"没有回执可等"的申请改用名单判定，所以照实带上宿主即可。*/
+            const host = {
+                adapter: toText(current.vendor) || 'codex',
+                label: toText(current.label) || 'Codex'
+            };
             return connectAgent({
-                host: {
-                    adapter: toText(current.vendor) || 'codex',
-                    label: toText(current.label) || 'Codex'
-                },
+                host: host,
                 role: current.role,
                 nickname: current.nickname, prepared: current,
                 waitingPrefix: enrollmentSelectionNote(current)
@@ -6848,16 +7326,36 @@
                     if (toText(state.get('currentProjectId')) === projectId) keys.push('agents', 'project');
                     return Tsunagou.refresh(keys);
                 }
-                const trouble = connectTrouble(outcome.status, { adapter: 'codex', label: 'Codex' });
+                /* 用**这条申请自己的宿主**收尾：写死成 Codex 的话，一条 DSH 的申请会拿到
+                   "票/申请"那套说法，而它根本没有票。*/
+                const trouble = connectTrouble(outcome.status, host);
                 if (trouble) notify.info(trouble);
                 return false;
             });
         }, function () { return false; });
     }
 
-    /* 等待/失败时给人一句能读懂的话（两个入口共用，免得文案两处跑偏）*/
+    /* 等待/失败时给人一句能读懂的话（几个入口共用，免得文案几处跑偏）。
+
+       **取消类的收场这里一律不再出声**：作废票据 / 撤登记由 withdrawEnrollment 收尾，
+       它那句话是**以取消接口的答案为准**的（成功用后端给的 note，失败如实说没撤掉）。
+       这里再补一句只会变成两条消息 —— 而且原来 `dismissed` 那句说的是"那条申请还在"，
+       与"这次接入申请已撤掉"直接打架（待改清单阶段 2 第 3 条）。*/
     function connectTrouble(status, host) {
         const label = toText((host || {}).label) || '宿主';
+        const place = toText((host || {}).place);
+        if (status === 'cancelled' || status === 'dismissed' || status === 'stopped') return '';
+        /* 跨机器那条路（place=network）：要人把邀请内容交给**另一台机器**上的人跑一次导入，
+           所以超时/过期的说法是"那边跑没跑过导入命令"，不能沿用"在自己的聊天里说一句"
+           —— 那是宿主自己接入那条路的说法，与"让对方跑一次 import"对不上。*/
+        if (place === 'network') {
+            if (status === 'timeout') {
+                return '还没看到它出现：确认邀请内容已经交给 ' + label + ' 上的人，' +
+                    '并且他在那边跑过一次导入命令';
+            }
+            if (status === 'expired') return '邀请已经过期，请重新生成一张';
+            return '';
+        }
         /* 在宿主自己聊天里接入的那条路没有票：这里不能说"票过期/票据作废"。判据用宿主本身
            （codex 之外都是"那条聊天自己签票"），不靠调用点额外传一个 mode —— 传漏了就会
            把 DSH 说成 Codex。*/
@@ -6866,22 +7364,17 @@
                 return '还没看到它出现在名单里：确认那条聊天里已经说了“接入 Tsunagou”，' +
                     '或者让它把那边的报错说出来';
             }
-            if (status === 'cancelled' || status === 'stopped') {
-                return '已停止等待：这次接入申请已撤掉，可以重新接入';
-            }
-            if (status === 'dismissed') {
-                return '已停止等待显示；那条申请还在，它接上时仍会作为新席位出现在名单里';
-            }
+            if (status === 'expired') return '这次接入已经过期，请重新准备一次';
             return '';
         }
-        if (toText((host || {}).adapter).toLowerCase() === 'codex') {
-            if (status === 'expired') return '待接入申请已过期，请在前端重新准备接入';
-            if (status === 'cancelled') return '已取消这次待接入申请，可以重新接入';
-            if (status === 'dismissed') return '已停止等待显示，接入申请的实际状态以控制台查询结果为准';
+        /* 走到这里 adapter 一定是 codex（上面已经提前返回）：以前这里又判了一次 === 'codex'
+           （恒为真），底下还重复了同样三条 —— 既不可达，又让 codex 的 timeout / stopped
+           静默返回空串，人看不到任何收尾说明。*/
+        if (status === 'expired') return '待接入申请已过期，请在前端重新准备接入';
+        if (status === 'timeout') {
+            return '还没看到它出现在名单里：确认那台机器上已经跑过那条接入命令，' +
+                '并且在那边的 Agent 窗口里说过“接入 Tsunagou”';
         }
-        if (status === 'expired') return '票据已过期，这一次接入作废了，可以再试一次';
-        if (status === 'cancelled') return '已取消等待：这次准备的票据已作废，可以重新接入';
-        if (status === 'dismissed') return '已停止等待接入；票还有效，稍后打开 ' + label + ' 连接上仍会加入';
         return '';
     }
 
@@ -6920,12 +7413,12 @@
         return backendItems(bucket);
     }
 
-    /* 项目目标落在哪：`user_decision.propose` 里 kind 为 project.objective 的那条决定，
+    /* 协作目标落在哪：`user_decision.propose` 里 kind 为 project.objective 的那条决定，
        用户确认后（status=resolved）它的 summary 就是主 Agent 与用户谈定的目标。
        已解决的决定不能被撤回，只能再提一条，所以取最后一条 = 最新的那版理解。
-       没有这样的决定就返回空串，由调用方回落到项目记录里那句（后端写的是占位）。
+       没有这样的决定就返回空串，由调用方回落到协作记录里那句（后端写的是占位）。
        计划（coordination.plan）的抬头**故意不算数**：那是"这一批任务要干什么"，
-       可以被下一个阶段换掉，不能冒充整个项目的目标。*/
+       可以被下一个阶段换掉，不能冒充整个协作的目标。*/
     const OBJECTIVE_DECISION_KIND = 'project.objective';
 
     function confirmedObjective(decisions) {
@@ -6950,7 +7443,7 @@
     }
 
     /* ---- 上一次记录 -------------------------------------------------------
-       项目结束（daemon 停了）之后，中间层会把它**搬运过的**那些出口拿出来顶上，
+       协作结束（daemon 停了）之后，中间层会把它**搬运过的**那些出口拿出来顶上，
        并在回答里说清那是**记录**：聚合视图放在 `history`（一个出口一个时刻），
        页面自己直连的那些出口放在 payload 的 `_history` 里。
 
@@ -6976,7 +7469,7 @@
     function recordNote(raw) {
         const stamp = recordStamp(raw);
         if (!stamp) return null;
-        return recordText(stamp) + '：daemon 已经不在，下面是它还在时最近一次看到的内容。';
+        return recordText(stamp) + '：服务已经不在，下面是它还在时最近一次看到的内容。';
     }
 
     /* 同一件事的另一种说法：卡片已经有「上次记录」这个抬头时用它，免得抬头与正文重复。*/
@@ -6984,7 +7477,7 @@
         const stamp = recordStamp(raw);
         if (!stamp) return '';
         return '记录到 ' + toText(stamp).replace('T', ' ').slice(0, 16)
-            + '：daemon 已经不在，下面是它还在时最近一次看到的内容。';
+            + '：服务已经不在，下面是它还在时最近一次看到的内容。';
     }
 
     /* ---- 总路径的阶段 ----------------------------------------------------
@@ -6993,13 +7486,13 @@
        命中里程碑就进入下一段。里程碑用真实 command kind 判断
        （docs/implementation/command-catalog.md；审计出口给的 action 就是 kind）：
 
-         初始化      项目创建起，到第一条任务真正开工之前
+         初始化      协作创建起，到第一条任务真正开工之前
          正式开工    第一条 task.publish / task.claim / task.start
          开始总验收  第一份 project.completion.propose.*（收尾提案）
          结束        project.completion.confirm（或 project.archive）
 
        两条例外：
-       · project.reactivate.* 让阶段**退回**"正式开工" —— 结束后又复工的项目，
+       · project.reactivate.* 让阶段**退回**"正式开工" —— 结束后又复工的协作，
          总路径应该如实再出现一段"正式开工"，而不是把复工之后的事算进"结束"；
        · 被拒绝的行动（*.denied）不算里程碑，否则一条没通过的 publish 会假装已开工。
 
@@ -7037,11 +7530,11 @@
         return label + ' · ' + start + ' – ' + (sameDay ? end.replace(/^.*?日/, '') : end);
     }
 
-    /* 操作人：项目里的 Agent 显示昵称（和 Agent 管理一致），用户显示"用户"；
+    /* 操作人：协作里的 Agent 显示昵称（和 Agent 管理一致），用户显示"用户"；
        其余（例如 runtime）只能给 actor_ref 缩写 —— 后端手里就只有这个。
 
        两处都查：state 里的 agents（适配过，名字/图标/是否主 Agent 都算好了）
-       与用户档案（启动时就拉好，早于任何项目被打开）。只认 agents 不行 ——
+       与用户档案（启动时就拉好，早于任何协作被打开）。只认 agents 不行 ——
        总路径和 agents 是同一次 refresh 并发拉的，谁先回来不定，赶上 agents 后到
        第一屏就会是一串 id 缩写。*/
     function timelineActor(actorRef) {
@@ -7073,13 +7566,13 @@
 
     const BACKEND_SHAPE = {
         /* 中间层 GET /projects → render.list 需要的左栏卡片字段。
-           注意 id 必须映射出来，否则卡片的 data-project-id 是空的、点不开项目。*/
+           注意 id 必须映射出来，否则卡片的 data-project-id 是空的、点不开协作。*/
         projects: function (raw) {
             return backendItems(raw).map(function (p) {
                 const done = (p.lifecycle === 'completed' || p.lifecycle === 'archived');
                 const daemon = isPlainObject(p.daemon) ? p.daemon : null;
                 const running = !!(daemon && daemon.running);
-                /* 谁负责这个项目：中间层给的只有 agent_id/status/role，
+                /* 谁负责这个协作：中间层给的只有 agent_id/status/role，
                    名字与图标照旧由用户档案解析（与 Agent 管理页同一套）。
                    只算 status=active 的 —— 退役/接入中的不算"现在负责"。*/
                 const mainAgentId = toText(p.main_agent_id);
@@ -7101,23 +7594,23 @@
                         : (running ? '进行中' : '未启动'),
                     /* 卡片右下角那行小字：daemon 起没起。daemon 不在了但有记录时，补一句
                        "上次记录"—— 这样人知道点进去还能看到东西，也知道那是旧的那一份。*/
-                    time: (running ? 'daemon 运行中' : (daemon ? 'daemon 无响应' : 'daemon 未启动'))
+                    time: (running ? '服务运行中' : (daemon ? '服务无响应' : '服务未启动'))
                         + (!running && isPlainObject(p.history) && toText(p.history.captured_at)
                             ? ' · ' + recordText(p.history.captured_at) : ''),
-                    /* 上面那行要"项目是否已完工"和"有没有记录"都判得了，两份原值都留着。*/
+                    /* 上面那行要"协作是否已完工"和"有没有记录"都判得了，两份原值都留着。*/
                     lifecycle: toText(p.lifecycle),
                     history: isPlainObject(p.history) ? p.history : null,
-                    /* 分组与状态文字用同一个判据：确认完工（completed）的项目就该和已归档的
+                    /* 分组与状态文字用同一个判据：确认完工（completed）的协作就该和已归档的
                        一起落到「已完成的协作」那一组 —— 否则卡片写着"已完成"却留在上面那一组，
                        而控制台里没有归档入口，它会一直混在"进行中"里。*/
                     group: done ? 'done' : undefined,
                     selected: false,
-                    /* 卡片上不用，但别的面板要：项目目录、daemon 端点 */
+                    /* 卡片上不用，但别的面板要：协作目录、daemon 端点 */
                     path: p.path,
                     daemon: daemon,
                     /* agents === null = 中间层读不到（daemon 没起/没答）——
                        此时只给主 Agent（主 Agent 是中间层名单里的一部分，读不到就都没有），
-                       不能写成 []，那会看起来像"这个项目没有 Agent"。
+                       不能写成 []，那会看起来像"这个协作没有 Agent"。
                        extra 是"其他 Agent"的数量（不含主 Agent），与卡片原本的算法一致。*/
                     mainAgent: mainAgentId ? chipOf(mainAgentId) : null,
                     agents: others.map(function (agent) { return chipOf(agent.agent_id); }),
@@ -7126,8 +7619,8 @@
             });
         },
         /* 中间层 GET /console/agents → render.agentWindow 需要的行。
-           一行 = 一个 (项目, Agent)：同一个 Agent 在几个项目里干活就出现几行，
-           所以 id 拼上项目号（否则详情窗口按 id 找会撞车）。
+           一行 = 一个 (协作, Agent)：同一个 Agent 在几个协作里干活就出现几行，
+           所以 id 拼上协作号（否则详情窗口按 id 找会撞车）。
            昵称与图标不在这里查档案 —— 渲染时按 agent_id 现算（见 render.agentWindow）。
            task 空就是"现在没有在做的任务"，不编一句话填进去。*/
         agentsWindow: function (raw) {
@@ -7190,7 +7683,7 @@
             const workspaces = sourceItems(sources, 'workspaces');
             const leases = sourceItems(sources, 'resources');
             /* 契约与任务的边后端**只认 payload.task_id**（cognition.linked_contracts
-               就是这么连的：契约内容里写明覆盖哪个任务；不写就是项目级契约，
+               就是这么连的：契约内容里写明覆盖哪个任务；不写就是协作级契约，
                不归任何任务）。所以这一件也照另外三件的规矩画：有就亮、没有就灰。*/
             const contractTaskOf = function (contract) {
                 const payload = isPlainObject(contract && contract.payload) ? contract.payload : {};
@@ -7211,14 +7704,14 @@
                    视图里拖的 `attempts` 出口取；旧演示数据里万一写在任务上，也认。*/
                 const at = epochSecondsTime(attemptStarted[toText(t.current_attempt_id)])
                     || t.started_at || t.updated_at || '';
-                /* 开工条件：回答"现在具备哪几件"（认知报告 / 契约 / 工作空间 / 租约）。
+                /* 开工条件：回答"现在具备哪几件"（认知报告 / 契约 / 工作区 / 租约）。
                    任务自己声明的"前置条件"后端没落库（协议里有、运行时白名单不含），
                    所以这四个是**当前状态**，不是"任务要求"。*/
                 const conditions = [{ text: '认知报告', ok: reports.indexOf(id) >= 0 }];
                 conditions.push({ text: '契约', ok: contracts.some(function (c) {
                     return contractTaskOf(c) === id;
                 }) });
-                conditions.push({ text: '工作空间', ok: workspaces.some(function (w) {
+                conditions.push({ text: '工作区', ok: workspaces.some(function (w) {
                     return taskOfAttempt(w.attempt_id) === id;
                 }) });
                 conditions.push({ text: '租约', ok: leases.some(function (l) {
@@ -7271,7 +7764,7 @@
             const pending = decisions.filter(function (d) { return toText(d.status) === 'pending'; });
             const done = tasks.filter(function (t) { return t.status === 'completed'; });
             const main = agents.filter(function (a) { return a.role === 'main'; })[0];
-            /* 项目目录由中间层知道（daemon 的概况出口不含文件路径），从项目列表里取。*/
+            /* 协作目录由中间层知道（daemon 的概况出口不含文件路径），从协作列表里取。*/
             const known = toArray(state.get('projects', [])).filter(function (item) {
                 return toText(item.id) === toText(header.project_id);
             })[0] || {};
@@ -7289,16 +7782,16 @@
                 name: header.name,
                 description: confirmedObjective(decisions) || header.objective,
                 /* 策略版本的原值（基本信息的「策略版本」是它的显示写法 r7）。
-                   确认项目完成要拿它与后端做 CAS，所以得留着数字。*/
+                   确认协作完成要拿它与后端做 CAS，所以得留着数字。*/
                 policyRevision: header.policy_revision,
                 statusText: header.lifecycle === 'completed' ? '已完成'
                     : (header.lifecycle === 'archived' ? '已归档' : '进行中'),
                 statusClass: header.lifecycle === 'active' ? 'status-doing' : '',
                 basics: [
-                    { label: '项目编号', value: header.project_id },
+                    { label: '协作编号', value: header.project_id },
                     { label: '生命周期', value: glossText('lifecycle', header.lifecycle) },
                     { label: '策略版本', value: toText(header.policy_revision) ? ('r' + header.policy_revision) : '' },
-                    { label: '项目根', value: toArray(header.roots).length + ' 个' },
+                    { label: '协作根', value: toArray(header.roots).length + ' 个' },
                     { label: '仓库', value: toArray(header.repositories).length + ' 个' },
                     { label: '主 Agent', value: main ? agentDisplayName(main) : '未指定', active: !!main }
                 ],
@@ -7316,21 +7809,17 @@
                         };
                     })
                 },
-                versions: [
-                    { label: '血缘（lineage）', value: shortId(header.current_lineage_id) },
-                    { label: '运行代次（epoch）', value: shortId(header.runtime_epoch) }
-                ],
                 stats: [
                     { label: 'Agent', value: agents.length + ' 个' },
                     { label: '任务', value: tasks.length + ' 个（已完成 ' + done.length + '）' },
                     { label: '认知报告', value: reports.length + ' 份' },
                     { label: '存档点', value: toArray(checkpoints.items).length + ' 个' }
                 ],
-                /* 没有真实项目目录时（演示数据）就不摆两个空行，别装作有目录。*/
+                /* 没有真实协作目录时（演示数据）就不摆两个空行，别装作有目录。*/
                 storage: (knownPath ? [
-                    { label: '项目目录', value: knownPath },
+                    { label: '协作目录', value: knownPath },
                     { label: '状态目录', value: knownPath + '/.tsunagou' }
-                ] : []).concat(notes.length ? [{ label: '读不到的东西', value: notes.join('；') }] : []),
+                ] : []).concat(notes.length ? [{ label: '暂时读不到的数据', value: notes.join('；') }] : []),
                 /* 「待用户决定」：后端 decisions 出口里还没定的那些（render.overview 里多一节）*/
                 pending: pending.map(function (d) {
                     const payload = isPlainObject(d.payload) ? d.payload : {};
@@ -7378,10 +7867,10 @@
                 const mine = tasks.filter(function (task) {
                     return toText((task.agent || {}).id) === toText(a.agent_id);
                 });
-                /* 会话降级/结束时先说会话这一层：席位状态（可用/接入中）说的是"这个座位"，
+                /* 会话降级/结束时先说会话这一层：Agent状态（可用/接入中）说的是"这个座位"，
                    "这条会话现在不能干活了"只有 session_status 说得出来。
                    没有会话（ready 之外本来就是 degraded，但 exit 给 null 表示读不到）时
-                   还是照旧看席位状态。*/
+                   还是照旧看Agent状态。*/
                 const sessionBroken = a.session_status === 'degraded' || a.session_status === 'ended';
                 /* 在不在别的机器上 —— 只给"能不能当主 Agent"用：跨机器入席的人自报了机器名，
                    或者中间层标了 network。下面那枚「网络接入」标记另有主 Agent 的例外，
@@ -7408,25 +7897,30 @@
                         ? glossText('session_status', a.session_status)
                         : glossText('agent_status', a.status),
                     statusOk: !sessionBroken && a.status === 'active',
-                    desc: '后端代号：' + codename,
+                    desc: '后端代号：' + codename
+                          + (a.status === 'retired' ? '　已退役（不可恢复），记录保留。' : ''),
                     currentTask: mine.length ? mine[0].title : '',
                     /* 基础能力 = 4 项准入，运营能力 = 7 项运营（名单与中文都在中间层词表里）。
                        出口的 missing_admission / missing_operational 说缺哪几项；
                        没有会话（missing 为 null）就两栏都不画。*/
                     basic: glossTags('capability_admission', a.missing_admission),
                     ops: glossTags('capability_operational', a.missing_operational),
-                    actions: (a.role === 'main' || !main || projectFinished() || remoteSeat
+                    actions: (a.role === 'main' || a.status === 'retired' || !main || projectFinished() || remoteSeat
                         ? []
                         : [{ text: '设为主 Agent', action: 'agent.setMain:' + toText(a.agent_id) }]).concat([
-                            /* 已退役的席位只剩"查看"（卡片本身点得开）：不能再改名字、也不能
+                            /* 已退役的 Agent 只剩"查看"（卡片本身点得开）：不能再改名字、也不能
                                再删一次 —— 否则等于把一条历史记录翻来覆去地改。
-                               「修改」改昵称（存用户档案）；「删除」让他退役（后端两道拒绝：
-                               当前主 Agent、手上还有活）。这两项与"项目是否已完工"无关：
+                               主 Agent 留「修改」但**不留「删除」**：改昵称动的是本机用户档案
+                               （不是协作事实，主 Agent 也该能改），而删掉主 Agent 后端本来就拒
+                               （main_agent_cannot_retire）—— 与其画一个点了必然失败的按钮，不如不画。
+                               其余人「修改」改昵称、「删除」让他退役。这两项与"协作是否已完工"无关：
                                改名字、退掉一个 Agent 是清理。*/
-                            ...(a.status === 'retired' || a.role === 'main' ? [] : [
+                            ...(a.status === 'retired' ? [] : (a.role === 'main' ? [
+                                { text: '修改', action: 'agent.edit:' + toText(a.agent_id) }
+                            ] : [
                                 { text: '修改', action: 'agent.edit:' + toText(a.agent_id) },
-                                { text: '删除', action: 'agent.remove:' + toText(a.agent_id) }
-                            ])
+                                { text: '退役', action: 'agent.remove:' + toText(a.agent_id) }
+                            ]))
                         ])
                 };
             });
@@ -7590,7 +8084,7 @@
                 })
             };
         },
-        /* 中间层 view=acceptance（完成决定 + 概况 + 任务 + 结果 + 评审）→ render.acceptance.
+        /* 中间层 view=acceptance（完成决定 + 概况 + 任务 + 结果 + 验收）→ render.acceptance.
            后端没有"验收标准"这个概念，所以那一段已经不画了（原来只能恒空）。
            「任务验收情况」的结论来自 reviews 出口（`task.review.*` 写的轮次），
            没验过就是没验过 —— 不能拿"已提交"充当通过。*/
@@ -7626,7 +8120,7 @@
                     proposal_id: toText(payload.proposal_id) || completion.decision_id,
                     digest: toText(payload.proposal_digest) || completion.input_digest,
                     revision: completion.expected_revision,
-                    title: toText(payload.title) || '项目完成提案',
+                    title: toText(payload.title) || '协作完成提案',
                     time: formatTime(completion.updated_at || completion.created_at),
                     timePrecise: formatTime(completion.updated_at || completion.created_at, { precise: true }),
                     /* "还有哪些没完成"就是这张卡的正文本体。
@@ -7694,7 +8188,7 @@
                     time: formatTime(at),
                     timePrecise: formatTime(at, { precise: true }),
                     actor: timelineActor(event.actor_ref),
-                    /* 「任务」列：能对上当前名单就写名字（任务是任务名、项目是项目名）；
+                    /* 「任务」列：能对上当前名单就写名字（任务是任务名、协作是协作名）；
                        对不上就按 ref 的前缀写成「任务 b71」「接入码 0」这种，
                        而不是把 `task/b71…` 整串截 8 个字符。*/
                     task: ref ? (subjectLabel(ref) || refText(ref)) : '',
@@ -7768,7 +8262,7 @@
         const hasProject = !!toText(state.get('currentProjectId'));
         const skipped = [];
         const tasks = REFRESH_ROUTES.filter(function (pair) {
-            /* 没选项目时不请求项目作用域的数据，免得白跑一趟错误提示 */
+            /* 没选协作时不请求协作作用域的数据，免得白跑一趟错误提示 */
             if (pathNeedsProject(pair[0]) && !hasProject) return false;
             /* 后端尚未提供的接口（路径留空）直接跳过：不拼坏地址、不报错，界面保留空状态 */
             if (!toText(pathTemplate(pair[0]))) { skipped.push(pair[0]); return false; }
@@ -7824,7 +8318,7 @@
         agentNetwork: {},
         profile: { nickname: '', theme: '', agents: {} },
         wizard: {
-            /* 第 1 步真建出来的项目、第 2 步真接上的主 Agent、第 3 步接上的子 Agent */
+            /* 第 1 步真建出来的协作、第 2 步真接上的主 Agent、第 3 步接上的子 Agent */
             project: null,
             main: null,
             draftSubAgents: [],
@@ -7860,7 +8354,14 @@
         return PROJECT_TABS[0].slug;
     }
 
+    /* 这个函数是**对外公开的**（宿主脚本可以调 Tsunagou.init()），而下面那些绑定一律是往
+       document 上加监听、没有去重 —— 跑第二次就会让每个点击执行两遍（点一张协作卡片开两次、
+       写命令提交两次）。所以只认第一次。*/
+    let initialized = false;
+
     function init() {
+        if (initialized) return true;
+        initialized = true;
         /* 0) 先认自己在哪里：中间层会在同源下给一份 /console.config.js。*/
         applyConsoleConfig();
         /* 0.5) 地址栏上的开发开关（?poll_ms=0 / ?shape=dag）—— 比配置文件优先，只影响本次打开 */
@@ -7898,8 +8399,8 @@
         ui.aside.clearAll();
         ui.blockTabs.init();
 
-        /* 2.5) 拉一次全局数据：左侧协作列表、用户档案与后端参数值的中文对照表都不依赖"当前项目"。
-              顺带把上次打开的项目接回去（只记 id，不存任何协作数据）。*/
+        /* 2.5) 拉一次全局数据：左侧协作列表、用户档案与后端参数值的中文对照表都不依赖"当前协作"。
+              顺带把上次打开的协作接回去（只记 id，不存任何协作数据）。*/
         Tsunagou.refresh(['projects', 'settings', 'glossary', 'hosts']).then(function () {
             const remembered = lastProjectId();
             const known = toArray(state.get('projects', [])).filter(function (item) {

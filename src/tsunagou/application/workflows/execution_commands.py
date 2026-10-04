@@ -359,7 +359,7 @@ class ExecutionCommands:
             # a version pin, not a secret: it is the value review already requires back.
             self.messages.send(command_id=context["command_id"] + ":submitted", sender_agent_id=context["principal_id"],
                                recipient_agent_id=main, kind="task.submitted", subject_ref="task/" + task_id,
-                               summary="有结果待评审",
+                               summary="有结果待验收",
                                payload={"task_id": task_id, "result_id": result.result_id,
                                         "result_digest": result.digest})
         return {"task_id": task_id, "attempt_id": attempt_id, "result_id": result.result_id, "digest": result.digest,

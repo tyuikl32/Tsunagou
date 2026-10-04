@@ -13,38 +13,41 @@
 <body>
     <!--侧边栏-->
     <section class="secAside" id="secAside-Wide">
-        <!--logo和新建协作-->
+        <!--logo和新建协作：点左上角 logo 回首页（收起来的侧栏里那张小 logo 也一样）-->
         <div class="header">
             <div class="topper">
-                <img src="./assets/img/logo-l.png" />
+                <img src="./assets/img/logo-l.png" onclick="Tsunagou.app.openHome()" />
                 <div class="sdBtn" onclick="Tsunagou.app.foldSidebar()">
                     <i class="fa-solid fa-angle-left"></i>
                 </div>
             </div>
             <div class="newBtn" onclick="Tsunagou.app.createProject()"><i class="fa-solid fa-file-circle-plus"></i>创建协作</div>
         </div>
-        <!--协作项目列表-->
+        <!--协作列表-->
         <div class="subMgr" id="projList"></div>
-        <!--项目卡片上的操作菜单（点卡片右上角那个笔打开；位置由 JS 贴在卡片旁）-->
+        <!--协作卡片上的操作菜单（点卡片右上角那个笔打开；位置由 JS 贴在卡片旁）-->
         <section class="selection" id="projMenu">
             <div class="item" data-proj-action="rename"><i class="fa-solid fa-pen-to-square"></i>重命名</div>
-            <div class="item" data-proj-action="delete"><i class="fa-solid fa-trash"></i>删除项目</div>
+            <div class="item" data-proj-action="delete"><i class="fa-solid fa-trash"></i>删除协作</div>
         </section>
         <!--排序菜单（点左栏「进行中的协作」右边的设置按钮打开）-->
+        <!--顺序是刻意的：先说"按什么排"，再说"怎么排" —— 第二组那两项的字会跟着第一组变
+            （按时间说"新的/旧的在前"，按名称说"拼音 A→Z / Z→A"），字由 syncSortMenu 现写，
+            这里写的那份只是菜单打开前那一瞬间的样子。-->
         <section class="selection" id="sortMenu">
-            <div class="title">排序规则</div>
+            <div class="title">按什么排</div>
+            <div class="item" data-sort-by="viewed"><div class="left"><i class="fa-solid fa-clock"></i>按查看时间</div></div>
+            <div class="item" data-sort-by="created"><div class="left"><i class="fa-solid fa-clock"></i>按登记时间</div></div>
+            <div class="item" data-sort-by="name"><div class="left"><i class="fa-solid fa-tag"></i>按名称</div></div>
+            <div class="title">怎么排</div>
             <div class="item" data-sort-order="new"><div class="left"><i class="fa-solid fa-arrow-up"></i>新的在前</div></div>
             <div class="item" data-sort-order="old"><div class="left"><i class="fa-solid fa-arrow-down"></i>旧的在前</div></div>
-            <div class="title">排序方式</div>
-            <div class="item" data-sort-by="viewed"><div class="left"><i class="fa-solid fa-clock"></i>按查看时间</div></div>
-            <div class="item" data-sort-by="created"><div class="left"><i class="fa-solid fa-clock"></i>按创建时间</div></div>
-            <div class="item" data-sort-by="name"><div class="left"><i class="fa-solid fa-tag"></i>按名称</div></div>
         </section>
         <!--侧边栏底部按钮-->
         <div class="btmTabs">
             <div class="btmBtn" onclick="Tsunagou.app.openAgents()">
                 <i class="fa-solid fa-terminal"></i>
-                <p>Agent列表</p>
+                <p>Agent 列表</p>
             </div>
             <div class="btmBtn" onclick="Tsunagou.app.openSettings()">
                 <i class="fa-solid fa-cog"></i>
@@ -57,7 +60,7 @@
     <section class="secAsideFolded" id="secAside-Narrow">
         <!--顶部按钮-->
         <div class="topArea">
-            <img class="foldImg" src="./assets/img/logo-little-l.png" />
+            <img class="foldImg" src="./assets/img/logo-little-l.png" onclick="Tsunagou.app.openHome()" />
             <div class="foldBtn" onclick="Tsunagou.app.createProject()"><i class="fa-solid fa-file-circle-plus"></i></div>
             <div class="foldBtn" onclick="Tsunagou.app.unfoldSidebar()"><i class="fa-solid fa-angle-right"></i></div>
         </div>
@@ -99,14 +102,14 @@
                 <p>2026.09.21</p>
             </div>
             <div class="right">
-                <p>Tsunagou v0.1.0 beta</p>
+                <p>Tsunagou v1.0.0 beta</p>
             </div>
         </div>
     </section>
 
-    <!--项目工作区-->
+    <!--协作工作区-->
     <section class="secProjPanel">
-        <!--项目任务栏-->
+        <!--协作任务栏-->
         <div class="navArea">
             <div class="left"></div>
             <div class="right"></div>
@@ -220,7 +223,7 @@
                 <div class="content"></div>
             </div>
 
-            <!--验收与存档点 MAIN：项目完成提案（含「确认完成」）+ 任务验收情况 + 存档点三段-->
+            <!--验收与存档点 MAIN：协作完成提案（含「确认完成」）+ 任务验收情况 + 存档点三段-->
             <div class="tabMain" id="pane-acceptance"></div>
 
             <!--总路径MAIN-->
@@ -254,7 +257,7 @@
     <section class="secWindow" id="setPanel">
         <div class="window1">
             <div class="titleBar">
-                <div class="title"><i class="fa-solid fa-cog"></i> 设置</div>
+                <div class="title"><i class="fa-solid fa-cog"></i> 系统设置</div>
                 <div class="button" onclick="Tsunagou.app.closeWindow('setPanel')">×</div>
             </div>
             <div class="main">
@@ -300,10 +303,10 @@
                             <div class="items">
                                 <div class="freebox">
                                     <img src="./assets/img/logo-l.png" />
-                                    <p class="center">v0.1.0 Alpha</p>
+                                    <p class="center">v1.0.0 Beta</p>
                                     <p class="description">Tsunagou 是一个多 Agent 协作调度系统，旨在通过文档交换、契约更新、权限管理等调度机制，解决多个 Agent
-                                        在同一项目上共同协作时产生的冲突，使他们能够“看见彼此”、像人类一样协作，从而提升效率。</p>
-                                    <p class="description">前端:陈林榕；后端:骆宣卓；测试:张子宸</p>
+                                        在同一协作上共同协作时产生的冲突，使他们能够“看见彼此”、像人类一样协作，从而提升效率。</p>
+                                    <p class="description">开发人员：骆宣卓、陈林榕、张子宸、大肥鱼、GPT-6</p>
                                 </div>
                             </div>
                         </div>
@@ -314,7 +317,7 @@
         </div>
     </section>
 
-    <!--窗口：Agent列表-->
+    <!--窗口：Agent 列表-->
     <section class="secWindow" id="mgrAgent">
         <div class="window1">
             <div class="titleBar">
@@ -355,8 +358,8 @@
                 <div class="uiBlock">
                     <div class="title2">昵称</div>
                     <div class="textbox2"><input class="inner" placeholder="Agent 的昵称" /></div>
-                    <div class="title2">项目名称</div>
-                    <div class="dspText2">这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目这是一个项目</div>
+                    <div class="title2">协作名称</div>
+                    <div class="dspText2">这是一个协作这是一个协作这是一个协作这是一个协作这是一个协作这是一个协作这是一个协作</div>
                     <div class="title2">任务名称</div>
                     <div class="dspText2">这是一个任务</div>
                     <!-- 下面两行只有跨机器接入的 Agent 才显示（本机接入的 Agent 界面完全不变）：
@@ -379,7 +382,7 @@
     <section class="secWindow" id="delPmt">
         <div class="window3">
             <div class="titleBar">
-                <div class="title">删除 Agent</div>
+                <div class="title">确认操作</div>
                 <div class="button" onclick="Tsunagou.app.closeWindow('delPmt')">×</div>
             </div>
             <div class="content">
@@ -406,8 +409,8 @@
             </div>
             <div class="content">
                 <div class="uiBlock">
-                    <div class="title2">项目名称</div>
-                    <div class="textbox2"><input class="inner" id="renamePmtInput" placeholder="新的项目名称" /></div>
+                    <div class="title2">协作名称</div>
+                    <div class="textbox2"><input class="inner" id="renamePmtInput" placeholder="新的协作名称" /></div>
                 </div>
             </div>
             <div class="options">
@@ -439,8 +442,8 @@
                 </div>
                 <div class="right" id="newXz2">
                     <div class="uiBlock">
-                        <div class="title">连接到主 Agent</div>
-                        <div class="descbox">输入一个 Agent 的名字和类型，以将该 Agent 作为主 Agent 连接到协作系统中。</div>
+                        <div class="title">接入主 Agent</div>
+                        <div class="descbox">输入一个 Agent 的名字和类型，以将该 Agent 作为主 Agent 接入协作。</div>
                         <div class="textbox2">
                             <input class="inner" placeholder="主 Agent 名称" />
                         </div>
@@ -463,8 +466,8 @@
                 </div>
                 <div class="right" id="newXz3">
                     <div class="uiBlock">
-                        <div class="title">连接到子 Agent</div>
-                        <div class="descbox">为你的协作项目加入一个或多个子 Agent。</div>
+                        <div class="title">接入子 Agent</div>
+                        <div class="descbox">为你的协作接入一个或多个子 Agent。</div>
                         <div class="listfieldbox">
                             <div class="item itemC">
                                 <img class="left" src="./assets/img/agent/deepseek-l.png" />
@@ -490,7 +493,7 @@
                         <div class="descbox">请核对以下配置是否正确。</div>
                     </div>
                     <div class="freebox">
-                        <div class="descbox">项目名称</div>
+                        <div class="descbox">协作名称</div>
                         <div class="title">一种由CERN支持的基于HyperText Markup Language的WWW站点建设</div>
                         <div class="descbox">主 Agent</div>
                         <div class="listfieldbox">
@@ -551,14 +554,14 @@
         <div class="aIcon">
             <i class="fa-solid fa-circle-info"></i>
         </div>
-        <div class="aText">请至少选择一个Agent</div>
+        <div class="aText">请至少选择一个 Agent</div>
     </section>
 
     <!--通知：权限审计-->
     <section class="secActWin" id="rightGetWin">
         <div class="title">需要用户确认/决定的信息</div>
         <div class="content">
-            项目“Hello World”的子 Agent（Claude Code 051）试图将main()函数的printf("%d",a)关键位置改为printf("%f",a)，主 Agent
+            协作“Hello World”的子 Agent（Claude Code 051）试图将main()函数的printf("%d",a)关键位置改为printf("%f",a)，主 Agent
             认为这一改动可能会影响整个程序的输出结果，需要人工裁定。
         </div>
         <div class="option">
@@ -640,7 +643,7 @@
     <section class="secWindow" id="loadW">
         <div class="window5">
             <div class="loaderbox"></div>
-            <div class="textW">正在连接 Agent</div>
+            <div class="textW">正在接入 Agent</div>
             <div class="buttonbox2" id="loadWCancel" onclick="Tsunagou.app.cancelWaiting()">取消等待</div>
         </div>
     </section>
