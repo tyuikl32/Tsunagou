@@ -1223,6 +1223,9 @@ describe("控制台接入等待与取消", () => {
     await vi.advanceTimersByTimeAsync(2000);
     const asked = calls.filter((call) => call.url.includes("enrollments:observe"));
     expect(asked.length).toBeGreaterThanOrEqual(1);
+    /* 路由挂在中间层的 /console 下（console/app.py）：漏掉那一段就是 404，页面把一次失败
+       当成"还没到"接着问，等待框永远不翻绿 —— 这里钉住整条路径，不再只匹配方法名。*/
+    expect(asked[0]!.url).toMatch(/\/api\/v1\/console\/projects\/[^/]+\/enrollments:observe\?/);
     expect(decodeURIComponent(asked[0]!.url)).toContain("enrollment_id=e-net");
     observeBody = { status: "arrived", adapter: "codex", agent: { agent_id: "a-net" } };
     await vi.advanceTimersByTimeAsync(2000);
@@ -1283,6 +1286,8 @@ describe("控制台接入等待与取消", () => {
     await vi.advanceTimersByTimeAsync(2000);
     const asked = calls.filter((call) => call.url.includes("enrollments:observe"));
     expect(asked).toHaveLength(1);
+    /* 钉住整条路径：宿主自己接入这条路问的就是中间层 /console 下那条 observe 路由。*/
+    expect(asked[0]!.url).toMatch(/\/api\/v1\/console\/projects\/[^/]+\/enrollments:observe\?/);
     expect(decodeURIComponent(asked[0]!.url)).toContain("adapter=deepseek");
     expect(decodeURIComponent(asked[0]!.url)).toContain("enrollment_id=e-1");
     /* 中间层说"连上了但角色不对"：照它的话说，并且身份照旧带上，不报成功 */

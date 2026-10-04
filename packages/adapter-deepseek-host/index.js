@@ -79,6 +79,9 @@ function cliContext(config, exec) {
         || /^(?:DSH_SESSION_ID|OPENCODE_SESSION_ID|ZCODE_SESSION_ID)$/i.test(key)) delete environment[key];
   }
   environment.DSH_SESSION_ID = identity;
+  // runCli decodes stdout as UTF-8. Windows Python pipes otherwise inherit an
+  // ANSI encoding and corrupt non-ASCII project paths before the connect call.
+  environment.PYTHONIOENCODING = "utf-8";
   if (config.env?.TSUNAGOU_ROUTING_DIR) environment.TSUNAGOU_ROUTING_DIR = config.env.TSUNAGOU_ROUTING_DIR;
   return { cwd, environment, runtime };
 }
@@ -159,7 +162,25 @@ async function runOnboarding(config, args, exec) {
   }
   const context = cliContext(config, exec);
   if (context.error) return context.error;
-  const cliArgs = [...context.runtime.args, "agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host"];
+  const selection = await runCli(context, [...context.runtime.args, "agent", "pending", "--adapter", "deepseek"]);
+  if (selection.stopped) return connectFailure(stopCode("tsunagou_connect", selection.stopped));
+  const pending = selection.result;
+  if (selection.code !== 0 || !["none", "pending"].includes(pending?.status)) {
+    return connectFailure(publicError(pending, "tsunagou_connect_pending_failed"), selection.code);
+  }
+  const cliArgs = [...context.runtime.args];
+  if (pending.status === "pending") {
+    if (pending.state !== "pending") return connectFailure("enrollment_not_pending");
+    if (pending.adapter !== "deepseek" || typeof pending.project_root !== "string"
+        || !isAbsolute(pending.project_root) || pending.project_root.includes("\0")
+        || typeof pending.project_id !== "string" || !pending.project_id
+        || typeof pending.enrollment_id !== "string" || !/^[a-f0-9]{32}$/.test(pending.enrollment_id)) {
+      return connectFailure("tsunagou_connect_invalid_selection");
+    }
+    cliArgs.push("--project-root", pending.project_root);
+  }
+  cliArgs.push("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host");
+  if (pending.status === "pending") cliArgs.push("--pending-enrollment-id", pending.enrollment_id);
   if (args.role !== undefined) cliArgs.push("--role", args.role);
 
   const outcome = await runCli(context, cliArgs);
@@ -171,6 +192,9 @@ async function runOnboarding(config, args, exec) {
   if (!["project_id", "agent_id"].every((key) => typeof result[key] === "string" && result[key])
       || !["worker", "main"].includes(result.role)) {
     return connectFailure("tsunagou_connect_invalid_receipt");
+  }
+  if (pending.status === "pending" && result.project_id !== pending.project_id) {
+    return connectFailure("onboarding_project_mismatch");
   }
   const connected = { status: "enrolled", host_ready: false,
     next: `Call ${publicName(config.serverName || "tsunagou", "context__project_read")} in this conversation and verify project, Agent and ready status.` };

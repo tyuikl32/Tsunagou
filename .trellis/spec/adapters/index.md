@@ -1,5 +1,7 @@
 # Adapter and TypeScript guidance
 
+Shared bridge reminder rules: [Reminder-only coordination hooks](reminder-hooks.md).
+
 Status: shared bridge and diagnostic adapters are implemented. Existing Codex/OpenCode acceptance remains unchanged. The DeepSeek Harness 0.2.0-rc.2 ordinary Desktop onboarding repair passed live acceptance on 2026-10-02; release-gate status remains unchanged. Use the [single acceptance report](../../../docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md) for evidence and retained limitations.
 
 Host fact proven on OpenCode v2.0.18: local MCP servers receive no session env vars; the host conversation id arrives per tool call via `_meta["ai.opencode/sessionID"]`. Bridge identity for such hosts must be derived from that field, and a project-shared bridge must keep one private session file per conversation.
@@ -13,6 +15,10 @@ Read the T02 verified host/version matrix before coding a host adapter. Require 
 Read the [subagent onboarding guide](../../../docs/overview/subagent-guide.md) and [coordination trace](../../../docs/implementation/coordination-walkthrough.md). Host-native subagents do not automatically become Tsunagou members; enrollment must prove a distinct conversation and session. CLI issues tickets as user_control, while the selected bridge redeems them through the ticket bootstrap path.
 
 ## Implementation rules
+
+DeepSeek's CLI subprocess environment must set `PYTHONIOENCODING=utf-8` after merging inherited and configured environment values, because the provider decodes stdout as UTF-8. On Windows, CP936 JSON output otherwise corrupts non-ASCII pending project paths before they enter the connect arguments. Keep project/role/route validation strict; switching path transport does not repair already-corrupted JSON. Regression tests must exercise real Python stdout with a CP936 input environment and Chinese/space-containing paths, not only Node CLI doubles. This is an automated encoding contract, not evidence of original Desktop readiness.
+
+DeepSeek native connect must query the installed CLI's `agent pending --adapter deepseek` before connecting. A matching request supplies `--project-root` and the hidden `--pending-enrollment-id` to `agent connect`; only no request permits cwd fallback. Keep identity/cwd host-derived and all project paths model-inaccessible. Python revalidates the request and private conversation route before creating bridge material. See [project-selection contract](../backend/entrypoint-contracts.md#scenario-deepseek-console-project-selection).
 
 Use strict TypeScript, ESM/NodeNext and workspace:* dependencies. bridge-sdk owns auth injection, command IDs/retry/dedup, typed clients, inbox, epoch recovery and prompt rendering. Host adapters translate official lifecycle/tool surfaces; no duplicate task state machines or private DTO forks.
 
@@ -81,3 +87,20 @@ return completed.get(commandId);
 bridge.reconnect(epoch2); // clears completed results
 return transport.send(envelope, { connectionEpoch: 2, authorization });
 ```
+
+
+## Local DSH console association
+
+The existing pending-enrollment-id connects the validated DSH CLI result to the local
+console request. Keep the record pending until a fresh roster shows that exact active
+Agent with the requested role and ready session. Never infer local arrival from baseline
+membership. New local/network requests record their place; legacy records retain their
+existing behavior until an original-chat retry explicitly links a local DSH result.
+Codex receipts, OpenCode, and network roster attribution remain separate. Repeated links
+are idempotent; wrong project/role/Agent and terminal records cannot be overwritten.
+
+## OpenCode original-chat onboarding
+
+OpenCode local console onboarding uses a user-level credential-free plugin and native MCP entry, with private routes per actual conversation. `agent prepare --adapter opencode` installs once; after the initial reload, joining adds only a route. The zero-argument host tool obtains identity from the live execution context and calls the installed `agent join --adapter opencode`; models cannot supply identity, project, role or commands. Do not clone the DSH MCP transport: OpenCode supplies `ai.opencode/sessionID` natively. Keep Codex wake independent of generic receipt handling.
+
+Installed OpenCode 2.0.18 uses a directory plugin exporting `{id, setup(api)}`, `api.tool.transform`, plain JSON Schema input and `execute(args, ctx)` returning MCP content; identity is `ctx.sessionID`. Upstream dev/v1 plugin examples are not evidence of this installed API. Original-chat readiness requires its successful MCP context and exact receipt, excluding the CLI helper. Legacy project bindings and user config conflicts fail explicitly; no bulk migration or fabricated replacement identity. See the [decision](../../../docs/decisions/2026-10-03-opencode-original-chat.md).

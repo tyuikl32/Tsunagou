@@ -193,7 +193,11 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 ## CLI 映射与退出码
 
+OpenCode 本机原对话入口：`agent prepare --adapter opencode` 一次性安装用户级无凭据工具与共享 MCP，不创建身份；`agent join --adapter opencode` 由宿主工具调用，使用真实会话身份认领匹配控制台申请并复用现有 U 签票流程。`agent join` 默认 Codex 不变。无参数宿主工具 `tsunagou_connect` 不是 daemon 领域命令，不新增权限或业务 Schema；原会话的 MCP context 回执才确认到达，helper 不产生回执。
+
 FX4 已实现 `agent prepare --adapter codex --role worker|main`（只准备私有真实宿主请求）、`agent connect --request-file PATH`（用户授权接入及角色选择）、`agent list [--json]`（只读）。connect 输出 enrolled，原会话 MCP context 验证后才 ready；profile 不决定 Agent 身份。全局 `--project-root` 和子目录发现共享同一 runtime resolver。
+
+DeepSeek 项目选择修复：`agent pending --adapter deepseek` 投影申请 ID/项目/角色，宿主适配器通过 `--project-root` 和隐藏的 `agent connect --pending-enrollment-id` 固定选择。connect 的项目优先级为显式路径/绑定环境、该宿主申请、cwd；显式选择与申请冲突则拒绝，已有会话跨项目也拒绝。无申请保留手动接入；不改变领域 payload、权限或控制台 arrived 状态机。
 
 `daemon start --reuse ROOT` 使用已有 daemon 原启动项目 U 控制凭据调用 `POST /api/v1/daemon/projects`，请求 `{project_root,state_dir}`。此本机注册入口不是 Agent 业务命令，不增加 M/B 权限。每项目独立 SQLite/凭据；HTTP 由 URL project_id 或 `Tsunagou-Project-Id` 路由，冲突拒绝，多项目无选择拒绝。stop 停止全部成员，输出 project_ids；保留私有注册位置用于从任一成员重启。上述为已实现入口；下文宽泛命令树仍含设计目标，应以 CLI help 为准。
 

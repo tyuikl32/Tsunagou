@@ -19,6 +19,7 @@ runner = CliRunner()
 def join_setup(tmp_path, monkeypatch):
     monkeypatch.setenv("TSUNAGOU_ENROLLMENT_DIR", str(tmp_path / "intents"))
     monkeypatch.setenv("TSUNAGOU_ROUTING_DIR", str(tmp_path / "routes"))
+    monkeypatch.setenv("TSUNAGOU_PROJECT_INDEX", str(tmp_path / "projects.json"))
     monkeypatch.setenv("CODEX_THREAD_ID", "fixture-original-thread")
     monkeypatch.setenv("CODEX_APP_TOOLS_PIPE_PATH", "fixture-private-pipe")
     for name in ("TSUNAGOU_PROJECT_ROOT", "TSUNAGOU_PROJECT_ID", "TSUNAGOU_STATE_DIR", "TSUNAGOU_DAEMON_URL"):
@@ -45,7 +46,8 @@ def join_setup(tmp_path, monkeypatch):
     monkeypatch.setattr(onboarding, "NativeAppToolsClient", Host)
     calls = []
 
-    def connect(operations, *, adapter, role, profile, request_file):
+    def connect(operations, *, adapter, role, profile, request_file, register_host):
+        assert register_host is True
         runtime = operations.runtime()
         request = onboarding.read_codex_request(request_file, runtime)
         calls.append((runtime.project_root, role, request["conversation_id"]))
@@ -185,3 +187,124 @@ def test_missing_manifest_cannot_be_substituted_by_environment(join_setup, monke
     result = runner.invoke(cli.app, ["agent", "join"])
     assert result.exit_code == 4 and "onboarding_project_mismatch" in result.output
     assert store.get(pending["enrollment_id"])["status"] == "pending" and not calls
+
+
+@pytest.fixture
+def opencode_join_setup(join_setup, monkeypatch):
+    store, root, outside, calls = join_setup
+    monkeypatch.setenv("TSUNAGOU_HOST_CONVERSATION_ID", "ses_original")
+
+    def connect(operations, *, adapter, role, profile, request_file, register_host):
+        assert adapter == "opencode" and profile == "desktop"
+        assert request_file is None and register_host is False
+        runtime = operations.runtime()
+        conversation = operations.host_conversation_id(adapter)
+        calls.append((runtime.project_root, role, conversation))
+        onboarding.write_opencode_route(conversation, runtime, root / ".tsunagou/bridges/shared")
+        return {"status": "enrolled", "project_id": runtime.project_id, "agent_id": "fixture-agent",
+                "role": role, "host_registration": "not_requested"}
+
+    monkeypatch.setattr("tsunagou.application.agent_connection.connect_agent", connect)
+    return store, root, outside, calls
+
+
+@pytest.mark.parametrize("role", ["main", "worker"])
+def test_opencode_join_current_chat_from_any_directory_and_retry(opencode_join_setup, role):
+    store, root, outside, calls = opencode_join_setup
+    pending = store.create(project_id="chosen-project-id", project_root=root, role=role,
+                           adapter="opencode", place="local")
+    for _ in range(2):
+        result = runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["enrollment_id"] == pending["enrollment_id"]
+    assert calls == [(root, role, "ses_original")] * 2
+    assert not (outside / ".tsunagou").exists()
+    route = onboarding.opencode_routing_directory() / (onboarding.conversation_key("ses_original") + ".json")
+    assert json.loads(route.read_text())["console_enrollment"]["enrollment_id"] == pending["enrollment_id"]
+
+
+@pytest.mark.parametrize("adapter", ["codex", "deepseek"])
+def test_opencode_join_ignores_other_host_requests(opencode_join_setup, adapter):
+    store, root, _outside, calls = opencode_join_setup
+    pending = store.create(project_id="chosen-project-id", project_root=root, role="worker", adapter=adapter)
+    result = runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"])
+    assert result.exit_code == 4 and "enrollment_not_pending" in result.output
+    assert store.get(pending["enrollment_id"])["status"] == "pending" and not calls
+
+
+def test_opencode_join_rejects_second_chat(opencode_join_setup, monkeypatch):
+    store, root, _outside, calls = opencode_join_setup
+    store.create(project_id="chosen-project-id", project_root=root, role="worker", adapter="opencode", place="local")
+    assert runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"]).exit_code == 0
+    monkeypatch.setenv("TSUNAGOU_HOST_CONVERSATION_ID", "ses_other")
+    result = runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"])
+    assert result.exit_code == 4 and "enrollment_claimed_by_another_chat" in result.output
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("conflict", ["route", "legacy"])
+def test_opencode_join_conflict_before_claim(opencode_join_setup, conflict):
+    store, root, _outside, calls = opencode_join_setup
+    pending = store.create(project_id="chosen-project-id", project_root=root, role="worker",
+                           adapter="opencode", place="local")
+    if conflict == "route":
+        path = onboarding.opencode_routing_directory() / (onboarding.conversation_key("ses_original") + ".json")
+        value = {"conversation_id": "ses_original", "project_root": str(root), "project_id": "foreign"}
+    else:
+        path = root / ".tsunagou/bridges/opencode-old/host-identity.json"
+        value = {"adapter": "opencode", "conversation_id": "ses_original"}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value), encoding="utf-8")
+    result = runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"])
+    assert result.exit_code == 4 and "conflict" in result.output
+    assert store.get(pending["enrollment_id"])["status"] == "pending" and not calls
+    assert json.loads(path.read_text()) == value
+
+
+@pytest.mark.parametrize("claimed_retry", [False, True])
+def test_opencode_rejects_legacy_binding_in_another_indexed_project(opencode_join_setup, claimed_retry):
+    from tsunagou.platform.project_index import record_project
+
+    store, root, _outside, calls = opencode_join_setup
+    intent = store.create(project_id="chosen-project-id", project_root=root, role="worker",
+                          adapter="opencode", place="local")
+    if claimed_retry:
+        store.claim(intent["enrollment_id"], "ses_original", expected_revision=intent["revision"])
+        store.fail(intent["enrollment_id"], "ses_original", "daemon_unreachable")
+    other = root.parent / "old-project"
+    profile = onboarding.conversation_key("ses_original")[:16] if claimed_retry else "legacy"
+    identity = other / ".tsunagou/bridges" / f"opencode-{profile}" / "host-identity.json"
+    identity.parent.mkdir(parents=True)
+    identity.write_text(json.dumps({"adapter": "opencode", "conversation_id": "ses_original",
+                                   "profile": "desktop" if claimed_retry else "legacy"}), encoding="utf-8")
+    record_project(project_id="old-project-id", path=other)
+    before = identity.read_bytes()
+
+    result = runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"])
+
+    assert result.exit_code == 4 and "opencode_legacy_binding_conflict" in result.output
+    assert not calls and identity.read_bytes() == before
+    assert store.get(intent["enrollment_id"])["status"] == ("failed" if claimed_retry else "pending")
+
+
+def test_opencode_retry_after_identity_written_before_route(opencode_join_setup, monkeypatch):
+    from tsunagou.application import agent_connection
+
+    store, root, _outside, calls = opencode_join_setup
+    intent = store.create(project_id="chosen-project-id", project_root=root, role="worker",
+                          adapter="opencode", place="local")
+    success = agent_connection.connect_agent
+
+    def fail_before_route(operations, **_kwargs):
+        destination = root / ".tsunagou/bridges" / ("opencode-" + onboarding.conversation_key("ses_original")[:16])
+        operations.profile_identity(destination, "opencode", "desktop")
+        raise RuntimeError("daemon_unreachable")
+
+    monkeypatch.setattr(agent_connection, "connect_agent", fail_before_route)
+    result = runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"])
+    assert result.exit_code == 4 and "daemon_unreachable" in result.output
+    assert store.get(intent["enrollment_id"])["status"] == "failed"
+    monkeypatch.setattr(agent_connection, "connect_agent", success)
+    result = runner.invoke(cli.app, ["agent", "join", "--adapter", "opencode"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1

@@ -457,3 +457,65 @@ Real OpenCode v2.0.18 host: fixed bridge _meta session identity and per-conversa
 ### Status
 
 [OK] **Completed**
+
+
+## Session 20: Agent reminder hooks implemented
+<!-- trellis-session: v=2 fp=809adb2912a3f5e3 -->
+
+**Date**: 2026-10-03
+**Task**: Agent reminder hooks implemented
+**Branch**: `elysia`
+
+### Summary
+
+Implemented reminder-only bridge hooks and generated context; reviewed with no blocking findings. No commit requested.
+
+### Main Changes
+
+- Wake reminder for all Agents; Codex exception requires both sender and recipient Codex.
+- Current authenticated main gets conditional completion-proposal reminder; original JSON preserved.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 3 new stdio, 39 existing bridge, 9 template tests; 8 workspace type checks; Ruff, mypy and docs checks passed.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Review uncommitted changes; reload updated bridge and bootstrap refresh existing project context when deploying.
+
+
+## Session 21: Wake reminder operational guidance
+<!-- trellis-session: v=2 fp=ae13ba1302a2aede -->
+
+**Date**: 2026-10-03
+**Task**: Wake reminder operational guidance
+**Branch**: `elysia`
+
+### Summary
+
+Enhanced first hook with source-local host guide and failure self-investigation; no manual-user wake fallback. Follow-up uncommitted, original hooks already at c5edb36.
+
+### Main Changes
+
+- Added verified host guide and explicit no auto-wake configuration loop guidance.
+- Failure first checks real target host/vendor, original session and operation; do not ask user to manually wake.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 9 template and 3 stdio tests; workspace types, independent Ruff/mypy/tsc review, docs and diff checks passed.
+
+### Status
+
+[OK] **Completed**

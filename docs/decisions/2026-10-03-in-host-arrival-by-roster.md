@@ -59,3 +59,17 @@
 
 真机上再来一次 DSH 接入（用这一版控制台）——本轮只在单测与前端冒烟里验过；虚拟机上的 DSH
 缺 `desktop` profile，那台机器上还没有可用的 DSH 宿主（见跨机器实测方案）。
+
+
+## 2026-10-03 本机 DSH 等待竞态修正
+
+本机 DSH 不再由名单增量推断接入者。控制台新申请记录 `place=local`；已有
+`--pending-enrollment-id` 在 CLI 连接成功后关联实际 Agent ID，记录保持 pending，
+控制台以新鲜名单核对指定 Agent 的 active、角色和 ready 后完成。厂商归属来自经过
+DSH 专用 CLI 分支验证的关联，不依赖用户可编辑的显示档案。此确认不替代原聊天读取上下文。
+
+`place=network` 的新邀请继续名单判定；Codex/OpenCode 不变。无 place 的历史记录
+不批量迁移，以免将旧跨机器 DSH 邀请误判为本机。旧本机申请可由原聊天重试接入，
+复用原身份并补写关联，之后忽略污染的 baseline。取消、过期记录不复活。
+关联幂等，项目、角色或 Agent 不一致拒绝写回。status/current 与带申请 ID 的 observe
+共用本机 DSH 判据。无需新回执文件、时间戳体系或前端流程修改。

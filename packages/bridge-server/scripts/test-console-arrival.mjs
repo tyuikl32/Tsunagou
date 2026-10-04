@@ -18,7 +18,7 @@ const hash = (text) => createHash("sha256").update(text).digest("hex");
 const read = (path) => JSON.parse(readFileSync(path, "utf8"));
 const respond = (response, result) => response.end(JSON.stringify({ result }));
 
-async function fixture(t, role = "main") {
+async function fixture(t, role = "main", metaKey = "threadId") {
   const root = mkdtempSync(join(tmpdir(), "tsunagou-console-arrival-"));
   const receiptFile = join(root, "receipt.json");
   const sessionFile = join(root, "session.json");
@@ -57,7 +57,7 @@ async function fixture(t, role = "main") {
   writePrivateJson(sessionFile, credential);
   writePrivateJson(routeFile, route);
   const clients = [];
-  const env = { ...baseEnv, TSUNAGOU_ROUTING_DIR: routingDir };
+  const env = { ...baseEnv, TSUNAGOU_ROUTING_DIR: routingDir, TSUNAGOU_HOST_META_KEY: metaKey };
   const connect = async (extra = {}) => {
     const transport = new StdioClientTransport({ command: process.execPath, args: [bridge],
       env: { ...env, ...extra }, stderr: "pipe" });
@@ -72,14 +72,15 @@ async function fixture(t, role = "main") {
     rmSync(root, { recursive: true, force: true });
   });
   const call = (client, identity = thread, name = "context__project_read") => client.callTool({ name, arguments: {},
-    ...(identity ? { _meta: { threadId: identity } } : {}),
+    ...(identity ? { _meta: { [metaKey]: identity } } : {}),
   });
   return { root, receiptFile, sessionFile, routeFile, route, credential, context, thread, calls, hooks, env, connect, call };
 }
 
+for (const metaKey of ["threadId", "ai.opencode/sessionID"]) {
 for (const role of ["main", "worker"]) {
-  test(`an already loaded shared bridge records the original ${role} context after its route is added`, async (t) => {
-    const f = await fixture(t, role);
+  test(`${metaKey}: an already loaded shared bridge records the original ${role} context after its route is added`, async (t) => {
+    const f = await fixture(t, role, metaKey);
     const { console_enrollment: enrollment, ...oldRoute } = f.route;
     writePrivateJson(f.routeFile, oldRoute);
     const client = await f.connect();
@@ -100,6 +101,8 @@ for (const role of ["main", "worker"]) {
     assert.ok(!(await f.call(restarted)).isError);
     assert.equal(read(f.receiptFile).agent_id, receipt.agent_id);
   });
+}
+
 }
 
 test("only a matching ready own context can produce a receipt", async (t) => {
@@ -226,4 +229,20 @@ test("DeepSeek routed context never records Codex console arrival or refreshes i
   assert.equal(read(f.sessionFile).connection_epoch, 1);
   assert.equal(read(f.sessionFile).host_binding_generation, undefined);
   assert.equal(read(f.routeFile).endpoint, "stale-codex-endpoint");
+});
+
+
+test("OpenCode native metadata records receipt without Codex wake; helper stays silent", async (t) => {
+  const f = await fixture(t, "worker", "ai.opencode/sessionID");
+  const extra = { CODEX_APP_TOOLS_PIPE_PATH: "unrelated-parent", TSUNAGOU_DESKTOP_WAKE: "1" };
+  const helperClient = await f.connect({ ...extra, TSUNAGOU_CONNECT_HELPER: "1" });
+  assert.ok(!(await f.call(helperClient)).isError);
+  assert.equal(existsSync(f.receiptFile), false);
+  const client = await f.connect(extra);
+  assert.equal((await f.call(client, "another-chat")).isError, true);
+  assert.equal((await f.call(client, "")).isError, true);
+  assert.equal(existsSync(f.receiptFile), false);
+  assert.ok(!(await f.call(client)).isError);
+  assert.equal(read(f.receiptFile).thread_id, f.thread);
+  assert.ok(f.calls.every(call => call.path === "/api/v1/commands/context.project_read"));
 });

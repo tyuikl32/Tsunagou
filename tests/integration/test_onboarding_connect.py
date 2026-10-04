@@ -155,3 +155,61 @@ def test_deepseek_native_connect_preserves_identity_and_role_without_an_overlay(
             assert conn.execute("SELECT COUNT(*) FROM commands WHERE command_kind='agent.enroll'").fetchone()[0] == 2
     finally:
         cli("daemon", "stop")
+
+
+def test_deepseek_pending_selection_controls_real_bridge_and_rejects_rebinding(tmp_path: Path):
+    from tsunagou.application.onboarding import conversation_key
+    from tsunagou.platform.enrollment_store import EnrollmentStore
+
+    selected = tmp_path / "中文 selected"
+    other = tmp_path / "chat-cwd"
+    subprocess.run(["git", "init", "--quiet", str(selected)], check=True)
+    other.mkdir()
+    (other / ".tsunagou").mkdir()
+    (other / ".tsunagou/project.json").write_text(json.dumps({"project_id": "other-project"}), encoding="utf-8")
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("TSUNAGOU_", "CODEX_", "DSH_"))}
+    if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
+        env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
+    env["TSUNAGOU_ENROLLMENT_DIR"] = str(tmp_path / "enrollments")
+    env["TSUNAGOU_ROUTING_DIR"] = str(tmp_path / "routes")
+    env["DSH_SESSION_ID"] = "real-dsh-chat"
+
+    def cli(*args: str, cwd: Path = other) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, "-m", "tsunagou", *args], cwd=cwd, env=env,
+                              capture_output=True, text=True, timeout=45)
+
+    init = cli("--project-root", str(selected), "project", "init", "--coordination-root", str(selected))
+    assert init.returncode == 0, init.stderr or init.stdout
+    project_id = json.loads(init.stdout)["project_id"]
+    store = EnrollmentStore(tmp_path / "enrollments")
+    request = store.create(project_id=project_id, project_root=selected, role="worker", adapter="deepseek")
+    try:
+        result = cli("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
+                     "--pending-enrollment-id", request["enrollment_id"])
+        assert result.returncode == 0, result.stderr or result.stdout
+        connected = json.loads(result.stdout)
+        assert connected["project_id"] == project_id and connected["role"] == "worker"
+        linked = store.get(request["enrollment_id"])
+        assert linked["agent_id"] == connected["agent_id"] and linked["place"] == "local"
+        repeated = cli("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
+                       "--pending-enrollment-id", request["enrollment_id"])
+        assert repeated.returncode == 0, repeated.stdout
+        assert json.loads(repeated.stdout)["agent_id"] == connected["agent_id"]
+        assert store.get(request["enrollment_id"])["revision"] == linked["revision"]
+        route = json.loads((tmp_path / "routes" / (conversation_key("real-dsh-chat") + ".json")).read_text(encoding="utf-8"))
+        assert route["project_id"] == project_id and Path(route["project_root"]) == selected
+        assert Path(route["state_dir"]).parent == selected / ".tsunagou/bridges"
+        session = json.loads((Path(route["state_dir"]) / "bridge-session.json").read_text(encoding="utf-8"))
+        assert session["agent_id"] == connected["agent_id"]
+        assert not (other / ".tsunagou/bridges").exists()
+        store.cancel(request["enrollment_id"])
+        wrong = store.create(project_id="other-project", project_root=other, role="worker", adapter="deepseek")
+        conflict = cli("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
+                       "--pending-enrollment-id", wrong["enrollment_id"])
+        assert conflict.returncode == 4, conflict.stderr or conflict.stdout
+        assert json.loads(conflict.stdout)["error"] == "onboarding_project_mismatch"
+        assert not (other / ".tsunagou/bridges").exists()
+        assert json.loads((tmp_path / "routes" / (conversation_key("real-dsh-chat") + ".json")).read_text(encoding="utf-8")) == route
+    finally:
+        stopped = cli("--project-root", str(selected), "daemon", "stop")
+        assert stopped.returncode == 0, stopped.stderr or stopped.stdout

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,6 +70,11 @@ test("native connect uses trusted session/cwd, cleans stale host state and never
     assert.equal(process.env.TSUNAGOU_HOST_CONVERSATION_ID, undefined);
     assert.equal(process.env.TSUNAGOU_CONTROL_TOKEN, undefined);
     const args = process.argv.slice(1);
+    if (args[1] === 'pending') {
+      assert.deepEqual(args, ['agent', 'pending', '--adapter', 'deepseek']);
+      console.log(JSON.stringify({status:'none'}));
+      process.exit(0);
+    }
     assert.deepEqual(args.slice(0, 7), ['agent', 'connect', '--adapter', 'deepseek', '--profile', 'desktop', '--no-register-host']);
     const role = args.includes('--role') ? args[args.indexOf('--role') + 1] : 'worker';
     console.log(JSON.stringify({status:'enrolled', project_id:'fixture-project', agent_id:'fixture-agent', role,
@@ -89,6 +95,96 @@ test("native connect uses trusted session/cwd, cleans stale host state and never
     assert.equal(value.session.connection_epoch, 3);
     assert.match(value.next, /mcp__tsunagou__context__project_read/);
     assert.ok(!JSON.stringify(result).includes("hidden-"));
+  }
+});
+
+test("native connect carries the CLI's pending project across an unrelated chat cwd", async (t) => {
+  const f = host(t);
+  const selected = join(f.root, "selected-project");
+  const enrollment = "0123456789abcdef0123456789abcdef";
+  f.config.connect = { command: process.execPath, args: ["-e", `
+    const assert = require('node:assert/strict');
+    assert.equal(process.cwd(), ${JSON.stringify(f.root)});
+    assert.equal(process.env.DSH_SESSION_ID, 'fixture-original');
+    const args = process.argv.slice(1);
+    if (args[1] === 'pending') {
+      console.log(JSON.stringify({status:'pending',state:'pending',adapter:'deepseek',
+        project_id:'selected-project',project_root:${JSON.stringify(selected)},enrollment_id:${JSON.stringify(enrollment)}}));
+    } else {
+      assert.deepEqual(args, ['--project-root', ${JSON.stringify(selected)}, 'agent', 'connect', '--adapter',
+        'deepseek', '--profile', 'desktop', '--no-register-host', '--pending-enrollment-id', ${JSON.stringify(enrollment)}]);
+      console.log(JSON.stringify({status:'enrolled',project_id:'selected-project',agent_id:'fixture-agent',role:'worker'}));
+    }
+  `, "--"] };
+  await apply(f.ctx, f.config);
+  const result = f.value(await f.tools.get("tsunagou_connect").execute({}, f.exec));
+  assert.equal(result.project_id, "selected-project");
+  assert.equal(result.status, "enrolled");
+});
+
+test("native connect preserves Unicode paths through real Python CLI pipes under CP936", async (t) => {
+  const probe = spawnSync("python", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" });
+  assert.equal(probe.status, 0, "Python is required for the CLI encoding regression");
+  const python = probe.stdout.trim();
+  for (const dirname of ["selected-project", "中文项目", "中文 project with spaces"]) {
+    await t.test(dirname, async (t) => {
+      const f = host(t);
+      const selected = join(f.root, dirname);
+      const literal = JSON.stringify(selected).replace(/[^\x00-\x7f]/g,
+        (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+      const cli = `
+import json, sys
+selected = ${literal}
+args = sys.argv[1:]
+if args == ['agent', 'pending', '--adapter', 'deepseek']:
+    result = dict(status='pending', state='pending', adapter='deepseek',
+                  project_id='selected-project', project_root=selected, enrollment_id='a' * 32)
+elif args == ['--project-root', selected, 'agent', 'connect', '--adapter', 'deepseek',
+              '--profile', 'desktop', '--no-register-host', '--pending-enrollment-id', 'a' * 32]:
+    result = dict(status='enrolled', project_id='selected-project', agent_id='fixture-agent', role='worker')
+else:
+    print(json.dumps(dict(status='error', error='onboarding_project_mismatch')))
+    sys.exit(4)
+print(json.dumps(result, ensure_ascii=False))
+`;
+      f.config.connect = { command: python, args: ["-c", cli],
+        env: { PYTHONIOENCODING: "cp936", PYTHONUTF8: "0" } };
+      await apply(f.ctx, f.config);
+      const result = f.value(await f.tools.get("tsunagou_connect").execute({}, f.exec));
+      assert.equal(result.status, "enrolled", JSON.stringify(result));
+      assert.equal(result.project_id, "selected-project");
+      assert.equal(result.host_ready, false);
+    });
+  }
+});
+
+test("native connect fails closed for malformed pending selection and mismatched receipts", async (t) => {
+  const f = host(t);
+  f.config.connect = { command: process.execPath, args: ["-e", "", "--"] };
+  await apply(f.ctx, f.config);
+  const tool = f.tools.get("tsunagou_connect");
+  for (const selection of [undefined, {status:'pending',state:'pending',project_root:'relative'},
+    {status:'pending',state:'pending',adapter:'codex',project_root:f.root,project_id:'p',enrollment_id:'a'.repeat(32)}]) {
+    f.config.connect.args[1] = `console.log(${JSON.stringify(JSON.stringify(selection ?? {}))})`;
+    assert.match(f.value(await tool.execute({}, f.exec)).error, /tsunagou_connect_(?:pending_failed|invalid_selection)/);
+  }
+  f.config.connect.args[1] = `
+    if (process.argv[2] === 'pending') {
+      console.log(JSON.stringify({status:'pending',state:'pending',adapter:'deepseek',project_root:${JSON.stringify(f.root)},
+        project_id:'expected-project',enrollment_id:'a'.repeat(32)}));
+    } else {
+      console.log(JSON.stringify({status:'enrolled',project_id:'wrong-project',agent_id:'a',role:'worker'}));
+    }
+  `;
+  assert.equal(f.value(await tool.execute({}, f.exec)).error, "onboarding_project_mismatch");
+  for (const state of ["claimed", "enrolled"]) {
+    f.config.connect.args[1] = `
+      const assert = require('node:assert/strict');
+      assert.equal(process.argv[2], 'pending');
+      console.log(JSON.stringify({status:'pending',state:${JSON.stringify(state)},adapter:'deepseek',
+        project_root:${JSON.stringify(f.root)},project_id:'expected-project',enrollment_id:'a'.repeat(32)}));
+    `;
+    assert.equal(f.value(await tool.execute({}, f.exec)).error, "enrollment_not_pending");
   }
 });
 

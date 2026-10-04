@@ -21,6 +21,19 @@ SOURCE_REPOSITORY = "https://github.com/tyuikl32/Tsunagou.git"
 GENERATOR_VERSION = "project-bootstrap-v4"
 START_MARKER = "<!-- TSUNAGOU:START -->"
 END_MARKER = "<!-- TSUNAGOU:END -->"
+WAKE_REMINDER = (
+    "需要唤醒其他 Agent 时，请通过 PowerShell 执行对应宿主的唤醒操作；"
+    "发起方和接收方都为 Codex 时，沿用 Codex 已有的唤醒机制。"
+    "请确认是否确实需要唤醒，避免重复操作。"
+    "请优先使用已验证的宿主原会话入口，不要把尚未完整实现或未经当前宿主验证的 Tsunagou 自动唤醒当作前提，"
+    "也不要反复配置、探测或重绑来等待它生效。"
+    "各宿主操作指南：优先读取当前安装源码中的 docs/overview/agent-wake-guide.md；"
+    "在线入口 https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md"
+    "（未发布的本地更新以安装源码为准）。消息已入队不等于对方已开始新回合。"
+    "唤醒失败时先自行排查是否认错目标厂商或宿主、原会话及操作入口，"
+    "依据真实注册信息纠正后再试；不要请用户手动唤醒。"
+    "仍受真实能力或权限阻塞时，向 main 记录证据和未解决状态，不要宣称成功或扩大权限。"
+)
 
 
 class ProjectIntegrationError(RuntimeError):
@@ -134,6 +147,8 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 6. 上游决定阻塞时调用 `task.block` 保存进展、释放占用并结束本轮；不相交的任务可以继续。
    恢复前重读状态并再次 begin。静默、断线或同库重启不会转移资源 owner，主 Agent 可以显式回收。
 7. 需要扩大范围、改变项目设计或处理无法协调的冲突时向主 Agent 提出；越过用户上限时建立 UserDecision，不能自行绕过。
+8. {WAKE_REMINDER}
+   此规则仅作提醒，具体操作由当前 Agent 判断并执行。
 
 ## 被拒时怎么办
 
@@ -146,6 +161,7 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 - 当前项目轻量入口：`.agents/skills/tsunagou-project/SKILL.md`。
 - 规范源码（本机可用时）：`{local_docs}/overview/agent-quick-start.md`、`{local_docs}/overview/subagent-guide.md`。
   任务和身份规范：`{local_docs}/implementation/modules/02-agents.md`、`{local_docs}/implementation/modules/03-tasks.md`。
+- 宿主唤醒操作指南（优先读取本机安装源码）：`{local_docs}/overview/agent-wake-guide.md`。
 - 在线来源：`{source['repository']}`；项目入口不复制 Tsunagou 源码。
 
 ## 运行数据边界

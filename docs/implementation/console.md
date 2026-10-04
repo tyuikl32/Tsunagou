@@ -115,7 +115,7 @@ HTTP 侧的完整表格在 [CLI/HTTP 说明书](../overview/cli-http-manual.md)�
 
 只有 `console` 才签票：另外两种都不产生票据文件——给一个兑不了的宿主签票，看起来像有进展，最后只会等到"票过期"。`in_host` 那边的票是宿主聊天里的 CLI 以用户身份自己签的（身份来自宿主给的会话 id），页面既不签也不作废。
 
-**三种宿主现在都写同一条机器级待接入记录**（`platform/enrollment_store.py`，每个 OS 用户同时一条）：`{adapter, project_id, project_root, role, nickname, 过期时间}`，不含任何凭据。它回答的是"聊天里被要求接入时，我该接哪个项目、什么角色"——聊天手上只有自己的会话 id 和工作目录，而工作目录常常不是协调仓库。读它有三个入口：Codex 的 `agent join`（认领后签票）、连接路径的解析回退（`agent connect`，工作目录推不出项目时用它）、以及只读的 `tsunagou agent pending --adapter <adapter>`。到达后由 `observe` / `status` 关掉这条记录，让下一个 Agent 接得上；页面的「停止等待」也会撤掉它。技术决定见 [接入时的项目从哪来](../decisions/2026-10-02-enrollment-record.md)。
+**三种宿主现在都写同一条机器级待接入记录**（`platform/enrollment_store.py`，每个 OS 用户同时一条）：`{adapter, project_id, project_root, role, nickname, 过期时间}`，不含任何凭据。它回答的是"聊天里被要求接入时，我该接哪个项目、什么角色"——聊天手上只有自己的会话 id 和工作目录，而工作目录常常不是协调仓库。读它有三个入口：Codex 的 `agent join`（认领后签票）、连接路径的项目解析（DeepSeek `agent connect` 优先使用本宿主 pending 申请，OpenCode 仍在 cwd 推不出项目时回退）、以及只读的 `tsunagou agent pending --adapter <adapter>`。到达后由 `observe` / `status` 关掉这条记录，让下一个 Agent 接得上；页面的「停止等待」也会撤掉它。原技术决定见 [接入时的项目从哪来](../decisions/2026-10-02-enrollment-record.md)，DSH 后续修正规则见 [DeepSeek 适配器](adapter-deepseek.md)。
 
 **记录里的角色就是最终角色。** 页面上选主 Agent，那条聊天就只能以主 Agent 接入：`agent connect` 在没给 `--role` 时用记录里的角色，给了**冲突**的角色直接拒绝（`enrollment_role_conflict`，且在写任何桥材料之前）；`observe` 的到达判定也核对角色，席位角色不符时只报"连上了但角色不对"，绝不报"主 Agent 已接入"，且**不收掉记录**（真正该来的那个还能用它）。daemon 那层本来就保证了"角色只认票"。
 

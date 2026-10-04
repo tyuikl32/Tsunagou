@@ -1,0 +1,19 @@
+{
+  "host": "OpenCode 2.0.18",
+  "model": "deterministic localhost fixture",
+  "checks": {
+    "global_prepare": true,
+    "prepare_idempotent": true,
+    "original_session_install_reload": true,
+    "chinese_project": true,
+    "pending_then_sign": true,
+    "helper_waits": true,
+    "second_session_claim_denied": true,
+    "second_session_route_denied": true,
+    "same_chat_retry": true,
+    "native_context_arrived": true,
+    "reload_stable": true,
+    "join_config_unchanged": true
+  },
+  "status": "passed"
+}

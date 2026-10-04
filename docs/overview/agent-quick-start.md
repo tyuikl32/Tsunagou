@@ -45,7 +45,7 @@ tsunagou agent pending --adapter <本宿主的 adapter，例如 deepseek>
 - 有申请：返回 `project_root`、`project_id`、`role`、`nickname`（**没有凭据**），照它接入即可；
 - `status: none`：现在没有人等这个宿主接入 —— 如实报告，请用户先在控制台为目标项目准备接入。**不要**从机器上的项目清单里自己挑一个，也**不要**为了让接入有个去处而 `project init`。
 
-宿主自己接入那条路（DeepSeek Harness）与 OpenCode 都走这条回退：CLI 在**工作目录推不出项目**时才读这条记录；显式 `--project-root`、`TSUNAGOU_PROJECT_ROOT` 和工作目录里真正的项目永远优先。
+DeepSeek Harness 的 `tsunagou_connect` 先读取本宿主仍处于 pending 的控制台申请，项目以申请为准；没有申请才按聊天工作目录及父目录发现项目。显式 `--project-root` 或 `TSUNAGOU_PROJECT_ROOT` 与申请冲突会报项目不匹配。OpenCode 的既有连接路径仍在**工作目录推不出项目**时才用记录。
 
 ## 手动指定项目和角色的接入
 
@@ -67,21 +67,23 @@ profile 只作显示标签。同一 IDE 的不同对话/subagent 由真实会话
 
 在正常打开的 Desktop 项目聊天中要求接入即可。Agent 优先调用宿主本地工具 `tsunagou_connect`；首次尚无此工具时，使用已安装 CLI 执行 `agent prepare --adapter deepseek`，把已有身份插件注册到实际 Desktop profile。此准备步骤不创建 Agent、不启动 daemon。优先使用宿主热重载，必要时完整重启一次并回到原聊天，不要求用户另开终端执行接入命令。
 
-那条聊天的工作目录**不必**是协调仓库：控制台点接入时写下的那条待接入记录就是项目与角色的来源（`agent pending --adapter deepseek` 可核对），CLI 只在工作目录推不出项目时才用它。所以顺序是：先在控制台为目标项目点一次接入，再去那条聊天里说“接入 Tsunagou”。
+那条聊天的工作目录**不必**是协调仓库：控制台点接入时写下的待接入记录就是项目与角色的来源（`agent pending --adapter deepseek` 可核对）。即使 cwd 属于另一项目，DSH 也优先接入控制台选定的项目；无申请时才按 cwd 手动接入。所以顺序是：先在控制台为目标项目点一次接入，再去那条聊天里说“接入 Tsunagou”。
 
 `tsunagou_connect` 从本次调用的宿主上下文取得真实聊天和工作目录，再调用固定的已安装 CLI；不接受模型填写的身份、凭据、任意命令或目录。不指定角色时保留已有角色，新登记默认为 worker；main 仍须用户明确指定。插件共享入口不保存某个 Agent 的凭据，每个聊天按自身身份选择私有路由。
 
 工具返回 enrolled 后，**同一聊天**再调用 `mcp__tsunagou__context__project_read`，核对项目、自己的 Agent、角色和 ready 状态。CLI/helper 成功、临时 headless 会话成功或插件文件存在都不能替代这一步。Desktop 入口的实际验证状态以[现有验收报告](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)为准；此入口不承诺 Codex 专属自动唤醒。
 
-## OpenCode 接入（从控制台）
+## OpenCode 接入（当前对话，任意目录）
 
-前端选 OpenCode 准备接入后，等待提示会给出一个**会话名**（形如 `ses_<profile>`）：票绑的就是这个名字，所以人要用同一个名字开会话，两边的身份才对得上。
+首次安装运行 `tsunagou agent prepare --adapter opencode`，配置用户级接入工具和无凭据共享 MCP。重载一次并回到**原对话**，等待 MCP 连接完成；安装不创建 Agent、不签票。配置冲突时先解决提示的问题，不覆盖用户其他配置。
 
-1. 在这个项目的目录里用该名字打开（或继续）会话：`opencode --session ses_<profile>`。
-2. 在那边重载一次（`opencode reload` 或重启窗口），让项目里的 MCP 配置生效。
-3. 该会话首次调用 `context__project_read` 即完成接入，控制台随即显示已接入。
+1. 在控制台选择项目、角色和 OpenCode，准备接入。此时只保存申请，不指定会话名。
+2. 在要加入的当前对话中说“请接入 Tsunagou”，调用无参数的 `tsunagou_connect`。工作目录可以与项目无关；工具读取宿主真实会话 ID，通过已安装 CLI 的 `agent join --adapter opencode` 认领申请。
+3. 工具返回 enrolled 后，**同一对话**调用共享 MCP 的 `context__project_read`。控制台核对原会话回执、Agent、项目、角色及 ready 状态后显示已接入。
 
-同一次等待重试沿用同一个名字（记在该会话的私有 bridge 目录里）；换名字就是另一次接入——项目里一条 MCP 条目只对一个会话。别的会话调用同一个 bridge 会被明确拒绝（`not_enrolled`），不会顶替这次接入。
+后续接入只增加私有会话路由，不重复修改 MCP 配置。没有申请时明确提示先在控制台准备；失败由原对话重试。不要手填会话 ID、复制凭据或另建对话替代原对话验证。已有其他项目路由或旧绑定发生冲突时明确报错，不静默创建第二个身份。
+
+旧项目级接入及跨机器邀请保留原流程，不批量迁移已有 Agent。旧绑定检查覆盖当前目标及本机索引中的项目；若旧项目已移出索引或移动后未重新登记，须先处理原绑定。本机 v2.0.18 的插件入口使用目录插件、`setup(api)` 和宿主执行上下文；不可照搬旧版插件示例。真实功能验证状态见[适配器实施说明](../implementation/adapter-opencode.md)。
 
 ## 多项目和查询
 
@@ -115,9 +117,36 @@ FX3/FX4/FX6 负责原 Codex 会话自动唤醒的产品接入与现场验收；�
 
 普通 Task 完成不等于 Project 完成；用户按手册执行 project complete，checkpoint 失败查询 Operation 并按需 retry。
 
+### 协作提醒 hook
+
+共享 bridge 为 Codex、OpenCode、DeepSeek Harness 提供两个纯提醒 hook。提醒以独立文本附加在原有工具 JSON 之后，不改变业务结果或权限。
+
+- **唤醒提醒（所有 Agent）**：需要唤醒其他 Agent 时，请通过 PowerShell 执行对应宿主的唤醒操作；**发起方和接收方都为 Codex 时**，沿用 Codex 已有的唤醒机制。请确认是否确实需要唤醒，避免重复操作。规则出现在 MCP instructions、项目上下文，以及分派任务、提交结果、审核反馈、发送协作消息等成功操作之后。
+- **完工提案提醒（仅当前 main）**：读取上下文、成功接受或自验收任务结果后，提醒 main：如果所有工作已经完成，且合并与验收已通过，请调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认提案时不要重复提交，最终完工由用户确认。是否已经完成全部工作由 main 判断，单个任务完成不代表整体验收通过。
+
+hook 不执行 PowerShell、不发送额外消息、不自动唤醒或续跑 Agent，也不自动发起或确认提案。失败操作保留原有错误指导。提醒不证明某个宿主具备可用的唤醒能力，具体操作仍由 Agent 根据实际宿主处理。
+
+唤醒提醒附有 [各宿主原会话操作指南](agent-wake-guide.md)，包含 OpenCode 命令形状、Codex 已有机制与 DeepSeek Harness 的操作入口及限制。优先读取安装源码中的指南；不要把尚未完整实现或未经当前宿主验证的 Tsunagou 自动唤醒当作前提，也不要陷入反复配置、探测、重绑。消息已入队不等于对方已开始新回合。
+
+失败时 Agent 先自行核对是否认错目标厂商/宿主，再核对原会话和操作入口，依据真实注册与版本信息修正后重试；不要要求用户手动唤醒。仍有真实能力或权限阻塞时向 main 记录证据和未解决状态。
+
+升级共享 bridge 后，运行中的旧 bridge 需重载才能使用新的工具提醒；已有项目通过 `tsunagou project bootstrap --refresh` 更新生成的常驻上下文，用户自写区块仍予保留。
+
 
 ## 断线恢复
 
 Agent 先自行查看 daemon status、doctor、agent list --json。daemon 不可用时 connect 自动启动所选实例；可用时 bridge 复用现有 session，真正失效或宿主代次变化才 reconnect。宿主端点变更时重新 prepare/connect 同一会话，不能通过创建新身份掩盖故障。使用 project history、task history 查询已持久化的时间线。
 
 CLI 结果不能证明 LLM 已开始工作。完整使用方法见 [CLI/HTTP 手册](cli-http-manual.md)，角色边界见 [子 Agent 指南](subagent-guide.md)。
+
+
+### 本机 DSH 控制台等待恢复
+
+控制台准备后，原 DSH 聊天通过 `tsunagou_connect` 接入。CLI 将实际 Agent ID
+关联到这次申请；控制台看到该 Agent 角色正确、会话 ready 后自动确认。
+原聊天仍须调用 `context__project_read` 验证自身上下文。控制台确认不是原聊天回执。
+
+若旧的、尚未过期的申请因 baseline 卡住，在原聊天重新调用接入工具即可复用身份并补关联；
+无需改 baseline 或手动执行 CLI。已过期申请保持过期，已有 Agent 不会因此被删除。
+本次修复不改变 Codex、OpenCode 或跨机器邀请流程。运行中的旧控制台需要在用户安排下
+加载更新；DSH 插件的实际加载版本仍须在现场确认，自动化通过不代表原聊天验收完成。
