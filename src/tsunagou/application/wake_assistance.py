@@ -32,10 +32,12 @@ class WakeAssistance:
         project_root: Path, state_dir: Path, database: Any = None, native: Any = None,
         runner: Callable[..., dict[str, Any]] | None = None,
         route_directories: dict[str, Path] | None = None,
+        native_policy: Callable[[], bool] | None = None,
     ) -> None:
         self.authority, self.messages = authority, messages
         self.project_id, self.project_root = project_id, project_root.resolve()
         self.database, self.native, self.runner = database, native, runner
+        self.native_policy = native_policy
         self.routes = route_directories or {
             host: Path.home() / ".tsunagou" / "hosts" / host for host in ("codex", "opencode", "deepseek")
         }
@@ -216,6 +218,36 @@ class WakeAssistance:
                 (self.project_id, f"message/{message_id}"),
             ).fetchone() is not None
 
+    def _native_status(self, base: dict[str, Any], message_id: str, recipient: str) -> None:
+        """Expose only correlated execution facts, not provider internals or secrets."""
+        with self._domain_lock():
+            enabled = self.native_policy() if self.native_policy is not None else None
+        attempt = self.native.status(message_id=message_id, recipient_agent_id=recipient) if self.native else None
+        native: dict[str, Any] = {"enabled": enabled, "outbox_status": None, "attempt_count": None,
+                                  "attempt_state": None, "error_code": None}
+        if self.database is not None:
+            with self.database.lock, contextlib.closing(self.database._connect()) as conn:
+                row = conn.execute(
+                    "SELECT status,attempt_count FROM outbox WHERE project_id=? AND kind='host_wake' "
+                    "AND target_ref=? ORDER BY rowid DESC LIMIT 1",
+                    (self.project_id, f"message/{message_id}"),
+                ).fetchone()
+            if row is not None:
+                native.update(outbox_status=row[0], attempt_count=row[1])
+        # An absent turn digest is absence of proof, not proof of no host execution.
+        base["progress"]["host_turn_started"] = None
+        if attempt is not None:
+            native.update(attempt_state=attempt.get("state"), error_code=attempt.get("error_code"))
+            base["error_code"] = attempt.get("error_code")
+            proven = any(isinstance(item, dict) and item.get("kind") == "turn_started"
+                         and item.get("message_id") == message_id for item in attempt.get("evidence", []))
+            if proven and attempt.get("turn_id_digest") and not attempt.get("coalesced_into"):
+                base["progress"]["host_turn_started"] = True
+                base["evidence"] = [attempt["turn_id_digest"]]
+        if enabled is False:
+            base["error_code"] = "native_wake_disabled"
+        base["native"] = native
+
     def status(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         return self._run(payload, context, wake=False)
 
@@ -252,7 +284,8 @@ class WakeAssistance:
                 base["error_code"] = "cross_machine_unsupported" if remote else "host_identity_unverified"
                 return base
             if sender["host"] == target["host"] == "codex":
-                base.update(lane="native", result="native_channel_only", error_code="codex_native_channel_only")
+                base.update(lane="native", result="native_channel_only", error_code=None)
+                self._native_status(base, message_id, message.recipient_agent_id)
                 return base
             # A covered native lane retains its queued work. Never silently cancel it.
             if self._native_active(message.recipient_agent_id) or (target["host"] == "codex" and self._native_pending(message_id)):

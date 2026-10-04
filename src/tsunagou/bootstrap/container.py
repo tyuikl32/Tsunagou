@@ -182,6 +182,8 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
             authority=authority, messages=messages, project_id=project_id or "local-project",
             project_root=Path(project_root), state_dir=state_path, database=database,
             native=wake_dispatcher, runner=run_host_assistance,
+            native_policy=lambda: bool(project_registry is not None and project_registry.project is not None
+                                       and project_registry.project.automatic_wake_enabled),
         )
     for command_kind, handler in build_handlers(
         authority=authority, tasks=tasks, cognition=cognition, messages=messages,
@@ -232,14 +234,14 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
     application.state.project_registry = project_registry
     if database is not None and wake_dispatcher is not None:
         def project_wants_automatic_wake() -> bool:
-            """Whether this project opted in to automatic worker wake.
+            """Whether this project permits automatic worker wake.
 
             Read on every delivery pass so ``project.configure`` takes effect without a
-            restart. Absent means off: the console snapshot shows the same value, and a
-            switch that reads "off" has to mean off.
+            restart. Absent means enabled; explicit false remains disabled. Context and
+            console views use the same effective project policy.
             """
             project = getattr(project_registry, "project", None) if project_registry is not None else None
-            return bool(project is not None and project.settings.get("auto_wake_multi_agent", False))
+            return bool(project is not None and project.automatic_wake_enabled)
 
         host_delivery = HostDeliveryWorker(database, wake_dispatcher, telemetry, messages=messages,
                                            wake_policy=project_wants_automatic_wake)
@@ -596,7 +598,7 @@ def _query_provider(
                         "coverage": coordination.coverage({key: task.status for key, task in tasks.tasks.items()}),
                         "auto_wake_multi_agent": bool(
                             project_registry is not None and project_registry.project is not None
-                            and project_registry.project.settings.get("auto_wake_multi_agent", False)
+                            and project_registry.project.automatic_wake_enabled
                         )}
             if kind == "wake_attempts":
                 return {"project_id": requested_project_id, "items": wakes}
@@ -608,7 +610,7 @@ def _query_provider(
                     "coverage": coordination.coverage({key: task.status for key, task in tasks.tasks.items()}),
                     "auto_wake_multi_agent": bool(
                         project_registry is not None and project_registry.project is not None
-                        and project_registry.project.settings.get("auto_wake_multi_agent", False)
+                        and project_registry.project.automatic_wake_enabled
                     )}
         if kind == "attempts":
             return {

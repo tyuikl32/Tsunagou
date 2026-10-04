@@ -1301,7 +1301,7 @@ def build_handlers(
                 "events": visible_events,
                 "auto_wake_multi_agent": bool(
                     project_registry is not None and project_registry.project is not None
-                    and project_registry.project.settings.get("auto_wake_multi_agent", False)
+                    and project_registry.project.automatic_wake_enabled
                 ),
             },
         }

@@ -62,3 +62,17 @@ def test_auto_wake_project_policy_is_explicit_and_persistent(tmp_path: Path) -> 
     assert reloaded.project.settings["auto_wake_multi_agent"] is True
     with pytest.raises(ValueError, match="unsupported_policy_patch"):
         reloaded.configure(policy_patch={"unknown": True}, reason="invalid")
+
+
+@pytest.mark.parametrize("configured", [None, False, True])
+def test_effective_auto_wake_default_and_explicit_choice_survive_reload(tmp_path: Path, configured: bool | None) -> None:
+    (tmp_path / ".git").mkdir()
+    registry = ProjectRegistry.initialize(tmp_path, name="wake", objective="test")
+    assert registry.project is not None
+    if configured is not None:
+        registry.configure(policy_patch={"auto_wake_multi_agent": configured}, reason="explicit choice")
+    for project in (registry.project, ProjectRegistry(tmp_path).project):
+        assert project is not None
+        assert project.automatic_wake_enabled is (configured is not False)
+        if configured is None:
+            assert project.settings == {}  # Reading does not rewrite old project policy.

@@ -127,7 +127,12 @@ for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessio
     f.state.wake = {...f.state.wake,state:"running",result:"queued",request_associated:true};
     assert.ok((await f.call("message.send", "agent-a", required)).content[1].text.includes("不追加回合"));
     f.state.wake = {...f.state.wake,lane:"native",result:"failed"};
-    assert.ok((await f.call("message.send", "agent-a", required)).content[1].text.includes("不追加唤醒"));
+    const nativeHint = (await f.call("message.send", "agent-a", required)).content[1].text;
+    assert.ok(nativeHint.includes("路由不代表已派发"));
+    assert.ok(nativeHint.includes("仅在确认已有派发或处理时避免重复"));
+    assert.ok(!nativeHint.includes("不追加唤醒"));
+    f.state.wake = {...f.state.wake,native:{enabled:false,outbox_status:"pending",attempt_count:0}};
+    assert.ok((await f.call("message.send", "agent-a", required)).content[1].text.includes("项目已明确关闭"));
     for (let index = 0; index < 2; index++) {
       const explicit = await f.call("coordination.wake_status", "agent-a", {message_id:"message-one"});
       assert.equal(explicit.content[0].text, JSON.stringify(f.state.wake));

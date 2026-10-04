@@ -1,5 +1,7 @@
 # Implementation plan — v2
 
+Current follow-up: [default-wake-followup.md](default-wake-followup.md). User approved default-on for missing settings, preserving explicit false, and authorized source edits and Git submission.
+
 - [x] Narrow authenticated message-query and explicit PowerShell invocation contract.
 - [x] Backend current message/grant/host identity validation, independent progress facts and native/fallback fencing.
 - [x] Version-gated OpenCode status/wake, original-session checks, DSH unsupported downgrade.

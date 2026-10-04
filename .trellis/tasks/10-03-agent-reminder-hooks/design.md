@@ -1,5 +1,7 @@
 # Design
 
+Current follow-up: [default-wake-followup.md](default-wake-followup.md). User approved default-on for missing settings, preserving explicit false, and authorized source edits and Git submission.
+
 The authoritative scope is [approved-v2.md](approved-v2.md); concrete tradeoffs are in [implementation-v2.md](implementation-v2.md).
 
 ## Presentation

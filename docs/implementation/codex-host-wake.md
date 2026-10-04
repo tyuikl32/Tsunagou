@@ -65,7 +65,7 @@ listener 保持运行期间，另一个终端执行 `host attach --endpoint "uni
 - **提示词无正文**：唤醒 prompt 只带“有几条在等、最久等了多久”，正文只在通过认证的 MCP 拉取里；`HostWakeRequest.waiting_hint` 只输出计数与时长。
 - **声明诚实**：daemon endpoint 未设 `TSUNAGOU_HOST_WAKE` 时如实报 `disabled`；A2A Agent Card 的 `host_wake` 在没有 dispatcher 时为 `unsupported`，有 dispatcher 时为 `binding-dependent`（能否真正唤醒仍取决于该 Agent 是否登记了 binding）。
 - **只读 peek**：`GET /api/v1/projects/{project_id}/inbox` 与 `MessageStore.waiting()` 只描述收件箱，不领租约、不计次；等待超过 10 分钟的 delivery 会写一条按消息去重的 `message_waiting` 诊断。
-- **项目开关是真的**：投递工人在每轮派发前读项目策略 `auto_wake_multi_agent`（`project.configure` 写入，运行中改动能立即生效）。**读不到即视为关**，与界面/快照展示的值一致；关闭期间“待唤醒”行保持 `pending`，重新打开即补投，不丢工作。
+- **项目默认开启，明确关闭仍有效**：投递工人在每轮派发前读项目策略 `auto_wake_multi_agent`（`project.configure` 写入，运行中改动能立即生效）。新项目和旧项目未设置该项时均按开启处理，与上下文/快照展示的值一致；显式 `false` 保持关闭。关闭期间“待唤醒”行保持 `pending`，重新打开即补投，不丢工作。开启不绕过宿主支持、身份、绑定及重复派发检查；升级后未配置项目的既有待唤醒消息也可能被处理。
 - **能力协商参与决策**：宿主公开了方法目录却没有唤醒所需方法时记为 `unsupported`（有目录却说没有是确定答案，没有目录才是未知），这种 Agent 直接以 `host_wake_capability_unsupported` 收尾；探针只有**证明**路径可用时才把绑定恢复为 `ready`。
 - **失效绑定不再当临时故障**：`degraded` 报 `host_binding_degraded` 并收尾（已判定此路不通）；`stale`/`detached` 仍可重连恢复，保留重试。
 - **Desktop 占用会话显式降级**：`desktop_thread_unavailable`（例如 Codex 自己握着那个 thread 的写入权）、`desktop_thread_required`、`desktop_thread_identity_mismatch`、`desktop_attach_transport_unsupported`、`desktop_attach_endpoint_invalid` 是确定性失败：尝试以 `wake_failed` 收尾，绑定标 `degraded` 并留下原因；成功探针会把它恢复为 `ready`。

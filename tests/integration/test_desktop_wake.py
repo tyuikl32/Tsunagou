@@ -33,10 +33,7 @@ WAKE_WORTHY = "task.assigned"
 def runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
     registry = ProjectRegistry.initialize(tmp_path, name="desktop", objective="message delivery")
-    # Automatic wake is opt-in at the project level, exactly like the switch
-    # ``project.configure`` writes. These tests are about delivery mechanics, so they say
-    # yes explicitly instead of relying on an implicit default.
-    registry.configure(policy_patch={"auto_wake_multi_agent": True}, reason="wake delivery tests")
+    assert registry.project.settings == {}  # Fresh and persisted unconfigured projects wake by default.
     monkeypatch.setenv("TSUNAGOU_PROJECT_ROOT", str(tmp_path))
     monkeypatch.setenv("TSUNAGOU_STATE_DIR", str(tmp_path / ".tsunagou" / "local"))
     monkeypatch.setenv("TSUNAGOU_CONTROL_TOKEN", "test-control")
@@ -376,6 +373,29 @@ def test_ack_suppression_preserves_previous_host_failure(runtime) -> None:
     assert any(event["kind"] == "wake_failed" and event["wake_attempt_id"] == first["wake_attempt_id"] for event in events)
     assert not any(event["kind"] == "turn_completed" for event in events)
     assert not host.turns
+
+
+def test_default_policy_agrees_in_context_control_and_first_native_dispatch(runtime) -> None:
+    app, call, sender, receiver, host = runtime
+    registry = app.state.project_registry
+    assert registry.project.settings == {}
+    routes = {route.name: route.endpoint for route in app.routes if hasattr(route, "endpoint")}
+    for configured in (None, False, True):
+        if configured is not None:
+            registry.configure(policy_patch={"auto_wake_multi_agent": configured}, reason="explicit test choice")
+        expected = configured is not False
+        context = call("context.project_read", {}, sender)
+        assert context["coordination"]["auto_wake_multi_agent"] is expected
+        for name in ("project_coordination", "project_assignments"):
+            assert routes[name](registry.project.project_id)["auto_wake_multi_agent"] is expected
+    # Restore absent policy so delivery itself proves the default, not the explicit True above.
+    registry.project.settings.clear()
+    call("message.send", {"recipient_agent_id": receiver["agent_id"], "kind": WAKE_WORTHY,
+                          "subject_ref": "project", "summary": "default first wake", "payload": {}}, sender)
+    drain(app)
+    assert len(host.turns) == 1
+    with contextlib.closing(app.state.project_database._connect()) as conn:
+        assert tuple(conn.execute("SELECT status,attempt_count FROM outbox WHERE kind='host_wake'").fetchone()) == ("done", 1)
 
 
 def test_the_project_switch_really_controls_automatic_wake(runtime) -> None:

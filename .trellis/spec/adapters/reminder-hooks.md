@@ -6,12 +6,15 @@ Shared bridge guidance is presentation-only. Explicit authenticated status/wake 
 ## 2. Signatures
 `coordination.wake_status` and `coordination.wake` take only `message_id`; MCP maps to `coordination__wake_status` / `coordination__wake`. Caller comes from current authentication, never arguments. Original business tool JSON stays `content[0].text`; hints are additional text. Execution entry is an explicit authenticated tool, then trusted packaged PowerShell runner, not a credential-bearing model shell command.
 
+Native status includes a safe `native` summary of effective `enabled`, `outbox_status`, `attempt_count`, `attempt_state` and `error_code`; missing records stay unknown. `progress.host_turn_started` is nullable on the native path: null means unproven. A positive value requires actual correlated execution evidence, not mere routing or queue admission. No raw provider record is exposed.
+
 ## 3. Contracts
 - Peer host evidence uses real local route/session registration and observed host facts. Model brand/nickname/caller host never determine recipient host; unknown/conflicting/stale binding fails closed. Raw host IDs, paths to credentials, endpoints and tokens stay private.
 - Sender-authorized direct/system message only; main is not inbox superuser. Same-machine execution only, no new enrollment or scope expansion.
 - Persistent guide-version presentation is per authenticated project/Agent; restarts do not repeat it. Changed guide version may show once. Dedup same message/state; explicit status always fresh.
 - Later hints: targeted assignment, response_contract.required messages and result submission needing main. Ordinary query/ACK/obligation closure/review do not append wake hints. No natural-language response detection or untargeted publish inference.
 - Native Codex lane respects existing policy and dispatch. Native pending/inflight/unknown work prevents fallback; same recipient serializes across both paths. Persist external attempt before side effect, never replay unknown effects blindly. No host HTTP/process work while holding SQLite write transaction.
+- Effective project `auto_wake_multi_agent` defaults to true when absent, including older persisted empty settings; explicitly saved false remains false. Runtime delivery and context/control views must agree. Do not infer host support from enabling this policy. Native lane selection alone proves neither dispatch nor execution; hints must distinguish routing and observed wake evidence, and never present missing turn evidence as proof of inactivity.
 - idle/running from actual current host evidence, can_queue independent. Last activity is not liveness. Same-request running requires correlation. Check unknown state before execution; no busy interruption or approval changes.
 - Four independent progress facts: message durable receipt, actual turn start, recipient presentation, associated response. ACK/exit-zero/queued is not proof of another stage.
 - Explicit wake authenticates and checks message/target, then fixed PowerShell runner. DSH unsupported form is honest supported downgrade; OpenCode must prove original session exists and omit --auto.
@@ -23,6 +26,7 @@ Shared bridge guidance is presentation-only. Explicit authenticated status/wake 
 | Condition | Behavior |
 | --- | --- |
 | Codex sender + Codex recipient | Native lane only, no fallback wake entry |
+| Project setting absent / explicitly false | Default enabled / remain disabled; no automatic override of explicit false |
 | Unknown/conflicting host or cross-machine | No execution; explicit verification/unsupported reason |
 | Unrelated message / other project / stale identity | Reject without revealing private target data |
 | Native pending/inflight or same request already started | No second host execution |

@@ -3,3 +3,4 @@
 {"file":".trellis/spec/backend/quality-guidelines.md","reason":"Relevant verification"}
 {"file": ".trellis/spec/adapters/reminder-hooks.md", "reason": "Verify authenticated reminder scoping and side effects"}
 {"file": ".trellis/tasks/10-03-agent-reminder-hooks/approved-v2.md", "reason": "v2 acceptance"}
+{"file": ".trellis/tasks/10-03-agent-reminder-hooks/default-wake-followup.md", "reason": "User-approved default-on wake and honest native hook guidance supersede old absent-setting policy"}

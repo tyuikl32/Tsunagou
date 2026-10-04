@@ -121,6 +121,11 @@ class Project:
     settings: dict[str, Any] = field(default_factory=dict)
     config: ConfigProvenance | None = None
 
+    @property
+    def automatic_wake_enabled(self) -> bool:
+        """Unconfigured projects use supported native wake; explicit false is retained."""
+        return bool(self.settings.get("auto_wake_multi_agent", True))
+
 
 class ProjectRegistry:
     """Small persistent project registry backed by the coordination repository."""

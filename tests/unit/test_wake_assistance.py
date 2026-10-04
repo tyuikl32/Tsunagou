@@ -401,3 +401,40 @@ def test_uncommitted_message_rolled_back_cannot_trigger_host_io(tmp_path: Path) 
         transaction.result()
         external.result()
     assert f.calls == []
+
+
+def test_native_status_distinguishes_policy_route_and_observed_turn(tmp_path: Path) -> None:
+    f = Fixture(tmp_path, ("codex", "codex"))
+    message = f.message()
+    f.service.native_policy = lambda: True
+    result = f.invoke(message)
+    assert result["native"]["enabled"] is True
+    assert result["native"]["attempt_state"] is None
+    assert result["progress"]["host_turn_started"] is None
+    assert result["evidence"] == []
+    assert result["error_code"] is None
+    with f.database.transaction("native-test") as uow:
+        uow.append_event(lineage_id="lineage", event_type="message.created", aggregate_ref=f"message/{message}",
+                         actor_ref=f.agents[0].agent_id, payload={})
+        uow.stage_outbox(kind="host_wake", target_ref=f"message/{message}", payload={})
+    pending = f.invoke(message)["native"]
+    assert pending["outbox_status"] == "pending" and pending["attempt_count"] == 0
+    key = f.native._key(f.agents[1].agent_id, message)
+    f.native.attempts[key] = {"state": "failed", "error_code": "host_binding_not_ready",
+                              "error_message": "private endpoint must not be exposed"}
+    result = f.invoke(message)
+    assert result["native"]["attempt_state"] == "failed"
+    assert result["error_code"] == "host_binding_not_ready"
+    assert result["progress"]["host_turn_started"] is None
+    assert "private endpoint" not in json.dumps(result)
+    f.native.attempts[key] = {"state": "running", "turn_id_digest": "sha256:proven-turn"}
+    assert f.invoke(message)["progress"]["host_turn_started"] is None
+    f.native.attempts[key]["evidence"] = [{"kind": "turn_started", "message_id": message}]
+    assert f.invoke(message)["progress"]["host_turn_started"] is True
+    f.native.attempts[key]["coalesced_into"] = "other-message"
+    assert f.invoke(message)["progress"]["host_turn_started"] is None
+    f.service.native_policy = lambda: False
+    result = f.invoke(message, wake=True)
+    assert result["native"]["enabled"] is False
+    assert result["error_code"] == "native_wake_disabled"
+    assert f.calls == []

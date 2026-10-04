@@ -1,5 +1,7 @@
 # On-demand Agent reminders and host wake assistance
 
+Current follow-up: [default-wake-followup.md](default-wake-followup.md). User approved default-on for missing settings, preserving explicit false, and authorized source edits and Git submission.
+
 ## Goal and approval
 The user approved implementation of [approved-v2.md](approved-v2.md) on 2026-10-04. That complete plan is the authoritative requirement and acceptance checklist, replacing the historical always-repeated reminder design.
 

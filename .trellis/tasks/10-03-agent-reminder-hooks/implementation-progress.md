@@ -1,3 +1,7 @@
+# Default-on follow-up — 2026-10-04
+
+Implemented and independently reviewed; see [default-wake-followup.md](default-wake-followup.md) for behavior and test evidence. This supersedes the earlier absent-setting default. Explicit false is preserved. Live collaboration acceptance is still pending; runtime was not restarted.
+
 # v2 implementation evidence — 2026-10-04
 
 ## Delivered
