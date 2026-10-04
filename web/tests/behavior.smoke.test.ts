@@ -2130,3 +2130,375 @@ describe("回归：本轮修掉的若干条（失焦提交 / 原型链 / 机器�
     expect(writes().length).toBe(1);
   });
 });
+
+/* ============================================================================
+ * 「冲突与协商」/「意图与权限审计」的显示回归（2026-10-04）
+ * ----------------------------------------------------------------------------
+ * 下面几条是同一类毛病：**适配层读了出口里根本没有的键**，于是数据明明有、
+ * 屏上却是空的或者错的：
+ *   · 分歧卡片读 `actor_agent_id` / `subject_ref` / `updated_at`（出口里都没有），
+ *     于是 Agent 列恒空、时间恒空、标题只剩英文规则代号；
+ *   · 契约的「已确认 Agent」去 /cognition 找 acceptances（那个出口从不导出它），
+ *     participants 是对象数组却被当字符串印成 `[object `；
+ *   · 审计页第 1 个子标签挂着一个无条件返回空列表的出口，点进去什么都没有。
+ * 断言一律落在渲染出来的 DOM 上，不断言适配层的中间值 —— 后者改歪了照样绿。
+ * ==========================================================================*/
+describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
+  type CollabWin = {
+    fetch: unknown;
+    Tsunagou: {
+      refresh: (keys?: string[]) => Promise<unknown>;
+      state: {
+        set: (path: string, value: unknown) => unknown;
+        get: (path: string, fallback?: unknown) => unknown;
+      };
+      dispatch: (type: string, payload?: unknown) => { ok: boolean; error?: string };
+    };
+  };
+
+  const collabWin = (): CollabWin => dom.window as unknown as CollabWin;
+
+  /* 应答表：匹配是"路径里包含即算"，更具体的路径要排在前面。 */
+  function serve(replies: [string, unknown][]): void {
+    collabWin().fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+  }
+
+  /* 卡片里「标签 → 紧跟它的那一格」：卡片的各字段是兄弟节点（见 dissentCardHtml
+     与契约卡片那段 parts）。标签找不到就直接失败 —— 这正是"这一行没画出来"。*/
+  function fieldOf(card: Element, label: string): Element {
+    const head = [...card.querySelectorAll(".title")].find((node) => node.textContent === label);
+    expect(head, `卡片里没有「${label}」这一行`).toBeTruthy();
+    return head!.nextElementSibling as Element;
+  }
+
+  function chipNames(node: Element): string[] {
+    return [...node.querySelectorAll(".listfieldbox > .item > .right")]
+      .map((item) => item.textContent ?? "");
+  }
+
+  /* 中间层词表（/console/glossary）里与本次有关的那几域。词本身住在
+     src/tsunagou/console/glossary.py，页面只负责查表；这里按真实答复的形状给。*/
+  const GLOSSARY = {
+    version: 5,
+    domains: {
+      discrepancy_rule: {
+        "claim.literal_mismatch": "说法不一致",
+        "claim.contract_digest_mismatch": "契约版本不符",
+        "claim.resource_use_mismatch": "资源用法不符",
+        "manual.discrepancy": "人工记录",
+      },
+      discrepancy_severity: { soft: "轻微", hard: "严重", critical: "致命" },
+      discrepancy_status: { open: "未处理", clarifying: "澄清中", negotiating: "协商中" },
+      ref_kind: { task: "任务" },
+    },
+  };
+
+  const AGENTS = {
+    items: [
+      { agent_id: "a-1", role: "worker", status: "active" },
+      { agent_id: "a-2", role: "worker", status: "active" },
+      { agent_id: "a-3", role: "worker", status: "active" },
+    ],
+  };
+
+  /* 昵称住在中间层的用户档案里（不在协作事实里），所以显式铺一份，
+     免得与前面那些测试留在 state 里的档案串味。*/
+  function profile(): void {
+    collabWin().Tsunagou.state.set("profile", {
+      nickname: "",
+      theme: "",
+      agents: {
+        "a-1": { nickname: "熊猫" },
+        "a-2": { nickname: "海豚" },
+        "a-3": { nickname: "树懒" },
+      },
+    });
+  }
+
+  it("分歧卡片：标题是人话、Agent 由 claim_ids→reports 派生、严重度与状态画得出来、「…的理解」有内容", async () => {
+    serve([
+      ["/console/glossary", GLOSSARY],
+      ["/console/views/collaboration", {
+        sources: {
+          agents: AGENTS,
+          cognition: {
+            reports: [
+              {
+                report_id: "r-1", task_id: "t-1", attempt_id: "at-1", actor_agent_id: "a-1",
+                digest: "sha256:r1", input_revisions: {},
+                claims: [{
+                  subject_key: "接口契约", claim_type: "literal", equality_key: "接口契约",
+                  value: "A 说：字段必填",
+                }],
+              },
+              {
+                report_id: "r-2", task_id: "t-1", attempt_id: "at-2", actor_agent_id: "a-2",
+                digest: "sha256:r2", input_revisions: {},
+                claims: [{
+                  subject_key: "接口契约", claim_type: "literal", equality_key: "接口契约",
+                  value: "B 说：字段可空",
+                }],
+              },
+            ],
+            /* 出口给的就这 7 个键：没有 actor_agent_id / subject_ref / 任何时间。
+               参与 Agent 只能由 claim_ids 里的报告号 join 回 reports 的 actor_agent_id。
+               注意 claim_ids 装的是**报告号**，而且自动判定出的分歧只记下**触发它的
+               那一份**报告（modules/cognition.py 的 `_record_discrepancy(…, report)`）
+               —— 这里照真实的形状给一条。*/
+            discrepancies: [{
+              discrepancy_id: "d-1", rule_id: "claim.literal_mismatch", subject_key: "接口契约",
+              severity: "hard", status: "open", claim_ids: ["r-2"], input_digest: "sha256:d1",
+            }],
+          },
+          contracts: { items: [] },
+          messages: { items: [] },
+          conflicts: { items: [] },
+        },
+        missing: {},
+      }],
+    ]);
+    const win = collabWin();
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    profile();
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const card = page.querySelector<HTMLElement>(
+      '#block-conflict .tabContent .boxerbox > .item[data-row-id="d-1"]',
+    );
+    expect(card).not.toBeNull();
+
+    // ① 卡头是人话（词表 discrepancy_rule），不是英文规则代号。
+    expect(card!.querySelector(".header")!.textContent).toBe("说法不一致");
+    // ② 规则代号仍然留着 —— 人要靠它跟账本、协议对上（短号那套同一个道理）。
+    expect(fieldOf(card!, "规则").textContent).toContain("claim.literal_mismatch");
+    // ③ 参与 Agent 由 claim_ids → reports.actor_agent_id 派生（以前读的键不存在，恒空）。
+    expect(chipNames(card!)).toEqual(["海豚"]);
+    // ④ severity / status 出口早就给了，以前一处没画。
+    expect(fieldOf(card!, "严重度").textContent).toContain("严重");
+    expect(fieldOf(card!, "处理状态").textContent).toContain("未处理");
+    // ⑤ 影响范围是那件被说岔的事本身。
+    expect(fieldOf(card!, "影响范围").textContent).toContain("接口契约");
+    // ⑥ 「…的理解」写的是那份报告在被说岔的主题上说的话（以前恒空）。
+    expect(card!.textContent).toContain("海豚的理解");
+    expect(card!.textContent).toContain("B 说：字段可空");
+    /* ⑦ 另一半**不补**：熊猫那份报告确实在同一个主题上说了别的话，但这条分歧里没有
+       它的报告号（自动判定只记触发的那一份），页面不能凭"同一主题的另一份报告"去凑
+       一个参与者出来 —— 那是编。要显示双方，得先让后端把对方也存下来。*/
+    expect(card!.textContent).not.toContain("熊猫");
+    // ⑧ 分歧没有任何时间戳可读（出口与领域模型里都没有），就不画时间那一行：
+    //    宁可少一行，也不拿报告时间冒充"分歧发生的时间"。
+    expect(card!.querySelectorAll(".textTime")).toHaveLength(0);
+
+    // ⑨ 点卡片开侧栏：细节与卡片同一套字段（以前侧栏里是英文代号 + 一行空时间）。
+    card!.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    const aside = page.getElementById("aside-conflict")!;
+    expect(aside.style.display).toBe("flex");
+    const detail = aside.querySelector(".content")!;
+    expect(detail.textContent).toContain("claim.literal_mismatch");
+    expect(detail.textContent).toContain("严重");
+    expect(detail.textContent).toContain("未处理");
+    expect(detail.textContent).toContain("海豚的理解");
+    expect(detail.textContent).not.toContain("时间");
+  });
+
+  it("分歧引用多份报告时（discrepancy.create 的 report_refs）：参与 Agent 逐个出来且不重复", async () => {
+    serve([
+      ["/console/glossary", GLOSSARY],
+      ["/console/views/collaboration", {
+        sources: {
+          agents: AGENTS,
+          cognition: {
+            reports: [
+              { report_id: "r-1", actor_agent_id: "a-1", claims: [] },
+              { report_id: "r-2", actor_agent_id: "a-2", claims: [] },
+              { report_id: "r-3", actor_agent_id: "a-2", claims: [] },
+            ],
+            discrepancies: [{
+              discrepancy_id: "d-4", rule_id: "manual.discrepancy", subject_key: "task/t-9",
+              severity: "soft", status: "open", claim_ids: ["r-1", "r-2", "r-3"],
+              input_digest: "sha256:d4",
+            }],
+          },
+          contracts: { items: [] },
+          messages: { items: [] },
+          conflicts: { items: [] },
+        },
+        missing: {},
+      }],
+    ]);
+    const win = collabWin();
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    profile();
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const card = page.querySelector<HTMLElement>(
+      '#block-conflict .tabContent .boxerbox > .item[data-row-id="d-4"]',
+    );
+    expect(card).not.toBeNull();
+    // 同一个 Agent 报了两份就是一个人；抬头是词表里 manual.discrepancy 的说法。
+    expect(chipNames(card!)).toEqual(["熊猫", "海豚"]);
+    expect(card!.querySelector(".header")!.textContent).toBe("人工记录");
+  });
+
+  it("分歧的「影响范围」：引用才缩写，`workspace.driver` 这种主题名原样印（不截成 8 个字符）", async () => {
+    serve([
+      ["/console/glossary", GLOSSARY],
+      ["/console/views/collaboration", {
+        sources: {
+          agents: AGENTS,
+          cognition: {
+            reports: [],
+            discrepancies: [
+              {
+                discrepancy_id: "d-2", rule_id: "claim.literal_mismatch",
+                subject_key: "workspace.driver", severity: "soft", status: "clarifying",
+                claim_ids: [], input_digest: "sha256:d2",
+              },
+              {
+                discrepancy_id: "d-3", rule_id: "manual.discrepancy",
+                subject_key: "task/0108a623-4f59-4d8e-be4e-67ea1667a106", severity: "hard",
+                status: "negotiating", claim_ids: [], input_digest: "sha256:d3",
+              },
+            ],
+          },
+          contracts: { items: [] },
+          messages: { items: [] },
+          conflicts: { items: [] },
+        },
+        missing: {},
+      }],
+    ]);
+    const win = collabWin();
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    profile();
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const scopeOf = (id: string): string => fieldOf(
+      page.querySelector(`#block-conflict .tabContent .boxerbox > .item[data-row-id="${id}"]`)!,
+      "影响范围",
+    ).textContent ?? "";
+    expect(scopeOf("d-2")).toBe("workspace.driver");
+    expect(scopeOf("d-3")).toBe("任务 0108a623");
+  });
+
+  it("契约卡片：已确认/未确认读 /contracts 自己的 acceptances，participants 按对象取 agent_id", async () => {
+    serve([
+      ["/console/glossary", GLOSSARY],
+      ["/console/views/collaboration", {
+        sources: {
+          agents: AGENTS,
+          /* /cognition 从来不导出 acceptances —— 签名记录就在下面 /contracts 的每项里。*/
+          cognition: { reports: [], discrepancies: [], contracts: [] },
+          messages: { items: [] },
+          conflicts: { items: [] },
+          contracts: {
+            items: [{
+              proposal_id: "c-1", digest: "sha256:c1", status: "proposed",
+              payload: { task_id: "t-1" }, supersedes_id: null, resolution_reason: null,
+              required_slots: ["api", "ui"],
+              participants: [
+                { slot: "api", agent_id: "a-1", required: true },
+                { slot: "ui", agent_id: "a-2", required: true },
+                { slot: "review", agent_id: "a-3", required: false },
+              ],
+              acceptances: [{
+                participant_slot: "api", proposal_digest: "sha256:c1", real_actor_id: "a-1",
+                represented_participant: null, via_proxy: false,
+              }],
+            }],
+          },
+        },
+        missing: {},
+      }],
+    ]);
+    const win = collabWin();
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    profile();
+    await win.Tsunagou.refresh(["glossary"]);
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const card = page.querySelector<HTMLElement>(
+      '#block-conflict .tabContent .boxerbox > .item[data-row-id="c-1"]',
+    );
+    expect(card).not.toBeNull();
+    // 签了的那一个在「已确认」，没签的两个在「未确认」；两边是同一份 participant 名单。
+    expect(chipNames(fieldOf(card!, "已确认 Agent"))).toEqual(["熊猫"]);
+    expect(chipNames(fieldOf(card!, "未确认 Agent"))).toEqual(["海豚", "树懒"]);
+    // 对象被当成字符串的痕迹不许出现（`[object Object]` 截 8 个字符就是 `[object `）。
+    expect(card!.textContent).not.toContain("[object");
+  });
+
+  it("审计页：没有「Agent 意图」子标签了，唯一的子标签画的是租约，点某一行开的是那一行的侧栏", async () => {
+    /* 后端仍然把 /intents 列为这一屏的一个来源（中间层 CONSOLE_VIEWS 与它自己的
+       测试都钉着那份名单）—— 页面不再读它，也不为它画一格。
+       resources 出口给的是 `reservation_id`（显式预约模型），行身份就用它；
+       `lease_set_id` / `revision` 是租约集合时代的旧拼法，出口里已经没有。*/
+    serve([
+      ["/console/views/audit", {
+        sources: {
+          agents: { items: [{ agent_id: "a-1", role: "main", status: "active" }] },
+          resources: {
+            items: [
+              {
+                reservation_id: "R-1", owner_agent_id: "a-1", status: "active",
+                resources: ["file:src/x.py"],
+              },
+              {
+                reservation_id: "R-2", owner_agent_id: "a-1", status: "released",
+                resources: ["file:src/y.py"],
+              },
+            ],
+          },
+          intents: { items: [{ intent_id: "i-1", owner_agent_id: "a-1" }] },
+        },
+        missing: {},
+      }],
+    ]);
+    const win = collabWin();
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    profile();
+    await win.Tsunagou.refresh(["audits"]);
+
+    const block = page.getElementById("block-audit")!;
+    expect([...block.querySelectorAll(".tabPlace > .tabItem")].map((tab) => tab.textContent))
+      .toEqual(["Agent 权限"]);
+    const panels = [...block.querySelectorAll(".tabContent")];
+    expect(panels).toHaveLength(1);
+    // 租约表现在就画在**第一个**（唯一一个）面板里，不再挂在第 2 个隐藏面板上。
+    expect(panels[0]!.textContent).toContain("已经获得的租约");
+    const rows = [...panels[0]!.querySelectorAll(".tablebox .tr")];
+    expect(rows).toHaveLength(2);
+    // 每一行都认得出自己是谁（以前读 lease_set_id，出口没有这个键 → 行号是空的，
+    // 点哪一行都只会打开第一条租约）。
+    expect(rows.map((node) => node.getAttribute("data-row-id"))).toEqual(["R-1", "R-2"]);
+    // 出口不给 revision，所以「声明版本」那一列不许再摆着（原来恒空）。
+    expect([...panels[0]!.querySelectorAll(".tablebox .th .colu")].map((cell) => cell.textContent))
+      .toEqual(["Agent", "批准范围", "租约"]);
+    // 出口给了 intents 数据，页面也不攒它、不画它 —— 那是被显式 reservation 取代的旧模型。
+    expect(win.Tsunagou.state.get("audits")).not.toHaveProperty("intents");
+    expect(block.textContent).not.toContain("i-1");
+
+    rows[1]!.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    const aside = page.getElementById("aside-audit")!;
+    expect(aside.style.display).toBe("flex");
+    // 点第二行给的是第二行的租约，不是第一条。
+    expect(aside.textContent).toContain("file:src/y.py");
+    expect(aside.textContent).not.toContain("file:src/x.py");
+
+    // 静态骨架上也不再留着那半个标签。
+    expect(readWeb("index.html")).not.toContain("Agent 意图");
+  });
+});
