@@ -92,7 +92,7 @@ describe("控制台页面（web/）结构冒烟", () => {
       name: "main",
       status: "working",
       statusText: "进行中",
-      time: "daemon 运行中",
+      time: "服务运行中",
     });
     const result = api.dispatch("project.list", [card("p-1"), card("p-2"), card("p-3")]);
     expect(result.ok).toBe(true);
@@ -484,12 +484,29 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["projects"]);
 
     const rail = page.querySelector("#projList")!;
-    /* 左栏的结构：分组标题 → 搜索条（挂在第一个标题下面）→ 卡片 → 下一个标题 → 卡片。
-       搜索条那一段写成 "搜索条"：它是新加的一层，但位置固定，写清楚比跳过它更能说明结构。*/
-    const layout = [...rail.children].map((node) => node.classList.contains("wkTitle")
-      ? node.textContent!.trim()
-      : (node.classList.contains("searchBar") ? "搜索条" : node.getAttribute("data-project-id")));
-    expect(layout).toEqual(["进行中的协作", "搜索条", "p-1", "已完成的协作", "p-2"]);
+    /* 左栏结构：两组各自「标题（带本组自己的放大镜与齿轮）→ 本组搜索条 → 本组卡片 →
+       本组那句『没有协作』」，全都画在 #projList 里；空文案是一行真实元素（.title2），
+       不借 .emptybox（那句话写死在 CSS 的 content 里，两组换不了字）。
+       本组有卡片时那句空文案只是被 display:none 藏着 —— 元素一直在，才能按组切换显隐。*/
+    const label = (node: Element) => node.classList.contains("wkTitle")
+      ? `${node.getAttribute("data-proj-group")}:${node.textContent!.trim()}`
+      : (node.classList.contains("searchBar")
+        ? `搜索条(${node.getAttribute("data-proj-group")})`
+        : (node.hasAttribute("data-proj-blank")
+          ? `没有协作(${node.getAttribute("data-proj-blank")})`
+          : node.getAttribute("data-project-id")));
+    expect(page.querySelector("#projHead")).toBeNull();
+    expect([...rail.children].map(label)).toEqual([
+      "active:进行中的协作", "搜索条(active)", "p-1", "没有协作(active)",
+      "done:已完成的协作", "搜索条(done)", "p-2", "没有协作(done)",
+    ]);
+    // 每张卡片自己带着分组属性；卡片外面**没有**多包一层容器（那会把卡片样式弄没）。
+    expect([...rail.querySelectorAll(".projItem")].map((node) => node.getAttribute("data-proj-group")))
+      .toEqual(["active", "done"]);
+    expect(rail.querySelectorAll(".projItem .projItem")).toHaveLength(0);
+    // 两组各自的放大镜与齿轮都在（顺序就是那一组标题右边的两个键）。
+    expect([...rail.querySelectorAll(".wkTbtn")].map((node) => node.getAttribute("data-tg-role")))
+      .toEqual(["project-search", "project-sort", "project-search", "project-sort"]);
     expect(rail.querySelector('.projItem[data-project-id="p-2"] .right p')!.textContent).toBe("已完成");
   });
 
@@ -597,7 +614,7 @@ describe("控制台页面（web/）结构冒烟", () => {
 
     const card = page.querySelector('.projItem[data-project-id="p-1"]')!;
     // 端点文件还在、进程已经没了 —— 中间层如实说"无响应"，并补上"上次记录"。
-    expect(card.textContent).toContain("daemon 无响应");
+    expect(card.textContent).toContain("服务无响应");
     expect(card.textContent).toContain("上次记录（记录到 2026-10-03 06:14）");
   });
 
@@ -609,7 +626,7 @@ describe("控制台页面（web/）结构冒烟", () => {
     // 抬头是「上次记录」，正文写清记录到什么时候、以及 daemon 已经不在。
     expect(pane.textContent).toContain("上次记录");
     expect(pane.textContent).toContain("记录到 2026-10-03 06:15");
-    expect(pane.textContent).toContain("daemon 已经不在");
+    expect(pane.textContent).toContain("服务已经不在");
   });
 
   /* 子 Agent 头像一行最多 3 个，多出来的用 `+N` 说明——N 是**没摆出来的**数量。
@@ -1506,5 +1523,262 @@ describe("控制台接入等待与取消", () => {
       .find((node) => (node.textContent ?? "").includes("OpenCode"))!;
     click(opencode);
     expect(enrollmentApi.ui.choosebox.value(box)).toBe("OpenCode");
+  });
+});
+
+/* ---- 左栏两组各自独立：搜索 / 排序 -------------------------------------------
+   盯的是"两组分家"这件事本身：一组的放大镜、搜索条、齿轮只作用在自己那一组，另一组照旧。
+   走真页面 + 真 DOM（runScripts: 'dangerously'）：内联 onclick 也真的被编译过，
+   不会拿"事件压根没绑上"当成通过。排序偏好存在 localStorage 里，所以每一条用例自己起一份
+   页面（互不串味），也能顺手钉住"按组分开存"与"旧格式能迁移"。*/
+describe("左栏两组各自独立（搜索 / 排序）", () => {
+  type RailApi = {
+    dispatch: (type: string, payload?: unknown) => { ok: boolean };
+    stopPolling?: () => void;
+    /* 页面那套「失焦即提交」的判据：搜索框必须不在里面（data-tg-commit="manual"） */
+    form: { isAutoCommit: (node: Element) => boolean };
+  };
+
+  let railDom: JSDOM;
+  let railPage: Document;
+  let railApi: RailApi;
+
+  const PROJECTS = [
+    { id: "a-1", name: "甲组-接口对齐", group: "active", lifecycle: "active", history: { captured_at: "2026-01-01T10:00:00Z" } },
+    { id: "a-2", name: "乙组-联调", group: "active", lifecycle: "active", history: { captured_at: "2026-01-02T10:00:00Z" } },
+    { id: "a-3", name: "甲组-回归", group: "active", lifecycle: "active", history: { captured_at: "2026-01-03T10:00:00Z" } },
+    { id: "d-1", name: "甲组已完工", group: "done", lifecycle: "completed", history: { captured_at: "2026-01-04T10:00:00Z" } },
+    { id: "d-2", name: "丙组已完工", group: "done", lifecycle: "completed", history: { captured_at: "2026-01-05T10:00:00Z" } },
+  ];
+
+  const rail = () => railPage.querySelector("#projList")!;
+  /* 这一组**没有被 display:none 藏起来**的卡片，按 DOM 顺序（也就是这一组自己的排序）。*/
+  const visible = (group: string) => [...rail().querySelectorAll(`.projItem[data-proj-group="${group}"]`)]
+    .filter((node) => (node as HTMLElement).style.display !== "none")
+    .map((node) => node.getAttribute("data-project-id"));
+  const all = (group: string) => [...rail().querySelectorAll(`.projItem[data-proj-group="${group}"]`)]
+    .map((node) => node.getAttribute("data-project-id"));
+  const bar = (group: string) => rail().querySelector(`.searchBar[data-proj-group="${group}"]`) as HTMLElement;
+  const blank = (group: string) => rail().querySelector(`[data-proj-blank="${group}"]`) as HTMLElement;
+  const titleBtn = (group: string, role: string) =>
+    rail().querySelector(`.wkTitle[data-proj-group="${group}"] .wkTbtn[data-tg-role="${role}"]`)!;
+  /* 这一组那个分组标题（里面有这一组的放大镜与齿轮） */
+  const titleOf = (group: string) => rail().querySelector(`.wkTitle[data-proj-group="${group}"]`) as HTMLElement;
+  const click = (node: Element) => node.dispatchEvent(new railDom.window.MouseEvent("click", { bubbles: true }));
+  /* 点某一组的齿轮、在菜单里选一项（"按什么排"或"怎么排"） */
+  const chooseSort = (group: string, attr: "data-sort-by" | "data-sort-order", value: string) => {
+    click(titleBtn(group, "project-sort"));
+    click(railPage.querySelector(`#sortMenu .item[${attr}="${value}"]`)!);
+  };
+  const type = (input: HTMLInputElement, value: string) => {
+    input.value = value;
+    input.dispatchEvent(new railDom.window.Event("input", { bubbles: true }));
+  };
+  const inputOf = (group: string) => bar(group).querySelector("input.left") as HTMLInputElement;
+  /* 菜单里某一项右边有没有那个对勾 */
+  const checked = (attr: string, value: string) => {
+    const item = railPage.querySelector(`#sortMenu .item[${attr}="${value}"]`)!;
+    return (item.querySelector(".right")?.innerHTML ?? "").includes("fa-check");
+  };
+  const storedSort = () => JSON.parse(railDom.window.localStorage.getItem("tsunagou.console.projSort") ?? "null");
+
+  /* 页面发过的每一次请求（url + 方法）。测"点一下会不会偷偷发写请求"要看的就是这个：
+     没记下来就没法断言"一条都没有"，只能断言"没崩"。默认那一份 fetch 只 reject、
+     不留痕迹，所以这里换成会记账的桩。 */
+  const sent: Array<{ url: string; method: string }> = [];
+  const writes = () => sent.filter((call) => call.method !== "GET");
+  /* 空抓的 promise 也要消费掉它的 rejection —— 不消费会在用例里冒出一条没人管的告警。 */
+  const quiet = () => { const p = Promise.reject(new Error("smoke: no backend")); p.catch(() => undefined); return p; };
+
+  async function loadRail(seededSort?: unknown) {
+    railDom = new JSDOM(readWeb("index.html"), {
+      url: "http://127.0.0.1:55862/?poll_ms=0", runScripts: "dangerously", pretendToBeVisual: true,
+    });
+    const win = railDom.window as unknown as Window & typeof globalThis;
+    if (seededSort !== undefined) {
+      win.localStorage.setItem("tsunagou.console.projSort", JSON.stringify(seededSort));
+    }
+    sent.length = 0;
+    (win as unknown as { fetch: unknown }).fetch = (input: unknown, init?: { method?: string }) => {
+      const url = typeof input === "string" ? input : String((input as { url?: string })?.url ?? input);
+      const method = String(init?.method ?? (input as { method?: string })?.method ?? "GET").toUpperCase();
+      sent.push({ url, method });
+      return quiet();
+    };
+    win.eval(readWeb("console.config.js"));
+    win.eval(readWeb("assets/js/behavior.js"));
+    /* behavior.js 是在 readyState 还是 'loading' 时被 eval 的：它把 init 挂在 DOMContentLoaded 上，
+       所以要等一个宏任务页面才真的起来（少了这一步，点击委托一个都还没绑）。*/
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    railPage = win.document;
+    railApi = (win as unknown as { Tsunagou: RailApi }).Tsunagou;
+    return win;
+  }
+
+  beforeEach(() => {
+    /* 上面那组用例用过假时钟，这里要真的等 DOMContentLoaded。*/
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    railApi?.stopPolling?.();
+    railDom?.window.close();
+  });
+
+  it("搜索按组独立：只开本组搜索条、只滤本组卡片，另一组一个都不少", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    expect(visible("active")).toEqual(["a-3", "a-2", "a-1"]);
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+    expect(bar("active").style.display).toBe("none");
+    expect(bar("done").style.display).toBe("none");
+
+    // 点【进行中】那组的放大镜：只有这一组的搜索条出来、并拿到焦点。
+    click(titleBtn("active", "project-search"));
+    expect(bar("active").style.display).toBe("");
+    expect(bar("done").style.display).toBe("none");
+    expect(railPage.activeElement).toBe(inputOf("active"));
+
+    // 打「甲」：本组只剩两张，另一组连名字里有「甲」的 d-1 也照旧显示。
+    type(inputOf("active"), "甲");
+    expect(visible("active")).toEqual(["a-3", "a-1"]);
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+    expect(all("done")).toHaveLength(2);
+    expect(blank("active").style.display).toBe("none");
+    expect(blank("done").style.display).toBe("none");
+
+    // 打一个本组谁都不匹配的词：本组那句「没有协作」露出来，另一组照旧。
+    type(inputOf("active"), "查无此项");
+    expect(visible("active")).toEqual([]);
+    expect(blank("active").style.display).toBe("");
+    expect(blank("done").style.display).toBe("none");
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+
+    // 点本组的 iconB：只收本组、只清本组，另一组始终没被碰过。
+    click(bar("active").querySelector(".iconB")!);
+    expect(inputOf("active").value).toBe("");
+    expect(bar("active").style.display).toBe("none");
+    expect(visible("active")).toEqual(["a-3", "a-2", "a-1"]);
+    expect(blank("active").style.display).toBe("none");
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+  });
+
+  it("搜索条关闭时不发写请求（失焦即提交不再把搜索词当档案字段）", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    expect(writes()).toEqual([]);
+
+    // 打开【进行中】的搜索条、打一个字，再点 iconB 关掉：输入框会失焦、随即被移除。
+    click(titleBtn("active", "project-search"));
+    type(inputOf("active"), "甲");
+    // 手动补一次 blur：关搜索条时输入框正在失焦，这条路径不能把搜索词提交出去。
+    inputOf("active").dispatchEvent(new railDom.window.Event("blur"));
+    click(bar("active").querySelector(".iconB")!);
+    expect(inputOf("active").value).toBe("");
+    expect(bar("active").style.display).toBe("none");
+
+    // 一条非 GET 的 fetch 都不能有（搜索词不是档案字段，关一次搜索不该写一次档案）。
+    expect(writes()).toEqual([]);
+    // 真的记了请求才算数（否则上面那条断言可能只是"页面压根没发过任何请求"）。
+    expect(sent.every((call) => call.method === "GET")).toBe(true);
+    expect(sent.length).toBeGreaterThan(0);
+    /* 这条行为断言**拦不住**"把逃生门删掉"：在这份页面里 `isAutoCommitInput` 的
+       `inputScope` 回落到 document，而 document 里有 `.buttonbox`，所以搜索框本来
+       就不会被 form.watch 装上失焦提交（实测去掉 data-tg-commit 后同样一个写请求都没有）。
+       真正钉住"这个框永远不参与失焦提交"的是下面这条，与输入框当前落在哪个容器无关。 */
+    expect(inputOf("active").dataset.tgCommit).toBe("manual");
+    expect(railApi.form.isAutoCommit(inputOf("active"))).toBe(false);
+  });
+
+  it("在搜的那一组把标题让给搜索条，另一组的标题照旧", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    expect(titleOf("active").style.display).toBe("");
+    expect(titleOf("done").style.display).toBe("");
+
+    // 打开【进行中】的搜索条：本组标题收起（放大镜与齿轮就在标题里，让位给搜索条）。
+    click(titleBtn("active", "project-search"));
+    expect(titleOf("active").style.display).toBe("none");
+    expect(titleOf("done").style.display).toBe("");
+
+    // 打字期间同样收着；【已完成】那一组一个都没动 —— 更没被跟着藏。
+    type(inputOf("active"), "甲");
+    expect(titleOf("active").style.display).toBe("none");
+    expect(titleOf("done").style.display).toBe("");
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+
+    // 关掉搜索条、字也清空：本组标题交回 CSS（清成空串，不是写个 display:flex 盖住）。
+    click(bar("active").querySelector(".iconB")!);
+    expect(titleOf("active").style.display).toBe("");
+    expect(titleOf("done").style.display).toBe("");
+  });
+
+  it("按名称：order=new 是拼音升序（A→Z），order=old 是降序（Z→A）", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+
+    // 先切成按名称。【进行中】这一组是：乙组-联调 / 甲组-接口对齐 / 甲组-回归。
+    chooseSort("active", "data-sort-by", "name");
+    // order 还是默认的 new → 拼音升序 A→Z：甲组-回归（jiǎ）→ 甲组-接口对齐（jiē）→ 乙组-联调（yǐ）。
+    expect(visible("active")).toEqual(["a-3", "a-1", "a-2"]);
+
+    // 换成 old → 同一批名字倒过来（Z→A）。菜单上写的就是 A→Z / Z→A，实际顺序要跟它一致。
+    chooseSort("active", "data-sort-order", "old");
+    expect(visible("active")).toEqual(["a-2", "a-1", "a-3"]);
+    // 只是换了顺序，没有藏卡片。
+    expect(all("active")).toEqual(visible("active"));
+    // 另一组没被这次改动碰到。
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+    expect(storedSort()).toEqual({ active: { order: "old", by: "name" }, done: { order: "new", by: "viewed" } });
+  });
+
+  it("排序按组独立：改一组不动另一组，对勾跟着打开菜单的那一组，并按组存进本地", async () => {
+    await loadRail();
+    railApi.dispatch("project.list", PROJECTS);
+    const activeBefore = visible("active");
+    expect(activeBefore).toEqual(["a-3", "a-2", "a-1"]);
+    expect(visible("done")).toEqual(["d-2", "d-1"]);
+
+    // 点【已完成】那组的齿轮：菜单画的是**这一组**的偏好（默认 按查看时间 / 新的在前）。
+    click(titleBtn("done", "project-sort"));
+    expect((railPage.querySelector("#sortMenu") as HTMLElement).style.display).toBe("flex");
+    expect(checked("data-sort-by", "viewed")).toBe(true);
+    expect(checked("data-sort-order", "new")).toBe(true);
+
+    click(railPage.querySelector('#sortMenu .item[data-sort-by="created"]')!);
+    click(railPage.querySelector('#sortMenu .item[data-sort-order="old"]')!);
+    expect(visible("done")).toEqual(["d-1", "d-2"]);   // 按登记时间、旧的在前
+    expect(visible("active")).toEqual(activeBefore);   // 进行中那一组一个都没动
+    expect(checked("data-sort-by", "created")).toBe(true);
+    expect(checked("data-sort-order", "old")).toBe(true);
+
+    // 再点【进行中】那组的齿轮：同一个菜单，对勾立刻换回这一组的偏好。
+    click(titleBtn("active", "project-sort"));
+    expect(checked("data-sort-by", "viewed")).toBe(true);
+    expect(checked("data-sort-order", "new")).toBe(true);
+    click(railPage.querySelector('#sortMenu .item[data-sort-by="name"]')!);
+    expect(visible("active")).not.toEqual(activeBefore);   // 这一组换了排法
+    expect(all("active")).toEqual(visible("active"));       // 换了排法也不是"藏卡片"
+    expect(visible("done")).toEqual(["d-1", "d-2"]);        // 完成组仍是它自己那份
+
+    // 存进本地的是按组分开的一份。
+    expect(storedSort()).toEqual({ active: { order: "new", by: "name" }, done: { order: "old", by: "created" } });
+  });
+
+  it("旧格式（扁平的 {order,by}）能迁移：两组都按它排，再改一组只写这一组", async () => {
+    await loadRail({ order: "old", by: "name" });
+    railApi.dispatch("project.list", PROJECTS);
+    // 名称降序（order=old 就是 Z→A）：乙组-联调 / 甲组-接口对齐 / 甲组-回归；完成组：甲组已完工 / 丙组已完工。
+    expect(visible("active")).toEqual(["a-2", "a-1", "a-3"]);
+    expect(visible("done")).toEqual(["d-1", "d-2"]);
+
+    click(titleBtn("done", "project-sort"));
+    expect(checked("data-sort-by", "name")).toBe(true);
+    expect(checked("data-sort-order", "old")).toBe(true);
+
+    click(railPage.querySelector('#sortMenu .item[data-sort-order="new"]')!);
+    expect(storedSort()).toEqual({ active: { order: "old", by: "name" }, done: { order: "new", by: "name" } });
+    expect(visible("active")).toEqual(["a-2", "a-1", "a-3"]);   // 还是旧偏好（old 就是 Z→A）
+    expect(visible("done")).toEqual(["d-2", "d-1"]);            // 这一组换成 new，名称升序 A→Z
   });
 });
