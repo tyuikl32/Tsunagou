@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
+- **Total Sessions**: 25
 - **Last Active**: 2026-10-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~608 | Active |
+| `journal-1.md` | ~630 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-10-04 | Windows wake runner compatibility and preflight diagnostics | `f39d820` | `elysia` |
 | 24 | 2026-10-04 | Default-on native wake and honest hook evidence | `7b57214` | `elysia` |
 | 23 | 2026-10-04 | Completion-triggered exclusive daemon shutdown | - | `elysia` |
 | 22 | 2026-10-04 | On-demand wake guidance and authenticated host assistance | - | `elysia` |

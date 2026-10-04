@@ -606,3 +606,25 @@ Unconfigured projects now enable supported native wake by default; explicit fals
 ### Status
 
 [OK] **Completed**
+
+
+## Session 25: Windows wake runner compatibility and preflight diagnostics
+<!-- trellis-session: v=2 fp=57937be59525d8b7 -->
+
+**Date**: 2026-10-04
+**Task**: Windows wake runner compatibility and preflight diagnostics
+**Branch**: `elysia`
+
+### Summary
+
+Fixed PS5.1 parsing/native JSON argv and added sanitized interpreter/stage diagnostics; distinguish failed preflight from uncertain admission and stop hint loops. Independent review: 66 Python and 3 stdio suites plus lint/type/docs/wheel pass. User live Codex wake passed; OpenCode real business response remains pending. No daemon reload or live wake; task retained open.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f39d820` | fix: repair Windows wake runner and clarify preflight failures |
+
+### Status
+
+[OK] **Completed**
