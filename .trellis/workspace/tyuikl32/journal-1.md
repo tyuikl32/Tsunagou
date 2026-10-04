@@ -628,3 +628,25 @@ Fixed PS5.1 parsing/native JSON argv and added sanitized interpreter/stage diagn
 ### Status
 
 [OK] **Completed**
+
+
+## Session 26: Simplify host wake guidance from user evidence
+<!-- trellis-session: v=2 fp=a90c51b005a8ed13 -->
+
+**Date**: 2026-10-04
+**Task**: Simplify host wake guidance from user evidence
+**Branch**: `elysia`
+
+### Summary
+
+Shortened hook/template guidance; unsupported is tool-path specific. Documented historical OpenCode CLI and DSH original-window operations without adding executors. Reference file unchanged by SHA256. Independent review and 3 stdio + 9 template tests, types/lint/docs pass. No runtime reload/live wake; acceptance task remains open.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ea3dbf1` | fix: simplify wake hints and scope unsupported guidance |
+
+### Status
+
+[OK] **Completed**
