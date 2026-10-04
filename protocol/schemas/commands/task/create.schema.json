@@ -17,7 +17,38 @@
       "minLength": 1
     },
     "execution_scope": {
-      "type": "object"
+      "description": "Required. Where this task may work. Two legal shapes: {\"roots\": [root_id, ...]} claims whole registered roots, and {\"resources\": [{kind:\"path\", root_id, segments, mode:\"read\"|\"consistent_read\"|\"exclusive_write\"} | {kind:\"named\", namespace, name}]} claims individual paths or names. The key must be present, and {} is allowed: {} means \"no explicit restriction\". A {} scope claims no path, so begin prepares no workspace and takes no reservation, and the task is reported as not needing a workspace; the workspace resolver's fallback would inherit every root already registered on this project, but no begin reaches that fallback without a path claim.",
+      "type": "object",
+      "examples": [
+        {
+          "roots": [
+            "coordination"
+          ]
+        },
+        {
+          "resources": [
+            {
+              "kind": "path",
+              "root_id": "coordination",
+              "segments": [
+                "src",
+                "app.py"
+              ],
+              "mode": "exclusive_write"
+            }
+          ]
+        },
+        {
+          "resources": [
+            {
+              "kind": "named",
+              "namespace": "build",
+              "name": "queue"
+            }
+          ]
+        },
+        {}
+      ]
     },
     "required_contract_ids": {
       "type": "array",
@@ -36,6 +67,7 @@
   },
   "required": [
     "title",
-    "objective"
+    "objective",
+    "execution_scope"
   ]
 }

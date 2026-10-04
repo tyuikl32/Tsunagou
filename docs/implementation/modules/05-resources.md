@@ -6,7 +6,7 @@
 
 每条占用包含 reservation_id、task_id、attempt_id、owner_agent_id、execution_epoch、scope_digest、resources、status、created_at、released_at、release_reason。status 只有 active/released；内部时间为 UTC 毫秒，查询输出 RFC3339 毫秒。没有 TTL、到期、续租、模型 heartbeat 或资源等待队列。
 
-占用由 task.begin 根据 main 已确认的 execution_scope 一次创建。Worker 不重复声明范围，也不能通过 begin 增加文件路径。空 scope 表示非文件任务；仅 named 资源不制造工作区。
+占用由 task.begin 根据 main 已确认的 execution_scope 一次创建。Worker 不重复声明范围，也不能通过 begin 增加文件路径。空 scope 与仅 named 资源的 scope 都不制造工作区、不产生占用；空 scope 的语义是"不额外限制"（它不声明 path，任务描述也报"不需要工作区"），必填不等于禁止为空。
 
 占用是协调中心内的权限记录，不是操作系统文件锁。Full Access Agent 或用户手工写入的责任由实际观察和主 Agent 判断，系统不猜测写入者。
 

@@ -38,7 +38,7 @@ def clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         main, _ = runtime.enroll("main")
         worker, _ = runtime.enroll("worker")
         runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
-        task = runtime.call("task.create", {"title": "resume later", "objective": "never revive a grant"}, main)
+        task = runtime.call("task.create", {"title": "resume later", "objective": "never revive a grant", "execution_scope": {}}, main)
         runtime.call("task.ready", {"task_id": task["task_id"]}, main)
         runtime.call("task.publish", {"task_id": task["task_id"]}, main)
         claim = runtime.call(

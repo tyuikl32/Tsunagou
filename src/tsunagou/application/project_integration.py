@@ -128,7 +128,7 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
    主 Agent 与用户把目标谈清楚后，用 `user_decision.propose` 提一条决定（`kind=project.objective`、
    `summary` 写目标本身、`choices` 给出可选答复）；用户确认后那句才是项目目标，界面也才显示它。
    在那之前不要把占位句当目标复述，也不要替用户宣称目标已经确定。
-4. 读取任务的当前 revision 后调用 `task.begin`，成功才获得当前 scope 的执行授权；`task.submit` 自动收集结果并释放占用。
+4. 读取任务的当前 revision 后调用 `task.begin`，成功才获得当前 scope 的执行授权；`task.submit` 自动收集结果并释放占用。文件任务的执行范围由主 Agent 在发布前写进 `execution_scope`；两个任务会碰同一批文件时，先谈妥一条契约再开工 —— 不声明范围不等于不会撞。
    Full Access 宿主不等于获得 Tsunagou scope，也不等于 OS 沙箱。
 5. 认知报告、契约接受、消息 ACK、Task 完成和 Project 完成是不同事实；ACK 不表示同意，项目完成必须由用户确认。
 6. 上游决定阻塞时调用 `task.block` 保存进展、释放占用并结束本轮；不相交的任务可以继续。
@@ -170,6 +170,7 @@ bridge, or onboarding skill and it grants no permission.
 2. Ask the bridge for the current project/Agent/session context; `ticket_issued` is not ready.
 3. Read the incremental inbox and blackboard on each turn and at every natural break (a finished sub-step,
    a build or a test run). A worker calls task.begin on eligible published work and uses the returned Attempt.
+   A file task's execution_scope is main's decision and is written before publication; when two tasks would touch the same files, main settles a contract first.
    Main handles routine worker requests under existing authorization: check duplicates, publish work or reply with a concrete reason.
    Reading or ACK alone is not a response.
 4. Follow the main/worker/user boundaries, Full Access limitation, Git ownership, and recovery rules in the context file.
@@ -192,7 +193,7 @@ The main Agent proactively handles routine worker requests: check existing work,
 Do not ask the user to authorize ordinary scheduling again.
 Enrolling a **new** Agent (a new host conversation joining this project) is not ordinary scheduling: the user decides it.
 Do not invite, ticket or enroll one on your own initiative; ask the user first, and let them choose the host.
-`task.begin` prepares and starts the owned attempt; `task.submit` captures results and releases it.
+`task.begin` prepares and starts the owned attempt; `task.submit` captures results and releases it. Main writes a file task's `execution_scope` before publishing it, and when two tasks would touch the same files it settles a contract first: an unstated scope is not a protected one.
 Full Access does not expand Tsunagou scope.
 The project goal is agreed with the user, not filled in when the project is created: the `objective` field holds a
 placeholder until the main Agent proposes `user_decision.propose` with `kind=project.objective` and the user confirms it.

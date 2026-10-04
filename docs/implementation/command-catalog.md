@@ -73,7 +73,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| task.create | `/tasks` | M / task.create | title,objective,parent_task_id?,execution_scope?,required_contract_ids?,blocks? | Task draft；parent非终态或明确follow-up |
+| task.create | `/tasks` | M / task.create | title,objective,execution_scope,parent_task_id?,required_contract_ids?,blocks? | Task draft；execution_scope 必填但可为 `{}`（空=不额外限制：不声明 path，begin 不准备 workspace、不产生占用）；parent非终态或明确follow-up |
 | task.create.user | `/control/tasks` | U / — | 同task.create | Task；不自动任命自己owner |
 | task.update_plan | `/tasks/{id}:update-plan` | M / task.coordinate | title?,objective?,required_contract_ids?,reason? | Task；仅无执行的可编辑态 |
 | task.ready | `/tasks/{id}:ready` | M / task.publish | reason? | Task ready；完整结构检查 |
