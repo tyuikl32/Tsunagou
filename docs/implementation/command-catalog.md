@@ -100,6 +100,10 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 |---|---|---|---|---|
 | coordination.plan | `/coordination/plans` | M / coordination.write | objective,assignments,auto_wake? | 原子创建 Task、Assignment、持久通知；依赖读取 Task，唤醒读取 hostwake；不设模型 ready 回执 |
 | coordination.takeover | `/coordination/assignments/{id}:takeover` | M / coordination.write | assignment_id,takeover_reason | 显式 Main 接管；记录原 worker、失败状态证据和原因后才能 claim |
+| coordination.peer_hosts | `/coordination/peer-hosts` | B / coordination.read | — | 本机私有路由与当前认证会话证据形成的宿主摘要；未知不推测，不返回私有连接信息 |
+| coordination.wake_candidates | `/coordination/wake-candidates` | B / message.send | source_command_id | 仅查询调用者原命令产生的定向分派、提交和需要回复的消息引用；不读取对方收件箱 |
+| coordination.wake_status | `/coordination/wake-status` | B / message.send | message_id | 调用者关联消息的最新宿主、投递与响应证据；只读检查，不启动宿主回合 |
+| coordination.wake | `/coordination/wake` | B / message.send | message_id | 显式请求本机原会话补位；持久消息级去重，Codex 双方仅原生通道，外部执行不持有数据库写锁 |
 
 ## 认知与契约
 

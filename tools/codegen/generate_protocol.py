@@ -157,7 +157,7 @@ def main() -> None:
         "export type CommandKind =\n"
         + "".join(f'  | "{name}"\n' for name in sorted(commands))
         + ";\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="\n",
     )
     print(f"generated {len(commands)} command schemas")
 

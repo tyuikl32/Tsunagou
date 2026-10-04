@@ -25,6 +25,10 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
         "objective", "assignments", "auto_wake",
     }),
     "coordination.takeover": frozenset({"assignment_id", "takeover_reason"}),
+    "coordination.peer_hosts": frozenset(),
+    "coordination.wake_status": frozenset({"message_id"}),
+    "coordination.wake_candidates": frozenset({"source_command_id"}),
+    "coordination.wake": frozenset({"message_id"}),
     "project.configure": frozenset({"policy_patch", "reason"}),
     "agent.enroll": frozenset({
         "installation_id", "conversation_evidence", "probe_payload", "client_nonce",
@@ -248,6 +252,13 @@ class CommandDispatcher:
             "command_hash": command_hash,
             "command_id": envelope["command_id"],
         }
+        if command_kind in {"coordination.peer_hosts", "coordination.wake_status", "coordination.wake", "coordination.wake_candidates"}:
+            # Host observation/IPC must not run under the SQLite writer lock.
+            # These handlers revalidate current grants; explicit wake owns its
+            # durable per-message uncertain-outcome fence, independent of command IDs.
+            if principal.replay_only:
+                raise PermissionError("authentication_failed")
+            return DispatchResponse(command_kind, command_hash, handler(envelope["payload"], context))
         def prepare() -> None:
             observer = self.preparers.get(command_kind)
             if observer is not None:

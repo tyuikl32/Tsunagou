@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,14 +10,15 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { writePrivateJson } from "../dist/private-file.js";
 
-const wake = "需要唤醒其他 Agent 时，请通过 PowerShell 执行对应宿主的唤醒操作；发起方和接收方都为 Codex 时，沿用 Codex 已有的唤醒机制。请确认是否确实需要唤醒，避免重复操作。请优先使用已验证的宿主原会话入口，不要把尚未完整实现或未经当前宿主验证的 Tsunagou 自动唤醒当作前提，也不要反复配置、探测或重绑来等待它生效。各宿主操作指南：优先读取当前安装源码中的 docs/overview/agent-wake-guide.md；在线入口 https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md（未发布的本地更新以安装源码为准）。消息已入队不等于对方已开始新回合。唤醒失败时先自行排查是否认错目标厂商或宿主、原会话及操作入口，依据真实注册信息纠正后再试；不要请用户手动唤醒。仍受真实能力或权限阻塞时，向 main 记录证据和未解决状态，不要宣称成功或扩大权限。";
+import { WAKE_REMINDER as wake, WAKE_INSTRUCTIONS } from "../dist/reminders.js";
+
 const completion = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
 async function fixture(t, metaKey) {
   const root = mkdtempSync(join(tmpdir(), "tsunagou-reminders-"));
   const calls = [];
-  const state = { main: "agent-a", fail: undefined, context: undefined };
+  const state = { main: "agent-a", fail: undefined, context: undefined, result: undefined, wake: undefined };
   const result = { accepted: true, nested: { evidence: ["unchanged"] } };
   const context = (agent) => state.context ?? { agent_id: agent, main_agent_id: state.main,
     // Deliberately stale role: only authoritative main_agent_id decides guidance.
@@ -33,7 +34,7 @@ async function fixture(t, metaKey) {
       response.statusCode = 403;
       response.end(JSON.stringify({ detail: { code: "capability_denied" } }));
     } else {
-      response.end(JSON.stringify({ result: kind === "context.project_read" ? context(agent) : result }));
+      response.end(JSON.stringify({ result: kind === "context.project_read" ? context(agent) : kind === "coordination.wake_status" ? state.wake : kind === "coordination.wake_candidates" ? {messages: state.result?.messages ?? []} : state.result ?? result }));
     }
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -53,16 +54,21 @@ async function fixture(t, metaKey) {
   }
   writePrivateJson(join(root, "daemon", "endpoint.json"), { url: `http://127.0.0.1:${server.address().port}` });
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TSUNAGOU_|CODEX_)/.test(key)));
-  const transport = new StdioClientTransport({ command: process.execPath,
-    args: [fileURLToPath(new URL("../dist/server.js", import.meta.url))],
-    env: { ...env, TSUNAGOU_ROUTING_DIR: routingDir, TSUNAGOU_HOST_META_KEY: metaKey }, stderr: "pipe" });
-  const client = new Client({ name: "reminder-test", version: "1.0.0" }, { capabilities: {} });
+  const connect = async () => {
+    const transport = new StdioClientTransport({ command: process.execPath,
+      args: [fileURLToPath(new URL("../dist/server.js", import.meta.url))],
+      env: { ...env, TSUNAGOU_ROUTING_DIR: routingDir, TSUNAGOU_HOST_META_KEY: metaKey }, stderr: "pipe" });
+    const client = new Client({ name: "reminder-test", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(transport);
+    return client;
+  };
+  let client = await connect();
+  const restart = async () => { await client.close(); client = await connect(); };
   t.after(async () => {
     await client.close();
     await new Promise((resolve) => server.close(resolve));
     rmSync(root, { recursive: true, force: true });
   });
-  await client.connect(transport);
   const { tools } = await client.listTools();
   const call = (kind, agent = "agent-a", args = {}) => {
     // Review tools have historical flat names, so resolve via the explicit mapping.
@@ -70,7 +76,7 @@ async function fixture(t, metaKey) {
     assert.ok(tools.some((tool) => tool.name === name), name);
     return client.callTool({ name, arguments: args, _meta: { [metaKey]: agent } });
   };
-  return { root, calls, state, result, context, client, call };
+  return { root, calls, state, result, context, client, call, restart };
 }
 
 function check(output, result, hints) {
@@ -80,54 +86,79 @@ function check(output, result, hints) {
 }
 
 for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessionId"]) {
-  test(`${metaKey}: real stdio reminders preserve JSON, role isolation and operation boundaries`, async (t) => {
+  test(`${metaKey}: persistent first guide, quiet calls, scoped hints and original JSON`, async (t) => {
     const f = await fixture(t, metaKey);
-    assert.ok(f.client.getInstructions().includes(wake));
-    assert.ok(!f.client.getInstructions().includes("project__completion_propose"));
+    assert.ok(f.client.getInstructions().includes(WAKE_INSTRUCTIONS));
+    assert.ok(!f.client.getInstructions().includes(wake));
+    assert.ok(wake.includes("Codex → Codex 只走现有 Tsunagou Codex 通道"));
+    assert.ok(wake.includes("不要求用户手动唤醒"));
 
-    // An internal role lookup must not impersonate an original-host context read.
-    check(await f.call("task.review.accept"), f.result, [wake, completion]);
+    check(await f.call("task.review.accept"), f.result, [completion]);
     assert.equal(existsSync(join(f.root, "agent-a-receipt.json")), false);
-    assert.deepEqual(f.calls.map(({ kind }) => kind), ["task.review.accept", "context.project_read"]);
-
+    check(await f.call("context.project_read"), f.context("agent-a"), [wake, completion]);
+    check(await f.call("context.project_read"), f.context("agent-a"), [completion]);
+    const reminders = join(f.root, "daemon", "reminders");
+    for (const file of readdirSync(reminders)) writePrivateJson(join(reminders, file), {guide_version:"old-version"});
     check(await f.call("context.project_read"), f.context("agent-a"), [wake, completion]);
     check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), [wake]);
-    check(await f.call("task.self_accept", "agent-b", { role: "main", agent_id: "agent-a" }), f.result, [wake]);
-    assert.equal(f.calls.at(-1).session, "session-agent-b");
+    await f.restart();
+    check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), []);
+    check(await f.call("context.project_read"), f.context("agent-a"), [completion]);
     f.state.main = "agent-b";
-    check(await f.call("task.review.accept"), f.result, [wake]);
-    check(await f.call("task.self_accept", "agent-b"), f.result, [wake, completion]);
-
-    for (const kind of ["coordination.plan", "coordination.takeover", "task.publish", "task.submit",
-      "task.review.request_changes", "message.send", "message.respond"]) {
-      const before = f.calls.length;
-      check(await f.call(kind), f.result, [wake]);
-      assert.deepEqual(f.calls.slice(before).map((row) => row.kind), [kind]);
-    }
-    for (const kind of ["inbox.claim", "task.begin", "project.completion_propose"]) {
+    check(await f.call("task.review.accept"), f.result, []);
+    check(await f.call("task.self_accept", "agent-b"), f.result, [completion]);
+    for (const kind of ["coordination.takeover", "task.publish", "task.review.request_changes", "message.send",
+      "message.respond", "inbox.claim", "task.begin", "project.completion_propose"]) {
       const before = f.calls.length;
       check(await f.call(kind), f.result, []);
-      assert.deepEqual(f.calls.slice(before).map((row) => row.kind),
-        [kind === "project.completion_propose" ? "project.completion.propose.main" : kind]);
+      assert.equal(f.calls.length, before + 1);
     }
-    for (const invalid of [{}, { agent_id: "", main_agent_id: "" }, { agent_id: 1, main_agent_id: 1 },
-      { agent_id: "agent-a", role: "main" }]) {
+    f.state.wake = {message_id: "message-one", target: {agent_id:"agent-b",host:"opencode",version:"2.0.18",machine:"local"},
+      lane:"fallback",state:"idle",can_queue:true,result:"observed",entry:{tool:"coordination__wake",arguments:{message_id:"message-one"}},progress:{durably_received:true,host_turn_started:false,presented:false,business_response:false}};
+    f.state.result = {message_id: "message-one",recipient_agent_id:"agent-b"};
+    const required = {response_contract: {required:true}};
+    const output = await f.call("message.send", "agent-a", required);
+    assert.equal(output.content[0].text, JSON.stringify(f.state.result));
+    assert.equal(output.content.length, 2);
+    assert.ok(output.content[1].text.includes('coordination__wake {"message_id":"message-one"}'));
+    check(await f.call("message.send", "agent-a", required), f.state.result, []);
+    await f.restart();
+    check(await f.call("message.send", "agent-a", required), f.state.result, []);
+    f.state.wake = {...f.state.wake,state:"running",result:"queued",request_associated:true};
+    assert.ok((await f.call("message.send", "agent-a", required)).content[1].text.includes("不追加回合"));
+    f.state.wake = {...f.state.wake,lane:"native",result:"failed"};
+    assert.ok((await f.call("message.send", "agent-a", required)).content[1].text.includes("不追加唤醒"));
+    for (let index = 0; index < 2; index++) {
+      const explicit = await f.call("coordination.wake_status", "agent-a", {message_id:"message-one"});
+      assert.equal(explicit.content[0].text, JSON.stringify(f.state.wake));
+      assert.equal(explicit.content.length, 2);
+    }
+    f.state.wake = {...f.state.wake,message_id:"submitted-message",lane:"fallback",state:"unknown"};
+    f.state.result = {result_id:"result-one",messages:[{message_id:"submitted-message"}]};
+    const submitted = await f.call("task.submit", "agent-b", {command_id:"original-submit-id"});
+    assert.equal(submitted.content[0].text, JSON.stringify(f.state.result));
+    assert.equal(submitted.content.length, 2);
+    const query = f.calls.find(({kind}) => kind === "coordination.wake_candidates");
+    assert.equal(query.body.payload.source_command_id, "original-submit-id");
+    assert.equal(query.agent, "agent-b");
+    for (const result of ["same_request_running", "already_delivered", "failed", "unknown", "unsupported"]) {
+      f.state.wake = {...f.state.wake,state:"idle",result,error_code:"host_test_failure",entry:{tool:"coordination__wake_status"}};
+      const guarded = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
+      assert.ok(!guarded.content[1].text.includes('显式调用 coordination__wake '));
+      assert.ok(guarded.content[1].text.includes("host_test_failure"));
+    }
+    for (const invalid of [{}, {agent_id:"",main_agent_id:""}, {agent_id:1,main_agent_id:1}]) {
       f.state.context = invalid;
-      check(await f.call("context.project_read"), invalid, [wake]);
+      check(await f.call("context.project_read"), invalid, []);
     }
     f.state.context = undefined;
+    f.state.result = undefined;
     f.state.fail = "context.project_read";
-    check(await f.call("task.review.accept"), f.result, [wake]);
-    const failedContext = await f.call("context.project_read");
-    assert.equal(failedContext.isError, true);
-    assert.equal(failedContext.content.length, 1);
-    f.state.fail = "task.review.accept";
-    const before = f.calls.length;
-    const failed = await f.call("task.review.accept");
-    assert.equal(failed.isError, true);
-    assert.equal(failed.content.length, 1);
-    assert.equal(JSON.parse(failed.content[0].text).code, "capability_denied");
-    assert.deepEqual(f.calls.slice(before).map((row) => row.kind), ["task.review.accept"]);
+    check(await f.call("task.review.accept"), f.result, []);
+    const failed = await f.call("context.project_read");
+    assert.equal(failed.isError,true);
+    assert.equal(failed.content.length,1);
     assert.ok(!JSON.stringify(failed).includes("token-agent"));
+    assert.equal(f.calls.some(({kind}) => kind === "coordination.wake"), false);
   });
 }

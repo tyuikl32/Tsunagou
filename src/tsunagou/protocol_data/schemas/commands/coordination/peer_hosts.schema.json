@@ -1,0 +1,9 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/coordination.peer_hosts",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {},
+  "required": [],
+  "title": "CoordinationPeer_HostsPayload",
+  "type": "object"
+}

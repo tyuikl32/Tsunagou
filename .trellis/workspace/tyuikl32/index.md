@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
-- **Last Active**: 2026-10-03
+- **Total Sessions**: 22
+- **Last Active**: 2026-10-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~521 | Active |
+| `journal-1.md` | ~553 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-10-04 | On-demand wake guidance and authenticated host assistance | - | `elysia` |
 | 21 | 2026-10-03 | Wake reminder operational guidance | - | `elysia` |
 | 20 | 2026-10-03 | Agent reminder hooks implemented | - | `elysia` |
 | 19 | 2026-09-28 | OpenCode 11 baseline live + merged-tree retest | `e29a2ae` | `elysia` |

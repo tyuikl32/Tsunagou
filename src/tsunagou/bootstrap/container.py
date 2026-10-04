@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from tsunagou.api.app import create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.application.handlers import Handler, build_handlers
+from tsunagou.application.wake_assistance import WakeAssistance
 from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.hostwake import (
     DesktopAttachProvider,
@@ -171,6 +172,17 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
     if wake_dispatcher is not None:
         dispatcher.record_failure = wake_dispatcher.record_command_failure
     preparers: dict[str, Handler] = {}
+    assistance = None
+    if state_path is not None and project_root is not None:
+        def run_host_assistance(action: str, **kwargs: Any) -> dict[str, Any]:
+            from tsunagou.application.host_wake_runner import run_host_operation
+            return run_host_operation(action, **kwargs)
+
+        assistance = WakeAssistance(
+            authority=authority, messages=messages, project_id=project_id or "local-project",
+            project_root=Path(project_root), state_dir=state_path, database=database,
+            native=wake_dispatcher, runner=run_host_assistance,
+        )
     for command_kind, handler in build_handlers(
         authority=authority, tasks=tasks, cognition=cognition, messages=messages,
         resources=resources, workspaces=workspaces, lifecycle=lifecycle,
@@ -181,7 +193,7 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         checkpoint_worker=checkpoint_worker,
         project_root=project_root, artifact_root=str(state_path.parent / "artifacts") if state_path else None,
         project_registry=project_registry,
-        artifacts=artifacts, preparers=preparers,
+        artifacts=artifacts, preparers=preparers, wake_assistance=assistance,
     ).items():
         dispatcher.register(command_kind, handler)
     for command_kind, prepare in preparers.items():

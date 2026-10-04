@@ -1,3 +1,30 @@
+# v2 implementation evidence — 2026-10-04
+
+## Delivered
+- Four authenticated coordination entries: peer_hosts, wake_candidates, wake_status, wake. No sender/session/endpoint override arguments.
+- Real private host route/session binding, current grants and epochs; short committed-state snapshots with host I/O outside database locks.
+- Shared recipient lock fences native and explicit fallback; durable message journal precedes side effects, unknown outcomes do not repeat. Corrupt journal fails closed.
+- OpenCode 2.0.18 CLI and running-service verification, fixed packaged PowerShell runner using host-owned authentication, original session and actual directory checks. DSH forms return explicit unsupported.
+- Full guide once per project/Agent/version across restart; later compact message/state reminders respect backend executable entry. Original business JSON unchanged.
+- Existing main completion reminder preserved for every project's authenticated main; no automatic proposal or user confirmation.
+- Command policy, request Schema, OpenAPI/generated artifacts, project context template, guide, specs and quick-start synchronized.
+
+## Validation
+Parent final combined Python run: 151 passed across wake assistance, real PowerShell mock-host runner, template, hostwake, all protocol tests, Desktop wake integration and M1 runtime flow. Existing FastAPI lifecycle deprecation warnings remain unrelated.
+
+Parent final JavaScript run: 104 Vitest tests passed across frontend and adapters. Bridge credentials/arrival regression: 38 tests passed plus both late-ticket smoke variants. Implementer and independent reviewer also passed all 3 real stdio reminder suites (Codex/OpenCode/DSH metadata), workspace type checks, targeted Python Ruff/mypy and docs validation. Wheel built and inspected for both runner .py and .ps1. Protocol regeneration checks passed.
+
+Independent reviewer resolved and rechecked uncommitted-state visibility, unknown machine misclassification, misleading repeated wake advice, prior-journal retry entry and formatting. No blocking code findings remain.
+
+## Controlled live evidence and limits
+See [live-opencode-evidence.json](live-opencode-evidence.json) and [acceptance record](../../../docs/acceptance/agent-wake-assistance-2026-10-04.md). Synthetic authenticated Worker identities drove one real disposable OpenCode original session: idle -> queued -> one user input and one assistant execution. Default provider returned provider.auth 403, so no business response. Repeated status/wake and an actual bearer-authenticated duplicate check returned request_already_delivered; no new user input. Not an enrolled production project end-to-end test. DSH live wake not claimed.
+
+The attempted combined cleanup of the disposable host session and temporary directory was rejected by automatic approval review (only reason returned: blocked by policy). No bypass or deletion retry; isolated artifacts remain. No Git commit/push, active host reconfiguration, enrollment or project refresh was performed. The task remains for user review; no formal project completion proposal is issued from an unenrolled source checkout.
+
+---
+
+The following v1 evidence is retained only as history; current behavior is defined above and in approved-v2.md.
+
 # Implementation evidence — 2026-10-03
 
 ## Delivered

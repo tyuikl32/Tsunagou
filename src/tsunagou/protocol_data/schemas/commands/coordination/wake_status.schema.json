@@ -1,0 +1,16 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/coordination.wake_status",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "message_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id"
+  ],
+  "title": "CoordinationWake_StatusPayload",
+  "type": "object"
+}

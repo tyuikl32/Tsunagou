@@ -1,8 +1,8 @@
 {
   "id": "agent-reminder-hooks",
   "name": "agent-reminder-hooks",
-  "title": "Agent coordination reminder hooks",
-  "description": "Implement reminder-only wake guidance and main completion proposal guidance in shared bridge and generated context.",
+  "title": "On-demand Agent reminders and host wake assistance",
+  "description": "Implement persistent on-demand reminder hooks and authenticated message-scoped local host assistance; preserve native Codex lane and main completion reminder.",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "v2 implemented and independently reviewed; controlled OpenCode original-session drive verified, provider 403 prevented business response. DSH explicit downgrade. Uncommitted user review; no project completion claim.",
   "meta": {}
 }

@@ -1,0 +1,14 @@
+{
+  "project_agents": "synthetic authenticated worker fixture; no live enrollment",
+  "admission": "queued",
+  "checked_utc": "2026-10-04T07:55:36.1860391Z",
+  "duplicate_result": "request_already_delivered",
+  "version": "2.0.18",
+  "provider_error": "provider.auth 403: default free model refused external client",
+  "business_reply": false,
+  "user_message_count": 1,
+  "initial_state": "idle",
+  "assistant_execution_count": 1,
+  "host": "opencode",
+  "bearer_authenticated_duplicate_check": true
+}

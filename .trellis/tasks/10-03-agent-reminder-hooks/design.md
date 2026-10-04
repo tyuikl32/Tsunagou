@@ -1,18 +1,21 @@
 # Design
 
-## Boundary
-Reminder rendering lives at shared MCP presentation boundary, not domain mutation handlers or host wake providers. Centralize pure rules in bridge-server; append extra text blocks after original JSON. Add wake text to initialization instructions and generated project context. Existing protocols/domain records unchanged.
+The authoritative scope is [approved-v2.md](approved-v2.md); concrete tradeoffs are in [implementation-v2.md](implementation-v2.md).
 
-## Role source
-Use successful authenticated context.project_read output: compare agent_id and main_agent_id; never use tool args or a global previous caller. For post-acceptance reminders obtain fresh context with same per-request configuration/session; optional role lookup failure must not change a successful mutation result. Context reads use own result. No cached global main role.
+## Presentation
+Shared bridge rules append text after unchanged business JSON. Authenticated context supplies current main identity. A private project/Agent/version record survives bridge restart; message/state fingerprints suppress repeated incidental hints. Explicit status queries stay fresh. Static context and MCP instructions point to the guide.
 
-Internal role lookup passes `observeContext=false` to avoid writing the console's original-chat arrival receipt; it is not an Agent-originated context read.
+## Authenticated explicit operation
+coordination.peer_hosts provides safe host facts. coordination.wake_candidates correlates successful business commands to concrete authorized recipients. coordination.wake_status observes one authorized message; coordination.wake explicitly invokes the packaged PowerShell-backed runner. The hook never invokes wake. Raw shell calls cannot prove the initiating conversation, so MCP authentication is retained instead of exposing credentials or transferable intent tickets.
 
-## Events
-Wake guidance: context.project_read, coordination.plan, coordination.takeover, task.publish, task.submit, task.review.accept, task.review.request_changes, task.self_accept, message.send and message.respond, successful results only. Completion guidance: context.project_read, task.review.accept and task.self_accept, authenticated current main only. Text is conditional; no inference of project completion from one task. Static shared context must not give workers the main-only action.
+The backend verifies current grants, message association, target binding and private local route records. It exposes no recipient inbox, raw host conversation ID, endpoint or credential. Host I/O occurs outside SQLite write transactions. Shared recipient serialization and a durable per-message reservation fence native and fallback operations. Unknown outcomes require observation, not repeat dispatch.
 
-## Compatibility
-Hints perform no shell commands, new messages, retries or wake calls. Preserve response JSON and error guidance. Template refresh uses existing bootstrap flow, preserving user content. Docs describe reminder-only guarantees and BOTH-Codex exception.
+## Routing and evidence
+Codex to Codex returns only the native lane. Other verified local combinations are eligible only when an existing lane does not own delivery. OpenCode requires the installed verified version and a proven original session. Host session location is distinct from the coordination root, supporting worktrees. Unverified DSH forms return unsupported.
 
-## Follow-up: actionable wake guidance
-Keep the inline hint compact with an explicit warning that Tsunagou auto-wake is not a reliable prerequisite. Add a focused source runbook with Codex/OpenCode/DeepSeek sections and pointers to existing operational evidence. Include a source-relative guide path plus repository fallback in the shared hint; generated context can expose its resolved installed-source docs path. The unpublished working-tree guide is authoritative until published, so do not claim the remote URL already contains it. No unverified universal resume command, secret-bearing endpoint example or recovery loop. Host guidance must preserve the original conversation and validate actual turn/presentation rather than queued delivery.
+Runtime state and queue support are independent. Queue admission, turn start, presentation and related reply are separate facts. No last-active-time inference or interpretation of conversational completion.
+
+## Main reminder and failures
+Compare agent_id and main_agent_id from current authenticated context. Context reads and successful review/self acceptance retain conditional completion proposal guidance for each project's main. Internal role lookup does not write console arrival receipts. Workers receive no directed completion proposal instruction; user confirmation is unchanged.
+
+On failure verify host, version, machine and original session first. Observe unknown outcomes; stop unsupported paths. Workers escalate unresolved evidence to main once; main retains blockers without requiring manual user wake. Existing native provider behavior and project switches remain unchanged. Bootstrap refresh updates generated context; long instructions stay in docs and stable operations in scripts.

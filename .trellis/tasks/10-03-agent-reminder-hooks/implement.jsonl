@@ -3,3 +3,4 @@
 {"file":".trellis/spec/backend/quality-guidelines.md","reason":"Validation gates"}
 {"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Presentation boundary and ownership"}
 {"file": ".trellis/spec/adapters/reminder-hooks.md", "reason": "Approved reminder-only presentation contract"}
+{"file": ".trellis/tasks/10-03-agent-reminder-hooks/approved-v2.md", "reason": "Approved v2 requirements override v1"}

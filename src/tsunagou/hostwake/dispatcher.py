@@ -100,6 +100,7 @@ class WakeDispatcher:
         self._recipient_locks: dict[str, threading.RLock] = {}
         # Bound by HostDeliveryWorker to committed, recipient-scoped deliveries.
         self.deliveries_acked: Callable[[str, tuple[str, ...]], bool] | None = None
+        self.manual_delivery: Callable[[str], dict[str, Any] | None] | None = None
         self._stop = threading.Event()
         self._last_unknown_sweep = 0.0
         self._load()
@@ -115,9 +116,11 @@ class WakeDispatcher:
     ) -> dict[str, Any]:
         """Persist dispatch identity before RPC; serialize only this recipient."""
         key = self._key(recipient_agent_id, message_id)
-        with self._lock:
-            recipient_lock = self._recipient_locks.setdefault(recipient_agent_id, threading.RLock())
-        with recipient_lock:
+        with self.recipient_lock(recipient_agent_id):
+            if self.manual_delivery is not None:
+                manual = self.manual_delivery(message_id)
+                if manual is not None:
+                    return manual
             already_acked = (self.deliveries_acked(recipient_agent_id, (message_id,))
                              if self.deliveries_acked is not None else False)
             with self._lock:
@@ -207,6 +210,11 @@ class WakeDispatcher:
                     self._degrade_binding(recipient_agent_id, str(result["error_code"]))
                 self._ensure_watcher(key, result)
                 return dict(result)
+
+    def recipient_lock(self, agent_id: str) -> threading.RLock:
+        """One host lane across native delivery and explicitly requested assistance."""
+        with self._lock:
+            return self._recipient_locks.setdefault(agent_id, threading.RLock())
 
     @staticmethod
     def _request(item: dict[str, Any], binding: Any) -> HostWakeRequest:

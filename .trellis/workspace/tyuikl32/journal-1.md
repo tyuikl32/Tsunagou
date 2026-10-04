@@ -519,3 +519,35 @@ Enhanced first hook with source-local host guide and failure self-investigation;
 ### Status
 
 [OK] **Completed**
+
+
+## Session 22: On-demand wake guidance and authenticated host assistance
+<!-- trellis-session: v=2 fp=6f9a16c2fb81115d -->
+
+**Date**: 2026-10-04
+**Task**: On-demand wake guidance and authenticated host assistance
+**Branch**: `elysia`
+
+### Summary
+
+Implemented approved v2 hooks, authenticated peer/message wake entries, native Codex fencing, PowerShell OpenCode 2.0.18 runner and explicit DSH downgrade. 151 Python tests, 104 Vitest, 38 credential tests plus stdio and smoke checks passed. Controlled real OpenCode original session drove once; provider 403 blocked business reply. Independent review passed; no Git commit or deployment.
+
+### Main Changes
+
+- Persistent first-guide and message-state dedup; worker-to-worker explicit message-scoped wake; preserved main-only completion reminders.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Controlled real host + synthetic project auth clearly separated in acceptance evidence; retry produced no second input.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- User review of uncommitted implementation; real enrolled-project business response remains unverified.

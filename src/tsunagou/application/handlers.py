@@ -198,6 +198,7 @@ def build_handlers(
     coordination: CoordinationService | None = None,
     artifacts: ArtifactService | None = None,
     preparers: dict[str, Handler] | None = None,
+    wake_assistance: Any | None = None,
 ) -> dict[str, Handler]:
     tasks = tasks if tasks is not None else TaskService()
     cognition = cognition if cognition is not None else CognitionService()
@@ -1123,6 +1124,13 @@ def build_handlers(
         )
         return {"message_id": message.message_id, "recipient_agent_id": recipient_agent_id}
 
+    def assist_wake(payload: dict[str, Any], context: dict[str, Any], action: str) -> dict[str, Any]:
+        _authorize(context, "coordination.read" if action == "peers" else "message.send")
+        if wake_assistance is None:
+            raise RuntimeError("host_assistance_unavailable")
+        result: dict[str, Any] = getattr(wake_assistance, action)(payload, context)
+        return result
+
     def message_respond(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "message.respond")
         obligation_id = _required_str(payload, "obligation_id")
@@ -1347,6 +1355,10 @@ def build_handlers(
         "message.respond": message_respond,
         "coordination.plan": coordination_plan,
         "coordination.takeover": coordination_takeover,
+        "coordination.peer_hosts": lambda payload, context: assist_wake(payload, context, "peers"),
+        "coordination.wake_status": lambda payload, context: assist_wake(payload, context, "status"),
+        "coordination.wake_candidates": lambda payload, context: assist_wake(payload, context, "candidates"),
+        "coordination.wake": lambda payload, context: assist_wake(payload, context, "wake"),
         "context.project_read": context_project_read,
         "user_decision.propose": user_decision_propose,
         "user_decision.resolve": user_decision_resolve,

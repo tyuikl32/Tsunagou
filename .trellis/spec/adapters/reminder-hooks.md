@@ -1,34 +1,40 @@
-# Reminder-only coordination hooks
+# On-demand coordination guidance and explicit local wake
 
 ## 1. Scope / Trigger
-Shared bridge MCP presentation and generated project context carry advisory wake/completion guidance for Codex, OpenCode and DeepSeek Harness. Domain commands, wake providers and user confirmation permissions remain unchanged.
+Shared bridge guidance is presentation-only. Explicit authenticated status/wake commands fill same-machine gaps, not a second automatic scheduler. Codex-to-Codex stays on the existing Tsunagou native lane; completion proposal/user-confirmation boundaries remain unchanged.
 
 ## 2. Signatures
-`tools/call` returns its original JSON in `content[0].text`; reminders are additional `{type: "text", text: ...}` items. `context.project_read` supplies authenticated `agent_id` and `main_agent_id`. No new command, argument, response JSON field or environment option is introduced.
+`coordination.wake_status` and `coordination.wake` take only `message_id`; MCP maps to `coordination__wake_status` / `coordination__wake`. Caller comes from current authentication, never arguments. Original business tool JSON stays `content[0].text`; hints are additional text. Execution entry is an explicit authenticated tool, then trusted packaged PowerShell runner, not a credential-bearing model shell command.
 
 ## 3. Contracts
-- All Agents get wake guidance in MCP instructions/generated context and successful context/coordination/submit/review/message outputs. PowerShell is the reminder default; the Codex-native exception applies only when BOTH sender and recipient are Codex.
-- Wake guidance points to the installed-source host operation runbook (with source-relative/repository fallback for shared MCP). Explicitly state that Tsunagou automatic wake must not be assumed reliable; do not repeatedly configure/probe/rebind it to make progress. Per-host guide steps must distinguish demonstrated native operation from unknown capability, preserve the original conversation, and never equate queued delivery with actual wake. A docs entrypoint is preferable to an invented or unverified command.
-- On failure, guidance must first require checking target host/vendor identification against real registration/host evidence (not model brand, nickname or caller host), original conversation and command, then correcting and verifying. Do not delegate wake back to the user as a manual fallback. Unsupported/permission blockers are recorded honestly for main; no fabricated success or authority expansion.
-- Main-only completion reminder appears after context reads, `task.review.accept` and `task.self_accept`. Compare fresh non-empty authenticated `agent_id` and `main_agent_id`; never trust caller arguments, stale role labels or a process-global previous caller.
-- A role lookup after acceptance uses the same request configuration/session. Internal role reads suppress original-host console arrival receipts (`observeContext=false`); they are not proof that the Agent read its context. Optional reminder lookup failure omits only the completion reminder and preserves successful original output.
-- Main decides whether all work/merge/acceptance is complete and whether a proposal already awaits confirmation. Do not detect business completion by parsing chat or task counts.
-- No reminder-driven shell execution, recipient message, wake, continuation, proposal or confirmation. Existing independent wake behavior is untouched. Static shared instructions must not direct workers to issue project-completion proposals.
+- Peer host evidence uses real local route/session registration and observed host facts. Model brand/nickname/caller host never determine recipient host; unknown/conflicting/stale binding fails closed. Raw host IDs, paths to credentials, endpoints and tokens stay private.
+- Sender-authorized direct/system message only; main is not inbox superuser. Same-machine execution only, no new enrollment or scope expansion.
+- Persistent guide-version presentation is per authenticated project/Agent; restarts do not repeat it. Changed guide version may show once. Dedup same message/state; explicit status always fresh.
+- Later hints: targeted assignment, response_contract.required messages and result submission needing main. Ordinary query/ACK/obligation closure/review do not append wake hints. No natural-language response detection or untargeted publish inference.
+- Native Codex lane respects existing policy and dispatch. Native pending/inflight/unknown work prevents fallback; same recipient serializes across both paths. Persist external attempt before side effect, never replay unknown effects blindly. No host HTTP/process work while holding SQLite write transaction.
+- idle/running from actual current host evidence, can_queue independent. Last activity is not liveness. Same-request running requires correlation. Check unknown state before execution; no busy interruption or approval changes.
+- Four independent progress facts: message durable receipt, actual turn start, recipient presentation, associated response. ACK/exit-zero/queued is not proof of another stage.
+- Explicit wake authenticates and checks message/target, then fixed PowerShell runner. DSH unsupported form is honest supported downgrade; OpenCode must prove original session exists and omit --auto.
+- OpenCode 2.0.18 managed service authentication belongs to installed `opencode api`; direct HTTP and explicit --server are not interchangeable. Verify CLI and service versions, resolve the bound original session and distinguish its directory from project coordination root. No credentials in script args. A queued/delivered input does not prove an associated turn.
+- Failure self-check host/vendor/session/entry first; no request for user manual wake. Stop unsupported path, escalate main once with evidence, no configure/rebind loops.
+- Existing main-only completion hint uses fresh authenticated agent_id == main_agent_id. Internal identity reads must not create original-host arrival receipts. Optional hint failure does not invalidate successful business operation.
 
-## 4. Validation & Error Matrix
-| Condition | Reminder behavior |
+## 4. Validation / Error Matrix
+| Condition | Behavior |
 | --- | --- |
-| Authenticated current main reads context/accepts result | Wake plus conditional completion reminder |
-| Worker, missing/malformed identity or changed main | No completion reminder |
-| Optional role read fails after successful acceptance | Successful JSON and wake hint preserved |
-| Tool fails | Original error guidance, no success hints |
-| Unrelated operation | Original output without post-tool hints |
+| Codex sender + Codex recipient | Native lane only, no fallback wake entry |
+| Unknown/conflicting host or cross-machine | No execution; explicit verification/unsupported reason |
+| Unrelated message / other project / stale identity | Reject without revealing private target data |
+| Native pending/inflight or same request already started | No second host execution |
+| Host status unknown / timeout | Preserve unknown; inspect before another attempt |
+| DSH unverified form/version | Explicit unsupported, no fabricated capability |
+| Ordinary successful query/review/ACK | No wake long text; completion hint unaffected |
 
 ## 5. Good / Base / Bad Cases
-Good: a main receives a reminder to submit a completion proposal if all work is done; user confirms later. Base: worker submits results and receives wake guidance only. Bad: target-only Codex exception; treating `role: main` or tool args as authority; automatic proposal creation.
+Good: worker sends required-response message, checks target, explicitly wakes verified idle peer. Base: DSH unsupported response records a blocker. Bad: raw shell takes sender credentials, duplicate native/fallback dispatch, metadata caches misidentify vendor, CLI --session silently creates replacement.
 
 ## 6. Tests Required
-Exercise actual stdio MCP initialize/tool output, main/worker and shared-session isolation, main handoff, successful operation allowlist, failures and failed optional context lookup. Assert original JSON preservation and no extra mutation commands. Test generated context content and refresh preservation. Mock daemon responses do not prove live-host wake or frontend acceptance.
+Real stdio tests for persistent first-guide dedup across restart, per-Agent isolation, compact trigger selection, explicit fresh lookup and completion regression. Authenticated backend tests for sender/system actor, stale session, foreign project, status distinctions, native fencing, concurrency/crash unknown and no secret leakage. Host fixtures cover versions/missing session/idle/busy/timeout/unsupported. Controlled real OpenCode original-session evidence must be distinguished from domain-auth fixtures; DSH unverified paths remain downgrade.
 
 ## 7. Wrong vs Correct
-Wrong: store `lastRole = args.role` and use it for later callers. Correct: derive the recipient of a main-only hint from the current request's authenticated context. Wrong: run a shell command or submit a proposal in the reminder hook. Correct: append advisory text and leave execution to the Agent.
+Wrong: infer recipient host from model name, or pass arbitrary sender/session-file to PowerShell. Correct: authenticated MCP message entry resolves and fences private host mapping, then runs fixed script. Wrong: repeated context reads emit full wake guide or automatically execute it. Correct: persist first-guide version and return compact advisory only when relevant.

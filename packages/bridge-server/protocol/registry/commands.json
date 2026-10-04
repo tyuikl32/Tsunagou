@@ -382,6 +382,13 @@
       "schema": "commands/contract/withdraw.schema.json",
       "uri": "/contract-proposals/{id}:withdraw"
     },
+    "coordination.peer_hosts": {
+      "payload_fields": [],
+      "principal": "B",
+      "required_fields": [],
+      "schema": "commands/coordination/peer_hosts.schema.json",
+      "uri": "/coordination/peer-hosts"
+    },
     "coordination.plan": {
       "payload_fields": [
         "assignments",
@@ -408,6 +415,39 @@
       ],
       "schema": "commands/coordination/takeover.schema.json",
       "uri": "/coordination/assignments/{id}:takeover"
+    },
+    "coordination.wake": {
+      "payload_fields": [
+        "message_id"
+      ],
+      "principal": "B",
+      "required_fields": [
+        "message_id"
+      ],
+      "schema": "commands/coordination/wake.schema.json",
+      "uri": "/coordination/wake"
+    },
+    "coordination.wake_candidates": {
+      "payload_fields": [
+        "source_command_id"
+      ],
+      "principal": "B",
+      "required_fields": [
+        "source_command_id"
+      ],
+      "schema": "commands/coordination/wake_candidates.schema.json",
+      "uri": "/coordination/wake-candidates"
+    },
+    "coordination.wake_status": {
+      "payload_fields": [
+        "message_id"
+      ],
+      "principal": "B",
+      "required_fields": [
+        "message_id"
+      ],
+      "schema": "commands/coordination/wake_status.schema.json",
+      "uri": "/coordination/wake-status"
     },
     "discrepancy.advance": {
       "payload_fields": [
@@ -1534,6 +1574,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:17c94f00893671a9af7e655cb2f5093fa01619a499f1b5a5ec2adcce5cde7ea3",
+  "schema_bundle_digest": "sha256:e77f31285804c01deeb11fc37670355d5799d39cc0776c01a6b35bd723ae301a",
   "supported_previous_version": "0.9"
 }

@@ -1,12 +1,14 @@
-# Implementation plan
+# Implementation plan — v2
 
-- [x] Implement shared reminder renderer, instructions and per-request role resolution.
-- [x] Update generated project context wake guidance.
-- [x] Add actual stdio response and template regression tests: roles, handoff/isolation, operations, errors, JSON preservation, no extra mutations.
-- [x] Synchronize adapter specs and user docs.
-- [x] Run relevant Python/stdio tests, workspace type checks, docs validator and diff checks.
-- [x] Independent Trellis check and evidence record. No automatic Git commit/publish.
+- [x] Narrow authenticated message-query and explicit PowerShell invocation contract.
+- [x] Backend current message/grant/host identity validation, independent progress facts and native/fallback fencing.
+- [x] Version-gated OpenCode status/wake, original-session checks, DSH unsupported downgrade.
+- [x] Shared bridge persistent guide/state dedup and compact hints; existing main completion reminder preserved.
+- [x] Protocol, wheel packaging, controlled real OpenCode original-session test and regression checks.
+- [x] Independent review, current docs/spec and evidence records.
 
-Rollback: revert only task-owned reminder code/template/docs/test changes. No migration or persisted runtime changes.
+Scope: [approved-v2.md](approved-v2.md). Concrete choices: [implementation-v2.md](implementation-v2.md). Results: [implementation-progress.md](implementation-progress.md).
 
-Code is implemented and reviewed. Original hooks are now in externally created commit c5edb36; the subsequent actionable wake/failure guidance remains uncommitted for user review. See implementation-progress.md for evidence and limits.
+Real host execution reached the default model, which returned provider.auth 403; no business response or live enrolled-project closure is claimed. DSH remains explicitly unsupported. No Git commit, deployment or project bootstrap refresh performed. Task retained for review; code delivery is not a user-confirmed project completion.
+
+Rollback must include the new explicit commands, schemas/generated mappings and host runner as one coherent change. Private per-message execution records must not be deleted to manufacture retry eligibility after an uncertain operation.

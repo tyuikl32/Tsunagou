@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { CredentialHandoff, loadSession, type PersistedSession, type SessionCredential, type TicketFile } from "./credential-handoff.js";
 import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
-import { needsCompletionContext, reminderContent, WAKE_REMINDER } from "./reminders.js";
+import { needsCompletionContext, needsWakeContext, reminderContent, reminderMessageIds, WAKE_INSTRUCTIONS } from "./reminders.js";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -436,6 +436,10 @@ const TOOLS: readonly ToolSpec[] = [
   { name: "decision__propose", command_kind: "user_decision.propose", description: "Propose a decision that requires user input (main-authority only).", inputSchema: { type: "object", required: ["kind", "proposal_ref", "choices", "summary"], properties: { kind: { type: "string" }, proposal_ref: { type: "string" }, choices: { type: "array", items: { type: "object" } }, summary: { type: "string" }, proposal_digest: { type: "string" }, expected_revisions: { type: "object" } }, additionalProperties: false } },
   { name: "project__completion_propose", command_kind: "project.completion.propose.main", description: "Propose project completion for user confirmation (main-authority only).", inputSchema: { type: "object", required: ["objective_ref"], properties: { objective_ref: { type: "string" }, outstanding_summary: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, expected_project_revision: { type: "integer" } }, additionalProperties: false } },
   { name: "coordination__plan", command_kind: "coordination.plan", description: "Create Main-owned task assignments and durable inbox messages.", inputSchema: commandSchema("coordination.plan") },
+  { name: "coordination__peer_hosts", command_kind: "coordination.peer_hosts", description: "Read verified peer host identity facts without private routes or inbox content.", inputSchema: commandSchema("coordination.peer_hosts") },
+  { name: "coordination__wake_candidates", command_kind: "coordination.wake_candidates", description: "Find caller-associated wake notification references for one original command.", inputSchema: commandSchema("coordination.wake_candidates") },
+  { name: "coordination__wake_status", command_kind: "coordination.wake_status", description: "Inspect current host and independent delivery evidence for your associated message. Does not wake.", inputSchema: commandSchema("coordination.wake_status") },
+  { name: "coordination__wake", command_kind: "coordination.wake", description: "Explicitly request a verified same-machine fallback via the fixed PowerShell runner for your associated message. Preserves native Codex-only routing and permissions.", inputSchema: commandSchema("coordination.wake") },
   { name: "coordination__takeover", command_kind: "coordination.takeover", description: "Explicitly let Main take over a worker assignment after recording the reason (main-authority only).", inputSchema: { type: "object", required: ["assignment_id", "takeover_reason"], properties: { assignment_id: { type: "string" }, takeover_reason: { type: "string" } }, additionalProperties: false } },
 ];
 
@@ -778,7 +782,7 @@ async function main(): Promise<void> {
         + "- after finishing a sub-step, a build or a test run. "
         + "Use task__begin before work, task__submit for delivery, task__block before waiting. "
         + "Main handles routine worker requests within existing authorization; only major decisions require the user. "
-        + WAKE_REMINDER,
+        + WAKE_INSTRUCTIONS,
     },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -807,7 +811,7 @@ async function main(): Promise<void> {
       void restoreDesktopBindings();
       if (tool.command_kind === "context.project_read") rememberContracts(result);
       let reminderContext = tool.command_kind === "context.project_read" ? result : undefined;
-      if (needsCompletionContext(tool.command_kind)) {
+      if (needsCompletionContext(tool.command_kind) || needsWakeContext(tool.command_kind, result, args)) {
         try {
           // Re-read with this caller's configuration: role can change between calls.
           reminderContext = await executeTool(cfg, "context.project_read", {}, randomUUID(), false, false);
@@ -815,9 +819,33 @@ async function main(): Promise<void> {
           // Optional guidance must never turn an accepted mutation into an error.
         }
       }
+      let hints: { type: "text"; text: string }[] = [];
+      try {
+        const statuses: unknown[] = [];
+        if (tool.command_kind === "coordination.wake_status" || tool.command_kind === "coordination.wake") {
+          statuses.push(result);
+        } else {
+          let ids = reminderMessageIds(tool.command_kind, result, args);
+          if (tool.command_kind === "task.submit") {
+            const candidates = record(await executeTool(cfg, "coordination.wake_candidates", { source_command_id: commandId }, randomUUID(), false, false));
+            if (Array.isArray(candidates?.messages)) ids = candidates.messages.flatMap((item: unknown) => {
+              const message = record(item);
+              return typeof message?.message_id === "string" ? [message.message_id] : [];
+            });
+          }
+          for (const messageId of ids) {
+            statuses.push(await executeTool(cfg, "coordination.wake_status", { message_id: messageId }, randomUUID(), false, false));
+          }
+        }
+        hints = await reminderContent(tool.command_kind, reminderContext, cfg.daemonStateDir, statuses);
+      } catch {
+        // Presentation and observation failures must preserve the original operation.
+        // Completion guidance remains available even if a status query failed.
+        try { hints = await reminderContent(tool.command_kind, reminderContext, cfg.daemonStateDir); } catch { /* best effort */ }
+      }
       return { content: [
         { type: "text" as const, text: JSON.stringify(result) },
-        ...reminderContent(tool.command_kind, reminderContext),
+        ...hints,
       ] };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
