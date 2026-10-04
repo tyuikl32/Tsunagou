@@ -584,3 +584,25 @@ Implemented approved minimal completion shutdown; shared daemons retained and ch
 ### Next Steps
 
 - Code remains uncommitted for user review; unrelated baseline failures are documented.
+
+
+## Session 24: Default-on native wake and honest hook evidence
+<!-- trellis-session: v=2 fp=0f380bd813fbbf41 -->
+
+**Date**: 2026-10-04
+**Task**: Default-on native wake and honest hook evidence
+**Branch**: `elysia`
+
+### Summary
+
+Unconfigured projects now enable supported native wake by default; explicit false remains respected. Hook reports effective policy/outbox/attempt evidence and unknown turn proof. Independent review passed; 53 Python tests passed with one environment skip, 3 real stdio suites passed, mypy source and workspace checks passed. No live daemon restart; real collaboration acceptance remains open.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b57214` | fix: enable native wake by default and clarify hook execution evidence |
+
+### Status
+
+[OK] **Completed**
