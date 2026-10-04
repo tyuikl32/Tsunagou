@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 
@@ -21,6 +22,7 @@ class RuntimeMaintenance:
         self._thread: threading.Thread | None = None
         self._run_lock = threading.Lock()
         self.last_projection_error: str | None = None
+        self.after_run: Callable[[], None] | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -58,6 +60,8 @@ class RuntimeMaintenance:
                 return checkpoints + self._reconcile_locked()
         finally:
             self._run_lock.release()
+            if self.after_run is not None:
+                self.after_run()
 
     def _reconcile_locked(self) -> int:
         # Jobs describe internal handler execution and retain their own deadlines.

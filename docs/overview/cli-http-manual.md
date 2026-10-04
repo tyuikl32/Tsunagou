@@ -267,6 +267,8 @@ tsunagou project complete COMPLETION_PROPOSAL_ID `
 
 该命令只调用用户控制身份的 `project.completion.confirm`。成功后项目状态立即变为 `completed`，同时创建强制 checkpoint Operation。checkpoint 物化失败不会撤销已经确认的完成事实；应查询 Operation，修复持久化问题后再 retry。
 
+独占 daemon 在本次运行收到完成确认后，等待对应 checkpoint 成功和确认响应发送完毕，再自动退出并释放端口。checkpoint 失败或仍在处理中时保持运行；同一运行期间重试该 Operation 成功后也会退出。多个项目共用的 daemon 不自动停止，仍由用户执行 `daemon stop`。手动重新启动已完成项目不会仅因历史完成状态而自动退出；本规则不改变控制台的浏览和自动启动配置。
+
 ### 6.3 查看 Operation、checkpoint 和恢复状态
 
 ```powershell

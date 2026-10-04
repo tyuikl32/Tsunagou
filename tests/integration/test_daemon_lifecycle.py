@@ -64,10 +64,12 @@ def _run_inside_job(root: Path, report: Path, scenario: str) -> None:
 
         subprocess.Popen = old_flags
     started_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    result = CliRunner().invoke(cli_module.app, ["--project-root", str(root), "daemon", "start", "--host-wake", "disabled"])
+    result = CliRunner().invoke(
+        cli_module.app, ["--project-root", str(root), "daemon", "start", "--host-wake", "disabled", "--port", "0"],
+    )
     report.write_text(json.dumps({"scenario": scenario, "started_at": started_at,
                                  "finished_at": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-                                 "exit_code": result.exit_code, "output": result.output}), encoding="utf-8")
+                                 "exit_code": result.exit_code, "output": result.stdout}), encoding="utf-8")
     # Close the final handle: helper and inherited children die. The new daemon
     # must continue serving HTTP after this process has actually exited.
     kernel.CloseHandle(outer or job)

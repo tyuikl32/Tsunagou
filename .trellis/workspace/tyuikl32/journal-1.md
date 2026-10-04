@@ -551,3 +551,36 @@ Implemented approved v2 hooks, authenticated peer/message wake entries, native C
 ### Next Steps
 
 - User review of uncommitted implementation; real enrolled-project business response remains unverified.
+
+
+## Session 23: Completion-triggered exclusive daemon shutdown
+<!-- trellis-session: v=2 fp=5045f5e4ada5cbfe -->
+
+**Date**: 2026-10-04
+**Task**: Completion-triggered exclusive daemon shutdown
+**Branch**: `elysia`
+
+### Summary
+
+Implemented approved minimal completion shutdown; shared daemons retained and checkpoint failure remains repairable. Task archived without commits.
+
+### Main Changes
+
+- Added response/checkpoint barriers, same-lock registration fence and server-owned graceful exit; synchronized runtime spec and user docs.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 7 new regressions pass including real Windows exit/port/DB-lock release; existing shared daemon and 4 Windows Job tests pass; full Ruff/mypy and docs/protocol/architecture checks pass.
+- [OK] Full pytest: 1032 passed, 8 failures reproduced at unmodified HEAD, 12 skipped. Existing format debt retained; details in archived task implementation-progress.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Code remains uncommitted for user review; unrelated baseline failures are documented.

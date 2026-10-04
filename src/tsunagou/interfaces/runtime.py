@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,11 @@ from tsunagou.platform.telemetry import active_telemetry
 from tsunagou.shared_kernel.digests import canonical_digest
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+
+# The ASGI owner supplies a request-local receipt sink. AnyIO propagates the
+# context into synchronous handlers; the mutable sink also survives send errors.
+# Entries are (operation_id, replayed); none of this enters the wire result.
+completion_receipts: ContextVar[list[tuple[str, bool]] | None] = ContextVar("completion_receipts", default=None)
 
 # Typed-tool payload contract for every command the bridge exposes (and every
 # bootstrap handler). A payload key outside its set is a typed-tool violation:
@@ -309,6 +315,9 @@ class CommandDispatcher:
                 prepare=prepare,
             )
             response_result = stored.result
+            receipts = completion_receipts.get()
+            if command_kind == "project.completion.confirm" and receipts is not None and response_result.get("operation_id"):
+                receipts.append((str(response_result["operation_id"]), stored.replayed))
             if self.checkpoint_worker is not None:
                 # This is beyond the commit/rollback boundary. Filesystem
                 # errors must not restore a pre-command in-memory snapshot.

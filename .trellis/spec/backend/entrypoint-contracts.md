@@ -1,5 +1,45 @@
 # CLI, HTTP and enrollment entrypoint contracts
 
+## Scenario: completion-triggered exclusive daemon shutdown
+
+### 1. Scope / Trigger
+
+Applies to a fresh `project.completion.confirm` committed during this daemon run. Process lifecycle belongs to bootstrap, not domain handlers. No startup scan, historical cleanup, idle timer or console autostart change.
+
+### 2. Signatures
+
+Existing `POST /api/v1/commands/project.completion.confirm` and its `operation_id`/`checkpoint_status` result remain unchanged. CLI daemon start launches a runner owning `uvicorn.Server`; its internal shutdown callback sets `should_exit`. No new public command, schema or migration.
+
+### 3. Contracts
+
+Track the exact completion checkpoint operation in process memory after durable dispatch. Stop only after its succeeded outcome and successful final confirmation response send. Deferred success is observed through existing maintenance; a failed checkpoint keeps the daemon usable for retry. Domain completion remains committed if materialization fails.
+
+Final exclusive-project check and closing transition use the same asyncio lock as project registration. Once closing, refuse registration using the existing registration failure contract. More than one registered project always suppresses automatic shutdown. Request graceful server exit once and reuse existing lifespan cleanup; do not kill a PID or terminate from inside the completion transaction.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Fresh confirmed completion, exact checkpoint succeeds, response sent, one project | Graceful daemon exit |
+| Checkpoint pending or failed | Stay running; retry of that operation may later permit exit |
+| Shared daemon | Stay running regardless of member completion states |
+| Denied/stale/unauthorized confirmation | No shutdown eligibility |
+| Confirmation replay from an earlier daemon run | No historical shutdown eligibility |
+| Registration wins the lock before closing | Preserve newly shared daemon |
+| Closing wins before registration | Registration refused |
+
+### 5. Good/Base/Bad Cases
+
+Good: client receives completion response, then the service PID exits and the port is released. Base: restart a completed project for online inspection and keep it running. Bad: stop after a genesis checkpoint, on `completed` alone, before sending the response, or while another registered project needs the daemon.
+
+### 6. Tests Required
+
+Cover failed checkpoint then successful same-operation retry, delayed success, response barriers, concurrent registration, shared project isolation, denial/replay and restart. Real Windows subprocess coverage must observe service PID exit and bind the released listener port; mocked callbacks alone are insufficient.
+
+### 7. Wrong vs Correct
+
+Wrong: call `taskkill` from the completion handler or scan all completed projects on startup. Correct: associate the new committed command with its checkpoint, wait for response completion, and let bootstrap request the server's existing graceful shutdown after the exclusive-project check.
+
 Current delivery note (2026-09-28): FX1/FX2 are implemented; FX4 runtime/install work is in progress. Independent tickets, private session credentials and epochs are operational. Retain user/main/worker boundaries. Older full-host release requirements below do not block the authorized standalone flow; current interfaces and evidence are in the FX task records.
 
 ## 1. Scope / Trigger

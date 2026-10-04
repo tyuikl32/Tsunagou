@@ -1,0 +1,28 @@
+{
+  "id": "completion-daemon-stop",
+  "name": "completion-daemon-stop",
+  "title": "Stop exclusive daemon after confirmed project completion",
+  "description": "Gracefully stop a single-project daemon after confirmed completion checkpoint succeeds and the confirmation response is sent; retain shared daemons and checkpoint repair.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "tyuikl32",
+  "assignee": "tyuikl32",
+  "createdAt": "2026-10-04",
+  "completedAt": "2026-10-04",
+  "branch": "elysia",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "verification": "Task tests and review passed; full pytest 1032 passed, 8 HEAD-reproduced failures, 12 skips; baseline format debt documented."
+  }
+}

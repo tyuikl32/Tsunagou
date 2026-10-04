@@ -38,6 +38,8 @@ main 可以在可授权范围内留证接受风险、证明结果或授权新 Op
 5. archive Operation 等待 barrier 再 archived、结束 sessions、卸载 runtime；unanchored 不自动禁止 local archive。
 6. reactivate 由 user 或完成前 policy 已授权 main 发起，新 runtime，不恢复旧执行权。main 路径先验证旧授权，再要求显式建立新 session/Grant；无法建立新会话就 unassigned 等待用户，不能复活 token。非终态 Task 显式 restore_open，completed 只可 follow-up。
 
+独占 daemon 的进程收尾：仅对本次运行收到并提交的 `project.completion.confirm`，在对应 checkpoint Operation 成功且确认响应发送完毕后优雅退出。失败或未完成时保留运行，原 Operation 在同次运行重试成功后可触发退出。退出判断与项目注册共用锁；共享 daemon 保持运行。该收尾不等于归档，不改项目状态、权限或协议字段，不扫描历史完成项目，也不增加空闲计时或控制台自动启动策略。
+
 ## checkpoint 回退与 replica 切换
 
 同 lineage 正常恢复保留历史，按 fencing 重建 runtime/session；clone 新 replica 不携带另一台机器运行权限。激活核验 checkpoint、恢复证据和本机唯一 writer；旧 writer 不可协调则明确 user takeover，没有分布式锁承诺。

@@ -6,7 +6,8 @@ import asyncio
 import json
 import os
 import secrets
-from collections.abc import AsyncIterator
+import sqlite3
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -15,10 +16,11 @@ from uuid import uuid4
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 from starlette.responses import JSONResponse
-from starlette.types import Receive, Scope, Send
+from starlette.types import Message, Receive, Scope, Send
 
 from tsunagou import __version__
 from tsunagou.bootstrap.container import build_application
+from tsunagou.interfaces.runtime import completion_receipts
 from tsunagou.platform.private_files import write_private_bytes
 from tsunagou.platform.runtime_context import read_object, running_source_root
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
@@ -37,7 +39,7 @@ class ProjectDaemon:
     credentials remain in each project's existing database and private directory.
     """
 
-    def __init__(self, config: dict[str, str]) -> None:
+    def __init__(self, config: dict[str, str], *, request_exit: Callable[[], None] | None = None) -> None:
         self.config = config
         self.registry_path = Path(config.get("TSUNAGOU_DAEMON_REGISTRY") or
                                   str(Path(config["TSUNAGOU_STATE_DIR"]) / "daemon-projects.json"))
@@ -45,6 +47,12 @@ class ProjectDaemon:
         self.lifespans: dict[str, AbstractAsyncContextManager[Any]] = {}
         self.projects: dict[str, dict[str, str]] = {}
         self.lock = asyncio.Lock()
+        self.request_exit = request_exit
+        self.closing = False
+        # (committed in this run, successful response sent). Remember replay
+        # responses too: they can finish before a concurrent fresh request.
+        self.completions: dict[tuple[str, str], tuple[bool, bool]] = {}
+        self._completion_check: asyncio.Task[None] | None = None
         self.runtime_id = str(uuid4())
         self.started_at = format_timestamp(now_ms())
         self.owner = {"project_root": config["TSUNAGOU_PROJECT_ROOT"], "state_dir": config["TSUNAGOU_STATE_DIR"]}
@@ -63,6 +71,9 @@ class ProjectDaemon:
                 self.save_registry()
                 yield
             finally:
+                self.closing = True
+                if self._completion_check is not None:
+                    await self._completion_check
                 for context in reversed(list(self.lifespans.values())):
                     await context.__aexit__(None, None, None)
 
@@ -107,6 +118,8 @@ class ProjectDaemon:
         }
 
     async def add_project(self, project_root: str, state_dir: str, *, persist: bool = True) -> dict[str, Any]:
+        if self.closing:
+            raise RuntimeError("daemon_closing")
         root, state = Path(project_root).resolve(), Path(state_dir).resolve()
         project = read_object(root / ".tsunagou/project.json")
         project_id = project.get("project_id")
@@ -131,6 +144,9 @@ class ProjectDaemon:
                                  "TSUNAGOU_STATE_DIR": str(state), "TSUNAGOU_PROJECT_ID": project_id,
                                  "TSUNAGOU_CONTROL_TOKEN": token_path.read_text(encoding="utf-8").strip()})
         context = app.router.lifespan_context(app)
+        loop = asyncio.get_running_loop()
+        if app.state.maintenance is not None:
+            app.state.maintenance.after_run = lambda: loop.call_soon_threadsafe(self.schedule_completion_check)
         try:
             await context.__aenter__()
             self.apps[project_id], self.projects[project_id] = app, entry
@@ -146,6 +162,31 @@ class ProjectDaemon:
             self.lifespans.pop(project_id, None)
             await context.__aexit__(None, None, None)
             raise
+
+    def schedule_completion_check(self) -> None:
+        if not self.closing and self.completions and (self._completion_check is None or self._completion_check.done()):
+            self._completion_check = asyncio.create_task(self.check_completion())
+
+    async def check_completion(self) -> None:
+        if self.request_exit is None:
+            return
+        for (project_id, operation_id), (fresh, sent) in list(self.completions.items()):
+            if not fresh or not sent:
+                continue
+            worker = self.apps[project_id].state.checkpoint_worker
+            try:
+                result = await asyncio.to_thread(worker.decorate_result, {"operation_id": operation_id})
+            except (OSError, sqlite3.Error):
+                # A transient read failure leaves the next maintenance tick to retry.
+                continue
+            if result.get("checkpoint_status") != "sealed":
+                continue
+            async with self.lock:
+                if self.closing or set(self.apps) != {project_id}:
+                    return
+                self.closing = True
+                self.request_exit()
+                return
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -165,8 +206,51 @@ class ProjectDaemon:
             await JSONResponse({"detail": {"code": code}}, status_code=400)(scope, receive, send)
             return
         assert project_id is not None
-        await self.apps[project_id](scope, receive, send)
+        receipts: list[tuple[str, bool]] = []
+        token = completion_receipts.set(receipts)
+        sent = False
+        status = 500
+
+        async def response_send(message: Message) -> None:
+            nonlocal sent, status
+            await send(message)
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            elif message["type"] == "http.response.body" and not message.get("more_body", False):
+                sent = status < 400
+
+        try:
+            await self.apps[project_id](scope, receive, response_send)
+        finally:
+            completion_receipts.reset(token)
+            for operation_id, replayed in receipts:
+                key = (project_id, operation_id)
+                # Replays may finish a lost response from this run, never arm a
+                # historical completed project after an explicit restart.
+                fresh, previous_sent = self.completions.get(key, (False, False))
+                self.completions[key] = (fresh or not replayed, previous_sent or sent)
+            self.schedule_completion_check()
 
 
 def build_daemon() -> ProjectDaemon:
     return ProjectDaemon(dict(os.environ))
+
+
+def main() -> None:
+    """Own the server so a completed exclusive project can drain and exit."""
+    import argparse
+
+    import uvicorn
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", required=True)
+    parser.add_argument("--port", required=True, type=int)
+    args = parser.parse_args()
+    daemon = build_daemon()
+    server = uvicorn.Server(uvicorn.Config(daemon, host=args.host, port=args.port))
+    daemon.request_exit = lambda: setattr(server, "should_exit", True)
+    server.run()
+
+
+if __name__ == "__main__":
+    main()

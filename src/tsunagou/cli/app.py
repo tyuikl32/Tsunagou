@@ -900,8 +900,8 @@ if typer is not None:
         try:
             with open(log_path, "ab") as log_handle:
                 process = subprocess.Popen(
-                    [sys.executable, "-m", "uvicorn", "tsunagou.bootstrap.daemon:build_daemon",
-                     "--factory", "--host", host, "--port", str(selected_port)],
+                    [sys.executable, "-m", "tsunagou.bootstrap.daemon",
+                     "--host", host, "--port", str(selected_port)],
                     cwd=str(root), env=child_env, stdout=log_handle, stderr=log_handle,
                     stdin=subprocess.DEVNULL, creationflags=flags, start_new_session=os.name != "nt",
                 )

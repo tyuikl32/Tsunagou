@@ -36,7 +36,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | user_decision.cancel | `/decisions/{id}:cancel` | M / decision.propose | reason | UserDecision；仅尚pending，不等于用户拒绝 |
 | project.completion.propose.main | `/completion-proposals` | M / project.configure | objective_ref,evidence_refs,outstanding_summary,expected_project_revision | CompletionProposal |
 | project.completion.propose.owner | `/completion-proposals:from-owner` | X / task.execute | objective_ref,evidence_refs,outstanding_summary,expected_project_revision | CompletionProposal；必须root/objective owner |
-| project.completion.confirm | `/control/completion-proposals/{id}:confirm` | U / — | proposal_digest,expected_project_revision,expected_revisions | Project completed+checkpoint Operation；current Attempts先收敛 |
+| project.completion.confirm | `/control/completion-proposals/{id}:confirm` | U / — | proposal_digest,expected_project_revision,expected_revisions | Project completed+checkpoint Operation；current Attempts先收敛；独占 daemon 在本次确认响应发送完毕且对应 checkpoint 成功后自动退出，共享 daemon 保持运行 |
 | project.archive | `:archive` | M / project.archive | reason,expected_checkpoint_digest | Operation；barrier完成再archived |
 | project.reactivate.main | `:reactivate` | M / project.configure | reason,expected_runtime_epoch | Project+Operation；policy预授权，无ceiling扩大 |
 | project.reactivate.user | `/control:reactivate` | U / — | reason,expected_runtime_epoch | Project+Operation；新runtime，旧执行权不恢复 |

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-10-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~553 | Active |
+| `journal-1.md` | ~586 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-10-04 | Completion-triggered exclusive daemon shutdown | - | `elysia` |
 | 22 | 2026-10-04 | On-demand wake guidance and authenticated host assistance | - | `elysia` |
 | 21 | 2026-10-03 | Wake reminder operational guidance | - | `elysia` |
 | 20 | 2026-10-03 | Agent reminder hooks implemented | - | `elysia` |
