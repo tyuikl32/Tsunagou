@@ -429,8 +429,8 @@ body {
                 align-items: center;
                 justify-content: center;
                 user-select: none;
-                transition: right 0.1s, top 0.1s, background-color 0.1s;
-                color: white;
+                transition: right 0.1s, top 0.1s, background-color 0.1s, background-color 0.15s;
+                color: var(--col-8);
             }
 
             .edit::before {
@@ -441,10 +441,12 @@ body {
 
             .edit:hover {
                 background: var(--brand-col-2);
+                color:white;
             }
 
             .edit:active {
                 background-color: var(--brand-col);
+                color:white;
             }
         }
 
@@ -468,6 +470,7 @@ body {
 
             .edit {
                 background-color:var(--brand-col);
+                color: white;
             }
         }
 
@@ -2452,7 +2455,7 @@ body {
     }
 
     .st-7::after {
-        content: "待评审";
+        content: "待验收";
     }
 
     .st-8 {
@@ -2996,7 +2999,7 @@ body {
     font-size: 14px;
     /* box-shadow: 0 0 2px 2px var(--col-1-5); */
     /* gap: 4px; */
-
+    
     >.title {
         padding: 6px 10px 6px 10px;
         color: var(--col-6);

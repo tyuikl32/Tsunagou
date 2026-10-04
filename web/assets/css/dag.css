@@ -43,7 +43,7 @@
 }
 
 .dagArea .st-7::after {
-  content: "待评审";
+  content: "待验收";
   color: var(--active-col);
 }
 

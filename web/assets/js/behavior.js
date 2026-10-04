@@ -139,9 +139,19 @@
         return (value === null || value === undefined) ? [] : [value];
     }
 
+    /* 这三个键名不能当普通字段写 —— 它们落在原型链上。
+       patch / set 的键名可能来自外部（后端 push、宿主脚本），所以统一在这里挡掉：
+       否则 JSON 里的 "__proto__" 会把 Object.prototype 改掉，全页对象凭空多出字段。*/
+    const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+    function isUnsafeKey(key) {
+        return UNSAFE_KEYS.indexOf(key) >= 0;
+    }
+
     /* 深合并：把 patch 里的字段并进 target（数组整体替换，不逐项合并） */
     function deepAssign(target, patch) {
         Object.keys(patch || {}).forEach(function (key) {
+            if (isUnsafeKey(key)) return;
             const value = patch[key];
             if (isPlainObject(value) && isPlainObject(target[key])) {
                 deepAssign(target[key], value);
@@ -164,16 +174,20 @@
         return cursor === undefined ? fallback : cursor;
     }
 
-    /* 按 'a.b.c' 路径写，中间缺对象就补一个空对象 */
+    /* 按 'a.b.c' 路径写，中间缺对象就补一个空对象。
+       路径上的任何一段是原型链上的键就整条不写（`state.set('__proto__.x', v)` 同样是污染）。*/
     function setPath(obj, path, value) {
         const parts = String(path).split('.');
         let cursor = obj;
         for (let i = 0; i < parts.length - 1; i++) {
             const key = parts[i];
+            if (isUnsafeKey(key)) return value;
             if (!isPlainObject(cursor[key])) cursor[key] = {};
             cursor = cursor[key];
         }
-        cursor[parts[parts.length - 1]] = value;
+        const last = parts[parts.length - 1];
+        if (isUnsafeKey(last)) return value;
+        cursor[last] = value;
         return value;
     }
 
@@ -222,7 +236,7 @@
 
     const DEFAULT_PATHS = {
         /* 读取类：GET {baseUrl}{path}
-           带 {project} 的表示"属于某个协作协作"，请求时用当前协作 id 替换；
+           带 {project} 的表示"属于某个协作"，请求时用当前协作 id 替换；
            没选协作时这些请求会被直接跳过（见 Tsunagou.refresh）。
            路径为空字符串 = 后端尚未提供这个接口：refresh 会跳过它，界面保留空状态，
            不会拼出坏地址去打扰后端。见 method.md 的"后端缺口"清单。*/
@@ -445,7 +459,13 @@
         const provided = window.TSUNAGOU_CONSOLE_CONFIG;
         if (!isPlainObject(provided)) return null;
         if (provided.baseUrl) config.baseUrl = toText(provided.baseUrl).replace(/\/+$/, '');
-        const interval = Number(provided.poll_ms);
+        /* null / '' / false / [] 经 Number() 都会变成 0，而 0 是"不自动重拉"的**合法值** ——
+           于是"没写这个字段"被当成"明确要求不轮询"，页面静默地再也不刷了。
+           所以先要求它真的是个数字（或非空数字串），再看 isFinite。*/
+        const rawInterval = provided.poll_ms;
+        const interval = (typeof rawInterval === 'number'
+            || (typeof rawInterval === 'string' && rawInterval.trim() !== ''))
+            ? Number(rawInterval) : NaN;
         if (isFinite(interval)) config.pollMs = interval;
         emit('config:change', configSnapshot());
         return provided;
@@ -461,7 +481,10 @@
         const params = new URLSearchParams(toText(window.location.search));
         const notes = [];
         if (params.has('poll_ms')) {
-            const interval = Number(params.get('poll_ms'));
+            /* 空串（?poll_ms=）不是"关掉重拉"，是"这个开关没写值"—— Number('') 是 0，
+               不挡的话它会被当成明确要求 0。*/
+            const rawText = toText(params.get('poll_ms')).trim();
+            const interval = rawText === '' ? NaN : Number(rawText);
             if (isFinite(interval)) {
                 config.pollMs = interval;
                 notes.push('poll_ms=' + interval + (interval > 0 ? '' : '（不自动重拉）'));
@@ -490,11 +513,17 @@
     function on(name, handler) {
         if (typeof handler !== 'function') return function () {};
         const list = listenerMap[name] || (listenerMap[name] = []);
-        list.push(handler);
+        /* 同一个 handler 不重复登记：重复登记只会让一次 emit 把它调两遍，
+           而 off 只摘得掉一个，剩下的越攒越多（点击次数随注册次数放大）。*/
+        if (list.indexOf(handler) < 0) list.push(handler);
         return function offOne() { off(name, handler); };
     }
 
     function once(name, handler) {
+        /* 和 on 一样的兜底：非函数的话 unbind 是空操作，但 handler(detail) 会抛
+           TypeError；而 emit 的 try/catch 只会把它吞成一条 console 记录，
+           调用方永远等不到回调、也拿不到任何失败信号。*/
+        if (typeof handler !== 'function') return function () {};
         const unbind = on(name, function (detail) {
             unbind();
             handler(detail);
@@ -841,16 +870,15 @@
         }
     };
 
-    /* 点窗口背景（.secWindow 自己那层黑遮罩）：**不算提交、也不算取消**。
-       以前这里一律 close，而"关闭"对有些窗口就等于走它自己的那条路（向导、确认框……），
-       于是点一下黑边就把事情办了 —— 太容易误触。
-       唯一例外是加载遮罩 #loadW：把它关掉本来就是"我不等了"。*/
+    /* 点窗口背景（.secWindow 自己那层黑遮罩）：**一律不做任何反应**。
+       窗口怎么收场只由窗口里的按钮决定 —— 这样"点一下黑边"永远不会替人做决定。
+       以前这里给加载遮罩 #loadW 开过一个口子（点黑边 = "我不等了"），现在不需要了：
+       · **纯加载**的遮罩没有按钮，加载完自己关，本来也不该由人关；
+       · **等待 Agent 接入**那扇窗自己有「取消等待」按钮（#loadWCancel，只在能取消时露出来），
+         而且那条路会先问一次再收场。
+       这个函数保留成空实现，只为让 init 与宿主脚本的调用点继续成立。*/
     ui.window.bindBackdrop = function () {
-        delegateClick(['.secWindow'], function (node, event) {
-            if (event.target !== node) return;      /* 点在窗口盒子里不算 */
-            if (node.id !== 'loadW') return;        /* 其余窗口：点了不动 */
-            ui.window.close(node);
-        });
+        /* 有意为空：黑遮罩不接受点击。*/
     };
 
     /* ---- 协作标签页 ------------------------------------------------------ */
@@ -1028,8 +1056,8 @@
             建完之后输入框只读、按钮变成"下一步"（协作已经落地，再改名字只是自欺欺人）。
             这里只问名字：目标是用户和主 Agent 谈完、用户确认过之后才存在的东西，
             建协作时问一句只会得到一个没人看的占位；
-         2) 连接到主 Agent  —— 真的准备接入申请并等原会话就绪；
-         3) 连接到子 Agent  —— 同上，可以接多个，也可以一个都不接；
+         2) 接入主 Agent  —— 真的准备接入申请并等原会话就绪；
+         3) 接入子 Agent  —— 同上，可以接多个，也可以一个都不接；
          4) 接入结果        —— 只是把已经发生的事列出来给人看，不再发任何请求。
        第 2/3 步要人打开或重载宿主的窗口（宿主只在自己启动时读配置），
        遮罩上给了「取消等待」：确认后请求中间层取消，已领取时按服务端拒绝继续等。*/
@@ -1386,11 +1414,20 @@
             });
             document.addEventListener('pointermove', function (event) {
                 if (!asideDrag) { updateAsideCursor(event); return; }
+                /* 键已经松开了却还收到 pointermove（在窗口外松手、指针被整屏遮罩抢走、
+                   alt-tab 切走）—— 就地收尾。否则 asideDrag 永远不复位，
+                   此后**不按任何键**移动鼠标都会一直改侧栏宽度，只能刷新页面恢复。*/
+                if (event.buttons === 0) { endAsideDrag(); return; }
                 const width = asideDrag.startWidth + (asideDrag.startX - event.clientX);
                 asideDrag.el.style.width = clampNum(width, asideDrag.min, asideDrag.max) + 'px';
             });
             document.addEventListener('pointerup', endAsideDrag);
             document.addEventListener('pointercancel', endAsideDrag);
+            /* 另外两道兜底：窗口失焦、页面被藏起来时，pointerup 可能永远不来。*/
+            window.addEventListener('blur', endAsideDrag);
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) endAsideDrag();
+            });
         }
     };
 
@@ -1514,8 +1551,13 @@
 
     function settleCsPanel(panel, expanded) {
         clearTimeout(panel.csAnimTimer);
+        /* 上一次那次收尾的监听也要摘掉：下面的 clearTimeout 会让它自己的兜底定时器再也
+           不跑，于是那个闭包就永远留在元素上（开关几次积几个），而且它还会在之后某次
+           height 过渡结束时去动面板的 height / display。*/
+        if (panel.csOnEnd) panel.removeEventListener('transitionend', panel.csOnEnd);
         const finish = function () {
             panel.removeEventListener('transitionend', onEnd);
+            if (panel.csOnEnd === onEnd) panel.csOnEnd = null;
             clearTimeout(panel.csAnimTimer);
             if (panel.dataset.csState === 'open' && expanded) {
                 panel.style.height = 'auto';
@@ -1528,6 +1570,7 @@
         const onEnd = function (event) {
             if (event.target === panel && event.propertyName === 'height') finish();
         };
+        panel.csOnEnd = onEnd;
         panel.addEventListener('transitionend', onEnd);
         panel.csAnimTimer = setTimeout(finish, CSBOX_ANIM_TIMEOUT);
     }
@@ -1740,6 +1783,8 @@
      *     所以 error 靠图标与文案区分，颜色由 CSS 决定，JS 不插手。
      * ====================================================================== */
 
+    /* 两位数补零。**全文件只有这一个**（§6 的时间格式化也用它）——
+       以前 §6 里另有一份同名实现，靠"后声明的赢"把它整个盖住，改哪一份都不生效。*/
     function pad2(value) { return value < 10 ? '0' + value : '' + value; }
 
     function todayText() {
@@ -1805,7 +1850,10 @@
        整句替换而不是只认"整串就是码"：像 credential_command_failed:xxx 这种带前缀的也一起换。*/
     function humanizeDenial(text) {
         const raw = toText(text);
-        const words = (state.get('glossary') || {}).denial_reason || {};
+        /* 词表的形状是 {version, domains:{…}}（见 EMPTY_STATE 与 glossText），
+           这一张在 glossary.domains.denial_reason。以前写成 glossary.denial_reason，
+           拿到的永远是 undefined → words 恒为 {} → 整张表一次都没用上。*/
+        const words = state.get('glossary.domains.denial_reason', {}) || {};
         let out = raw;
         Object.keys(words).forEach(function (code) {
             if (out.indexOf(code) >= 0) out = out.split(code).join(toText(words[code]));
@@ -1951,8 +1999,11 @@
         /* 确认框本来就是最上面一层（见 init() 把 #delPmt 移到 body 末尾），
            所以不用把遮罩收起来，遮罩就在背后接着转。*/
         return dialog.confirm({
-            title: toText(copy.title) || '取消等待接入？',
-            text: toText(copy.text) || '要取消等待这个 Agent 连接吗？',
+            /* 全流程只留「取消等待 / 已取消等待」这一套说法：按钮叫「取消等待」，
+               问一句也叫「取消等待？」，确认键还是「取消等待」。路径差异交给后果句说
+               （description 那句），不再另造"取消等待接入"这类半截话。*/
+            title: toText(copy.title) || '取消等待？',
+            text: toText(copy.text) || '要取消等待这个 Agent 接入吗？',
             description: toText(copy.description) || ('系统会核对这次接入是否仍可取消；已经开始接入时会说明原因，' +
                 '不会移除已接入的 Agent。'),
             okText: toText(copy.okText) || '取消等待'
@@ -2224,6 +2275,17 @@
 
     /* ---- 请求 ------------------------------------------------------------ */
 
+    /* 失败的档位与口气：后端**明确拒绝**（4xx）是"条件不满足" → 警告；
+       连不上 / 超时 / 服务端 5xx 才是"真失败" → 错误。
+       这两种都会走"拒绝码说人话"（showTip 只对 warn / error 两档调 humanizeDenial），
+       所以失败绝不能用 notify.info —— 那样码会原样上屏，而且是最低那一档。*/
+    function notifyFailure(error) {
+        const status = Number(error && error.status) || 0;
+        const text = toText(error && error.message);
+        if (status >= 400 && status < 500) notify.warn(text);
+        else notify.error(text);
+    }
+
     api.ApiError = ApiError;
 
     api.request = function (options) {
@@ -2234,7 +2296,7 @@
         /* 协作作用域的接口：没选协作就不发请求，报一个说得清的错，
            免得拼出 /projects//tasks 这种地址去打扰后端。*/
         if (pathNeedsProject(pathKey) && !toText(state.get('currentProjectId'))) {
-            const noProject = new ApiError('还没有选择协作协作，无法请求 ' + toText(pathKey), {
+            const noProject = new ApiError('还没有选择协作，无法请求 ' + toText(pathKey), {
                 method: method,
                 url: toText(pathKey)
             });
@@ -2311,7 +2373,7 @@
                 (error && error.name === 'AbortError') ? ('请求超时（' + timeout + 'ms）') : ('网络错误：' + ((error && error.message) || '未知')),
                 { url: url, method: method, raw: error }
             );
-            if (!opts.silent) notify.info(normalized.message);
+            if (!opts.silent) notifyFailure(normalized);
             emit('api:error', { method: method, url: url, error: normalized });
             throw normalized;
         });
@@ -2390,14 +2452,17 @@
     /* ---- 表单 ------------------------------------------------------------ */
 
     /* 自动提交（失焦即提交）的判定规则：
-       1) 命中 .textbox / .textbox2 里的 input；
-       2) 不在"按钮提交"的窗口里（向导、添加子 Agent —— 它们有明确的提交按钮；
-          Agent 详情窗口的两个输入是只读展示，更没有东西可提交）；
-       3) 自己所在的 .item / .uiBlock 里没有按钮。 */
+       1) 不是明确标了"手动提交"的（`data-tg-commit="manual"` 是第一道逃生门）；
+       2) 不是只读 / 禁用的展示框；
+       3) 不在"按钮提交"的窗口里（向导、添加子 Agent、重命名 —— 它们有明确的提交按钮）；
+       4) 自己所在的 .item / .uiBlock 里没有按钮。
+       注：AUTOCOMMIT_SELECTOR 只给 form.fields 用，form.watch 收的是页面上**全部** input，
+       所以上面四条是唯一的把关处。*/
     const AUTOCOMMIT_SELECTOR = '.textbox input, .textbox2 input';
     /* 重命名窗口也在这里：它有明确的「确定」按钮（onclick 指向 submitRename），
-         没有理由失焦就提交 —— 手滑点到旁边一下，输入框的内容就被当档案字段提交了。*/
-      const AUTOCOMMIT_EXCLUDE = ['#addProj', '#addSubAgent', '#mgrAgentInfo', '#renamePmt'];
+         没有理由失焦就提交 —— 手滑点到旁边一下，输入框的内容就被当档案字段提交了。
+       #netInvite 同理：那段"邀请内容"是只读展示，更不该被当成档案字段。*/
+    const AUTOCOMMIT_EXCLUDE = ['#addProj', '#addSubAgent', '#mgrAgentInfo', '#renamePmt', '#netInvite'];
 
     function inputScope(input) {
         return closest(input, '.item') || closest(input, '.uiBlock') || closest(input, '.secWindow');
@@ -2405,6 +2470,10 @@
 
     function isAutoCommitInput(input) {
         if (!input || input.dataset.tgCommit === 'manual') return false;
+        /* 只读 / 禁用的框是**展示**用的（典型就是 #netInvite 里那段一次性邀请票）。
+           它们照样能聚焦、照样会失焦，所以必须在这里挡 —— 否则点一下框、再点到别处，
+           票的内容就被当档案字段发去 PUT /console/profile 了。*/
+        if (input.readOnly || input.disabled) return false;
         for (let i = 0; i < AUTOCOMMIT_EXCLUDE.length; i++) {
             if (closest(input, AUTOCOMMIT_EXCLUDE[i])) return false;
         }
@@ -2483,16 +2552,20 @@
             window: (closest(node, '.secWindow') || {}).id || '',
             label: opts.label || ''
         };
-        committedValues[key] = value;
         emit('form:commit', detail);
 
         /* 后端可以用 events.on('form:commit') 接管；默认按配置里的地址提交 */
         if (opts.local) {
+            committedValues[key] = value;
             if (opts.toast !== false) notify.success({ title: opts.title || '改动已成功保存' });
             return Promise.resolve(value);
         }
+        /* 只有**提交成功**才记"已提交值"。记早了的话，一次失败就会让同一个值再也发不出去：
+           下次失焦时 value === previous 成立，直接 return，界面上看着像"怎么点都没反应"，
+           而后端其实还是旧值。*/
         return api.post(opts.path || 'settingSave', { key: key, value: value }, { silent: opts.silent })
             .then(function (result) {
+                committedValues[key] = value;
                 if (opts.toast !== false) notify.success({ title: opts.title || '改动已成功保存' });
                 return result;
             });
@@ -2574,7 +2647,12 @@
         const source = isPlainObject(agent) ? agent.icon : agent;
         const text = toText(source);
         if (/\.(png|jpe?g|svg|webp)$/i.test(text)) return themedIconPath(text);
-        return themedIconPath(AGENT_ICONS[text.toLowerCase()] || TSUNAGOU_CARD_ICON);
+        /* 用 hasOwnProperty 查表：icon 可以是后端/档案带上来的任意字符串，
+           而 "constructor" / "toString" / "__proto__" 这种键会命中原型链拿到函数（真值），
+           于是回退不到小标，最后把一个函数源码塞进 img.src。*/
+        const key = text.toLowerCase();
+        const hit = Object.prototype.hasOwnProperty.call(AGENT_ICONS, key) ? AGENT_ICONS[key] : '';
+        return themedIconPath(hit || TSUNAGOU_CARD_ICON);
     }
 
     /* 选择框里的厂商文字（"DeepSeek Harness" / "Claude Code（待实现）" / "OpenCode" …）→ 图标。
@@ -2788,7 +2866,7 @@
         asideFields: asideFieldsHtml
     });
 
-    /* ---- 左栏：协作协作列表 ---------------------------------------------- */
+    /* ---- 左栏：协作列表 -------------------------------------------------- */
 
     const PROJECT_STATUS = {
         working: { cls: 'wking', text: '工作中' },
@@ -3251,7 +3329,9 @@
         return target;
     }
 
-    window.addEventListener('resize', function () { syncTitleMask(); });
+    /* 缩放时把标题渐隐重算一遍；开着的选择菜单顺手收起 —— 它是 fixed 定位，位置只在
+       打开时算过一次并在下一帧补一次，窗口一缩放就停在旧坐标（缩小后可能跑到视口外）。*/
+    window.addEventListener('resize', function () { syncTitleMask(); closeSelections(); });
     if (document.fonts && document.fonts.ready) {
         /* 字体晚一步到齐时文字宽度会变（图标字体尤其）：到齐后重量一次 */
         document.fonts.ready.then(function () { syncTitleMask(); }, function () { /* 忽略 */ });
@@ -3287,7 +3367,7 @@
         /* 整页一个字都没有时只留一个空状态：否则五个小节会各占一个 240px 的占位块（
            小节的空状态交给 keyValueTableHtml 处理，那是“某个小节单独为空”的情形）。*/
         const hasAny = !!(toText(data.name) || toText(data.description) || basics.length || plan.length ||
-            toArray(data.versions).length || toArray(data.stats).length || toArray(data.storage).length ||
+            toArray(data.stats).length || toArray(data.storage).length ||
             toArray(data.pending).length);
         if (!hasAny) {
             const blank = pageTitleHtml('主视图') + '<p class="title2">协作名称/描述</p>' + EMPTY_BOX;
@@ -3311,8 +3391,11 @@
                         optionHtml(item.completion
                             ? [{ text: '查看详情', kind: 'active', action: 'ui.tab:acceptance' }]
                             : [
-                                { text: '决定', kind: 'active', action: 'decision.resolve:' + esc(item.id) },
-                                { text: '稍后', action: 'decision.later:' + esc(item.id) }
+                                /* id 交 toText，**不要**在这里 esc：buttonsHtml 会把整个
+                                   action 再 esc 一次写进 data-tg-action，预先转义就变成二次转义，
+                                   属性读回来是被破坏的 id（含 & " ' 时查不到那条待决）。*/
+                                { text: '决定', kind: 'active', action: 'decision.resolve:' + toText(item.id) },
+                                { text: '稍后', action: 'decision.later:' + toText(item.id) }
                             ])
                     ]
                 };
@@ -3329,7 +3412,6 @@
                 '<div class="left"><p class="title">总进度</p>' + esc(progress.total) + '</div>' +
                 '<div class="right"><p class="title">计划进度</p><div class="inner">' + plan + '</div></div>' +
                 '</div></div>') +
-            section('协作版本', '<div class="dataArea">' + keyValueTableHtml(data.versions) + '</div>') +
             section('协作统计信息', '<div class="dataArea">' + keyValueTableHtml(data.stats) + '</div>') +
             section('协作数据存储', '<div class="dataArea">' + keyValueTableHtml(data.storage) + '</div>');
         fill(byId('pane-overview'), html);
@@ -3365,8 +3447,10 @@
         const info = agentNetworkOf(agent);
         if (!info.network) return '';
         /* 远端自己报的名字里没有，就还是原来那句「网络在线 / 网络离线」——
-           本机接入的 Agent 依旧什么都不画。*/
-        const where = info.machine ? ' · ' + info.machine : '';
+           本机接入的 Agent 依旧什么都不画。
+           机器名是**远端自报**的（`agent import --machine`），中间层原样透出，所以这里是
+           外部输入，必须过 esc —— 它是拼进 HTML 的。*/
+        const where = info.machine ? ' · ' + esc(info.machine) : '';
         return '<p class="right">' + (info.online ? '网络在线' : '网络离线') + where +
             '<i class="fa-solid fa-circle-nodes"></i></p>';
     }
@@ -3398,6 +3482,15 @@
     function renderNetworkBadges() {
         render.agents(state.get('agents', []));
         render.agentWindow(state.get('agentsWindow', []));
+        /* 详情窗口开着时也要跟着刷：它那三行（在哪台机器 / 这台机器的限制）是从**当前这份
+           数据**算出来的，不刷就得关掉重开才更新。找不到对应记录就**不重画** —— 那说明这个
+           窗口不是从这两份名单开出来的（例如后端直接 dispatch 了 agent.info），重画只会清空它。*/
+        const info = byId('mgrAgentInfo');
+        const wanted = toText(info && info.getAttribute('data-agent-id'));
+        const open = wanted
+            ? (findById(state.get('agents', []), wanted) || findById(state.get('agentsWindow', []), wanted))
+            : null;
+        if (open) render.agentInfoWindow(open);
     }
 
     function agentCardHtml(agent) {
@@ -3407,6 +3500,9 @@
         };
         return {
             cls: 'item',
+            /* 卡片本体也要带身份标记：点卡片（不只是点里面那个头像胶囊）就该能开详情。
+               这是 JS 生成的节点，允许挂 data-*（见 §5 开头那条约定）。*/
+            attrs: ' data-agent-id="' + esc(agent.id) + '"',
             parts: [
                 '<div class="header">' + esc(agent.role) + agentNetworkHtml(agent) + '</div>',
                 listFieldHtml([{ name: agent.name, icon: agent.icon, id: agent.id }]),
@@ -3682,7 +3778,8 @@
                 headerHtml(item.title),
                 item.time ? timeHtml(item.time) : '',
                 item.reason ? titleHtml('存档原因') + textZHtml(item.reason) : '',
-                optionHtml([{ text: '校验', action: 'checkpoint.verify:' + esc(item.id) }])
+                /* id 不要预先 esc：buttonsHtml 会把 action 整体再转义一次（同上）。*/
+                optionHtml([{ text: '校验', action: 'checkpoint.verify:' + toText(item.id) }])
             ]
         };
     }
@@ -3697,7 +3794,7 @@
                 item.time ? timeHtml(item.time) : '',
                 titleHtml('失败原因') + textZHtml(item.error + (item.reason ? '（' + item.reason + '）' : '')),
                 item.attempts ? textZHtml('已试 ' + item.attempts + ' 次') : '',
-                optionHtml([{ text: '重试', kind: 'active', action: 'checkpoint.retry:' + esc(item.id) }])
+                optionHtml([{ text: '重试', kind: 'active', action: 'checkpoint.retry:' + toText(item.id) }])
             ]
         };
     }
@@ -3987,7 +4084,14 @@
 
     /* folded：被折叠起来的任务号（点标题左边那个圆点切换）—— 折叠时节点只剩标题条，
        摆位也跟着变矮（整张图跟着收，这就是那个"缩放"）。
-       点一下是**连锁**的：它下游连着的（递归到底）一起折/展 —— 一条链一起收。*/
+       点一下是**连锁**的：它下游连着的（递归到底）一起折/展 —— 一条链一起收。
+
+       dagOptions 里的 dir / focus / showIso 是**故意没有控件**的公开开关（见 method.md §12.4
+       与 §7 的"有接口没控件"那条）：宿主脚本改它再调 Tsunagou.dag.render() 即可。
+       · dir      'TB'（上→下）| 'LR'（左→右）
+       · focus    true 且选中了任务时，canvas 多一个 .focus —— 无关节点从 .35 再暗到 .22
+       · showIso  独立任务（没有上下游）显不显示
+       所以 focus 长年 false 不是死代码，别当垃圾删掉。*/
     const dagOptions = { dir: 'TB', focus: false, showIso: true, sel: null, folded: {} };
     let dagGraph = null;
     let dagBox = null;
@@ -4399,7 +4503,11 @@
         };
         /* 轮询每几秒来一发，数据没变就别重画：重画会把节点全拆了重建 —— 会闪，
            也会打断 hover 与过渡。指纹一样就只把引用换掉，不动画面。*/
-        const signature = JSON.stringify(next);
+        /* 指纹还要带上**用户档案里的昵称**：节点上的负责人名字是建图时从 profile 烘焙进去的
+           （见 dagBuildGraph 里的 agentDisplayName），只按 tasks/attempts/agents 算指纹的话，
+           在系统设置里改完昵称，DAG 上的旧名字会一直留着不刷新 —— 而时间图与 Agent 管理页
+           早就更新了，两处对不上。*/
+        const signature = JSON.stringify({ data: next, names: state.get('profile.agents', {}) });
         if (signature === dagSignature) return dagGraph;
         dagSignature = signature;
         dagGraph = dagBuildGraph(next.tasks, next.attempts, next.agents);
@@ -4922,7 +5030,7 @@
             return dialog.confirm({
                 title: '删除这个协作？',
                 text: '“' + name + '”会被整个删掉，不能撤销。',
-                description: '它的 daemon 会停掉，宿主里为它注册的 bridge 会注销，' +
+                description: '它的服务会停掉，宿主里为它注册的连接会注销，' +
                     '协作目录与里面的协作数据一并删除。',
                 okText: '删除', danger: true
             }).then(function (ok) {
@@ -4975,6 +5083,12 @@
             const name = toText(input && input.value).trim();
             if (!id) return Promise.resolve(false);
             if (!name) { notify.info('名字不能是空的'); return Promise.resolve(false); }
+            /* 名字没变就别发那一次请求、更别报"已重命名" —— 那是在替后端宣布一件没发生的事。*/
+            const row = findById(state.get('projects', []), id);
+            if (row && toText(row.name) === name) {
+                notify.info('协作名字没有改动');
+                return Promise.resolve(false);
+            }
             const path = '/console/projects/' + encodeURIComponent(id) + ':rename';
             return notify.track('正在重命名协作', api.post(path, { name: name }))
                 .then(function () {
@@ -5012,6 +5126,13 @@
                 else notify.error(blocked.note);
                 return Promise.resolve(false);
             }
+            /* 位置＝网络、而这家宿主需要"远端自己报的编号"时，编号空着不该能确定：
+               空着只会发一条注定失败的准备请求，人还以为已经在等了。
+               放在"厂商办不办得完"之后：先报最根本的那个错。*/
+            if (data.place === 'network' && networkNeedsNumber(vendor) && !toText(data.number).trim()) {
+                notify.info('这家宿主需要远端报的会话编号，请先填上再确定');
+                return Promise.resolve(false);
+            }
             const finishWindow = function () {
                 ui.window.close('addSubAgent');
                 ui.window.clearInputs('addSubAgent');
@@ -5032,7 +5153,8 @@
             return connecting.then(function (outcome) {
                 const reached = toText(outcome && outcome.status);
                 if (reached !== 'arrived' && reached !== 'manual') {
-                    const trouble = connectTrouble(reached, host);
+                    /* 把"这条路是跨机器"一起说出去：超时/过期的说法与宿主自己接入那条不同。*/
+                    const trouble = connectTrouble(reached, Object.assign({}, host, { place: data.place }));
                     if (trouble) notify.info(trouble);
                     return false;
                 }
@@ -5054,7 +5176,7 @@
                 if (manual) {
                     notify.info(manualNote(outcome.registration, host));
                 } else {
-                    notify.success({ title: '接入成功', sub: agent.name + ' 已加入这个协作' });
+                    notify.success({ title: '接入成功', sub: agent.name + ' 已接入这个协作' });
                 }
                 if (source === 'wizard') return true;
                 /* 名单、卡片上的胶囊、昵称显示都要跟着变 */
@@ -5127,16 +5249,16 @@
             })[0] || {};
             const machine = toText(agent.machine);
             return confirmThen({
-                title: '删除 Agent',
+                title: '退役这个 Agent？',
                 text: '确定要让这个 Agent 退役吗？他立刻不能再派活、接活。',
                 description: '他做过的任务和发过的消息仍然记他的名字，不会被改写。'
                     + (machine ? '那台机器（' + machine + '）上还留着一条登记，请去那台机器上清掉。' : ''),
-                okText: '删除',
+                okText: '退役',
                 danger: true
             }, function () {
                 return notify.track('正在退役 Agent', api.post('agentRemove', { id: id, reason: 'removed from console' }))
                     .then(function () {
-                        notify.success({ title: '已删除 Agent' });
+                        notify.success({ title: '已退役' });
                         Tsunagou.refresh(['agents', 'project', 'tasks']);
                         return true;
                     }, function (error) {
@@ -5194,7 +5316,7 @@
                     proposal_digest: proposal.digest,
                     expected_project_revision: isFinite(current) ? current : proposal.revision,
                     /* 后端只对 `expected_revisions.decision` 有读的地方（决策自身版本）；
-                       协作版本走上面那一项。*/
+                       协作自己的版本号（revision）走上面那一项 expected_project_revision。*/
                     expected_revisions: { decision: proposal.revision }
                 })).then(function () {
                     notify.success({ title: '协作已完成', sub: '已新建存档点' });
@@ -5580,10 +5702,17 @@
             return Tsunagou.refresh(['agentsWindow']).then(function () { return true; },
                 function () { return false; });
         },
-        /* 点 Agent 列表里的某一条 → 打开详情 */
+        /* 点 Agent 列表里的某一条 → 打开详情。
+           两个入口给的 id 形状不一样：Agent 列表窗口是「协作/Agent」（同一个 Agent 在几个
+           协作里就几行），Agent 管理页的卡片是裸 agent_id（那个协作里的唯一一行）。两种都认 ——
+           只认前者的话，从管理页进来查到 null，详情窗口是个空壳。*/
         openAgentInfo: function (id) {
-            const agent = findById(state.get('agentsWindow', []), id);
-            render.agentInfoWindow(agent || {});
+            const wanted = toText(id);
+            const rows = state.get('agentsWindow', []);
+            const agent = findById(rows, wanted)
+                || findById(rows, toText(state.get('currentProjectId')) + '/' + wanted)
+                || {};
+            render.agentInfoWindow(agent);
             ui.window.open('mgrAgentInfo');
             return true;
         },
@@ -5621,12 +5750,16 @@
         editAgent: function (agentId) {
             const agent = findById(state.get('agents', []), agentId) || {};
             const project = findById(state.get('projects', []), state.get('currentProjectId')) || {};
-            render.agentInfoWindow({
+            /* 把 agent 整个透传下去：render.agentInfoWindow 只从**传进去的那个对象**算
+               "是不是远端"（machine / network / copy_path）。少这几个字段，同一个远端 Agent
+               从卡片「修改」进来时"在哪台机器 / 这台机器的限制"会被整片藏掉，
+               与从 Agent 列表窗口进来看到的自相矛盾。*/
+            render.agentInfoWindow(Object.assign({}, agent, {
                 agent_id: toText(agent.id || agentId),
                 nickname: toText(agent.name),
                 project: toText(state.get('project.name')) || toText(project.name),
                 task: toText(agent.currentTask)
-            });
+            }));
             ui.window.open('mgrAgentInfo');
             return true;
         },
@@ -5646,11 +5779,24 @@
                 return Promise.resolve(false);
             }
             if (!nickname) { notify.info('昵称不能为空'); return Promise.resolve(false); }
-            if (nickname === before) { ui.window.close(node); return Promise.resolve(true); }
+            if (nickname === before) {
+                /* 没改就别说"已保存"、也别装作做了一件事：如实说一句，窗口留着
+                   （与下面"没存上就留在窗口里"同一个口径）。*/
+                notify.info('昵称没有改动');
+                return Promise.resolve(false);
+            }
+            /* 这条路上**没有**加载遮罩（saveAgentProfile 直接发请求），所以必须自己防连点：
+               网络慢时连点「确定」会重复写一次用户档案。*/
+            if (agentInfoSaving) return Promise.resolve(false);
+            agentInfoSaving = true;
             return actions.saveAgentProfile(agentId, { nickname: nickname }).then(function (ok) {
+                agentInfoSaving = false;
                 /* 没存上就留在窗口里，让人改完再试（提示已由 api 弹过）*/
                 if (ok) ui.window.close(node);
                 return ok;
+            }, function (error) {
+                agentInfoSaving = false;
+                throw error;
             });
         },
 
@@ -5720,7 +5866,7 @@
             success: function () { notify.success({ title: '改动已成功保存' }); return true; },
             info: function () { notify.info('请至少选择一个 Agent'); return true; },
             loading: function () {
-                notify.loading('正在连接 Agent');
+                notify.loading('正在接入 Agent');
                 setTimeout(function () { notify.loadingEnd(); }, 2000);
                 return true;
             },
@@ -5762,6 +5908,11 @@
     }
 
     function bindProjectCards() {
+        /* 守卫放在**最前面**：以前它只包住函数后半段那 4 个 document 监听，而上面这些
+           delegateClick 在守卫之外 —— 绑定函数被调第二次时它们照样再挂一遍，
+           于是单击一张协作卡片会开两次、写命令会提交两次。*/
+        if (bindProjectCards.bound) return;
+        bindProjectCards.bound = true;
         delegateClick(['#projList .projItem'], function (card, event) {
             /* 点右上角那一块不属于"选这个协作" —— 它自己有一套（见下面的 .edit 绑定），
                这里直接让路，不然会先把协作打开、再弹出菜单。*/
@@ -5827,9 +5978,9 @@
             applyProjectFilter();
             return null;
         });
-        /* 点菜单以外的地方 / 按 Esc 收起来。只绑一次：绑定函数可能被多次调用。*/
-        if (!bindProjectCards.bound) {
-            bindProjectCards.bound = true;
+        /* 点菜单以外的地方 / 按 Esc 收起来。只绑一次：绑定函数可能被多次调用。
+           上面的 delegateClick 已经由函数最前面那道守卫挡住了。*/
+        {
             /* 列表一滚动就把菜单收起来：菜单是 fixed 定位、贴在卡片旁边，卡片一挪它就错位，
                看着像菜单飞走了。scroll 不冒泡，所以用捕获阶段听。*/
             document.addEventListener('scroll', function () {
@@ -5900,7 +6051,40 @@
 
     /* ---- 静态窗口里的按钮 ------------------------------------------------ */
 
+    /* ---- 提交类按钮：按下即禁用、防连点 ----------------------------------
+       「提交类」= 窗口页脚那排（取消 / 确定）与向导页脚那排（上一步 / 下一步 / 完成）。
+       点下去到加载遮罩收起之间给按钮挂 data-tg-busy，并且不再接受第二次点击 ——
+       网络慢时连点不会重复提交。
+       **只用属性，不写任何行内样式**：想画"禁用 + 转圈"就对着 [data-tg-busy] 写 CSS（样式归用户）。
+       只有真的开了加载遮罩的动作才会被标记 —— 不开遮罩的动作（例如"昵称没改动"）
+       不该把按钮锁死。*/
+    const SUBMIT_BUTTON_SELECTOR = '.options .buttonbox2, .buttonbox .buttonbox2';
+    /* 最近按下的那个提交键：内联 onclick 里拿不到自己那个节点，所以在捕获阶段先记下来。*/
+    let lastSubmitButton = null;
+    /* 用户档案那一次保存没有遮罩可依（见 saveAgentInfo），自己拿一个在途标记防连点。*/
+    let agentInfoSaving = false;
+
     function bindStaticWindowButtons() {
+        document.addEventListener('click', function (event) {
+            const node = closest(event.target, SUBMIT_BUTTON_SELECTOR);
+            if (!node) return;
+            if (node.getAttribute('data-tg-busy') === '1') {
+                /* 捕获阶段就拦掉：内联 onclick 不会再跑第二遍。*/
+                event.stopPropagation();
+                event.preventDefault();
+                return;
+            }
+            lastSubmitButton = node;
+        }, true);
+        events.on('ui:window', function (detail) {
+            if (!detail || detail.id !== 'loadW') return;
+            if (detail.open) {
+                if (lastSubmitButton) lastSubmitButton.setAttribute('data-tg-busy', '1');
+                return;
+            }
+            qsa('[data-tg-busy]').forEach(function (node) { node.removeAttribute('data-tg-busy'); });
+            lastSubmitButton = null;
+        });
         /* 位置或厂商一变，那个"网络 Agent 编号"输入框跟着显/隐 */
         const place = subAgentPlaceBox();
         if (place) place.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
@@ -5918,9 +6102,13 @@
             });
         });
         /* 向导第 3 步子 Agent 胶囊上的「×」是 CSS 画的（.itemC::before，hover 才滑出来）：
-           点它 = 删掉这个已接入的 Agent，后端还没装配 —— 如实说，不假装删掉。*/
+           点它 = 删掉这个已接入的 Agent，后端还没装配 —— 如实说，不假装删掉。
+           **不能调 actions.removeAgent()**：它要一个 agent_id，而这个入口一个参数都没传，
+           于是只会弹一个"确定要让这个 Agent 退役吗"的吓人确认框、再发一次注定被拒的写请求
+           （agent_id 是必填），而胶囊根本不会被删掉。*/
         delegateClick(['#newXz3 .listfieldbox .itemC'], function () {
-            return actions.removeAgent();
+            notify.info('从向导里移除已接入的 Agent 还没接通：要退役请到 Agent 管理页');
+            return Promise.resolve(false);
         });
         delegateClick(['#mgrAgent .inner .table .item'], function (node) {
             app.openAgentInfo(node.getAttribute('data-agent-id'));
@@ -5945,7 +6133,11 @@
             if (!panel || !closest(panel, '#setPanel')) return;
             if (panel.id === 'uSetCol1') {
                 app.setTheme(event.detail.value);
-                actions.saveSetting('theme', event.detail.value);
+                /* 主题当场就换了（改的是本机变量），但**存不上**必须说出来：
+                   否则重开设置面板又变回旧的那一套，人以为自己记错了。*/
+                actions.saveSetting('theme', event.detail.value).then(function (ok) {
+                    if (!ok) notify.error('主题没能保存：重开设置面板会变回原来的那一套');
+                });
             }
         });
     }
@@ -6178,7 +6370,7 @@
 
     /* 后端任务状态（字符串） → CSS 的 .st-1…13（文案在 style.css 里，别在这里改）。
        顺序**照 style.css 的 ::after 文案**排，不是照后端自己的枚举顺序：
-       1 草稿 · 2 待发布 · 3 待领取 · 4 已领取 · 5 执行中 · 6 受阻 · 7 待评审 ·
+       1 草稿 · 2 待发布 · 3 待领取 · 4 已领取 · 5 执行中 · 6 受阻 · 7 待验收 ·
        8 待返工 · 9 待取消 · 10 已失联 · 11 已完成 · 12 失败 · 13 已取消。
        （原来这份表从 `submitted` 起就错位了：`submitted→6` 会显示成「受阻」、
        `blocked→9` 会显示成「待取消」……照 CSS 的文案逐个数一遍才是对的。）*/
@@ -6332,10 +6524,6 @@
        毫秒只在详情（侧栏）里给 —— formatTime(value, { precise: true })。
        解析不了的值原样返回：宁可难看，也不编一个时间出来。本地时区。*/
 
-    function pad2(value) {
-        return (value < 10 ? '0' : '') + value;
-    }
-
     function formatTime(value, options) {
         const text = toText(value);
         if (!text) return '';
@@ -6372,7 +6560,13 @@
         const status = toText(lease.status);
         const shown = glossText('lease_status', status) || '未知';
         if (!lease.expires_at) return { text: shown, ok: status === 'active' };
-        const left = Math.round(Number(lease.expires_at) - Date.now() / 1000);
+        /* expires_at 的口径是**记账毫秒**（与 operations.created_at 同一套），不是 epoch 秒 ——
+           这是本文件里唯一一处不先转 ISO 的时间处理。按数量级认，两种都吃得下：
+           把 1.7e12 当秒用的话 left 会恒为正且巨大，早已过期的租约会显示
+           「还剩 29000000 分钟」并被标成绿的。*/
+        const rawExpiry = Number(lease.expires_at);
+        const expiryMs = rawExpiry > 1e11 ? rawExpiry : rawExpiry * 1000;
+        const left = Math.round((expiryMs - Date.now()) / 1000);
         return {
             text: left > 0 ? (shown + '（还剩 ' + Math.round(left / 60) + ' 分钟）') : (shown + '（已到期）'),
             ok: status === 'active' && left > 0
@@ -6456,18 +6650,31 @@
             if (!enrollmentId || !template) return resolve({ status: 'unknown' });
             let stopped = false;
             let timer = null;
+            /* 人把加载遮罩关掉 = 不等了。以前只在每次 tick 的**顶部**检查遮罩还在不在，
+               于是"关遮罩"在两次 tick 之间（尤其正好有请求在飞行时）会被无声丢掉 ——
+               回包一到，onWaiting 会把遮罩重新拉开，循环照常继续。
+               所以直接订阅窗口事件，关的那一刻就下结论。*/
+            const onWindow = function (detail) {
+                if (!detail || detail.open || detail.id !== 'loadW') return;
+                if (notify.cancelPending()) return;   /* 「取消等待」的确认框会先收起遮罩 */
+                stop({ status: 'dismissed' });
+            };
             const stop = function (outcome) {
                 if (stopped) return;
                 stopped = true;
                 if (timer) clearTimeout(timer);
+                events.off('ui:window', onWindow);
                 resolve(outcome);
             };
+            events.on('ui:window', onWindow);
             const tick = function () {
                 if (stopped) return;
-                /* 遮罩是"正在等"的可见信号：人把它关了，就是不等了。
-                   但「取消等待」的确认框会先把遮罩收起来 —— 那一瞬间不算放弃。*/
+                /* 兜底：万一那次关窗事件没被这里听到。*/
                 if (!ui.window.isOpen('loadW') && !notify.cancelPending()) return stop({ status: 'dismissed' });
                 api.get(path, null, { silent: true }).then(function (answer) {
+                    /* 回包晚到、等待已经收尾了：什么都别再动 —— 尤其不能 onWaiting
+                       （那会 notify.loading 把刚关掉的遮罩重新拉开）。*/
+                    if (stopped) return;
                     const status = toText(answer && answer.status);
                     if (status === 'arrived') return stop({ status: 'arrived', agent: answer });
                     if (status === 'expired') return stop({ status: 'expired', agent: answer });
@@ -6476,6 +6683,7 @@
                     if (typeof onWaiting === 'function') onWaiting(answer || {});
                     timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                 }, function () {
+                    if (stopped) return;
                     /* 一次问不到不算失败：接着等下一次。*/
                     timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                 });
@@ -6497,7 +6705,7 @@
         const note = toText((registration || {}).note);
         if (note) return note;
         const command = firstCommand(registration);
-        if (command) return '这个宿主要人手工把 bridge 写进它的 MCP 配置：' + command;
+        if (command) return '这个宿主要人手工把连接写进它的 MCP 配置：' + command;
         return '还没能把这次接入写进 ' + (toText((host || {}).label) || '宿主') + ' 的配置';
     }
 
@@ -6536,7 +6744,7 @@
         return '“' + label + '”那边的会话已经连上了，但还没就位' +
             (missing.length ? '（还缺：' + missing.join('、') + '）' : '') +
             '。请在' + (path ? '“' + path + '”下' : '那边') +
-            '让它检查接入状态，并确认原会话能读取协作上下文。正在等待连接';
+            '让它检查接入状态，并确认原会话能读取协作上下文。正在等待接入';
     }
 
     /* 两个向导共用入口：Codex 协作和角色取自申请，只需在目标聊天说一句话；
@@ -6544,11 +6752,11 @@
     function openWindowHint(host, phrase) {
         const label = toText((host || {}).label) || '宿主';
         if (toText((host || {}).adapter).toLowerCase() === 'codex') {
-            return '请在要接入的 Codex 当前对话中说“请接入 Tsunagou”。正在等待连接';
+            return '请在要接入的 Codex 当前对话中说“请接入 Tsunagou”。正在等待接入';
         }
         const path = currentProjectPath();
         return '请在“' + (path || '这个协作所在的目录') + '”下打开/重载 ' + label +
-            ' 窗口，让它' + (phrase || '') + '接入 Tsunagou。正在等待连接';
+            ' 窗口，让它' + (phrase || '') + '接入 Tsunagou。正在等待接入';
     }
 
     /* ---- 接入一个 Agent：准备 → 等原宿主会话就绪 ----
@@ -6610,27 +6818,72 @@
        只是没有"票过期"——因为这里根本没有票。*/
     const HOST_ARRIVAL_TIMEOUT_MS = 15 * 60 * 1000;
 
-    function waitForHostArrival(host, baseline, onWaiting, enrollmentId) {
+    /* 邀请的有效期可能是 ISO 串，也可能是数字时间戳（秒或毫秒）—— 按数量级认。
+       认不出来就返回 0（= 不按有效期判定，退回轮询上限那一套）。*/
+    function expiresAtMs(value) {
+        const text = toText(value).trim();
+        if (!text) return 0;
+        if (/^\d+$/.test(text)) {
+            const num = Number(text);
+            return num > 1e11 ? num : num * 1000;
+        }
+        const parsed = Date.parse(text);
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    function waitForHostArrival(host, baseline, onWaiting, enrollmentId, expiresAt, onExpired) {
         const adapter = toText((host || {}).adapter);
         const startedAt = Date.now();
+        /* 邀请只有 10 分钟有效，而这里的轮询上限是 15 分钟。以前**只**判轮询上限，
+           于是 10~15 分钟窗口里一个迟到的 arrived 会被当成"接入成功"，
+           还会顺手把用户档案里的厂商/昵称覆盖掉。有有效期就按有效期判。*/
+        const expiry = expiresAtMs(expiresAt);
+        const expiredNow = function () { return !!expiry && Date.now() > expiry; };
+        const timedOut = function () { return Date.now() - startedAt > HOST_ARRIVAL_TIMEOUT_MS; };
         return new Promise(function (resolve) {
             let stopped = false;
             let timer = null;
+            /* 与 waitForEnrollment 同一处修补：关遮罩那一刻就下结论，别等下一次 tick ——
+               否则正有请求在飞行时"我不等了"会被无声丢掉，回包还会把遮罩重新拉开。*/
+            const onWindow = function (detail) {
+                if (!detail || detail.open || detail.id !== 'loadW') return;
+                if (notify.cancelPending()) return;
+                stop({ status: 'dismissed' });
+            };
             const stop = function (outcome) {
                 if (stopped) return;
                 stopped = true;
                 if (timer) clearTimeout(timer);
+                events.off('ui:window', onWindow);
                 resolve(outcome);
             };
+            /* 过期/超时怎么收场：给了 onExpired 就把"改口"交给调用方（它会把遮罩写成
+               "已过期，请重新生成"），这里只停轮询、**不收场** —— 窗口留在那儿等用户按按钮，
+               那时 onWindow 才让本 Promise 收场（用户的窗口政策：窗口只由按钮决定）。*/
+            const giveUp = function () {
+                if (expiredNow()) {
+                    if (typeof onExpired === 'function') { onExpired(); return true; }
+                    stop({ status: 'expired' });
+                    return true;
+                }
+                if (timedOut()) { stop({ status: 'timeout' }); return true; }
+                return false;
+            };
+            events.on('ui:window', onWindow);
             const tick = function () {
                 if (stopped) return;
-                /* 遮罩是"正在等"的可见信号：人把它关了就是不等了（确认框开着的那一下不算）。*/
+                /* 兜底：万一那次关窗事件没被这里听到。*/
                 if (!ui.window.isOpen('loadW') && !notify.cancelPending()) return stop({ status: 'dismissed' });
-                if (Date.now() - startedAt > HOST_ARRIVAL_TIMEOUT_MS) return stop({ status: 'timeout' });
+                if (giveUp()) return;
                 api.get('enrollmentObserve', {
                     adapter: adapter, baseline: baseline.join(','), enrollment_id: toText(enrollmentId)
                 }, { silent: true })
                     .then(function (answer) {
+                        if (stopped) return;
+                        /* 过期之后到达的**不算数**（邀请 10 分钟、轮询上限 15 分钟）：
+                           不挡住这 5 分钟的窗口，就会拿着一个已经作废的申请报"接入成功"，
+                           还会顺带把用户档案里的厂商/昵称覆盖掉。*/
+                        if (giveUp()) return;
                         if (toText(answer && answer.status) === 'arrived') {
                             return stop({ status: 'arrived', agent: answer.agent });
                         }
@@ -6638,6 +6891,7 @@
                         if (typeof onWaiting === 'function') onWaiting(answer || {});
                         timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                     }, function () {
+                        if (stopped) return;
                         /* 一次问不到不算失败：接着等下一次。*/
                         timer = setTimeout(tick, ENROLLMENT_POLL_MS);
                     });
@@ -6882,6 +7136,14 @@
             start_daemon: true, place: 'network', conversation_id: toText((opts || {}).number)
         }, { silent: true }).then(function (prepared) {
             const answer = prepared || {};
+            /* 人在 POST 还没回来时把加载遮罩关掉了（= 不等了）：那就别再弹邀请窗口出来。
+               否则他刚取消，窗口自己回来，还会把 networkInvite 覆写成新的 resolve，
+               旧的那个 Promise 永远悬着。*/
+            if (!ui.window.isOpen('loadW') && !notify.cancelPending()) {
+                return withdrawEnrollment(toText(answer.enrollment_id)).then(function () {
+                    return { status: 'cancelled', nickname: nickname };
+                });
+            }
             return askForInvite(answer, host).then(function (confirmed) {
                 if (!confirmed) {
                     return withdrawEnrollment(toText(answer.enrollment_id)).then(function () {
@@ -6889,15 +7151,40 @@
                     });
                 }
                 let waiting = true;
+                /* 邀请的有效期写在遮罩上（"有效到 HH:MM（剩 X 分）"），每轮轮询顺手改写一次 ——
+                   ENROLLMENT_POLL_MS 是 2 秒，所以倒计时看着是活的。到点改口成
+                   "已过期，请重新生成"（见下面的 onExpired），并且不再轮询。*/
+                const expiry = expiresAtMs(answer.expires_at);
+                const waitText = function (note) {
+                    const body = toText(note) || networkWaitHint(host);
+                    if (!expiry) return body;
+                    const clock = formatTime(new Date(expiry).toISOString(), { second: false });
+                    if (Date.now() > expiry) {
+                        return '邀请已经过期（有效到 ' + clock + '），请重新生成一张';
+                    }
+                    const left = Math.max(0, Math.round((expiry - Date.now()) / 60000));
+                    return body + '｜邀请有效到 ' + clock + '（剩 ' + left + ' 分）';
+                };
                 const cancel = function () {
                     if (!waiting) return;
                     waiting = false;
                     withdrawEnrollment(toText(answer.enrollment_id));
                 };
-                notify.loading(networkWaitHint(host), { cancel: cancel });
+                /* 过期之后那张票已经作废，"取消等待"没有东西可撤 —— 那一下只是把窗口关掉。*/
+                const closeOnly = function () {
+                    waiting = false;
+                    notify.loadingEnd();
+                };
+                const show = function (note) { notify.loading(waitText(note), { cancel: cancel }); };
+                show('');
                 return waitForHostArrival(host, baseline, function (note) {
-                    if (note && waiting) notify.loading(note + '（本次以子 Agent 身份接入）', { cancel: cancel });
-                }, toText(answer.enrollment_id)).then(function (outcome) {
+                    if (waiting) show(note);
+                }, toText(answer.enrollment_id), answer.expires_at, function () {
+                    /* 到点了：改口 + 把按钮换成"只关窗"，窗口留在那儿等人按（见窗口政策）。*/
+                    if (!waiting) return;
+                    waiting = false;
+                    notify.loading(waitText(''), { cancel: closeOnly });
+                }).then(function (outcome) {
                     waiting = false;
                     return outcome;
                 });
@@ -7021,11 +7308,12 @@
             /* 这条申请是哪个宿主的，就按哪个宿主继续等 —— 以前这里写死 Codex，于是一条 DSH
                的申请被当成 Codex 的申请去等一个它永远不会有的回执（等待框永远不翻绿）。
                中间层那边已经给"没有回执可等"的申请改用名单判定，所以照实带上宿主即可。*/
+            const host = {
+                adapter: toText(current.vendor) || 'codex',
+                label: toText(current.label) || 'Codex'
+            };
             return connectAgent({
-                host: {
-                    adapter: toText(current.vendor) || 'codex',
-                    label: toText(current.label) || 'Codex'
-                },
+                host: host,
                 role: current.role,
                 nickname: current.nickname, prepared: current,
                 waitingPrefix: enrollmentSelectionNote(current)
@@ -7036,16 +7324,36 @@
                     if (toText(state.get('currentProjectId')) === projectId) keys.push('agents', 'project');
                     return Tsunagou.refresh(keys);
                 }
-                const trouble = connectTrouble(outcome.status, { adapter: 'codex', label: 'Codex' });
+                /* 用**这条申请自己的宿主**收尾：写死成 Codex 的话，一条 DSH 的申请会拿到
+                   "票/申请"那套说法，而它根本没有票。*/
+                const trouble = connectTrouble(outcome.status, host);
                 if (trouble) notify.info(trouble);
                 return false;
             });
         }, function () { return false; });
     }
 
-    /* 等待/失败时给人一句能读懂的话（两个入口共用，免得文案两处跑偏）*/
+    /* 等待/失败时给人一句能读懂的话（几个入口共用，免得文案几处跑偏）。
+
+       **取消类的收场这里一律不再出声**：作废票据 / 撤登记由 withdrawEnrollment 收尾，
+       它那句话是**以取消接口的答案为准**的（成功用后端给的 note，失败如实说没撤掉）。
+       这里再补一句只会变成两条消息 —— 而且原来 `dismissed` 那句说的是"那条申请还在"，
+       与"这次接入申请已撤掉"直接打架（待改清单阶段 2 第 3 条）。*/
     function connectTrouble(status, host) {
         const label = toText((host || {}).label) || '宿主';
+        const place = toText((host || {}).place);
+        if (status === 'cancelled' || status === 'dismissed' || status === 'stopped') return '';
+        /* 跨机器那条路（place=network）：要人把邀请内容交给**另一台机器**上的人跑一次导入，
+           所以超时/过期的说法是"那边跑没跑过导入命令"，不能沿用"在自己的聊天里说一句"
+           —— 那是宿主自己接入那条路的说法，与"让对方跑一次 import"对不上。*/
+        if (place === 'network') {
+            if (status === 'timeout') {
+                return '还没看到它出现：确认邀请内容已经交给 ' + label + ' 上的人，' +
+                    '并且他在那边跑过一次导入命令';
+            }
+            if (status === 'expired') return '邀请已经过期，请重新生成一张';
+            return '';
+        }
         /* 在宿主自己聊天里接入的那条路没有票：这里不能说"票过期/票据作废"。判据用宿主本身
            （codex 之外都是"那条聊天自己签票"），不靠调用点额外传一个 mode —— 传漏了就会
            把 DSH 说成 Codex。*/
@@ -7054,22 +7362,17 @@
                 return '还没看到它出现在名单里：确认那条聊天里已经说了“接入 Tsunagou”，' +
                     '或者让它把那边的报错说出来';
             }
-            if (status === 'cancelled' || status === 'stopped') {
-                return '已取消等待：这次接入申请已撤掉，可以重新接入';
-            }
-            if (status === 'dismissed') {
-                return '已取消等待；那条申请还在，它接上时仍会作为新 Agent出现在名单里';
-            }
+            if (status === 'expired') return '这次接入已经过期，请重新准备一次';
             return '';
         }
-        if (toText((host || {}).adapter).toLowerCase() === 'codex') {
-            if (status === 'expired') return '待接入申请已过期，请在前端重新准备接入';
-            if (status === 'cancelled') return '已取消这次待接入申请，可以重新接入';
-            if (status === 'dismissed') return '已取消等待，接入申请的实际状态以控制台查询结果为准';
+        /* 走到这里 adapter 一定是 codex（上面已经提前返回）：以前这里又判了一次 === 'codex'
+           （恒为真），底下还重复了同样三条 —— 既不可达，又让 codex 的 timeout / stopped
+           静默返回空串，人看不到任何收尾说明。*/
+        if (status === 'expired') return '待接入申请已过期，请在前端重新准备接入';
+        if (status === 'timeout') {
+            return '还没看到它出现在名单里：确认那台机器上已经跑过那条接入命令，' +
+                '并且在那边的 Agent 窗口里说过“接入 Tsunagou”';
         }
-        if (status === 'expired') return '票据已过期，这一次接入作废了，可以再试一次';
-        if (status === 'cancelled') return '已取消等待：这次准备的票据已作废，可以重新接入';
-        if (status === 'dismissed') return '已取消等待接入；票还有效，稍后打开 ' + label + ' 连接上仍会加入';
         return '';
     }
 
@@ -7504,10 +7807,6 @@
                         };
                     })
                 },
-                versions: [
-                    { label: '沿革编号', value: shortId(header.current_lineage_id) },
-                    { label: '运行版本', value: shortId(header.runtime_epoch) }
-                ],
                 stats: [
                     { label: 'Agent', value: agents.length + ' 个' },
                     { label: '任务', value: tasks.length + ' 个（已完成 ' + done.length + '）' },
@@ -7618,7 +7917,7 @@
                                 { text: '修改', action: 'agent.edit:' + toText(a.agent_id) }
                             ] : [
                                 { text: '修改', action: 'agent.edit:' + toText(a.agent_id) },
-                                { text: '删除', action: 'agent.remove:' + toText(a.agent_id) }
+                                { text: '退役', action: 'agent.remove:' + toText(a.agent_id) }
                             ]))
                         ])
                 };
@@ -7783,7 +8082,7 @@
                 })
             };
         },
-        /* 中间层 view=acceptance（完成决定 + 概况 + 任务 + 结果 + 评审）→ render.acceptance.
+        /* 中间层 view=acceptance（完成决定 + 概况 + 任务 + 结果 + 验收）→ render.acceptance.
            后端没有"验收标准"这个概念，所以那一段已经不画了（原来只能恒空）。
            「任务验收情况」的结论来自 reviews 出口（`task.review.*` 写的轮次），
            没验过就是没验过 —— 不能拿"已提交"充当通过。*/
@@ -8053,7 +8352,14 @@
         return PROJECT_TABS[0].slug;
     }
 
+    /* 这个函数是**对外公开的**（宿主脚本可以调 Tsunagou.init()），而下面那些绑定一律是往
+       document 上加监听、没有去重 —— 跑第二次就会让每个点击执行两遍（点一张协作卡片开两次、
+       写命令提交两次）。所以只认第一次。*/
+    let initialized = false;
+
     function init() {
+        if (initialized) return true;
+        initialized = true;
         /* 0) 先认自己在哪里：中间层会在同源下给一份 /console.config.js。*/
         applyConsoleConfig();
         /* 0.5) 地址栏上的开发开关（?poll_ms=0 / ?shape=dag）—— 比配置文件优先，只影响本次打开 */

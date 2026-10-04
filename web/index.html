@@ -23,7 +23,7 @@
             </div>
             <div class="newBtn" onclick="Tsunagou.app.createProject()"><i class="fa-solid fa-file-circle-plus"></i>创建协作</div>
         </div>
-        <!--协作协作列表-->
+        <!--协作列表-->
         <div class="subMgr" id="projList"></div>
         <!--协作卡片上的操作菜单（点卡片右上角那个笔打开；位置由 JS 贴在卡片旁）-->
         <section class="selection" id="projMenu">
@@ -257,7 +257,7 @@
     <section class="secWindow" id="setPanel">
         <div class="window1">
             <div class="titleBar">
-                <div class="title"><i class="fa-solid fa-cog"></i> 设置</div>
+                <div class="title"><i class="fa-solid fa-cog"></i> 系统设置</div>
                 <div class="button" onclick="Tsunagou.app.closeWindow('setPanel')">×</div>
             </div>
             <div class="main">
@@ -382,7 +382,7 @@
     <section class="secWindow" id="delPmt">
         <div class="window3">
             <div class="titleBar">
-                <div class="title">删除 Agent</div>
+                <div class="title">确认操作</div>
                 <div class="button" onclick="Tsunagou.app.closeWindow('delPmt')">×</div>
             </div>
             <div class="content">
@@ -442,8 +442,8 @@
                 </div>
                 <div class="right" id="newXz2">
                     <div class="uiBlock">
-                        <div class="title">连接到主 Agent</div>
-                        <div class="descbox">输入一个 Agent 的名字和类型，以将该 Agent 作为主 Agent 连接到协作系统中。</div>
+                        <div class="title">接入主 Agent</div>
+                        <div class="descbox">输入一个 Agent 的名字和类型，以将该 Agent 作为主 Agent 接入协作。</div>
                         <div class="textbox2">
                             <input class="inner" placeholder="主 Agent 名称" />
                         </div>
@@ -466,8 +466,8 @@
                 </div>
                 <div class="right" id="newXz3">
                     <div class="uiBlock">
-                        <div class="title">连接到子 Agent</div>
-                        <div class="descbox">为你的协作协作加入一个或多个子 Agent。</div>
+                        <div class="title">接入子 Agent</div>
+                        <div class="descbox">为你的协作接入一个或多个子 Agent。</div>
                         <div class="listfieldbox">
                             <div class="item itemC">
                                 <img class="left" src="./assets/img/agent/deepseek-l.png" />
@@ -643,7 +643,7 @@
     <section class="secWindow" id="loadW">
         <div class="window5">
             <div class="loaderbox"></div>
-            <div class="textW">正在连接 Agent</div>
+            <div class="textW">正在接入 Agent</div>
             <div class="buttonbox2" id="loadWCancel" onclick="Tsunagou.app.cancelWaiting()">取消等待</div>
         </div>
     </section>
