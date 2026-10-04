@@ -4,7 +4,7 @@
 
 ## scope
 
-main 通过 Task execution_scope.resources 或 roots 决定范围，并按 task/scope_revision 选择 workspace 策略。Worker begin 自动使用这些绑定；Worker 不传入绝对路径或额外 scope。空 scope 是非文件任务，不继承整个项目根。daemon 保存规范化 scope_paths/scope_roots/scope_digest，未绑定或 identity 变化明确拒绝。
+main 通过 Task execution_scope.resources 或 roots 决定范围，并按 task/scope_revision 选择 workspace 策略。Worker begin 自动使用这些绑定；Worker 不传入绝对路径或额外 scope。`execution_scope` 必填但可为 `{}`；`{}` 的语义是"不额外限制"：它不声明 path，begin 因此不准备 workspace、不产生占用，任务描述也如实报 `requires_workspace=false`。解析器另有一条"回落到项目已登记全部根"的兜底分支，但不声明 path 的 begin 走不到它；只有 scope 里出现 path 资源时 begin 才准备 workspace 并产生占用。daemon 保存规范化 scope_paths/scope_roots/scope_digest，未绑定或 identity 变化明确拒绝。
 
 `scope_digest` 绑定排序后的每个根描述：
 

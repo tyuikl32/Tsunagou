@@ -395,7 +395,7 @@ function buildBaseline(opts: {
 
 const TOOLS: readonly ToolSpec[] = [
   { name: "task__begin", command_kind: "task.begin", description: "Start a task in one operation, or recover the same running attempt after reconnect. Read the current task revision first.", inputSchema: commandSchema("task.begin") },
-  { name: "task__create", command_kind: "task.create", description: "Create a task plan; empty execution_scope is a non-file task. Only explicit required_contract_ids block execution.", inputSchema: commandSchema("task.create") },
+  { name: "task__create", command_kind: "task.create", description: "Create a task plan; execution_scope is required. {} is allowed and means \"no explicit restriction\": a {} scope claims no path, so begin prepares no workspace and takes no reservation, and the task is reported as not needing a workspace. Only explicit required_contract_ids block execution.", inputSchema: commandSchema("task.create") },
   { name: "task__ready", command_kind: "task.ready", description: "Mark a draft task ready for publication (main-authority only).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__publish", command_kind: "task.publish", description: "Publish a ready task so workers can claim it (main-authority only).", inputSchema: { type: "object", required: ["task_id"], properties: { task_id: { type: "string" }, reason: { type: "string" } }, additionalProperties: false } },
   { name: "task__update_plan", command_kind: "task.update_plan", description: "Update an unstarted plan or its explicit contract dependencies.", inputSchema: commandSchema("task.update_plan") },
@@ -777,6 +777,7 @@ async function main(): Promise<void> {
       instructions: "Read context__project_read and inbox on each coordination turn, and again at every natural break "
         + "- after finishing a sub-step, a build or a test run. "
         + "Use task__begin before work, task__submit for delivery, task__block before waiting. "
+        + "Main writes a file task's execution_scope before publishing it, and settles a contract first when two tasks would touch the same files. "
         + "Main handles routine worker requests within existing authorization; only major decisions require the user. "
         + WAKE_REMINDER,
     },

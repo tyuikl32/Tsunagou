@@ -162,6 +162,19 @@ class ExperimentResult:
     rework: int | None
     wall_time: float | None
     token_metrics: tuple[MetricSample, ...]
+    # Injected/observed hard discrepancies. The pre-registered threshold is a ratio over
+    # these two, so they are properties of the *sample*: one run either saw the injected
+    # divergence or it did not. ``None`` means "nobody measured it" and must stay
+    # distinguishable from a measured zero.
+    hard_discrepancies_injected: int | None = None
+    hard_discrepancies_detected: int | None = None
+    # False blocking: how many of the blocks this run raised turned out to be wrong, over
+    # the blocks it raised. ``docs/implementation/modules/08-evaluation.md`` fixes the
+    # threshold (≤5%) but never defines the denominator, so this is the literal reading
+    # ("wrong blocks ÷ blocks"); if the project means something else, this pair of fields
+    # and the rate in ``_summarise`` are the only places to change.
+    blocks_recorded: int | None = None
+    false_blocks: int | None = None
     failures: tuple[str, ...] = ()
     evidence_refs: tuple[str, ...] = ()
     digest: str = ""
@@ -171,6 +184,9 @@ class ExperimentResult:
             "run_id": self.run_id, "correctness": self.correctness,
             "interventions": self.interventions, "rework": self.rework,
             "wall_time": self.wall_time, "token_metrics": [asdict(sample) for sample in self.token_metrics],
+            "hard_discrepancies_injected": self.hard_discrepancies_injected,
+            "hard_discrepancies_detected": self.hard_discrepancies_detected,
+            "blocks_recorded": self.blocks_recorded, "false_blocks": self.false_blocks,
             "failures": self.failures, "evidence_refs": self.evidence_refs,
         }
         object.__setattr__(self, "digest", canonical_digest(body))
@@ -183,9 +199,55 @@ class ExperimentReport:
     sample_count: int
     failed_count: int
     statistics: Mapping[str, float | None]
+    # The pre-registered thresholds compare arms (C against B), so a figure pooled across
+    # A/B/C/D cannot answer them. ``statistics`` stays the definition-wide summary and
+    # ``by_arm`` carries the comparable numbers.
+    by_arm: Mapping[str, Mapping[str, float | None]]
     limitations: tuple[str, ...]
     result_refs: tuple[str, ...]
     digest: str
+
+
+def _summarise(results: list[ExperimentResult]) -> tuple[dict[str, float | None], list[str]]:
+    """Every metric the definition may promise, or an explicit limitation — never a filled-in zero."""
+
+    correctness = [r.correctness for r in results if r.correctness is not None]
+    latencies = [r.wall_time for r in results if r.wall_time is not None]
+    interventions = [r.interventions for r in results if r.interventions is not None]
+    rework = [r.rework for r in results if r.rework is not None]
+    pairs = [(r.hard_discrepancies_injected, r.hard_discrepancies_detected) for r in results
+             if r.hard_discrepancies_injected is not None and r.hard_discrepancies_detected is not None]
+    injected_total = sum(pair[0] for pair in pairs)
+    detected_total = sum(pair[1] for pair in pairs)
+    block_pairs = [(r.blocks_recorded, r.false_blocks) for r in results
+                   if r.blocks_recorded is not None and r.false_blocks is not None]
+    blocks_total = sum(pair[0] for pair in block_pairs)
+    false_total = sum(pair[1] for pair in block_pairs)
+    limitations: list[str] = []
+    if len(correctness) != len(results):
+        limitations.append("correctness_missing_for_some_samples")
+    # A missing count is a limitation, never a zero: "this run had none" and "nobody
+    # measured it" are different facts, and only the first may enter an average.
+    if len(interventions) != len(results):
+        limitations.append("interventions_missing_for_some_samples")
+    if len(rework) != len(results):
+        limitations.append("rework_missing_for_some_samples")
+    if len(pairs) != len(results):
+        limitations.append("hard_discrepancy_counts_missing_for_some_samples")
+    if len(block_pairs) != len(results):
+        limitations.append("false_blocking_counts_missing_for_some_samples")
+    if any(sample.availability == "unavailable" for result in results for sample in result.token_metrics):
+        limitations.append("token_usage_unavailable_for_some_samples")
+    statistics: dict[str, float | None] = {
+        "correctness_mean": mean(correctness) if correctness else None,
+        "latency_median": median(latencies) if latencies else None,
+        "interventions_median": median(interventions) if interventions else None,
+        "rework_median": median(rework) if rework else None,
+        # Over the samples that measured both sides; no such sample means no claim.
+        "hard_discrepancy_detection_rate": (detected_total / injected_total) if injected_total else None,
+        "false_blocking_rate": (false_total / blocks_total) if blocks_total else None,
+    }
+    return statistics, limitations
 
 
 class EvaluationLedger:
@@ -220,26 +282,20 @@ class EvaluationLedger:
         runs = [run for run in self.runs.values() if run.definition_digest == definition.digest]
         run_ids = {run.run_id for run in runs}
         results = [result for result in self.results.values() if result.run_id in run_ids]
-        correctness = [result.correctness for result in results if result.correctness is not None]
-        latencies = [result.wall_time for result in results if result.wall_time is not None]
         failed = sum(1 for result in results if result.failures or self.runs[result.run_id].status == "failed")
-        limitations: list[str] = []
-        if len(correctness) != len(results):
-            limitations.append("correctness_missing_for_some_samples")
-        if any(sample.availability == "unavailable" for result in results for sample in result.token_metrics):
-            limitations.append("token_usage_unavailable_for_some_samples")
-        statistics: dict[str, float | None] = {
-            "correctness_mean": mean(correctness) if correctness else None,
-            "latency_median": median(latencies) if latencies else None,
+        statistics, limitations = _summarise(results)
+        by_arm = {
+            arm: _summarise([result for result in results if self.runs[result.run_id].arm == arm])[0]
+            for arm in sorted({run.arm for run in runs})
         }
         refs = tuple(sorted(result.result_id for result in results))
         body = {
             "definition_digest": definition.digest, "sample_count": len(results),
-            "failed_count": failed, "statistics": statistics, "limitations": limitations,
-            "result_refs": refs,
+            "failed_count": failed, "statistics": statistics, "by_arm": by_arm,
+            "limitations": limitations, "result_refs": refs,
         }
         return ExperimentReport(
-            new_id(), definition.digest, len(results), failed, statistics,
+            new_id(), definition.digest, len(results), failed, statistics, by_arm,
             tuple(limitations), refs, canonical_digest(body),
         )
 
@@ -262,8 +318,16 @@ def new_result(
     rework: int | None, wall_time: float | None,
     token_metrics: tuple[MetricSample, ...], failures: tuple[str, ...] = (),
     evidence_refs: tuple[str, ...] = (),
+    hard_discrepancies_injected: int | None = None,
+    hard_discrepancies_detected: int | None = None,
+    blocks_recorded: int | None = None,
+    false_blocks: int | None = None,
 ) -> ExperimentResult:
-    return ExperimentResult(new_id(), run.run_id, correctness, interventions, rework, wall_time, token_metrics, failures, evidence_refs)
+    return ExperimentResult(
+        new_id(), run.run_id, correctness, interventions, rework, wall_time, token_metrics,
+        hard_discrepancies_injected, hard_discrepancies_detected, blocks_recorded,
+        false_blocks, failures, evidence_refs,
+    )
 
 
 def redact_for_export(value: object) -> object:

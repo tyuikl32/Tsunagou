@@ -9,14 +9,19 @@ table before shipping a value.
 from __future__ import annotations
 
 import json
+import re
 from importlib.resources import files
+from pathlib import Path
 
 from tsunagou.console.glossary import GLOSSARY, GLOSSARY_VERSION, public
+from tsunagou.modules.cognition import CognitionService
 from tsunagou.shared_kernel.baseline import (
     ADMISSION_CAPABILITIES,
     BASELINE_CAPABILITIES,
     OPERATIONAL_CAPABILITIES,
 )
+
+REPOSITORY = Path(__file__).resolve().parents[2]
 
 # 表格单元格里放得下的长度。「已答复」「等待中」是 3 个字，「共享目录」「重试后拿到」是 5 个；
 # 留一格余地给以后实在压不下去的词 —— 但超过这个数就该先想想能不能压。
@@ -99,3 +104,28 @@ def test_the_framework_events_that_land_on_the_timeline_have_words_too() -> None
     }
 
     assert framework <= set(GLOSSARY["command_kind"]), sorted(framework - set(GLOSSARY["command_kind"]))
+
+
+def test_every_discrepancy_rule_has_a_word() -> None:
+    """分歧卡片的抬头印的就是规则的中文说法。
+
+    规则清单是唯一事实源（`CognitionService.rules`），另加 `discrepancy.create`
+    写死的那条 `manual.discrepancy`。漏一条，人又得读 `claim.literal_mismatch`。
+    """
+
+    rules = set(CognitionService().rules) | {"manual.discrepancy"}
+    missing = sorted(rules - set(GLOSSARY["discrepancy_rule"]))
+    assert not missing, f"这些分歧规则还没有中文说法：{missing}"
+
+
+def test_the_page_only_looks_up_domains_the_table_has() -> None:
+    """页面每个值都写一句 `glossText('<域>', …)`；**域拼错就静默退回英文原值**。
+
+    这是页面与词表之间唯一会无声出错的地方（token 漏了只是难看，域漏了整屏都是
+    机器话），所以把页面里出现的域名与这张表对一遍。
+    """
+
+    source = (REPOSITORY / "web" / "assets" / "js" / "behavior.js").read_text(encoding="utf-8")
+    used = set(re.findall(r"gloss(?:Text|Word|Tags)\('([a-z_]+)'", source))
+    assert used, "没在页面里找到任何查表调用：这个测试本身失效了"
+    assert used <= set(GLOSSARY), sorted(used - set(GLOSSARY))

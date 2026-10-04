@@ -76,7 +76,7 @@ def test_shared_submit_fact_survives_private_notification_without_exposing_it(ru
     worker, _ = runtime.enroll("worker")
     outsider, _ = runtime.enroll("outsider")
     runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
-    task = runtime.call("task.create", {"title": "shared", "objective": "verify only"}, main)
+    task = runtime.call("task.create", {"title": "shared", "objective": "verify only", "execution_scope": {}}, main)
     runtime.call("task.ready", {"task_id": task["task_id"]}, main)
     runtime.call("task.publish", {"task_id": task["task_id"]}, main)
     state = runtime.app.state.state_runtime

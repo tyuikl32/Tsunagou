@@ -287,7 +287,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 |---|---|---|
 | 任务区 | 点任务行 | 第 1 段（任务细节） |
 | 冲突与协商 | 点分歧卡片 / 点**冲突行** / 点**Agent 间协商行** / 点契约卡片；「查看契约」按钮 | 第 1 段＝分歧详情，第 2 段＝契约详情，第 3 段＝冲突详情，第 4 段＝Agent 间协商详情（四段互斥） |
-| 意图与权限审计 | 点表格行（按当前子标签） | 第 1 段＝意图声明，第 2 段＝权限租约（互斥） |
+| 意图与权限审计 | 点租约行 | 第 1 段＝权限租约 |
 | 工作区 | 点工作区卡片 | 第 1 段 |
 | 总路径 | 点某条记录行 | 第 1 段（路径详情） |
 
@@ -357,7 +357,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `agent.info` | 对象 | 打开并填充 Agent 详情窗口 |
 | `task.list` | 数组 | 任务区 |
 | `conflict.data` | `{dissents, conflicts, messages, contracts}` | 冲突与协商（4 个子标签） |
-| `audit.data` | `{intents, leases, waiting}` | 意图与权限审计 |
+| `audit.data` | `{leases}` | 意图与权限审计（**2026-10-04 起只剩「Agent 权限」一栏**；`intents` 已删，见 §7 `render.audit`） |
 | `workspace.list` | 数组 | 工作区 |
 | `acceptance.data` | `{proposal, taskResults}` | 验收与存档点（段 1、段 2） |
 | `checkpoint.list` | `{latest, history}` | 存档点（三个段落里的前两段） |
@@ -412,7 +412,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `agents` | `/projects/{project}/agents` | 当前项目 | `{items:[{agent_id,role,status,authority_epoch,session_status,connection_epoch,missing_admission,missing_operational,...}]}`（后四个是"这个 Agent 现在还缺哪几项能力"：有活动会话时给状态 + 缺项名单，没有活动会话时四个都是 `null`，见 §7） |
 | `tasks` | `/console/views/tasks?project_id={project}` | 当前项目 | 任务表（`sources:{tasks,attempts,agents,results}`，适配层才会 join 成负责人/交付物） |
 | `conflicts` | `/console/views/collaboration?project_id={project}` | 当前项目 | `sources:{cognition,contracts,messages,agents,conflicts}` → `{dissents,conflicts,messages,contracts}` |
-| `audits` | `/console/views/audit?project_id={project}` | 当前项目 | `sources:{intents,resources,agents}` → `{intents,leases}` |
+| `audits` | `/console/views/audit?project_id={project}` | 当前项目 | `sources:{intents,resources,agents}` → `{leases}`（`intents` 那一栏 2026-10-04 已删：出口恒空，页面不再读它也不画它 —— 中间层的来源名单里还留着它，那是 `CONSOLE_VIEWS` 与它自己测试的事） |
 | `workspaces` | `/projects/{project}/workspaces` | 当前项目 | 工作区卡片 |
 | `acceptance` | `/console/views/acceptance?project_id={project}` | 当前项目 | `sources:{overview,decisions,tasks,results,reviews,agents}` → `{proposal, taskResults}`（段 2 的验收结论来自 `reviews`） |
 | `checkpoints` | `/projects/{project}/checkpoints` | 当前项目 | `{items,current,...}` → `{latest,history}`（卡片：摘要+时间+取档原因+校验态） |
@@ -731,12 +731,32 @@ POST /console/enrollments/{enrollment_id}:cancel
 
 ### 冲突与协商 `render.conflicts`
 ```
-{ dissents:   [{id, title, agents:[], time, scope,
+{ dissents:   [{id, title, ruleId, severity, status, agents:[], scope,
                 understandings:[{agent, text}], actions:[{text,kind,action}]}],
   conflicts:  [{id, title, detail, scope, agents:[], time, solution}],
   messages:   [{id, from, to, content, answered, answeredOk, progress:[{text,ok}]}],
-  contracts:  [{id, title, time, proposers:[], scope, text, confirmed:[], unconfirmed:[], action}] }
+  contracts:  [{id, title, scope, text, confirmed:[], unconfirmed:[], action}] }
 ```
+> **2026-10-04 修的三处键错位**（都是"适配层读了出口里没有的键"，数据其实有）：
+> · 分歧那一条，出口（`container.py` 的 `cognition`）只给 `discrepancy_id / rule_id /
+>   subject_key / severity / status / claim_ids / input_digest` —— **没有** `actor_agent_id`、
+>   **没有** `subject_ref`、**一点时间都没有**。所以 `title` 是规则的中文说法（词表
+>   `discrepancy_rule`，查不到才原样印 `rule_id`），代号另走 `ruleId` 那一行留着；
+>   `agents` 由 `claim_ids`（装的是 **report_id**）join 同一屏的 `cognition.reports[].actor_agent_id`
+>   得出；`understandings` 是那份报告在**被说岔的那个 subject_key** 上说的话。分歧卡与分歧详情
+>   **都不画时间** —— 没有时间戳可读，拿报告时间顶替就是编。
+>   ⚠ **`claim_ids` 里不一定有"双方"**：`discrepancy.create` 带的是调用方给的 `report_refs`
+>   （可以好几份），而自动判定（`modules/cognition.py` 的 `_record_discrepancy(…, report)`）
+>   只记下**触发它的那一份**报告 —— 对方是谁、说了什么都没存（只把两个值的 digest 存进
+>   `input_digest`）。所以卡片只列这份分歧真点名过的 Agent，**不拿"同一 subject_key 的另一份
+>   报告"去补另一半**。要在卡片上看到双方，得先改领域模型（存下成对的 report_id），那是
+>   后端的事；页面这一层已经取到它能取的全部。
+> · 契约那一条，签名记录在 `/contracts` **每项自己的** `acceptances` 里（`participant_slot` 判
+>   "签没签"），不在 `/cognition`（那个出口从不导出 `acceptances`，以前读它所以恒空）。
+>   `participants` 是对象数组 `{slot, agent_id, required}`，按对象取 `agent_id`（以前当字符串
+>   处理，页面上写成 `[object `）；`unconfirmed` = 槽位还没签的那些。
+>   `time` / `proposers` 已从卡片与详情里删掉：两个出口都不导出 `proposed_by`，也没有任何
+>   时间戳 —— 要显示得先让出口给出来。
 > 「状态」那一格读 `m.status`（词表 `message_status`：已答复 / 等待中 / 无需答复 / 未知），
 > 「消息处理情况」那几颗标签读 `m.obligations[].status`（词表 `obligation_status`）。
 > **这两个字段是 daemon 在 `messages` 出口里给的**（2026-09-29 接通）：消息本身没有 status，
@@ -748,9 +768,22 @@ POST /console/enrollments/{enrollment_id}:cancel
 
 ### 意图与权限审计 `render.audit`
 ```
-{ intents: [{id, agent, target, mode, reason, version, lease:{text, ok}}],
-  leases:  [{id, agent, scope, version, lease:{text, ok}}] }
+{ leases:  [{id, agent, scope, lease:{text, ok}}] }
 ```
+> **2026-10-04：「Agent 意图」那一栏连同它的适配器一起删掉了。** `intents` 出口
+> （`container.py`）**无条件返回 `{"items": []}`**：资源 intent 模型已被显式 reservation
+> 取代（`docs/decisions/2026-09-28-explicit-resource-release.md`），没有 intent 对象可读，
+> 重建一个就是第二套资源模型 —— 它自己在注释里把"这屏该怎么读新模型"交给前端设计。
+> 于是这屏只保留真拿得到的租约：子标签「Agent 权限」、`panels[0]` 一张租约表、侧栏第 1 段。
+> **租约那几行也跟着键名对齐了一次**：数据来自 `resources` 出口（显式预约模型），
+> 行身份是 `reservation_id`（`lease_set_id` 是租约集合时代的旧拼法，只有 `conflicts`
+> 出口还在兼容它）—— 以前只读旧拼法，于是每行的 `data-row-id` 都是空的、点哪一行都
+> 只打开第一条租约；`revision` 这个出口根本没有，所以「声明版本」那一列（表头与详情里
+> 那一行）一并去掉。
+> 中间层 `CONSOLE_VIEWS["audit"]` 里那个 `intents` 来源**留着没动**（它没有害处，而且
+> `tests/unit/test_console_relay.py` 与 `tools/dev/console_smoke.py` 都钉着那份名单）；
+> 页面不再读 `sources.intents`，也就不会再为它画一格。（页面抬头仍叫「意图与权限审计」，
+> 名字与 `index.html` 的 `title2` 是用户可见口径，另行决定是否一起改。）
 > 原来的 `waiting`（等待租约的 Agent）已按决定 11 砍掉：daemon 没把等待队列做成出口。
 > 租约冲突账本不在这里 —— 它在「冲突与协商 → 冲突」那一栏（形状就是上面 `render.conflicts` 的 `conflicts`）。
 
@@ -822,8 +855,9 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 点这条任务时它会合并进去（**只在 id 对得上时合并**，不会把别的项目的详情串进来说）。
 其余侧栏同样可以直接调 `render.dissentDetail` / `render.contractDetail` /
 `render.conflictDetail` / `render.messageDetail` /
-`render.intentDetail` / `render.leaseDetail` / `render.workspaceDetail` /
+`render.leaseDetail` / `render.workspaceDetail` /
 `render.acceptanceDetail` / `render.pathDetail`，然后 `ui.aside.show(slug, 段号)`。
+（原来这里还列着 `render.intentDetail`；2026-10-04 随「Agent 意图」那一栏一起删了。）
 
 > 启动时会调一次 `ui.aside.clearAll()`：把 `index.html` 里那些占位文案清掉，
 > 避免出现“没被填过就露出旧文字”的情况。
@@ -1233,10 +1267,11 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
   · **改动范围**改成**活跃租约涉及的资源键之和**（真出口给的是 `repo:x/**` 这种资源键字符串），
     没有活跃租约才退回任务自己声明的 `execution_scope`；有过期的另外补一句，不混进来。
   · **「交付结果」那一列删掉**：它是从 `results` 出口硬凑的，与"任务现在能不能开工"不是一回事。
-  · **「为什么被拒」**：拒绝的原因码本来落在事件的 `payload.code` 上（`resource_conflict:file:…`），
+  · **「为什么被拒」**：拒绝的原因码落在事件的 `payload.code` 上 —— **当前写入的是裸码 `resource_conflict`**（带冒号的 `resource_conflict:<keys>` 只出现在异常消息里；只有 `resource.acquire` 那个年代的旧账行才带冒号形态，所以读取端两种都要认），
     而 `audit` / `history` 出口只投影 `reason_code` —— 于是那一行只有动作名、括号是空的。
     现在投影出口**在 `reason_code` 为空时回填事件的 `payload.code`**，页面再把码的前半截（冒号之前）
-    过一遍 `denial_reason` 词表，写成 `resource.acquire.denied（资源被占用:file:backend/api/user.py）`。
+    过一遍 `denial_reason` 词表，写成 `resource.acquire.denied（资源被占用:file:backend/api/user.py）`；
+    当前链路的账行是裸码、没有冒号后缀，同样逻辑渲染成 `（资源被占用）`。
   · 演示数据（`mock-backend.js`）跟着对齐：词表替身补上这三个域、`subject_ref` 写成
     `task/<id>` / `project/<id>`（真后端的形状）、被拒那条**输入只有 `payload.code`、输出必须有
     `reason_code`**（走的就是上面那条兜底），契约内容里写上 `task_id` 好让「契约」那一格亮起来。

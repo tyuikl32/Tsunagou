@@ -809,7 +809,14 @@ def _query_provider(
                 refusal = refusal_event.get("payload")
                 if not isinstance(refusal, dict):
                     continue
-                if not str(refusal.get("code", "")).startswith("resource_conflict:"):
+                # Two spellings of the same refusal live in the ledger: this reader was
+                # written for a ``resource_conflict:<keys>`` code, but the command route
+                # records ``ResourceConflict.code`` verbatim (``shared_kernel/errors.py``),
+                # which is the bare ``resource_conflict`` — the colon form only ever
+                # existed in the exception *message*. Both are read, for the same reason
+                # the holder rows below accept two generations.
+                refusal_code = str(refusal.get("code", ""))
+                if refusal_code != "resource_conflict" and not refusal_code.startswith("resource_conflict:"):
                     continue
                 requester_raw = refusal.get("requester")
                 requester: dict[str, Any] = requester_raw if isinstance(requester_raw, dict) else {}
@@ -1119,9 +1126,12 @@ def _query_provider(
                     "subject_ref": event.get("subject_ref") or event["aggregate_ref"],
                     "outcome": event.get("outcome") or audit_payload.get("outcome", "committed"),
                     "reason_code": event.get("reason_code") or audit_payload.get("reason_code")
-                    # A refusal recorded by the HTTP layer keeps its reason in ``code``
-                    # (``resource_conflict:file:…``); without this fallback the timeline
-                    # could only say "this was denied" and never why.
+                    # A refusal recorded by the HTTP layer keeps its reason in ``code``.
+                    # For a collision that code is the bare ``resource_conflict``; the
+                    # ``resource_conflict:<keys>`` form only ever lived in the exception
+                    # *message* (`shared_kernel/errors.py`), never in this payload.
+                    # Without this fallback the timeline could only say "this was denied"
+                    # and never why.
                     or audit_payload.get("code"),
                     "evidence_refs": event.get("evidence_refs") or audit_payload.get("evidence_refs", []),
                     "occurred_at": event.get("occurred_at"),

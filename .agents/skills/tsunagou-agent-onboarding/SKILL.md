@@ -154,7 +154,7 @@ Use their actual host-provided conversation identity and supported bridge config
 
 ## After attachment
 
-- Read own context, incremental inbox and blackboard. A worker selects eligible published work, calls `task.begin` with the current revision, works in the returned scope and calls `task.submit`. Begin captures the baseline/reserves resources; submit captures results/releases resources. Use `task.block` when actually blocked.
+- Read own context, incremental inbox and blackboard. A worker selects eligible published work, calls `task.begin` with the current revision, works in the returned scope and calls `task.submit`. Begin captures the baseline/reserves resources; submit captures results/releases resources. Use `task.block` when actually blocked. The `execution_scope` you receive is main's decision, written when the task was published; if two tasks would touch the same files, main settles a contract first — raise it rather than assuming the overlap is harmless.
 - Main proactively handles ordinary worker requests under existing authorization: check existing tasks and duplicate requests, publish suitable work or give a concrete reply, and fulfill response obligations. Reading or ACK alone is not a response. Do not ask whether to do ordinary scheduling again.
 - Main handles Git writes and coordination. Major design/scope changes and project-completion confirmation stay user-controlled. Skill text and Full Access do not expand Tsunagou authority.
 - Lack of recent activity does not mean a worker died. Resources remain owned until explicit release/recovery, not until a timer expires.

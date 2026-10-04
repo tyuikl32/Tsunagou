@@ -346,7 +346,7 @@ $baseUrl = $endpoint.url
 | POST | `/api/v1/a2a` | A2A JSON-RPC `message/send`、`tasks/get`、任务状态转换 |
 | POST | `/api/v1/a2a/agents/{recipient_agent_id}` | 路由到指定 Agent 的 A2A JSON-RPC |
 
-冲突账本的来源：一次租约拒绝会以 `command.<kind>.denied` 事件持久化——该事件写在命令自身事务之外，所以拒绝即使回滚也留痕。`/conflicts` 读这些事件，再按**当前**租约与 Attempt 状态机械推断应对情况（`retried_and_won` / `gave_up` / `holder_released` / `open`），不需要任何人上报。冲突只是账：它从不阻塞流程，门仍由租约当。
+冲突账本的来源：一次结构化拒绝会以 `command.<kind>.denied` 事件持久化——该事件写在命令自身事务之外，所以拒绝即使回滚也留痕。占用冲突的 `code` 是裸的 `resource_conflict`（带冒号的 `resource_conflict:<keys>` 只出现在异常消息里，事件 payload 里从来没有），拒绝原因落在事件的 `payload.code` 上。`/conflicts` 读这些事件，再按**当前**预约（reservation）与 Attempt 状态机械推断应对情况（`retried_and_won` / `gave_up` / `holder_released` / `open`），不需要任何人上报。冲突只是账：它从不阻塞流程，门仍由预约当。
 
 所有写入统一走 command dispatcher：
 

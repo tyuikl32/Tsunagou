@@ -111,7 +111,7 @@ def test_proxy_identity_and_cancel_survive_restart_with_audit_times(runtime, mon
     assert result["real_actor_id"] == main["agent_id"]
     assert result["represented_participant"] == worker["agent_id"]
     assert result["proposal_status"] == "proposed"
-    task = call("task.create", {"title": "unowned", "objective": "cancel before claim"}, main)
+    task = call("task.create", {"title": "unowned", "objective": "cancel before claim", "execution_scope": {}}, main)
     payload = {"task_id": task["task_id"], "reason": "unneeded"}
     command_id = new_id()
     cancelled = call("task.cancel_request", payload, main, command_id=command_id)
@@ -192,7 +192,7 @@ def test_duplicate_slots_and_invalid_supersede_leave_original_untouched(runtime)
 def test_only_owner_ack_or_main_reclaim_can_finish_active_cancel(runtime) -> None:
     app, call, main, worker = runtime
     for reclaim in (False, True):
-        task = call("task.create", {"title": "claimed", "objective": "cancel active"}, main)
+        task = call("task.create", {"title": "claimed", "objective": "cancel active", "execution_scope": {}}, main)
         task_payload = {"task_id": task["task_id"]}
         call("task.ready", task_payload, main)
         published = call("task.publish", task_payload, main)
@@ -225,7 +225,7 @@ def test_a_repeated_reopen_recovery_does_not_mint_another_revision(runtime) -> N
     """
 
     app, call, main, worker = runtime
-    task = call("task.create", {"title": "blocked once", "objective": "recover exactly once"}, main)
+    task = call("task.create", {"title": "blocked once", "objective": "recover exactly once", "execution_scope": {}}, main)
     task_payload = {"task_id": task["task_id"]}
     call("task.ready", task_payload, main)
     published = call("task.publish", task_payload, main)

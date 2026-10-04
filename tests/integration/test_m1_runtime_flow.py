@@ -491,11 +491,11 @@ def test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped
     def agent_call(kind: str, payload: dict[str, Any], receipt: dict[str, Any]) -> dict[str, Any]:
         return call(kind, payload, receipt["secret_token"], session_id=receipt["session_id"], epoch=receipt["connection_epoch"])
 
-    task = agent_call("task.create", {"title": "before", "objective": "old"}, main)
+    task = agent_call("task.create", {"title": "before", "objective": "old", "execution_scope": {}}, main)
     agent_call("task.update_plan", {"task_id": task["task_id"], "title": "after", "objective": "new"}, main)
     agent_call("task.ready", {"task_id": task["task_id"]}, main)
     agent_call("task.publish", {"task_id": task["task_id"]}, main)
-    other = agent_call("task.create", {"title": "blocked-by", "objective": "edge"}, main)
+    other = agent_call("task.create", {"title": "blocked-by", "objective": "edge", "execution_scope": {}}, main)
     agent_call(
         "task.edge.add",
         {
@@ -549,7 +549,7 @@ def test_task_recovery_cancel_scope_and_plan_actions_are_public_and_owner_scoped
     )
     assert recovered["status"] == "open"
 
-    cancel_task = agent_call("task.create", {"title": "cancel", "objective": "stop"}, main)
+    cancel_task = agent_call("task.create", {"title": "cancel", "objective": "stop", "execution_scope": {}}, main)
     agent_call("task.ready", {"task_id": cancel_task["task_id"]}, main)
     agent_call("task.publish", {"task_id": cancel_task["task_id"]}, main)
     cancel_attempt = agent_call(
@@ -624,7 +624,7 @@ def test_cognition_discrepancy_and_contract_resolution_are_public_and_scoped(
     def agent_call(kind: str, payload: dict[str, Any], receipt: dict[str, Any]) -> dict[str, Any]:
         return call(kind, payload, receipt["secret_token"], session_id=receipt["session_id"], epoch=receipt["connection_epoch"])
 
-    task = agent_call("task.create", {"title": "cognition", "objective": "compare"}, main)
+    task = agent_call("task.create", {"title": "cognition", "objective": "compare", "execution_scope": {}}, main)
     agent_call("task.ready", {"task_id": task["task_id"]}, main)
     agent_call("task.publish", {"task_id": task["task_id"]}, main)
     claimed = agent_call(
