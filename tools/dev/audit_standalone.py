@@ -202,7 +202,7 @@ class Audit:
         main, worker = self.enroll("main"), self.enroll("worker")
         self.ok("authority.appoint", {"agent_id": main["agent_id"]}, self.control)
 
-        payload = {"title": "duplicate", "objective": "one command, one task"}
+        payload = {"title": "duplicate", "objective": "one command, one task", "execution_scope": {}}
         key = new_id()
         a_status, first = self.command("task.create", payload, main, command_id=key)
         b_status, second = self.command("task.create", payload, main, command_id=key)
@@ -224,7 +224,7 @@ class Audit:
         status, _ = self.command("task.resume", {"task_id": first["task_id"]}, worker)
         self.record("worker_cannot_take_over_main_attempt", status >= 400, http_status=status)
 
-        partial = self.ok("task.create", {"title": "atomicity", "objective": "reject before mutation"}, main)
+        partial = self.ok("task.create", {"title": "atomicity", "objective": "reject before mutation", "execution_scope": {}}, main)
         self.ok("task.ready", {"task_id": partial["task_id"]}, main)
         self.ok("task.publish", {"task_id": partial["task_id"]}, main)
         self.ok("task.claim", {"task_id": partial["task_id"]}, main)
@@ -235,7 +235,7 @@ class Audit:
 
         status, _ = self.command("cognition.report", {"task_id": new_id(), "attempt_id": new_id()}, worker)
         self.record("report_requires_real_task_relationship", status >= 400, http_status=status)
-        durable = self.ok("task.create", {"title": "restart", "objective": "survive process restart"}, main)
+        durable = self.ok("task.create", {"title": "restart", "objective": "survive process restart", "execution_scope": {}}, main)
         self.ok("task.ready", {"task_id": durable["task_id"]}, main)
         self.ok("task.publish", {"task_id": durable["task_id"]}, main)
         self.ok("task.claim", {"task_id": durable["task_id"]}, worker)
@@ -282,7 +282,7 @@ class Audit:
             and a2a_task.get("result", {}).get("status", {}).get("state") == "submitted",
             http_status=task_status,
         )
-        cancel_task = self.ok("task.create", {"title": "a2a cancel", "objective": "audit cancel transition"}, main)
+        cancel_task = self.ok("task.create", {"title": "a2a cancel", "objective": "audit cancel transition", "execution_scope": {}}, main)
         self.ok("task.ready", {"task_id": cancel_task["task_id"]}, main)
         self.ok("task.publish", {"task_id": cancel_task["task_id"]}, main)
         cancel_status, cancel_result = self.a2a(
@@ -297,7 +297,7 @@ class Audit:
             and cancel_result.get("result", {}).get("metadata", {}).get("tsunagou", {}).get("transition") == "task.cancel_request",
             http_status=cancel_status,
         )
-        fail_task = self.ok("task.create", {"title": "a2a fail", "objective": "audit failure transition"}, main)
+        fail_task = self.ok("task.create", {"title": "a2a fail", "objective": "audit failure transition", "execution_scope": {}}, main)
         self.ok("task.ready", {"task_id": fail_task["task_id"]}, main)
         self.ok("task.publish", {"task_id": fail_task["task_id"]}, main)
         fail_attempt = self.ok("task.claim", {"task_id": fail_task["task_id"]}, worker)
@@ -313,7 +313,7 @@ class Audit:
             fail_status == 200 and fail_result.get("result", {}).get("status", {}).get("state") == "failed",
             http_status=fail_status,
         )
-        retry_task = self.ok("task.create", {"title": "a2a retry", "objective": "audit retry transition"}, main)
+        retry_task = self.ok("task.create", {"title": "a2a retry", "objective": "audit retry transition", "execution_scope": {}}, main)
         self.ok("task.ready", {"task_id": retry_task["task_id"]}, main)
         self.ok("task.publish", {"task_id": retry_task["task_id"]}, main)
         retry_attempt = self.ok("task.claim", {"task_id": retry_task["task_id"]}, worker)

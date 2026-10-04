@@ -1182,6 +1182,7 @@
       ],
       "principal": "M",
       "required_fields": [
+        "execution_scope",
         "objective",
         "title"
       ],
@@ -1574,6 +1575,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:e77f31285804c01deeb11fc37670355d5799d39cc0776c01a6b35bd723ae301a",
+  "schema_bundle_digest": "sha256:4ad2aa8642d824670ee2e6ccb8009d5009a2d785ffb1d151d595bcbc1c6ec229",
   "supported_previous_version": "0.9"
 }

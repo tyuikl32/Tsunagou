@@ -976,7 +976,7 @@
         },
         /* 冲突与协商：0 分歧 / 1 冲突 / 2 Agent 间协商 / 3 契约 */
         conflict: function (index) { return ui.blockTabs.select('block-conflict', index); },
-        /* 意图与权限审计：0 Agent 意图 / 1 Agent 权限 */
+        /* 意图与权限审计：0 Agent 权限（原来 0 是 Agent 意图，那一栏已删） */
         audit: function (index) { return ui.blockTabs.select('block-audit', index); }
     };
 
@@ -3577,22 +3577,36 @@
 
     /* ---- 冲突与协商（4 个子标签） ---------------------------------------- */
 
+    /* 分歧卡。出口（container.py 的 cognition）只给 7 个键：
+       discrepancy_id / rule_id / subject_key / severity / status / claim_ids / input_digest
+       —— 没有 actor_agent_id、没有 subject_ref、**没有任何时间**。
+       所以抬头是规则的中文说法（词表 discrepancy_rule，查不到才原样印代号），
+       参与 Agent 与「…的理解」由适配层从 claim_ids 里的报告号 join 出来，
+       时间那一行干脆不画：分歧没有时间戳可读，拿报告时间顶替就是编。*/
     function dissentCardHtml(dissent) {
         const understandings = toArray(dissent.understandings).map(function (item) {
             return titleHtml(item.agent + '的理解') + '<p class="textZbox">' + esc(item.text) + '</p>';
         }).join('');
+        const agents = toArray(dissent.agents);
+        const actions = toArray(dissent.actions);
         return {
             cls: 'item',
             attrs: ' data-row-id="' + esc(dissent.id) + '"',
             parts: [
                 headerHtml(dissent.title),
-                listFieldHtml(dissent.agents, 'itemS'),
-                timeHtml(dissent.time),
+                agents.length ? listFieldHtml(agents, 'itemS') : '',
+                /* 规则代号留着：抬头是它的中文说法，而人要靠这个代号跟账本、协议对上
+                   （与总路径保留 `task/<短号>` 同一个道理）。*/
+                titleHtml('规则'), textZHtml(dissent.ruleId),
+                dissent.severity ? titleHtml('严重度') + tagsHtml([{ text: dissent.severity }]) : '',
+                dissent.status ? titleHtml('处理状态') + tagsHtml([{ text: dissent.status }]) : '',
                 titleHtml('影响范围'), textZHtml(dissent.scope),
                 understandings,
-                optionHtml(toArray(dissent.actions).map(function (action) {
+                /* 动作有才画按钮：出口不导出 actions，daemon 那两条命令
+                   （discrepancy.advance / resolve）控制台也还没有入口。*/
+                actions.length ? optionHtml(actions.map(function (action) {
                     return { text: action.text, kind: action.kind, action: action.action };
-                }))
+                })) : ''
             ]
         };
     }
@@ -3663,14 +3677,16 @@
             }));
         }
         if (panels[3]) {
+            /* 契约卡：谁签了哪个槽位来自 `/contracts` 每项自己的 acceptances
+               （适配层见 BACKEND_SHAPE.conflicts）。「提出 Agent」与时间不画 ——
+               `/contracts` 与 `/cognition` 都不导出 proposed_by，也没有任何时间戳，
+               画一格恒空的标签就是骗人。*/
             fill(panels[3], boxerHtml(toArray(data.contracts).map(function (contract) {
                 return {
                     cls: 'item',
                     attrs: ' data-row-id="' + esc(contract.id) + '"',
                     parts: [
                         headerHtml(contract.title),
-                        timeHtml(contract.time),
-                        titleHtml('提出 Agent'), listFieldHtml(contract.proposers, 'itemS'),
                         titleHtml('影响范围'), textZHtml(contract.scope),
                         titleHtml('已确认 Agent'), listFieldHtml(contract.confirmed, 'itemS'),
                         titleHtml('未确认 Agent'), listFieldHtml(contract.unconfirmed, 'itemS'),
@@ -3682,8 +3698,13 @@
         return true;
     };
 
-    /* ---- 意图与权限审计（2 个子标签） ------------------------------------ */
+    /* ---- 意图与权限审计（只剩「Agent 权限」一栏） ------------------------- */
 
+    /* 这一屏原来有两个子标签，「Agent 意图」那一栏读的是 /intents 出口 ——
+       它现在**无条件返回空列表**：资源 intent 模型已被显式 reservation 取代
+       （docs/decisions/2026-09-28-explicit-resource-release.md），没有 intent
+       对象可读，重建一个就是第二套资源模型。所以那一栏连同它的适配器一起删掉，
+       这一屏只画真拿得到的租约（2026-10-04）。*/
     render.audit = function (audit) {
         const data = audit || {};
         const block = byId('block-audit');
@@ -3693,38 +3714,19 @@
             return { cls: 'colu-m', html: '<div class="tagZ' + (lease.ok ? ' tagZOK' : '') + '">' + esc(lease.text) + '</div>' };
         };
         if (panels[0]) {
-            fill(panels[0], tableBoxHtml({
-                cls: 'tableboxC',
-                columns: [{ text: 'Agent', cls: 'colu-m' }, { text: '目标', cls: 'colu-m' }, { text: '方式' },
-                    { text: '原因', cls: 'colu-l' }, { text: '声明版本' }, { text: '租约', cls: 'colu-m' }],
-                rows: toArray(data.intents).map(function (item) {
-                    return {
-                        attrs: ' data-row-id="' + esc(item.id) + '"',
-                        cells: [
-                            { cls: 'colu-m', html: listFieldHtml([item.agent]) },
-                            { cls: 'colu-m', text: item.target },
-                            { text: item.mode },
-                            { cls: 'colu-l', text: item.reason },
-                            { text: item.version },
-                            leaseCell(item.lease)
-                        ]
-                    };
-                })
-            }));
-        }
-        if (panels[1]) {
             const leaseTable = function (title, rows) {
                 return '<p class="title3">' + esc(title) + '</p>' + tableBoxHtml({
                     cls: 'tableboxC',
+                    /* 没有「声明版本」那一列：`resources` 出口不给 revision，
+                       恒空的一列就是骗人（原来它一直在那儿空着）。*/
                     columns: [{ text: 'Agent', cls: 'colu-m' }, { text: '批准范围', cls: 'colu-l' },
-                        { text: '声明版本' }, { text: '租约', cls: 'colu-m' }],
+                        { text: '租约', cls: 'colu-m' }],
                     rows: toArray(rows).map(function (item) {
                         return {
                             attrs: ' data-row-id="' + esc(item.id) + '"',
                             cells: [
                                 { cls: 'colu-m', html: listFieldHtml([item.agent]) },
                                 { cls: 'colu-l', text: item.scope },
-                                { text: item.version },
                                 leaseCell(item.lease)
                             ]
                         };
@@ -3734,7 +3736,7 @@
             /* 只列真实拿到的租约：daemon 没把”等着拿“的队列做成出口，
                所以不摆一个永远为空的表（决定 11 砍掉了这一栏）。
                租约冲突不在本页：它在「冲突与协商 → 冲突」里（render.conflicts）。*/
-            fill(panels[1], leaseTable('已经获得的租约', data.leases));
+            fill(panels[0], leaseTable('已经获得的租约', data.leases));
         }
         return true;
     };
@@ -4690,13 +4692,15 @@
         ], { title: '任务细节' });
     };
 
+    /* 分歧详情：与卡片同一套字段（出口没有时间，所以这里也没有"时间"那一行）。*/
     render.dissentDetail = function (dissent) {
         const data = dissent || {};
         const parts = [
             { bgTitle: data.title },
+            { title: '规则', text: data.ruleId },
             { title: '参与 Agent', html: listFieldHtml(data.agents, 'itemS') },
-            /* 详情比表格细一级：这里给到毫秒 */
-            { title: '时间', text: data.timePrecise || data.time },
+            { title: '严重度', text: data.severity },
+            { title: '处理状态', text: data.status },
             { title: '影响范围', text: data.scope }
         ];
         toArray(data.understandings).forEach(function (item) {
@@ -4709,9 +4713,6 @@
         const data = contract || {};
         const parts = [
             { bgTitle: data.title },
-            { title: '提出 Agent', html: listFieldHtml(data.proposers, 'itemS') },
-            /* 详情比表格细一级：这里给到毫秒 */
-            { title: '提出时间', text: data.timePrecise || data.time },
             { title: '影响范围', text: data.scope },
             { title: '契约内容', text: data.text },
             { title: '已确认 Agent', html: listFieldHtml(data.confirmed, 'itemS') },
@@ -4750,28 +4751,16 @@
         ], { title: '详细信息' });
     };
 
-    render.intentDetail = function (intent) {
-        const data = intent || {};
-        const agentName = (data.agent || {}).name || data.agentName || 'Agent';
-        return render.aside('audit', 0, [
-            { bgTitle: agentName + ' 的意图声明' },
-            { title: 'Agent', html: listFieldHtml([data.agent], 'itemS') },
-            { title: '目标', text: data.target },
-            { title: '方式', text: data.mode },
-            { title: '原因', text: data.reason },
-            { title: '声明版本', text: data.version },
-            { title: '租约', html: '<div class="tagZ' + (data.lease && data.lease.ok ? ' tagZOK' : '') + '">' + esc(data.lease && data.lease.text) + '</div>' }
-        ], { title: '详细信息' });
-    };
-
+    /* 权限租约详情。审计页只剩这一种详情，所以侧栏也只有第 1 段
+       （原来第 1 段是"意图声明"，那一栏已随 /intents 的空回答一起删掉）。
+       「声明版本」那一行也去掉了：`resources` 出口不给 revision。*/
     render.leaseDetail = function (lease) {
         const data = lease || {};
         const agentName = (data.agent || {}).name || data.agentName || 'Agent';
-        return render.aside('audit', 1, [
+        return render.aside('audit', 0, [
             { bgTitle: agentName + ' 的权限租约' },
             { title: 'Agent', html: listFieldHtml([data.agent], 'itemS') },
             { title: '批准范围', text: data.scope },
-            { title: '声明版本', text: data.version },
             { title: '租约', html: '<div class="tagZ' + (data.lease && data.lease.ok ? ' tagZOK' : '') + '">' + esc(data.lease && data.lease.text) + '</div>' }
         ], { title: '详细信息' });
     };
@@ -5547,18 +5536,12 @@
             render.dissentDetail(dissent);
             return 0;
         },
-        /* 意图与权限审计：区块第 2 段（权限租约）对应侧栏第 2 段，其余都在第 1 段 */
-        audit: function (id, block) {
-            if (Number(block) === 1) {
-                const lease = findById(state.get('audits.leases', []), id) ||
-                    findById(state.get('audits.waiting', []), id);
-                if (!lease) return null;
-                render.leaseDetail(lease);
-                return 1;
-            }
-            const intent = findById(state.get('audits.intents', []), id);
-            if (!intent) return null;
-            render.intentDetail(intent);
+        /* 意图与权限审计只剩「Agent 权限」一栏，点租约行开侧栏那一段
+           （侧栏也只有那一段 —— 原来第 1 段的"意图声明"随那一栏一起删了）。*/
+        audit: function (id) {
+            const lease = findById(state.get('audits.leases', []), id);
+            if (!lease) return null;
+            render.leaseDetail(lease);
             return 0;
         }
     };
@@ -6465,9 +6448,11 @@
 
     /* 事件后面那句括注（审计出口的 reason_code）→ 中文。两种来源同一栏：
        写操作被拒的原因码（denial_reason），以及事件自己那句"为什么"
-       （event_reason：用户裁决、后台作业重试用尽…）。码可能带参数
-       （`resource_conflict:file:src/x.py`），所以只查冒号前那截、后面原样保留；
-       两张表都没命中就把整串原样返回 —— 宁可难看，也不编一个中文出来。*/
+       （event_reason：用户裁决、后台作业重试用尽…）。有些码带参数
+       （例如 `required_contract_not_accepted:<proposal_id>`），所以只查冒号前那截、
+       后面原样保留；两张表都没命中就把整串原样返回 —— 宁可难看，也不编一个中文出来。
+       注意 `resource_conflict` 是**裸码**（带冒号的形态只存在于异常消息与
+       `resource.acquire` 年代的旧账行），所以它走"整串查表"这条路。*/
     function reasonText(code) {
         const text = toText(code);
         if (!text) return '';
@@ -7940,46 +7925,34 @@
                 };
             });
         },
-        /* 中间层 view=audit（意图 + 租约 + 租约冲突账本）→ render.audit */
+        /* 中间层 view=audit（权限租约）→ render.audit。
+           `/intents` 仍是这一屏的一个来源（中间层 CONSOLE_VIEWS 里钉着那份名单），
+           但它的回答永远是空列表：资源 intent 模型已被显式 reservation 取代
+           （docs/decisions/2026-09-28-explicit-resource-release.md），没有 intent
+           对象可读。页面不再读它、也不再为它画一栏（2026-10-04）。*/
         audits: function (raw) {
             const sources = viewSources(raw);
-            const missing = viewMissing(raw);
             const agents = agentsById(sourceItems(sources, 'agents'));
-            const tasks = {};
-            sourceItems(sources, 'tasks').forEach(function (t) { tasks[toText(t.task_id)] = t; });
+            /* 租约表的行身份是**预约号**：`resources` 出口给的是 `reservation_id`
+               （显式 reservation 模型），`lease_set_id` 是租约集合时代的旧拼法
+               （只有 conflicts 出口还在兼容它）—— 两个拼法都认，取到的那个才让行
+               点得开（以前只读旧拼法，于是每行的 data-row-id 都是空的，点哪一行都
+               只会打开第一条）。`revision` 这个出口根本没有，所以「声明版本」那一列
+               与详情里那一行都不画（要显示得先让出口给出来）。*/
             const leases = sourceItems(sources, 'resources').map(function (l) {
+                const id = toText(l.reservation_id) || toText(l.lease_set_id);
                 const owner = l.owner_agent_id ? agents[toText(l.owner_agent_id)] : null;
                 return {
-                    id: l.lease_set_id,
+                    id: id,
                     agent: owner ? { name: agentDisplayName(owner), icon: owner.vendor || owner.agent_id, id: owner.agent_id }
-                        : { name: shortId(l.owner_agent_id || l.lease_set_id) },
+                        : { name: shortId(l.owner_agent_id || id) },
                     scope: toArray(l.resources).map(function (r) {
                         return isPlainObject(r) ? (toText(r.key) || toText(r.resource)) : toText(r);
                     }).join('、'),
-                    version: toText(l.revision),
                     lease: leaseState(l)
                 };
             });
-            return {
-                intents: sourceItems(sources, 'intents').map(function (intent) {
-                    const owner = intent.owner_agent_id ? agents[toText(intent.owner_agent_id)] : null;
-                    return {
-                        id: intent.intent_id,
-                        agent: owner ? { name: agentDisplayName(owner), icon: owner.vendor || owner.agent_id, id: owner.agent_id }
-                            : { name: shortId(intent.owner_agent_id || intent.intent_id) },
-                        target: toArray(intent.resources).map(function (r) {
-                            return isPlainObject(r) ? (toText(r.key) || toText(r.resource)) : toText(r);
-                        }).join('、'),
-                        mode: toArray(intent.resources).map(function (r) {
-                            return isPlainObject(r) ? glossText('mode', r.mode) : '';
-                        }).filter(Boolean).join('、'),
-                        reason: toText(intent.reason),
-                        version: toText(intent.revision),
-                        lease: { text: tasks[toText(intent.task_id)] ? '属于任务 ' + shortId(intent.task_id) : '未开工', ok: true }
-                    };
-                }),
-                leases: leases
-            };
+            return { leases: leases };
         },
         /* 中间层 view=collaboration（认知分歧 + 契约 + 消息 + 租约冲突）→ render.conflicts */
         conflicts: function (raw) {
@@ -7988,15 +7961,36 @@
             const agents = agentsById(sourceItems(sources, 'agents'));
             const cognition = isPlainObject(sources.cognition) ? sources.cognition : {};
             const contracts = sourceItems(sources, 'contracts');
-            const acceptances = isPlainObject(cognition.acceptances) ? cognition.acceptances : {};
-            const confirmedOf = function (proposalId) {
-                return toArray(acceptances[toText(proposalId)]).map(function (acceptance) {
-                    return { name: toText(acceptance.real_actor_id) ? shortId(acceptance.real_actor_id) : '' };
-                });
+            /* 一个 agent_id → 一个胶囊：名单里认得出就用昵称，认不出退回短号
+               （`agents` 是这一屏自己拉的名单）。*/
+            const agentChip = function (agentId) {
+                const id = toText(agentId);
+                const agent = agents[id];
+                return { name: agent ? agentDisplayName(agent) : shortId(id), id: id };
             };
-            const proposerChips = function (proposal) {
-                const actor = toText(proposal.created_by) || toText(proposal.actor_agent_id);
-                return actor ? [{ name: shortId(actor) }] : [];
+            /* 分歧本身不记"谁报的"，但它记着相关的**报告号**：claim_ids 里装的就是
+               report_id，两条产生分歧的路都这么写（见 modules/cognition.py）——
+               discrepancy.create 带的是调用方给的 report_refs（可以有好几份），
+               而自动判定（`_record_discrepancy(…, report)`）只记下**触发它的那一份**
+               报告。所以"参与 Agent"就是这份分歧真点名过的那几位，不多不少：对方是谁
+               在领域模型里根本没存（只把对的 digest 存进 input_digest），页面不替它补。*/
+            const reportsById = {};
+            backendItems(cognition.reports).forEach(function (report) {
+                reportsById[toText(report.report_id)] = report;
+            });
+            /* 分歧的对象（subject_key）两种形状都有：`task/<id>` 这类引用，和 Agent
+               自己起的主题名（`workspace.driver`、`接口契约`）。只有认得出前缀的引用
+               才缩写 —— 别的原样印，不能把主题名也截成 8 个字符。*/
+            const subjectText = function (value) {
+                const text = toText(value);
+                const at = text.indexOf('/');
+                if (at > 0 && glossWord('ref_kind', text.slice(0, at))) return refText(text);
+                return text;
+            };
+            /* claim 的 value 是任意 JSON；对象/数组原样印 JSON，别落成 `[object Object]`。*/
+            const claimValueText = function (value) {
+                if (isPlainObject(value) || Array.isArray(value)) return JSON.stringify(value);
+                return toText(value);
             };
             return {
                 /* 「冲突」子标签：每次被拒的租约申请一条。
@@ -8026,18 +8020,51 @@
                     };
                 }),
                 note: [missingNote(missing, 'conflicts', '租约冲突账本')].filter(Boolean).join('；'),
+                /* 「分歧」子标签：出口（container.py 的 cognition）给的就 7 个键 ——
+                   discrepancy_id / rule_id / subject_key / severity / status /
+                   claim_ids / input_digest。既没有 actor_agent_id、也没有 subject_ref，
+                   **一点时间都没有**（Discrepancy 自己也没记）。所以：
+                   · 抬头查词表 discrepancy_rule 说人话，规则代号另起一行留着；
+                   · 参与 Agent 由 claim_ids → reports.actor_agent_id join 出来；
+                   · 「…的理解」= 那份报告在**被说岔的那个主题**上说的话；
+                   · 时间不画 —— 拿报告时间冒充"分歧发生的时间"就是编。*/
                 dissents: backendItems(cognition.discrepancies).map(function (d) {
+                    const reports = toArray(d.claim_ids).map(function (claimId) {
+                        return reportsById[toText(claimId)] || null;
+                    }).filter(Boolean);
+                    const subject = toText(d.subject_key);
+                    const seenAgent = {};
+                    const actors = [];
+                    const understandings = [];
+                    reports.forEach(function (report) {
+                        const actorId = toText(report.actor_agent_id);
+                        if (actorId && !seenAgent[actorId]) {
+                            seenAgent[actorId] = true;
+                            actors.push(actorId);
+                        }
+                        const said = toArray(report.claims).filter(function (claim) {
+                            return toText(claim.subject_key) === subject;
+                        }).map(function (claim) {
+                            return claimValueText(claim.value);
+                        }).filter(Boolean);
+                        /* 报告里没有被说岔的这个主题（例如"契约版本不符"的 subject_key
+                           是任务号）就什么都不摆，不拿别的主题顶上；报告没写作者也不摆
+                           ——「的理解」前面得真有人名。*/
+                        if (said.length && actorId) {
+                            understandings.push({ agent: agentChip(actorId).name, text: said.join('；') });
+                        }
+                    });
                     return {
                         id: d.discrepancy_id,
-                        title: toText(d.rule_id),
-                        agents: toArray([d.actor_agent_id, d.subject_ref]).filter(Boolean).map(function (value) {
-                            const agent = agents[toText(value)];
-                            return { name: agent ? agentDisplayName(agent) : shortId(value), id: value };
-                        }),
-                        time: formatTime(d.updated_at || d.created_at),
-                        timePrecise: formatTime(d.updated_at || d.created_at, { precise: true }),
-                        scope: toText(d.subject_key) ? shortId(d.subject_key) : '',
-                        understandings: [],
+                        title: glossText('discrepancy_rule', d.rule_id),
+                        ruleId: toText(d.rule_id),
+                        severity: d.severity ? glossText('discrepancy_severity', d.severity) : '',
+                        status: d.status ? glossText('discrepancy_status', d.status) : '',
+                        agents: actors.map(agentChip),
+                        scope: subjectText(d.subject_key),
+                        understandings: understandings,
+                        /* 出口不导出 actions；daemon 那两条命令（discrepancy.advance /
+                           discrepancy.resolve）控制台还没有入口，所以这里是空的。*/
                         actions: []
                     };
                 }),
@@ -8062,23 +8089,38 @@
                         })
                     };
                 }),
+                /* 「契约」子标签：谁签了哪个槽位就在**这一项自己**的 acceptances 里
+                   （/contracts 的每项都带）。以前去 /cognition 找 acceptances ——
+                   那个出口从不导出它，于是「已确认 Agent」恒空。
+                   participants 是对象数组 {slot, agent_id, required}，不是字符串数组：
+                   以前按字符串处理，页面上写成 `[object `。
+                   未确认 = 这个槽位还没签（`required` 说的是"不签就不算谈成"，
+                   不影响"签没签"这个事实，两种槽位都按签没签来看）。
+                   提出的 Agent 与时间不画：/contracts 与 /cognition 都不导出 proposed_by，
+                   也没有任何时间戳（要显示得先让出口给出来）。*/
                 contracts: contracts.map(function (contract) {
-                    const confirmed = confirmedOf(contract.proposal_id);
+                    const acceptedSlots = {};
+                    toArray(contract.acceptances).forEach(function (acceptance) {
+                        acceptedSlots[toText(acceptance.participant_slot)] = acceptance;
+                    });
                     const participants = toArray(contract.participants).map(function (participant) {
-                        return { name: toText(participant) ? shortId(participant) : '' };
+                        const known = isPlainObject(participant);
+                        return {
+                            slot: known ? toText(participant.slot) : toText(participant),
+                            chip: agentChip(known ? participant.agent_id : participant)
+                        };
                     });
                     return {
                         id: contract.proposal_id,
                         title: toText(contract.proposal_id) ? ('契约 ' + shortId(contract.proposal_id)) : '契约',
-                        time: formatTime(contract.updated_at || contract.created_at),
-                        timePrecise: formatTime(contract.updated_at || contract.created_at, { precise: true }),
-                        proposers: proposerChips(contract),
                         scope: toArray(contract.required_slots).join('、'),
                         text: toText(contract.payload) ? JSON.stringify(contract.payload) : '',
-                        confirmed: confirmed,
-                        unconfirmed: participants.filter(function (participant) {
-                            return !confirmed.some(function (done) { return done.name === participant.name; });
-                        }),
+                        confirmed: participants.filter(function (item) {
+                            return !!acceptedSlots[item.slot];
+                        }).map(function (item) { return item.chip; }),
+                        unconfirmed: participants.filter(function (item) {
+                            return !acceptedSlots[item.slot];
+                        }).map(function (item) { return item.chip; }),
                         action: 'contract.detail:' + toText(contract.proposal_id)
                     };
                 })
@@ -8306,7 +8348,7 @@
         tasks: [],
         taskDetail: {},
         conflicts: { dissents: [], conflicts: [], messages: [], contracts: [] },
-        audits: { intents: [], leases: [] },
+        audits: { leases: [] },
         workspaces: [],
         acceptance: { proposal: {}, taskResults: [] },
         checkpoints: { latest: [], history: [], failed: [] },

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any
 
-GLOSSARY_VERSION = 5
+GLOSSARY_VERSION = 7
 
 #: domain -> {token: 中文}
 GLOSSARY: dict[str, dict[str, str]] = {
@@ -146,6 +146,17 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "soft": "轻微",
         "hard": "严重",
         "critical": "致命",
+    },
+    # 分歧是**哪条规则**判出来的（Discrepancy.rule_id）。这是纯粹机器代号
+    # （`claim.literal_mismatch`），页面上原来直接印它 —— 规则名也是协议词汇的一部分，
+    # 中文说法跟别的 token 一样住在这张表里（六个字以内；撑不下就该先想能不能压）。
+    # 规则集在 modules/cognition.py 的 CognitionService.rules，另有 discrepancy.create
+    # 写下的 manual.discrepancy。
+    "discrepancy_rule": {
+        "claim.literal_mismatch": "说法不一致",
+        "claim.contract_digest_mismatch": "契约版本不符",
+        "claim.resource_use_mismatch": "资源用法不符",
+        "manual.discrepancy": "人工记录",
     },
     # 存档点状态（checkpoints 出口）
     "checkpoint_status": {
@@ -332,6 +343,10 @@ GLOSSARY: dict[str, dict[str, str]] = {
         # 分工、风险与产物
         "coordination.plan": "下达计划",
         "coordination.takeover": "接管分工",
+        "coordination.peer_hosts": "查看宿主",
+        "coordination.wake_candidates": "查询待唤醒",
+        "coordination.wake_status": "查询唤醒状态",
+        "coordination.wake": "唤醒会话",
         "risk.request": "申请风险",
         "risk.submit": "提交风险",
         "risk.accept": "接受风险",

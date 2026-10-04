@@ -123,7 +123,7 @@ def test_actual_actor_subject_causation_entity_times_and_noop_revisions(runtime:
     appointment = next(item for item in runtime.page()["items"] if item["action"] == "authority.appoint")
     assert appointment["evidence_level"] == "user_confirmed"
     command_id = new_id()
-    task = runtime.call("task.create", {"title": "T", "objective": "do"}, main, command_id=command_id)
+    task = runtime.call("task.create", {"title": "T", "objective": "do", "execution_scope": {}}, main, command_id=command_id)
     task_ref = f"task/{task['task_id']}"
     original = runtime.page(subject_ref=task_ref)["items"][0]
     assert original["actor_ref"] == main["agent_id"]
@@ -137,7 +137,7 @@ def test_actual_actor_subject_causation_entity_times_and_noop_revisions(runtime:
     watermark = runtime.db.last_event_seq()
     with runtime.db._connect() as conn:
         before = [tuple(row) for row in conn.execute("SELECT * FROM module_state ORDER BY module")]
-    replay = runtime.call("task.create", {"title": "T", "objective": "do"}, main, command_id=command_id)
+    replay = runtime.call("task.create", {"title": "T", "objective": "do", "execution_scope": {}}, main, command_id=command_id)
     assert replay == task
     runtime.call("context.project_read", {}, main)
     runtime.call("context.project_read", {}, worker)
@@ -146,7 +146,7 @@ def test_actual_actor_subject_causation_entity_times_and_noop_revisions(runtime:
         assert [tuple(row) for row in conn.execute("SELECT * FROM module_state ORDER BY module")] == before
     assert runtime.page(subject_ref=task_ref)["items"][0] == original
     with pytest.raises(HTTPException) as conflict:
-        runtime.call("task.create", {"title": "changed", "objective": "do"}, main, command_id=command_id)
+        runtime.call("task.create", {"title": "changed", "objective": "do", "execution_scope": {}}, main, command_id=command_id)
     assert conflict.value.status_code == 409
     assert runtime.db.last_event_seq() == watermark
     runtime.call("task.ready", {"task_id": task["task_id"]}, main)
@@ -298,7 +298,7 @@ def test_query_entity_times_use_own_identity_and_survive_restart(runtime: Runtim
     main, _ = runtime.enroll("main")
     runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
     clock += 1_000
-    task = runtime.call("task.create", {"title": "T", "objective": "do"}, main)
+    task = runtime.call("task.create", {"title": "T", "objective": "do", "execution_scope": {}}, main)
     runtime.call("task.ready", {"task_id": task["task_id"]}, main)
     runtime.call("task.publish", {"task_id": task["task_id"]}, main)
     clock += 1_000
@@ -458,7 +458,7 @@ def test_audit_http_query_validation_and_schema(runtime: Runtime) -> None:
 def test_task_event_checkpoint_and_export_queries_share_public_projection(runtime: Runtime) -> None:
     main, _ = runtime.enroll("timeline-main")
     runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
-    task = runtime.call("task.create", {"title": "timeline", "objective": "query me"}, main)
+    task = runtime.call("task.create", {"title": "timeline", "objective": "query me", "execution_scope": {}}, main)
     task_page_route = runtime.endpoint("/api/v1/projects/{project_id}/tasks/{task_id}/history")
     page = task_page_route(
         runtime.project_id,
@@ -500,7 +500,7 @@ def test_task_history_includes_related_entities_without_writing(runtime: Runtime
     main, _ = runtime.enroll("timeline-main")
     worker, _ = runtime.enroll("timeline-worker")
     runtime.call("authority.appoint", {"agent_id": main["agent_id"]})
-    task = runtime.call("task.create", {"title": "related", "objective": "trace relations"}, main)
+    task = runtime.call("task.create", {"title": "related", "objective": "trace relations", "execution_scope": {}}, main)
     runtime.call("task.ready", {"task_id": task["task_id"]}, main)
     runtime.call("task.publish", {"task_id": task["task_id"]}, main)
     claim = runtime.call(
