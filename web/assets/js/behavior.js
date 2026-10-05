@@ -207,11 +207,100 @@
         return tpl.content;
     }
 
+    /* 一次重绘前要记住的滚动位置。
+
+     **为什么记在这里**：页面所有重绘都从 fill() 出去（28 处）。而被填的那个节点**自己**
+     往往就是滚动条所在 —— `.tabMain`（有 id）**和 `.tabContent`**（.tabContent 没有 id！）
+     都声明了 overflow: auto/scroll。原来按 `[id]` 找的写法因此漏掉了子标签内容区，
+     点一次重绘就把人弹回顶部（2026-10-04 用户实测复现）。
+     按**节点身份**记就没有这个问题：fill() 换的是它的 innerHTML，节点本身还在。
+
+     另外记一遍**滚动祖先**：内容变矮时浏览器会把祖先的 scrollTop 夹回上限，
+     只补自己不够。*/
+    /* 从 from 往下到 to 的"第几个孩子"链。后代节点会被整体换掉，只有路径能在新内容里
+       找回同一个位置（结构一样就找得到，不一样就跳过 —— 不硬塞）。*/
+    function childSteps(from, to) {
+        const steps = [];
+        for (let node = to; node && node !== from; node = node.parentElement) {
+            const parent = node.parentElement;
+            if (!parent) return null;
+            steps.unshift(Array.prototype.indexOf.call(parent.children, node));
+        }
+        return steps.length ? steps : null;
+    }
+
+    function nodeAtSteps(from, steps) {
+        let node = from;
+        for (let index = 0; index < steps.length; index++) {
+            if (!node || !node.children) return null;
+            node = node.children[steps[index]];
+        }
+        return node || null;
+    }
+
+    function scrollMarksFor(node) {
+        const marks = [];
+        const page = document.scrollingElement || document.documentElement;
+        const remember = function (el) {
+            if (!el || el === document.body || el === document.documentElement) return;
+            if (el.scrollTop > 0 || el.scrollLeft > 0) {
+                marks.push({ el: el, top: el.scrollTop, left: el.scrollLeft });
+            }
+        };
+        remember(node);
+        for (let parent = node.parentElement; parent; parent = parent.parentElement) remember(parent);
+        /* 被填节点**内部的滚动区**：总路径的线性时间图画在 `.taskFlow > .inner` 里，
+           而 fill() 换的是整个窗格 —— 那两个节点每次都是新的，位置只能靠路径找回来
+           （2026-10-04 用户实测就在这一屏复现）。只记真的滚了的，通常是 0～2 个。*/
+        if (typeof node.querySelectorAll === 'function') {
+            Array.prototype.forEach.call(node.querySelectorAll('*'), function (child) {
+                if (child.scrollTop > 0 || child.scrollLeft > 0) {
+                    const steps = childSteps(node, child);
+                    if (steps) {
+                        marks.push({ anchor: node, steps: steps, top: child.scrollTop, left: child.scrollLeft });
+                    }
+                }
+            });
+        }
+        if (page && (page.scrollTop > 0 || page.scrollLeft > 0)) {
+            marks.push({ page: true, top: page.scrollTop, left: page.scrollLeft });
+        }
+        return marks;
+    }
+
+    function restoreScrollMarksFor(marks) {
+        const put = function () {
+            marks.forEach(function (mark) {
+                let el;
+                if (mark.page) {
+                    el = document.scrollingElement || document.documentElement;
+                } else if (mark.steps) {
+                    /* 路径要在**放的那一刻**重新解一次：中间可能又换过一轮内容。*/
+                    el = mark.anchor && mark.anchor.isConnected !== false
+                        ? nodeAtSteps(mark.anchor, mark.steps) : null;
+                } else {
+                    el = mark.el;
+                }
+                /* 节点已经被换掉（不在文档里）就不动它 —— 这一趟没有它的位置可放，
+                   下一次 fill 会重新记。*/
+                if (!el || el.isConnected === false) return;
+                if (el.scrollTop !== mark.top) el.scrollTop = mark.top;
+                if (el.scrollLeft !== mark.left) el.scrollLeft = mark.left;
+            });
+        };
+        /* 同步放一次：读 scrollTop 会逼一次布局，所以这一步已经是按新高度算的。
+           再补一帧：表格/图片有时到下一帧才把高度定下来，只放一次会被夹回去。*/
+        put();
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(put);
+    }
+
     /* 渲染器的出口：整体替换容器内容 */
     function fill(container, html) {
         const node = resolveEl(container);
         if (!node) return null;
+        const marks = scrollMarksFor(node);
         node.innerHTML = html;
+        restoreScrollMarksFor(marks);
         return node;
     }
 
@@ -735,7 +824,7 @@
         { slug: 'agents', title: 'Agent 管理' },
         { slug: 'tasks', title: '任务区' },
         { slug: 'conflict', title: '冲突与协商' },
-        { slug: 'audit', title: '意图与权限审计' },
+        { slug: 'audit', title: '租约审计' },
         { slug: 'workspace', title: '工作区' },
         { slug: 'acceptance', title: '验收与存档点' },
         { slug: 'path', title: '总路径' }
@@ -975,9 +1064,8 @@
             });
         },
         /* 冲突与协商：0 分歧 / 1 冲突 / 2 Agent 间协商 / 3 契约 */
-        conflict: function (index) { return ui.blockTabs.select('block-conflict', index); },
-        /* 意图与权限审计：0 Agent 权限（原来 0 是 Agent 意图，那一栏已删） */
-        audit: function (index) { return ui.blockTabs.select('block-audit', index); }
+        conflict: function (index) { return ui.blockTabs.select('block-conflict', index); }
+        /* 租约审计没有子标签了：只剩一栏，那条横排被去掉，整页由 render.audit 直接生成。 */
     };
 
     ui.blockTabs.bindClicks = function () {
@@ -1684,19 +1772,27 @@
             qsa('.chooseboxOpen[data-cs-state="open"]').forEach(closeCsPanel);
         },
         /* 按选项文字选中（后端说"把主题设成浅色"时用）。
-           传 { silent: true } 则只改显示值、不当成用户操作。*/
+           传 { silent: true } 则只改显示值、不当成用户操作。
+           传 { fallback: true } 时，面板里没有这个值就退回落**第一项**（默认项）——
+           绝不把后端值原样当标签写上去（2026-10-04 实测：旧档案里的 `dark` 就这么显示出来了）。*/
         setValue: function (boxRef, value, options) {
             const box = resolveEl(boxRef);
             if (!box) return false;
+            const opts = options || {};
             const panel = findCsPanel(box);
             if (!panel) return false;
             const list = qsa('p', panel);
             const text = toText(value);
             for (let i = 0; i < list.length; i++) {
-                if (list[i].textContent.trim() === text) {
-                    selectCsOption(list[i], options);
+                /* 大小写不敏感：后端写 codex、面板写 Codex 时也该对上。*/
+                if (list[i].textContent.trim().toLowerCase() === text.trim().toLowerCase()) {
+                    selectCsOption(list[i], opts);
                     return true;
                 }
+            }
+            if (opts.fallback && list.length) {
+                selectCsOption(list[0], opts);
+                return true;
             }
             /* 面板里没有这个选项时也允许直接写值（后端给了个自定义值） */
             const label = qs('.left', box);
@@ -2697,9 +2793,14 @@
     function chipHtml(agent, cls, options) {
         const info = isPlainObject(agent) ? agent : { name: agent };
         const opts = options || {};
+        /* 主 Agent 的胶囊是品牌深蓝底、文字本来就是白的（style.css 的 `.id-mAgent`
+           + `.right{color:white}`），但图标是**厂商 logo 图片**，深色的那个在蓝底上几乎
+           看不见。所以给它套一层"变纯白"的滤镜 —— 行内 style，不改 style.css。
+           子 Agent 的胶囊是浅底深字，图标保持原样（2026-10-04 用户要求）。*/
         const left = info.user
             ? '<i class="left fa-solid fa-user"></i>'
-            : '<img class="left" src="' + esc(iconOf(info)) + '" />';
+            : '<img class="left"' + (info.mainAgent ? ' style="filter:brightness(0) invert(1);"' : '') +
+                ' src="' + esc(iconOf(info)) + '" />';
         const classes = [cls || 'itemS'];
         if (opts.identity) {
             if (info.user) classes.push('id-user');
@@ -2816,6 +2917,31 @@
     function textZHtml(text) { return '<p class="textZ">' + esc(text) + '</p>'; }
 
     function textZboxHtml(text) { return '<div class="textZbox">' + nl2br(text) + '</div>'; }
+
+    /* 任务声明的改动范围（`execution_scope`）写成一句人话。
+
+       出口给的是**对象**：`{}` = 不认领任何路径，`{roots:[…]}` = 整个根，
+       `{resources:[{kind:'path', root_id, segments, mode}…]}` = 逐个路径。
+       以前这里直接 `toText(scope)`，页面上就写成了 `[object Object]`（2026-10-04 实测，
+       任务区和它的详情页都有）。认不出的形状退回 JSON，绝不写 [object Object]。*/
+    function scopeText(scope) {
+        if (!isPlainObject(scope)) return toText(scope);
+        const parts = [];
+        toArray(scope.roots).forEach(function (root) { parts.push(toText(root) + '（整根）'); });
+        toArray(scope.resources).forEach(function (item) {
+            if (!isPlainObject(item)) { parts.push(toText(item)); return; }
+            const segments = toArray(item.segments).map(function (part) { return toText(part); })
+                .filter(Boolean).join('/');
+            const where = [toText(item.root_id), segments].filter(Boolean).join('/');
+            const mode = toText(item.mode);
+            parts.push((where || toText(item.name) || '（未命名）') + (mode ? '（' + mode + '）' : ''));
+        });
+        Object.keys(scope).forEach(function (key) {
+            if (key === 'roots' || key === 'resources') return;
+            parts.push(key + '：' + JSON.stringify(scope[key]));
+        });
+        return parts.filter(Boolean).join('、') || '不认领任何路径（不做文件改动）';
+    }
 
     function timeHtml(text) { return '<p class="textTime">' + esc(text) + '</p>'; }
 
@@ -3185,10 +3311,11 @@
             '<div class="icon iconB"></div>' +
             '</div></div>';
     };
-    /* 本组一句空文案：**真实元素**，用现成的 .title2。不借 .emptybox ——
-       那句"这里暂时还没有内容"写死在 CSS 的 content 里，两组只能同一句话，按组换不了字。*/
+    /* 本组一句空文案。**自己不带字**：借现成的 `.emptybox`，那句"这里暂时还没有内容"由 CSS
+       的 ::before 填 —— 两组共用同一句（2026-10-04 用户明确选了这个口径；此前是"每组一行
+       .title2、按组可换字"）。显隐仍按本组的 `data-proj-blank` 切 display，不靠文字。*/
     const projectBlankRowHtml = function (group) {
-        return '<p class="title2" data-proj-blank="' + group + '">没有协作</p>';
+        return '<p class="emptybox" data-proj-blank="' + group + '"></p>';
     };
     let projSearch = { active: { query: '', open: false }, done: { query: '', open: false } };
 
@@ -3448,36 +3575,51 @@
     function agentNetworkHtml(agent) {
         const info = agentNetworkOf(agent);
         if (!info.network) return '';
-        /* 远端自己报的名字里没有，就还是原来那句「网络在线 / 网络离线」——
-           本机接入的 Agent 依旧什么都不画。
-           机器名是**远端自报**的（`agent import --machine`），中间层原样透出，所以这里是
-           外部输入，必须过 esc —— 它是拼进 HTML 的。*/
-        const where = info.machine ? ' · ' + esc(info.machine) : '';
-        return '<p class="right">' + (info.online ? '网络在线' : '网络离线') + where +
-            '<i class="fa-solid fa-circle-nodes"></i></p>';
+        /* 卡面上只写**机器状态**：在线 / 离线（2026-10-04 用户口径）。
+           机器名不写在这里 —— 卡面那一行放不下，写了会把别的字挤掉；它在**详细信息窗口**
+           的「在哪台机器」那一行里（见 render.agentInfoWindow）。
+           判据是域里唯一能证明"这条会话现在还能干活"的事实：session_status === 'ready'。
+           ⚠️ 协议里原本没有心跳也没有过期，对端断电时这条会话会停在 ready —— 所以还有一条
+           真正的活口探测：桥定期发 agent.heartbeat，daemon 记下"最近一次活着的时刻"，
+           超时未上报就不再算在线（见 agents 出口的 online 字段）。*/
+        const state = info.online === true ? '在线' : '离线';
+        return '<p class="right">' + state + '<i class="fa-solid fa-circle-nodes"></i></p>';
     }
 
-    /* 一个 Agent 的网络状态：{network, online, machine}。
+    /* 一个 Agent 的网络身份：{network, session, online, machine}。
        优先级：中间层推来的 > 数据里带的 > 两边都没有（= 本机接入，不画徽标）。
-       「自报的机器名」是远端的证据：本机接入那条路从来不写它（见 `agent import`）。*/
+       「自报的机器名」是远端的证据：本机接入那条路从来不写它（见 `agent import`）。
+       `online` 的取法（2026-10-04，用户定的口径）：
+         · 后端给了 `online`（桥的心跳算出来的"这台机器最近还活着"）就**以它为准** ——
+           它说不通就不通，别拿会话状态去覆盖它；
+         · 后端**没给**这个字段（旧版本，或者中间层没透出来）也按**离线**算：没有证据就是
+           没有证据。会话 ready 只说明"这个座位还能干活"，不是"那台机器还在"。*/
     function agentNetworkOf(agent) {
         const record = isPlainObject(agent) ? agent : {};
         /* 主 Agent 必须和 daemon 同机 —— 它永远不是网络接入（中间层推了也不画）*/
-        if (record.isMain === true) return { network: false, online: false, machine: '' };
+        if (record.isMain === true) return { network: false, session: '', online: false, machine: '' };
         const machine = toText(record.machine);
+        const session = toText(record.session);
+        const heard = record.online === true || record.online === false;
+        const online = heard ? record.online === true : false;
         const id = toText(record.agent_id || record.id);
         const pushed = state.get('agentNetwork', {}) || {};
         const known = id ? pushed[id] : undefined;
-        /* 推来的布尔值就是“在不在线”；有键 = 这个 Agent 是网络接入的 */
-        if (known === true || known === false) return { network: true, online: known, machine: machine };
+        /* 推来的布尔值就是"这是网络接入的，而且它现在在/不在"；有键 = 这个 Agent 是网络接入的。
+           布尔推送说的是**机器状态本身**，所以它直接决定 online，不再看会话状态。*/
+        if (known === true || known === false) {
+            return { network: true, session: session, online: known === true, machine: machine };
+        }
         if (isPlainObject(known)) {
+            const pushedOnline = known.online === true || known.online === false;
             return {
                 network: known.network === true, machine: machine,
-                online: known.network === true && known.online === true
+                session: toText(known.session) || session,
+                online: pushedOnline ? known.online === true : online
             };
         }
         const network = record.network === true || Boolean(machine);
-        return { network: network, online: network && record.online === true, machine: machine };
+        return { network: network, session: session, online: online, machine: machine };
     }
 
     /* 徽标重绘：中间层刚推来网络状态时调它（卡片与 Agent 列表两处都画这个标记）。*/
@@ -3521,8 +3663,17 @@
         };
     }
 
+    /* 主 Agent 排最前：它是这个协作的调度者，混在子 Agent 里得翻着找（2026-10-04 用户
+       要求）。稳定：其余保持后端给的顺序，一个主 Agent 都没有时原样返回。*/
+    function mainFirst(rows) {
+        const list = toArray(rows);
+        const main = list.filter(function (row) { return row && row.isMain === true; });
+        if (!main.length) return list;
+        return main.concat(list.filter(function (row) { return !(row && row.isMain === true); }));
+    }
+
     render.agents = function (agents) {
-        const list = toArray(agents);
+        const list = mainFirst(agents);
         /* 末尾那个大加号是"添加子 Agent"的入口；一个 Agent 都没有时先放个空状态（加号留着）。
            协作确认完成之后不再画它：往一个已经收尾的协作里再接入 Agent 没有意义。*/
         /* 一个 Agent 都没有时**不放空状态**：下面那个加号卡片本身就说明了"这儿还没有人，点我加一个"，
@@ -3652,12 +3803,24 @@
         if (panels[2]) {
             fill(panels[2], tableBoxHtml({
                 cls: 'tableboxC',
-                columns: [{ text: '收发 Agent', cls: 'colu-m' }, { text: '内容', cls: 'colu-l' },
+                columns: [{ text: '时间', cls: 'colu-m' },
+                    { text: '收发 Agent', cls: 'colu-m' }, { text: '内容', cls: 'colu-l' },
                     { text: '状态' }, { text: '消息处理情况', cls: 'colu-m' }],
-                rows: toArray(data.messages).map(function (item) {
+                /* 新的在上：刚发生的协商一眼就看到，不用滚到底（2026-10-04 用户选定）。
+                   解析不了的时间排到最后，但**不丢行** —— 宁可难看，也不编一个时间。
+                   slice() 是为了不改动 state 里那份数组。*/
+                rows: toArray(data.messages).slice().sort(function (left, right) {
+                    const a = toText(left && left.at);
+                    const b = toText(right && right.at);
+                    if (!a && !b) return 0;
+                    if (!a) return 1;
+                    if (!b) return -1;
+                    return a < b ? 1 : (a > b ? -1 : 0);
+                }).map(function (item) {
                     return {
                         attrs: ' data-row-id="' + esc(item.id) + '"',
                         cells: [
+                            { cls: 'colu-m', text: formatTime(item.at) },
                             {
                                 cls: 'colu-m',
                                 html: '<div class="colu-t">' +
@@ -3698,7 +3861,7 @@
         return true;
     };
 
-    /* ---- 意图与权限审计（只剩「Agent 权限」一栏） ------------------------- */
+    /* ---- 租约审计（只剩租约一栏，所以没有子标签） ------------------------- */
 
     /* 这一屏原来有两个子标签，「Agent 意图」那一栏读的是 /intents 出口 ——
        它现在**无条件返回空列表**：资源 intent 模型已被显式 reservation 取代
@@ -3707,37 +3870,39 @@
        这一屏只画真拿得到的租约（2026-10-04）。*/
     render.audit = function (audit) {
         const data = audit || {};
-        const block = byId('block-audit');
-        if (!block) return null;
-        const panels = blockPanels(block);
+        const pane = byId('pane-audit');
+        if (!pane) return null;
         const leaseCell = function (lease) {
             return { cls: 'colu-m', html: '<div class="tagZ' + (lease.ok ? ' tagZOK' : '') + '">' + esc(lease.text) + '</div>' };
         };
-        if (panels[0]) {
-            const leaseTable = function (title, rows) {
-                return '<p class="title3">' + esc(title) + '</p>' + tableBoxHtml({
-                    cls: 'tableboxC',
-                    /* 没有「声明版本」那一列：`resources` 出口不给 revision，
-                       恒空的一列就是骗人（原来它一直在那儿空着）。*/
-                    columns: [{ text: 'Agent', cls: 'colu-m' }, { text: '批准范围', cls: 'colu-l' },
-                        { text: '租约', cls: 'colu-m' }],
-                    rows: toArray(rows).map(function (item) {
-                        return {
-                            attrs: ' data-row-id="' + esc(item.id) + '"',
-                            cells: [
-                                { cls: 'colu-m', html: listFieldHtml([item.agent]) },
-                                { cls: 'colu-l', text: item.scope },
-                                leaseCell(item.lease)
-                            ]
-                        };
-                    })
-                });
-            };
-            /* 只列真实拿到的租约：daemon 没把”等着拿“的队列做成出口，
-               所以不摆一个永远为空的表（决定 11 砍掉了这一栏）。
-               租约冲突不在本页：它在「冲突与协商 → 冲突」里（render.conflicts）。*/
-            fill(panels[0], leaseTable('已经获得的租约', data.leases));
-        }
+        const leaseTable = function (title, rows) {
+            return '<p class="title2">' + esc(title) + '</p>' + tableBoxHtml({
+                /* 不挂 `tableboxC`：这一屏只有一张表，用不上那一档更紧凑的样式
+                   （2026-10-04 用户要求）。不传 cls 时 tableBoxHtml 只写 `tablebox`。*/
+                /* 没有「声明版本」那一列：`resources` 出口不给 revision，
+                   恒空的一列就是骗人（原来它一直在那儿空着）。*/
+                columns: [{ text: 'Agent', cls: 'colu-m' }, { text: '批准范围', cls: 'colu-l' },
+                    { text: '租约', cls: 'colu-m' }],
+                rows: toArray(rows).map(function (item) {
+                    return {
+                        attrs: ' data-row-id="' + esc(item.id) + '"',
+                        cells: [
+                            { cls: 'colu-m', html: listFieldHtml([item.agent]) },
+                            { cls: 'colu-l', text: item.scope },
+                            leaseCell(item.lease)
+                        ]
+                    };
+                })
+            });
+        };
+        /* 这一屏只有一栏，所以**不再有子标签**：整页直接生成，与 Agent 管理 / 工作区那几页
+           同一个写法（原来那条横排只剩「Agent 权限」一个选项，留着只是噪声 —— 2026-10-04
+           用户要求去掉）。
+           标题只留一个：整页标题 + 表标题，中间那句副标题已按用户要求删掉（2026-10-04）。
+           只列真实拿到的租约：daemon 没把"等着拿"的队列做成出口，所以不摆一个永远为空的表。
+           租约冲突不在本页：它在「冲突与协商 → 冲突」里（render.conflicts）。*/
+        fill(pane, pageTitleHtml('租约审计') +
+            leaseTable('已经获得的租约', data.leases));
         return true;
     };
 
@@ -3852,12 +4017,14 @@
             }] : []) +
             '<p class="title2">任务验收情况</p>' +
             tableBoxHtml({
-                columns: [{ text: 'Agent', cls: 'colu-m' }, { text: '任务', cls: 'colu-l' }, { text: '验收结果', cls: 'colu-m' }],
+                columns: [{ text: 'Agent', cls: 'colu-m' }, { text: '任务', cls: 'colu-l' }, { text: '验收结果', cls: 'colu-l' }],
                 rows: toArray(data.taskResults).map(function (item) {
                     return [
                         { cls: 'colu-m', html: listFieldHtml([item.agent]) },
                         { cls: 'colu-l', text: item.task },
-                        { cls: 'colu-m', html: verdictHtml(item) }
+                        /* 验收结果是这一屏真正要看的那一列，宽度跟「任务」同级（2026-10-04
+                           用户要求：整列由 colu-m 改成 colu-l）。*/
+                        { cls: 'colu-l', html: verdictHtml(item) }
                     ];
                 })
             }) +
@@ -4590,7 +4757,7 @@
     render.agentWindow = function (agents) {
         const container = qs('#mgrAgent .inner');
         if (!container) return null;
-        const list = toArray(agents);
+        const list = mainFirst(agents);
         /* 名字与图标按 id 现算（与左栏卡片同一个道理）：名单和用户档案是并发拉回来的，
            谁先到不定，烘焙进数据的话会先显示成 id 缩写。*/
         fill(container, '<div class="table">' + (list.length ? list.map(function (agent) {
@@ -4667,12 +4834,27 @@
     }
 
     /* 设置窗口：把值回填到控件（现在只剩"颜色主题"一项）。
-       回填一律走 silent，否则会被 choosebox:change 当成用户操作。*/
+       回填一律走 silent，否则会被 choosebox:change 当成用户操作。
+       主题要**归一**：旧档案里存的是 dark / light，面板上的选项却是中文标签；两边都对不上
+       时退回落默认项，绝不在格子里显示 dark 这种后端值（2026-10-04 实测就是这么显示出来的）。*/
     render.settings = function (settings) {
         const data = settings || {};
-        if (data.theme) ui.choosebox.setValue(qs('#uSet1 .choosebox'), data.theme, { silent: true });
+        const theme = themeLabel(data.theme) || toText(data.theme);
+        if (theme) {
+            ui.choosebox.setValue(qs('#uSet1 .choosebox'), theme, { silent: true, fallback: true });
+        }
         return data;
     };
+
+    /* 主题的两种写法都认：后端值（dark / light）与界面标签（深色 / 浅色）。
+       认不出返回空串，交给调用方决定怎么回落。*/
+    function themeLabel(value) {
+        const text = toText(value).trim().toLowerCase();
+        if (!text) return '';
+        if (text.indexOf('dark') >= 0 || text.indexOf('深') >= 0) return '深色';
+        if (text.indexOf('light') >= 0 || text.indexOf('浅') >= 0) return '浅色';
+        return '';
+    }
 
     /* 侧栏细节内容的专用渲染器（点击内容时调用） */
     render.taskDetail = function (task) {
@@ -4688,7 +4870,10 @@
             }).join('  ') },
             { title: '改动范围', text: data.scope },
             /* 详情比表格细一级：这里给到毫秒 */
-            { title: '时间', text: data.timePrecise || data.time }
+            { title: '时间', text: data.timePrecise || data.time },
+            /* 任务介绍 = 出口的 objective（发布时主 Agent 写下的那段要求与约定）。
+               放在最后：它可能很长（实测近 1500 字），前面那几行才是"一眼要看的事实"。*/
+            { title: '任务介绍', html: textZboxHtml(data.detail) }
         ], { title: '任务细节' });
     };
 
@@ -4876,6 +5061,19 @@
             if (!hit && item && toText(item.id) === target) hit = item;
         });
         return hit;
+    }
+
+    /* 按 id 找一行，**两种身份都认**：行自己的 `id`（跨协作名单里是「协作/Agent」，
+       同一个 Agent 在几个协作里就有几行），以及行上的 `agent_id`（管理页那条路传的是
+       裸 agent_id）。只认一种形状时，跨协作列表在"当前没选协作"的情况下按裸 id 查不到人，
+       详情/修改窗口就退化成空壳：协作名称、当前任务、在哪台机器全空
+       （2026-10-04 用户实测）。*/
+    function findBySeat(list, id) {
+        const target = toText(id);
+        if (!target) return null;
+        return findById(list, target) || toArray(list).filter(function (item) {
+            return item && toText(item.agent_id) === target;
+        })[0] || null;
     }
 
     /* ---- 新建协作向导第 3 步：已接上的子 Agent 列表 ---------------------- */
@@ -5575,9 +5773,10 @@
             const taskRow = closest(target, '#pane-tasks .tablebox .tr');
             if (taskRow) { openDetail('tasks', rowId(taskRow)); return; }
 
-            const auditRow = closest(target, '#pane-audit .tabContent .tablebox .tr');
+            /* 这一屏没有子标签了，所以行直接挂在页面上（不再有 .tabContent 那一层）。 */
+            const auditRow = closest(target, '#pane-audit .tablebox .tr');
             if (auditRow) {
-                openDetail('audit', rowId(auditRow), blockIndexOf(auditRow, 'block-audit'));
+                openDetail('audit', rowId(auditRow));
                 return;
             }
 
@@ -5687,19 +5886,11 @@
             return Tsunagou.refresh(['agentsWindow']).then(function () { return true; },
                 function () { return false; });
         },
-        /* 点 Agent 列表里的某一条 → 打开详情。
-           两个入口给的 id 形状不一样：Agent 列表窗口是「协作/Agent」（同一个 Agent 在几个
-           协作里就几行），Agent 管理页的卡片是裸 agent_id（那个协作里的唯一一行）。两种都认 ——
-           只认前者的话，从管理页进来查到 null，详情窗口是个空壳。*/
+        /* 点 Agent 列表里的某一条 → 打开详情。与卡片上的「修改」是**同一个窗口、同一套解析**：
+           两个入口 id 形状不同（列表窗口「协作/Agent」、管理页裸 agent_id），
+           统一在 editAgent 里两种都认、两份名单都查。*/
         openAgentInfo: function (id) {
-            const wanted = toText(id);
-            const rows = state.get('agentsWindow', []);
-            const agent = findById(rows, wanted)
-                || findById(rows, toText(state.get('currentProjectId')) + '/' + wanted)
-                || {};
-            render.agentInfoWindow(agent);
-            ui.window.open('mgrAgentInfo');
-            return true;
+            return app.editAgent(id);
         },
 
         /* 网络接入标记（跨机器）：**中间层专用入口** —— 定一个 Agent 是从网络接进来的。
@@ -5712,8 +5903,13 @@
             const spec = isPlainObject(online) ? online : { network: true, online: online === true };
             if (spec.network === false) return app.clearAgentNetwork(id);
             const table = Object.assign({}, state.get('agentNetwork', {}) || {});
-            /* 有键 = 网络接入，值 = 在不在线（取值规则见 agentNetworkOf）*/
-            table[id] = spec.online === true;
+            /* 推来的可以是 {network, online, session} 的任意组合；统一存成一个对象
+               （**有键 = 网络接入**），取值规则见 agentNetworkOf。布尔推送说的是机器状态
+               本身，所以它必须留下来 —— 丢了它，推"离线"会被当成"接入但状态未知"。*/
+            const entry = { network: spec.network !== false };
+            if (toText(spec.session)) entry.session = toText(spec.session);
+            if (spec.online === true || spec.online === false) entry.online = spec.online;
+            table[id] = entry;
             state.set('agentNetwork', table);
             renderNetworkBadges();
             return true;
@@ -5730,27 +5926,58 @@
             return true;
         },
 
-        /* Agent 管理卡片上的「修改」（data-tg-action="agent.edit:<id>"）：
-           开的是同一个详情窗口 —— 昵称可改。*/
+        /* Agent 卡片上的「修改」/ 跨协作列表里的「详情」：同一个窗口，同一套解析。
+           两个入口的 id 形状不同（管理页卡片给**裸 agent_id**，跨协作的 Agent 列表给
+           **「协作/Agent」**），名单也有两份（当前协作的 agents / 跨协作的 agentsWindow）。
+           两个都要认、都要查 —— 只查当前协作那一份、又只认一种形状时，列表窗口点进来会
+           退化成空对象：昵称照旧（按 id 从档案现算），但协作名称、当前任务、在哪台机器
+           全空（2026-10-04 用户实测）。*/
         editAgent: function (agentId) {
-            const agent = findById(state.get('agents', []), agentId) || {};
-            const project = findById(state.get('projects', []), state.get('currentProjectId')) || {};
+            const wanted = toText(agentId);
+            const slash = wanted.lastIndexOf('/');
+            /* 查不到行也要认下"改的是谁"：窗口里那个「确定」要按 agent_id 存昵称，
+               退化成空对象的话，点确定只会得到"这条记录里没有 Agent 号"。*/
+            const bare = slash >= 0 ? wanted.slice(slash + 1) : wanted;
+            const current = toText(state.get('currentProjectId'));
+            const roster = state.get('agents', []);
+            const across = state.get('agentsWindow', []);
+            /* 两个入口、两份名单、两种 id 形状，挨个认；而且**两边的字段合起来用** ——
+               跨协作名单那一行带着协作名、任务名与机器名（它是权威形状），管理页那一行
+               带着当前任务。合并规则是"**只补空缺**"：名单行里空着的字段（比如 machine: ""）
+               不能反过来把好值盖掉。*/
+            const found = findBySeat(across, wanted) || findBySeat(across, current + '/' + wanted)
+                || findBySeat(across, bare) || {};
+            const seat = findBySeat(roster, wanted) || findBySeat(roster, bare) || {};
+            const agent = {};
+            [found, seat].forEach(function (source) {
+                Object.keys(source || {}).forEach(function (key) {
+                    if (!toText(agent[key]) && toText(source[key])) agent[key] = source[key];
+                });
+            });
+            /* 这个 Agent 属于哪个协作：跨协作那行自己带着，管理页那条只能靠当前协作，
+               「协作/Agent」形状的 id 也能直接切出来。*/
+            const projectId = toText(agent.project_id)
+                || (slash >= 0 ? wanted.slice(0, slash) : '')
+                || current;
+            const project = findById(state.get('projects', []), projectId) || {};
             /* 把 agent 整个透传下去：render.agentInfoWindow 只从**传进去的那个对象**算
                "是不是远端"（machine / network / copy_path）。少这几个字段，同一个远端 Agent
                从卡片「修改」进来时"在哪台机器 / 这台机器的限制"会被整片藏掉，
                与从 Agent 列表窗口进来看到的自相矛盾。*/
             render.agentInfoWindow(Object.assign({}, agent, {
-                agent_id: toText(agent.id || agentId),
+                agent_id: toText(agent.agent_id) || bare,
                 nickname: toText(agent.name),
-                project: toText(state.get('project.name')) || toText(project.name),
-                task: toText(agent.currentTask)
+                project: toText(state.get('project.name')) || toText(project.name) || toText(agent.project),
+                task: toText(agent.currentTask) || toText(agent.task)
             }));
             ui.window.open('mgrAgentInfo');
             return true;
         },
 
         /* 详情窗口的「确定」：把昵称存进中间层的用户档案（厂商从不上送），存完关窗。
-           值没变就只关窗 —— 不发无意义的请求、也不弹“已保存”。*/
+           一个字都没动就等于「取消」—— 直接关窗，不发请求、也不弹提示：点确定却没改过
+           东西，本来就该像没点过一样安静地结束，弹一句"没有改动"只是噪声（2026-10-04
+           用户明确要求，覆盖此前"不静默关窗"的旧口径）。只有真改了才去写档案。*/
         saveAgentInfo: function () {
             const node = byId('mgrAgentInfo');
             if (!node) return Promise.resolve(false);
@@ -5758,18 +5985,16 @@
             const before = toText(node.getAttribute('data-nickname'));
             const input = qs('.textbox2 input', node);
             const nickname = toText(input && input.value).trim();
+            if (nickname === before) {
+                ui.window.close(node);
+                return Promise.resolve(false);
+            }
             if (!agentId) {
                 ui.window.close(node);
                 notify.info('这条记录里没有 Agent 号，改不了昵称');
                 return Promise.resolve(false);
             }
             if (!nickname) { notify.info('昵称不能为空'); return Promise.resolve(false); }
-            if (nickname === before) {
-                /* 没改就别说"已保存"、也别装作做了一件事：如实说一句，窗口留着
-                   （与下面"没存上就留在窗口里"同一个口径）。*/
-                notify.info('昵称没有改动');
-                return Promise.resolve(false);
-            }
             /* 这条路上**没有**加载遮罩（saveAgentProfile 直接发请求），所以必须自己防连点：
                网络慢时连点「确定」会重复写一次用户档案。*/
             if (agentInfoSaving) return Promise.resolve(false);
@@ -6041,8 +6266,8 @@
        点下去到加载遮罩收起之间给按钮挂 data-tg-busy，并且不再接受第二次点击 ——
        网络慢时连点不会重复提交。
        **只用属性，不写任何行内样式**：想画"禁用 + 转圈"就对着 [data-tg-busy] 写 CSS（样式归用户）。
-       只有真的开了加载遮罩的动作才会被标记 —— 不开遮罩的动作（例如"昵称没改动"）
-       不该把按钮锁死。*/
+       只有真的开了加载遮罩的动作才会被标记 —— 不发请求的动作（例如"没改动就关窗"、
+       纯本地开关）不该把按钮锁死。*/
     const SUBMIT_BUTTON_SELECTOR = '.options .buttonbox2, .buttonbox .buttonbox2';
     /* 最近按下的那个提交键：内联 onclick 里拿不到自己那个节点，所以在捕获阶段先记下来。*/
     let lastSubmitButton = null;
@@ -7578,8 +7803,12 @@
                     statusText: done ? (p.lifecycle === 'archived' ? '已归档' : '已完成')
                         : (running ? '进行中' : '未启动'),
                     /* 卡片右下角那行小字：daemon 起没起。daemon 不在了但有记录时，补一句
-                       "上次记录"—— 这样人知道点进去还能看到东西，也知道那是旧的那一份。*/
-                    time: (running ? '服务运行中' : (daemon ? '服务无响应' : '服务未启动'))
+                       "上次记录"—— 这样人知道点进去还能看到东西，也知道那是旧的那一份。
+                       已完工的协作要单独说一句：它的 daemon 是**按设计退出**的（完工确认成功后
+                       自己关掉、把端口让出来），跟"服务没响应"混为一谈会让人以为出了故障。*/
+                    time: (running ? '服务运行中'
+                        : done ? '服务已退出（完工后自动关闭）'
+                        : (daemon ? '服务无响应' : '服务未启动'))
                         + (!running && isPlainObject(p.history) && toText(p.history.captured_at)
                             ? ' · ' + recordText(p.history.captured_at) : ''),
                     /* 上面那行要"协作是否已完工"和"有没有记录"都判得了，两份原值都留着。*/
@@ -7614,14 +7843,18 @@
                 return {
                     id: toText(item.project_id) + '/' + agentId,
                     agent_id: agentId,
+                    /* 协作号也留着：详情/修改窗口要按它去查协作（id 是拼出来的，
+                       `findById(projects, …)` 不认这种形状）。*/
+                    project_id: toText(item.project_id),
                     project: toText(item.project_name) || shortId(item.project_id),
                     task: toText(item.task),
-                    /* 是不是从网络接进来的（本机接入不画徽标）、此刻在不在线。
-                       中间层不给这两个字段就一律当本机 —— 不编造“网络离线”。
-                       远端还会自报一个机器名（`machine`）：有它就知道是哪台机器，
-                       也等于"这是远端"（本机接入那条路从来不写它）。*/
+                    /* 是不是从网络接进来的（本机接入不画徽标）、以及这条会话现在什么状态
+                       （ready/degraded/ended）。中间层不给这两样就一律当本机 —— 不编造
+                       "网络离线"。远端还会自报一个机器名（`machine`）：有它就知道是哪台
+                       机器，也等于"这是远端"（本机接入那条路从来不写它）。*/
                     network: item.network === true || Boolean(toText(item.machine)),
-                    online: item.online === true,
+                    session: toText(item.session_status),
+                    ...(item.online === true || item.online === false ? { online: item.online } : {}),
                     machine: toText(item.machine),
                     copy_path: toText(item.copy_path),
                     copy_baseline: toText(item.copy_baseline)
@@ -7720,7 +7953,8 @@
                     return activeKeys.indexOf(key) === index;
                 });
                 let scope = unique.join('、');
-                if (!scope) scope = toText(t.execution_scope);
+                /* 声明的范围是**对象**，要写成一句人话 —— 直接 toText 会写出 [object Object]。*/
+                if (!scope) scope = scopeText(t.execution_scope);
                 if (stale) scope += (scope ? '（另有 ' : '') + stale + ' 条租约已过期' + (scope ? '）' : '');
                 return {
                     id: t.task_id,
@@ -7866,11 +8100,15 @@
                     isMain: a.role === 'main',
                     role: glossText('agent_role', a.role),
                     /* 在不在别的机器上：**主 Agent 永远不算**（它必须和 daemon 同机），
-                       子 Agent 看后端有没有说它是从网络接进来的；说了还得再给它一个
-                       `online` 才画「网络在线」，否则是「网络离线」。两边都没说
-                       就是这个 Agent 在本机 —— 那就不画徽标。*/
+                       子 Agent 看后端有没有说它是从网络接进来的。它是远端的话，卡面上
+                       写**机器状态**（在线/离线）——判据优先用心跳算出来的 `online`，
+                       没有就退回会话状态（`session`）。两边都没说就是这个 Agent 在本机
+                       —— 那就不画徽标。*/
                     network: a.role !== 'main' && (a.network === true || Boolean(a.machine)),
-                    online: a.online === true,
+                    session: toText(a.session_status),
+                    /* 心跳（桥定期上报）算出来的"这台机器最近还活着"。后端还没上这一项时
+                       不给这个键 —— agentNetworkOf 会退回 session_status，见那里的注释。*/
+                    ...(a.online === true || a.online === false ? { online: a.online } : {}),
                     machine: toText(a.machine),
                     copy_path: toText(a.copy_path),
                     copy_baseline: toText(a.copy_baseline),
@@ -8079,6 +8317,9 @@
                     };
                     return {
                         id: m.message_id,
+                        /* 消息发生的时刻（出口给的是带时区的 ISO 串）。表格按它排序、并在
+                           最左边写出来 —— "什么时候发生的"是协商这件事的核心。*/
+                        at: toText(m.created_at),
                         from: chipName(m.sender_agent_id),
                         to: chipName(m.recipient_agent_id),
                         content: toText(m.summary) || toText(m.topic),
@@ -8299,7 +8540,41 @@
         return fn ? fn(raw) : raw;
     }
 
+    /* 重画 = 数据进、DOM 出，而"整体替换容器"会把滚动位置一起清掉 —— 用户正读到一半就被
+       拉回顶部（2026-10-04 用户实测）。刷新前后把"谁滚到哪"记下来再放回去：页面本身 +
+       所有带 id 的滚动容器（容器是 index.html 里的固定节点，换掉的是它们的内容，id 还在）。
+       **只放位置**：不改刷新节奏、也不动数据（用户选定"只保持滚动位置"这个口径）。*/
+    function scrollMarks() {
+        const marks = [];
+        const page = document.scrollingElement || document.documentElement;
+        if (page && (page.scrollTop > 0 || page.scrollLeft > 0)) {
+            marks.push({ page: true, top: page.scrollTop, left: page.scrollLeft });
+        }
+        qsa('[id]', document).forEach(function (el) {
+            if (el.scrollTop > 0 || el.scrollLeft > 0) {
+                marks.push({ id: el.id, top: el.scrollTop, left: el.scrollLeft });
+            }
+        });
+        return marks;
+    }
+
+    function restoreScrollMarks(marks) {
+        const put = function () {
+            marks.forEach(function (mark) {
+                const el = mark.page
+                    ? (document.scrollingElement || document.documentElement) : byId(mark.id);
+                if (!el) return;
+                if (el.scrollTop !== mark.top) el.scrollTop = mark.top;
+                if (el.scrollLeft !== mark.left) el.scrollLeft = mark.left;
+            });
+        };
+        put();
+        /* 再补一帧：容器内容往往在下一帧才完成布局，只放一次可能被布局收回去。*/
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(put);
+    }
+
     Tsunagou.refresh = function (keys) {
+        const marks = scrollMarks();
         const wanted = keys ? toArray(keys) : null;
         const hasProject = !!toText(state.get('currentProjectId'));
         const skipped = [];
@@ -8324,6 +8599,13 @@
                 notify.error('有 ' + failed.length + ' 项数据拉取失败：' + failed.map(function (item) { return item.key; }).join('、'));
             }
             return { results: results, failed: failed.length, skipped: skipped };
+        }).then(function (outcome) {
+            /* 画完了再把用户刚才读到的地方放回去（失败也放：错误提示不该把人弹回顶部）。*/
+            restoreScrollMarks(marks);
+            return outcome;
+        }, function (error) {
+            restoreScrollMarks(marks);
+            throw error;
         });
     };
 
