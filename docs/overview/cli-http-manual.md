@@ -574,3 +574,11 @@ uv run --project D:\Tsunagou python -m tsunagou daemon migrate-credentials --coo
 ```
 
 `migration_plan_changed` 表示确认前输入已变化，需要重新预览；`credential_migration_incomplete` 表示已有迁移未完成，须用原计划恢复。备份和 quarantine 含已撤销的历史秘密，不提交 Git，不传给模型。机制、交付 ACK 和测试命令见 [凭据交付](../implementation/credential-delivery.md)。
+
+
+## 本轮行为变更（2026-10-05）
+
+- `daemon start --host 0.0.0.0` 写进 `.tsunagou/local/endpoint.json` 的 `url` 现在是**能拨的地址**（通配绑定写成回环），原始绑定值另存为 `bind_url`。通配地址拨不通（实测 WinError 10049），此前每个读取方都得自己转换 —— 规则现集中在 `platform/endpoints.py::connectable_url`，CLI 探活、控制台转发、`runtime_context` 三处共用。`advertised_url` 语义不变（写进邀请、给别人照着拨）。
+- 控制台建项目时按你填的（或上游记下的）地址起 daemon：`--host/--port/--advertised-url`，不再是裸默认。
+- 桥启动失败会把原因（含 detail）写进 stderr，不再只留一句 `startup_failed`。
+- `agent invite --conversation-id` 的值必须**纯 ASCII**（会进宿主 HTTP 头）。

@@ -47,6 +47,45 @@ def _probe_url(url: str) -> str:
     return connectable_url(url)
 
 
+def _require_machine_name(declared: str) -> None:
+    """``--machine`` 是这台机器的名字，不是地址。
+
+    2026-10-05 实测踩到：把 daemon 地址填进这一格，主机界面上就再也认不出"在哪台机器"。
+    这一格只用于显示与辨认，所以只在明显是地址时拒绝：带协议头，或 host:port 形状。
+    """
+
+    text = str(declared or "").strip()
+    if not text:
+        return
+    host, _, port = text.rpartition(":")
+    if "://" in text or (host and port.isdigit()):
+        raise RuntimeError(
+            "machine_must_be_a_name:--machine 要填这台机器的名字（hostname 的输出），"
+            "不是地址；要给出主机地址请用 --daemon-url"
+        )
+
+
+def _remote_conversation_id(declared: str, *, adapter: str) -> str:
+    """这次接入的会话 id：**必须纯 ASCII**；没给就随机生成一个。
+
+    会话 id 会进宿主的 HTTP 头（OpenCode 用 `x-opencode-session-id` 往外发），所以中文一概不行
+    —— 2026-10-05 实测：控制台照签、`import` 照成功，直到宿主构造请求才炸，报错还看不出跟
+    Tsunagou 有关。**昵称是给人看的（可以中文），会话 id 是给宿主看的（只能 ASCII）**，这两件事
+    从这次改动起分开；此前 id 是拿昵称拼的（`ses_<昵称>`），中文昵称因此一路漏到了 HTTP 头。
+
+    只有"会话名由主机起"的宿主（OpenCode）可以不给；其余宿主必须自己报号（`agent whoami`）。
+    """
+
+    text = str(declared or "").strip()
+    if text:
+        if not text.isascii():
+            raise RuntimeError("conversation_id_must_be_ascii")
+        return text
+    if adapter != "opencode":
+        raise RuntimeError("conversation_id_required_for_this_host")
+    return f"ses_{secrets.token_hex(4)}"
+
+
 def _advertised_url(declared: str, bind_host: str) -> str:
     """核对"别人该怎么连我"这句话，返回规范化后的地址（空串 = 没声明）。
 
@@ -1600,12 +1639,7 @@ if typer is not None:
                             "跨机器请让协调中心带上 --advertised-url（并 --host 0.0.0.0 或网卡地址）。",
                 }, ensure_ascii=False, sort_keys=True), file=sys.stderr)
             chosen_profile = profile.strip() or nickname.strip() or "remote"
-            conversation = conversation_id.strip()
-            if not conversation:
-                if host.adapter != "opencode":
-                    raise RuntimeError("conversation_id_required_for_this_host")
-                # 这个名字是我们起的：票绑它，人用同一个名字开会话，两边身份就对上了。
-                conversation = f"ses_{chosen_profile}"
+            conversation = _remote_conversation_id(conversation_id, adapter=host.adapter)
             installation_id = f"{host.adapter}:{chosen_profile}"
             token = _control_token()
             if not token:
@@ -1639,7 +1673,9 @@ if typer is not None:
             "next": (
                 # 会话名是我们起的（只有 OpenCode 这一家）：不说清楚，那边起一个别的会话，
                 # 身份对不上，第一次调用就只会得到 not_enrolled。
-                f"让那边用这个名字开会话：opencode --session {conversation}（在代码副本目录里起），"
+                f"让那边用这个名字开会话：opencode --session {conversation}（在代码副本目录里起）"
+                " —— 这个 id 是随机生成的，**别改成别的名字**，否则身份对不上（第一次调用只会得到"
+                " not_enrolled）；"
                 "然后把 invite 里的整段内容发给远端，在那台机器上跑：tsunagou agent import <邀请>"
                 if host.adapter == "opencode" else
                 "把 invite 里的整段内容发给远端，在那台机器上跑：tsunagou agent import <邀请>；"
@@ -1682,6 +1718,8 @@ if typer is not None:
         )
         from tsunagou.platform.private_files import write_private_bytes
 
+        # 这一格是"我在哪台机器上"，不是"主机在哪"：填错了登记就永远认不出它（见 helper）。
+        _require_machine_name(machine)
         try:
             data = remote_invite.decode(invite)
             remote_invite.check(data)

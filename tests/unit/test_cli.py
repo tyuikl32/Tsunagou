@@ -115,3 +115,45 @@ def test_codex_executable_discovers_desktop_install(monkeypatch, tmp_path: Path)
     monkeypatch.setattr("tsunagou.platform.host_registration.shutil.which", lambda _: None)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     assert _resolve_codex_executable() == str(executable)
+
+def test_the_machine_field_must_be_a_name_not_an_address() -> None:
+    """2026-10-05 实测：把 daemon 地址填进 --machine，主机界面就认不出"在哪台机器"。"""
+
+    from tsunagou.cli.app import _require_machine_name
+
+    assert _require_machine_name("VM-OPENCODE-01") is None
+    assert _require_machine_name("desktop-k03dv8n") is None
+    assert _require_machine_name("") is None
+    assert _require_machine_name("测试机") is None  # 名字可以是中文，只是不能是地址
+    for bad in ("http://192.168.32.1:2810", "192.168.32.1:2810", "https://box.example.com", "0.0.0.0:2810"):
+        try:
+            _require_machine_name(bad)
+        except RuntimeError:
+            continue
+        raise AssertionError(f"这一格本该被拒绝：{bad}")
+
+def test_the_remote_conversation_id_is_ascii_and_random() -> None:
+    """昵称可以中文，会话 id 不可以 —— 它会进宿主的 HTTP 头（2026-10-05 实测）。"""
+
+    import re
+
+    from tsunagou.cli.app import _remote_conversation_id
+
+    assert _remote_conversation_id("ses_OpenCode-Net", adapter="opencode") == "ses_OpenCode-Net"
+    for bad in ("ses_OpenCode-网络", "会话", "ses_名字"):
+        try:
+            _remote_conversation_id(bad, adapter="opencode")
+        except RuntimeError as exc:
+            assert "ascii" in str(exc)
+            continue
+        raise AssertionError(f"这个会话 id 本该被拒绝：{bad}")
+    first = _remote_conversation_id("", adapter="opencode")
+    second = _remote_conversation_id("", adapter="opencode")
+    assert re.fullmatch(r"ses_[0-9a-f]{8}", first), first
+    assert first != second
+    try:
+        _remote_conversation_id("", adapter="codex")
+    except RuntimeError as exc:
+        assert "required" in str(exc)
+    else:
+        raise AssertionError("codex 没给会话 id 本该被拒绝")

@@ -7459,6 +7459,23 @@
             shown[1].textContent = '一次性、约 ' + minutes + ' 分钟内有效（到 ' +
                 formatTime(toText(prepared.expires_at)) + '）；过期就回来重新生成一张。';
         }
+        /* 仅 OpenCode：它的会话名由主机起（随机 ASCII），那条聊天必须用这个名字开会话 ——
+           否则身份对不上，第一次调用只会得到 not_enrolled。Codex 与深寻自己报号，不显示这一块。
+           显示清成空串交回 CSS，隐藏写 none（与页面别处同一套）。*/
+        const sessionBlock = byId('netInviteSession');
+        if (sessionBlock) {
+            const sessionId = toText(prepared.conversation_id);
+            const isOpencode = toText((host || {}).adapter).toLowerCase() === 'opencode';
+            if (isOpencode && sessionId) {
+                const idBox = byId('netInviteSessionId');
+                const cmdBox = byId('netInviteSessionCmd');
+                if (idBox) idBox.value = sessionId;
+                if (cmdBox) cmdBox.value = 'opencode --session ' + sessionId;
+                sessionBlock.style.display = '';
+            } else {
+                sessionBlock.style.display = 'none';
+            }
+        }
         return new Promise(function (resolve) {
             networkInvite = {
                 resolve: resolve, enrollment_id: toText(prepared.enrollment_id),

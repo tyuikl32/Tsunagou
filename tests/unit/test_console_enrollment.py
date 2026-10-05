@@ -393,10 +393,16 @@ def test_a_network_invitation_is_signed_here_and_written_nowhere(
 
     assert answer["status"] == "invited"
     assert answer["url"] == "http://10.0.0.5:2810", "邀请里写的是对外可达地址"
-    assert answer["conversation_id"] == "ses_小三", "会话名由主机起"
+    # 会话 id 与昵称是两件事（2026-10-05）：昵称给人看（这里就是"小三"，会进 installation_id），
+    # 会话 id 给宿主看 —— 它会进 OpenCode 的 HTTP 头，所以主机替它随机生成纯 ASCII 的那个，
+    # 不再拿昵称拼。此前 `ses_小三` 一路放行，直到宿主构造请求才炸。
+    assert answer["conversation_id"].startswith("ses_") and answer["conversation_id"].isascii()
+    assert answer["conversation_id"] != "ses_小三", "会话名由主机起，而且必须是 ASCII"
     decoded = remote_invite.decode(answer["invite"])
     assert decoded["project_id"] == PROJECT_ID and decoded["role"] == "worker"
+    assert decoded["conversation_id"] == answer["conversation_id"]
     assert decoded["secret"] == SECRET and decoded["installation_id"] == "opencode:小三"
+    assert decoded["nickname"] == "小三", "昵称照旧原样带过去"
     remote_invite.check(decoded)
     assert daemon.calls == ["/api/v1/commands/agent.ticket.create.user"], "只问一次票"
     assert not (entry.path / ".tsunagou" / "bridges").exists(), "主机这边不写桥材料"

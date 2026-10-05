@@ -399,7 +399,10 @@ def prepare(
         entry=entry, adapter=host.adapter, role=role, nickname=nickname,
         baseline=tuple(sorted(known_agents)),
     )
-    conversation = profile_name(profile) if profile else uuid.uuid4().hex[:12]
+    # 昵称给人看（可以中文），会话 id 给宿主看：OpenCode 会把它放进 HTTP 头，所以非 ASCII 的名字
+    # 不能当 id 用 —— 那时另起一个随机 id，名字照旧作为昵称带下去（2026-10-05 实测）。
+    requested = profile_name(profile) if profile else ""
+    conversation = requested if requested and requested.isascii() else uuid.uuid4().hex[:12]
     destination = (entry.path / BRIDGE_DIRECTORY / f"{host.adapter}-{conversation}").resolve()
     # OpenCode 认的是"开会话时用的那个名字"，而这个名字可以由接入方先定：票绑它，
     # 人再用同一个名字开会话，两边的身份就对得上了（其他宿主没有这一步，见 enroll_mode）。
@@ -1014,6 +1017,15 @@ def _prepare_network(
                            detail={"note": "协调中心没在跑，或还没有地址：先把它起来再发邀请。"})
     chosen_profile = (profile or "").strip() or (nickname or "").strip() or "remote"
     conversation = conversation_id.strip()
+    if conversation and not conversation.isascii():
+        # 会话 id 会进宿主的 HTTP 头（OpenCode 用 x-opencode-session-id），中文会被宿主直接拒。
+        # 2026-10-05 实测：这一路此前没有一层拦它，直到宿主构造请求才炸，报错还看不出与
+        # Tsunagou 有关 —— 所以在这里就拒绝，并说清"昵称可以中文，id 不行"。
+        raise ConsoleError(
+            "conversation_id_must_be_ascii",
+            detail={"conversation_id": conversation,
+                    "note": "会话 id 会进宿主的 HTTP 头，只能用 ASCII；昵称可以中文，请填在昵称那一栏。"},
+        )
     if not conversation:
         if host.adapter != "opencode":
             raise ConsoleError(
@@ -1021,7 +1033,8 @@ def _prepare_network(
                 detail={"vendor": host.adapter, "label": host.label,
                         "note": f"{host.label} 的会话名只有它自己知道：先在那台机器上报号，再把号填进来。"},
             )
-        conversation = f"ses_{chosen_profile}"
+        # 主机替它起一个：随机 ASCII。别再从昵称拼 —— 昵称一中文，这一步就是那个坑的入口。
+        conversation = f"ses_{uuid.uuid4().hex[:8]}"
     installation_id = f"{host.adapter}:{chosen_profile}"
     ttl = REMOTE_INVITE_TTL_SECONDS
     issued = _ticket(

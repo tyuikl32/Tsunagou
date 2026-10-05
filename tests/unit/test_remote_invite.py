@@ -97,10 +97,15 @@ def test_the_host_signs_one_ticket_and_hands_over_one_line(monkeypatch: pytest.M
     assert len(signed) == 1
     assert signed[0]["command"] == "agent.ticket.create.user"
     assert signed[0]["role"] == "worker" and signed[0]["installation_id"] == "opencode:小三"
-    assert signed[0]["conversation_evidence"] == {"conversation_id": "ses_小三"}
+    # 会话 id 与昵称从 2026-10-05 起是两件事：昵称给人看（可以中文），会话 id 给宿主看
+    # （会进 HTTP 头，必须 ASCII）。OpenCode 这条路由主机随机生成，昵称照旧原样带过去。
+    signed_id = signed[0]["conversation_evidence"]["conversation_id"]
+    assert signed_id.startswith("ses_") and signed_id.isascii() and signed_id != "ses_小三"
     decoded = remote_invite.decode(answer["invite"])
     assert decoded["secret"] == "s3cret-ticket" and decoded["project_id"] == PROJECT_ID
-    assert decoded["conversation_id"] == "ses_小三" and decoded["nickname"] == "小三"
+    assert decoded["conversation_id"] == signed_id and decoded["nickname"] == "小三"
+    # 邀请里必须写清"用这个 id 开会话"，否则那边随便起一个名字就只会得到 not_enrolled。
+    assert signed_id in answer["next"] and "--session" in answer["next"]
 
 
 def test_the_host_refuses_a_remote_main_and_asks_for_the_number_otherwise(

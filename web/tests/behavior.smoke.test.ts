@@ -1773,6 +1773,63 @@ describe("控制台接入等待与取消", () => {
     expect(vendor()).not.toBeNull();
   });
 
+  /* 昵称与会话 id 是两件事（2026-10-05）：昵称给人看（可以中文），会话 id 给宿主看 ——
+     OpenCode 会把它放进 HTTP 头，所以主机随机生成纯 ASCII 的一个，并在邀请窗口里告诉人
+     用哪个名字开会话。不显示或显示错，那条聊天就会起个别的会话，第一次调用只会得到
+     not_enrolled。Codex / 深寻自己报号，不显示这一块。*/
+  it("邀请窗口对 OpenCode 给出开会话用的名字，昵称与会话 id 分开", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "opencode", label: "OpenCode", mode: "console" },
+    ]);
+    const block = () => enrollmentPage.querySelector<HTMLElement>("#netInviteSession");
+    expect(block()!.style.display).toBe("none");
+
+    prepareBody = {
+      status: "invited", invite: "tsunagou-invite-v1:CCCC", enrollment_id: "e-oc",
+      expires_in_seconds: 600, expires_at: new Date(Date.now() + 600000).toISOString(),
+      url: "http://10.0.0.5:2810", conversation_id: "ses_ab12cd34",
+    };
+    const done = enrollmentApi.actions.addSubAgent({
+      name: "熊猫", vendor: "OpenCode", place: "network", number: "",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const prepared = calls.filter((call) => call.url.includes("agents:prepare"));
+    expect(prepared).toHaveLength(1);
+    /* 中文昵称照旧带过去 —— 它是给人看的，不是会话 id */
+    expect(prepared[0]!.body).toMatchObject({ nickname: "熊猫", vendor: "opencode", place: "network" });
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
+    expect(block()!.style.display).toBe("");
+    expect(enrollmentPage.querySelector<HTMLInputElement>("#netInviteSessionId")!.value).toBe("ses_ab12cd34");
+    expect(enrollmentPage.querySelector<HTMLInputElement>("#netInviteSessionCmd")!.value)
+      .toBe("opencode --session ses_ab12cd34");
+
+    enrollmentApi.app.cancelNetworkInvite();
+    await vi.advanceTimersByTimeAsync(0);
+    await done;
+  });
+
+  it("别的宿主不显示「开会话用的名字」那一块（它们自己报号）", async () => {
+    enrollmentApi.state.set("hosts", [
+      { adapter: "codex", label: "Codex", mode: "console" },
+    ]);
+    prepareBody = {
+      status: "invited", invite: "tsunagou-invite-v1:DDDD", enrollment_id: "e-codex",
+      expires_in_seconds: 600, expires_at: new Date(Date.now() + 600000).toISOString(),
+      url: "http://10.0.0.5:2810", conversation_id: "thread-abc",
+    };
+    const done = enrollmentApi.actions.addSubAgent({
+      name: "小三", vendor: "Codex", place: "network", number: "thread-abc",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
+    expect(enrollmentPage.querySelector<HTMLElement>("#netInviteSession")!.style.display).toBe("none");
+
+    enrollmentApi.app.cancelNetworkInvite();
+    await vi.advanceTimersByTimeAsync(0);
+    await done;
+  });
+
   it("网络接入点「取消」：邀请作废（撤掉那条申请），不进等待", async () => {
     enrollmentApi.state.set("hosts", [
       { adapter: "codex", label: "Codex", mode: "console" },

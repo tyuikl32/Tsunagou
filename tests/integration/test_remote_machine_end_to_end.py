@@ -30,6 +30,7 @@ from typing import Any
 
 import pytest
 
+from tsunagou.application import onboarding
 from tsunagou.console import enrollment
 from tsunagou.console.agents import AgentDirectory
 from tsunagou.console.config import ConsoleConfig
@@ -59,7 +60,11 @@ try {
   const result = await client.callTool({
     name: toolName, arguments: JSON.parse(argsJson), _meta: {[metaKey]: metaValue},
   });
-  const text = (result.content || []).filter((item) => item.type === 'text').map((item) => item.text).join(' ');
+  // 桥在结果后面会附上提醒文本（reminders），所以**只能取第一条 text** —— 它就是
+  // JSON.stringify(result)。把几条 text join 起来，提醒会粘在 JSON 后面，解析必然失败
+  // （2026-10-05 实测：Unexpected non-whitespace character after JSON at position 717）。
+  const first = (result.content || []).find((item) => item.type === 'text');
+  const text = first ? first.text : '';
   if (result.isError) reply({error: text});
   else reply(JSON.parse(text));
 } catch (error) {
@@ -87,11 +92,22 @@ class Bridge:
         return json.loads(observed.stdout)
 
     def session(self) -> dict[str, Any]:
-        """桥落下来的会话凭据：主 Agent 那边正是用它来发 M 权限的命令。"""
+        """桥落下来的会话凭据：主 Agent 那边正是用它来发 M 权限的命令。
+
+        单会话的宿主把路径写在配置里（`TSUNAGOU_SESSION_FILE`）；共享/路由式的配置**不写**它，
+        而是把这条会话的路由文件放在路由目录里 —— 路由里带着会话文件与状态目录的绝对路径
+        （那正是 server.ts 对 route 字段的要求，另见 adapter-opencode.md:22）。
+        """
 
         config = json.loads(self.config_path.read_text(encoding="utf-8"))
-        session_file = Path(str(config["env"]["TSUNAGOU_SESSION_FILE"]))
-        return json.loads(session_file.read_text(encoding="utf-8"))
+        env = config.get("env") or {}
+        explicit = env.get("TSUNAGOU_SESSION_FILE")
+        if not explicit:
+            route = (onboarding.opencode_routing_directory()
+                     / (onboarding.conversation_key(self.conversation) + ".json"))
+            assert route.is_file(), f"既没有 TSUNAGOU_SESSION_FILE，也没有这条会话的路由文件：{route}"
+            explicit = json.loads(route.read_text(encoding="utf-8"))["session_file"]
+        return json.loads(Path(str(explicit)).read_text(encoding="utf-8"))
 
 
 class RemoteMachine:
@@ -208,20 +224,34 @@ def host_handle(tmp_path: Path, root: Path, project: dict[str, Any], cli) -> dic
         return {item["agent_id"]: item for item in lineup.agents}
 
     def local_main() -> Bridge:
-        """本机那条路：中间层发起的本地接入，票里写着 main —— 入席那一刻由 daemon 自行任命。
+        """本机那条路：控制台**只留申请**，由那条聊天运行 `agent join` 认领。
 
-        它也顺便证明了"远端之外的那条路一点没变"。
+        2026-10-05 起 OpenCode 的本机接入就是这个形态（见 adapter-opencode.md 第 7 行）：
+        控制台不签票、不写桥配置；签票与桥配置都发生在聊天认领的那一步。所以这里用**另一个
+        进程**跑 `agent join`（与真实的宿主进程一致），再拿它写下的桥配置起桥。
         """
 
         prepared = enrollment.prepare(
             entry, daemon_endpoint, vendor="opencode", role="main", nickname="主机主控",
             profile="main-a", directory=directory, token=project_token(entry.path, daemon_endpoint),
         )
-        ticket = json.loads(Path(str(prepared["ticket_file"])).read_text(encoding="utf-8"))
-        bridge = Bridge(Path(str(prepared["bridge_config"])), "ai.opencode/sessionID", ticket["conversation_id"])
+        assert prepared["status"] == "prepared" and "ticket_file" not in prepared, \
+            "本机 OpenCode 这条路上，控制台只留申请，不该签票"
+        # 会话名必须每次运行都不同：路由是按会话 id 存在**全局**目录里的（~/.tsunagou/hosts/
+        # opencode），重用一个名字就会撞上别的项目留下的路由，`agent join` 会如实报
+        # host_route_project_conflict。生产上也正因如此才改成随机 id。
+        session = f"ses_main-{os.urandom(4).hex()}"
+        joined = subprocess.run(
+            [sys.executable, "-m", "tsunagou", "agent", "join", "--adapter", "opencode"],
+            cwd=root, capture_output=True, text=True, timeout=120,
+            env={**os.environ, "TSUNAGOU_HOST_CONVERSATION_ID": session},
+        )
+        assert joined.returncode == 0, joined.stderr or joined.stdout
+        bridge = Bridge(Path(str(json.loads(joined.stdout)["bridge_config"])),
+                        "ai.opencode/sessionID", session)
         arrived = bridge.call("context__project_read", {})
         assert "error" not in arrived, arrived
-        assert arrived["role"] == "main", "票里写着 main，席位就是主 Agent"
+        assert arrived["role"] == "main", "申请里写着 main，席位就是主 Agent"
         return bridge
 
     return {
@@ -235,7 +265,13 @@ def test_a_remote_machine_imports_an_invitation_and_reports_itself(host, tmp_pat
 
     invite = host["cli"]("agent", "invite", "--adapter", "opencode",
                          "--profile", "remote-a", "--nickname", "远端小三")
-    assert invite["status"] == "invited" and invite["conversation_id"] == "ses_remote-a"
+    # 会话 id 与昵称是两件事（2026-10-05）：昵称给人看（可以中文），会话 id 给宿主看 —— 它会进
+    # OpenCode 的 HTTP 头，所以主机随机生成一个纯 ASCII 的，不再拿名字拼。下面一律用邀请里
+    # 给的这个 id，别再按名字猜。
+    assert invite["status"] == "invited"
+    assert invite["conversation_id"].startswith("ses_") and invite["conversation_id"].isascii()
+    assert invite["conversation_id"] != "ses_remote-a"
+    assert invite["conversation_id"] in invite["next"] and "--session" in invite["next"]
 
     remote = RemoteMachine(tmp_path, "工位-九")
     remote.import_invitation(invite["invite"], host["url"], invite["conversation_id"])
