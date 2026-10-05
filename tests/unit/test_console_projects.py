@@ -395,3 +395,34 @@ def test_ensure_daemon_falls_back_to_the_cli_defaults_without_settings(tmp_path,
 
     joined = " ".join(str(part) for part in seen["command"])
     assert "--host" not in joined and "--port" not in joined and "--advertised-url" not in joined
+
+def test_a_wildcard_bind_address_is_probed_and_forwarded_on_the_loopback(tmp_path) -> None:
+    """daemon 绑 0.0.0.0 时自报的 url 是 http://0.0.0.0:2810 —— 那不是能拨的地址。
+
+    2026-10-05 用户实测：控制台拿它探活与转发，十项协作作用域数据全 503，页面上只看到
+    "有 10 项数据拉取失败"。探活与转发都改走回环；**advertised_url 一个字都不动** ——
+    那是写进邀请、给别人照着拨的。
+    """
+
+    import json
+
+    from tsunagou.console.projects import connectable_url, read_endpoint
+
+    assert connectable_url("http://0.0.0.0:2810") == "http://127.0.0.1:2810"
+    assert connectable_url("http://[::]:2810") == "http://[::1]:2810"
+    assert connectable_url("http://:2810") == "http://127.0.0.1:2810"
+    assert connectable_url("http://192.168.32.1:2810") == "http://192.168.32.1:2810"
+    assert connectable_url("http://127.0.0.1:2810") == "http://127.0.0.1:2810"
+
+    local = tmp_path / ".tsunagou" / "local"
+    local.mkdir(parents=True)
+    (local / "endpoint.json").write_text(json.dumps({
+        "url": "http://0.0.0.0:2810",
+        "advertised_url": "http://192.168.32.1:2810",
+        "pid": 1, "project_id": "p-1", "state_dir": str(local),
+    }), encoding="utf-8")
+
+    endpoint = read_endpoint(tmp_path)
+    assert endpoint is not None
+    assert endpoint["url"] == "http://127.0.0.1:2810"
+    assert endpoint["advertised_url"] == "http://192.168.32.1:2810"

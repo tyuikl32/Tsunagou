@@ -102,6 +102,31 @@ def read_manifest(root: Path) -> dict[str, Any] | None:
     return raw if isinstance(raw, dict) and raw.get("project_id") else None
 
 
+#: 绑在所有网卡上的写法。daemon 自报时就是它，但它**不是一个能拨的地址** ——
+#: 2026-10-05 实测：拨 0.0.0.0 报 WinError 10049，连本机自己都连不上。
+_WILDCARD_URL_HOSTS = frozenset({"0.0.0.0", "::", "[::]", "*"})
+
+
+def connectable_url(url: str) -> str:
+    """把 daemon 自报的**绑定地址**换成能连的地址，其余原样。
+
+    控制台拿这个地址探活、转发浏览器的请求；**对外公布**的那个地址在
+    ``advertised_url`` 里，是另一件事，不经过这里。
+    """
+
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return url
+    if parsed.hostname not in _WILDCARD_URL_HOSTS:
+        return url
+    loopback = "[::1]" if parsed.hostname in {"::", "[::]"} else "127.0.0.1"
+    netloc = f"{loopback}:{parsed.port}" if parsed.port else loopback
+    return urllib.parse.urlunsplit(
+        (parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment)
+    )
+
+
 def read_endpoint(root: Path) -> dict[str, Any] | None:
     """Read where this project's daemon says it is listening."""
 
@@ -112,7 +137,12 @@ def read_endpoint(root: Path) -> dict[str, Any] | None:
         raw = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return None
-    return raw if isinstance(raw, dict) and raw.get("url") else None
+    if not isinstance(raw, dict) or not raw.get("url"):
+        return None
+    # 自报的 url 可能是通配地址（绑 0.0.0.0 时就是它）。探活与转发都得能拨，所以在这里
+    # 换掉；`advertised_url` 一个字都不动 —— 那是写进邀请、给别人照着拨的。
+    raw["url"] = connectable_url(str(raw["url"]))
+    return raw
 
 
 def daemon_alive(url: str) -> bool:
