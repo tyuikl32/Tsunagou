@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -351,6 +352,24 @@ def bridge_profiles(root: Path) -> list[tuple[str, str]]:
     return [(item["adapter"], item["profile"]) for item in bridge_identities(root)]
 
 
+def _clear_readonly_and_retry(func: Callable[..., Any], path: str, _exc: BaseException) -> None:
+    """Let ``rmtree`` get past a read-only file — and only past a read-only file.
+
+    On Windows git marks everything under ``.git/objects`` read-only, so a plain
+    ``rmtree`` gives up on the very first object. That used to leave a project
+    half-forgotten: ``forget`` had already stopped its daemon and withdrawn its
+    registrations, but every file stayed on disk while the caller got a raw
+    ``PermissionError``. Clearing the write bit and retrying is what the folder needs.
+
+    A file that is *locked* rather than read-only still raises out of the retry, so a
+    folder that genuinely cannot be removed is reported as a failure instead of being
+    silently counted as deleted.
+    """
+
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def forget(
     config: ConsoleConfig, project_id: str, *, delete_files: bool = False,
     run: Callable[[tuple[str, ...], str | None], int] | None = None,
@@ -396,7 +415,7 @@ def forget(
     elif not root.exists():
         files["reason"] = "the folder was already gone"
     else:
-        shutil.rmtree(root, ignore_errors=False)
+        shutil.rmtree(root, onexc=_clear_readonly_and_retry)
         files["deleted"] = True
     index = {"removed": forget_index_entry(project_id=entry.project_id, index=config.index_path)}
     return {

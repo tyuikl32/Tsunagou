@@ -22,6 +22,7 @@ per project" and a test that points the index at a temporary directory is isolat
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +146,41 @@ class HistoryStore:
             return False
         except OSError:
             return False
+
+    def forget_sources(self, project_id: str, sources: Iterable[str]) -> int:
+        """Drop recorded answers that can no longer be passed off as the current one.
+
+        The console itself can be the reason a record is out of date: it relays the command
+        that changed the exit's answer. When that exit cannot be read again afterwards — a
+        confirmed completion closes the daemon by design — the record from *before* the
+        command is not "the last thing that machine said", it is a statement the console has
+        already watched become false. Serving nothing is the honest answer.
+
+        Never raises, like every other writer here: a read must not fail because this failed.
+        """
+
+        names = {str(name).strip() for name in sources if str(name).strip()}
+        if not names:
+            return 0
+        path = self.path_for(project_id)
+        try:
+            with private_file_lock(path):
+                known = self.read(project_id)["sources"]
+                kept = {name: item for name, item in known.items() if name not in names}
+                dropped = len(known) - len(kept)
+                if not dropped:
+                    return 0
+                if not kept:
+                    path.unlink(missing_ok=True)
+                    return dropped
+                stamps = [str(item.get("captured_at") or "") for item in kept.values()]
+                value = {"format_version": FORMAT_VERSION, "project_id": project_id,
+                         "captured_at": max(stamps), "sources": kept}
+                write_private_bytes(
+                    path, (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+                return dropped
+        except (OSError, ValueError, TypeError):
+            return 0
 
     @staticmethod
     def _bounded(payload: Any) -> Any | None:

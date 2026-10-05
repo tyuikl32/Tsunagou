@@ -6,6 +6,7 @@ import hashlib
 import secrets
 from typing import Any
 
+from tsunagou.api.liveness import SessionLiveness
 from tsunagou.interfaces.runtime import PrincipalContext
 from tsunagou.modules.authority import AuthorityService
 
@@ -18,12 +19,33 @@ class LocalCommandAuthenticator:
     """
 
     def __init__(
-        self, *, authority: AuthorityService | None = None, control_token: str | None = None
+        self, *, authority: AuthorityService | None = None, control_token: str | None = None,
+        liveness: SessionLiveness | None = None,
     ) -> None:
         self.authority = authority
         self.control_token = control_token
+        #: 每次成功认证都往这里记一笔（内存级，见 api/liveness.py）。默认自带一份，
+        #: 于是单独构造认证器的测试不用关心它。
+        self.liveness = liveness if liveness is not None else SessionLiveness()
 
     def authenticate(
+        self, principal_kind: str, authorization: str | None, *,
+        session_id: str | None, connection_epoch: int | None,
+    ) -> PrincipalContext:
+        """认证一次调用，并把**每一次被接受的调用都当成一次心跳**。
+
+        桥按固定间隔做便宜的已认证读取，所以"那台机器最近还活着"不需要新增协议命令
+        —— 一次成功的认证就是一次证明（见 api/liveness.py）。过期判断在出口那边做。
+        """
+
+        context = self._authenticate(
+            principal_kind, authorization, session_id=session_id,
+            connection_epoch=connection_epoch,
+        )
+        self.liveness.seen(getattr(context, "session_id", None) or session_id)
+        return context
+
+    def _authenticate(
         self, principal_kind: str, authorization: str | None, *,
         session_id: str | None, connection_epoch: int | None,
     ) -> PrincipalContext:

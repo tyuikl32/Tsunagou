@@ -51,7 +51,7 @@ GLOSSARY: dict[str, dict[str, str]] = {
     # 会话状态（agents 出口的 session_status；agent_status 说的是"这个席位"，
     # 它说的是"现在这条会话"，降级时席位名字不变、会话已经不能干活了）
     "session_status": {
-        "ready": "待发布",
+        "ready": "就绪",
         "degraded": "降级中",
         "ended": "已结束",
     },

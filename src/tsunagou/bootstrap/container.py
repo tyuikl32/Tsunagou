@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 from tsunagou.api.app import create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
+from tsunagou.api.liveness import SessionLiveness
 from tsunagou.application.handlers import Handler, build_handlers
 from tsunagou.application.wake_assistance import WakeAssistance
 from tsunagou.application.workflows.lifecycle import LifecycleService
@@ -200,8 +201,13 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         dispatcher.register(command_kind, handler)
     for command_kind, prepare in preparers.items():
         dispatcher.register_preparer(command_kind, prepare)
+    # 「那台机器最近还活着」= 最近一次**已认证的会话调用**（桥按固定间隔做便宜读取）。
+    # 只记在内存里：不落库、不写审计、重启后为空（读不到就退回会话状态，老桥不吃亏）。
+    session_liveness = SessionLiveness()
+
     authenticator = LocalCommandAuthenticator(
-        authority=authority, control_token=config.get("TSUNAGOU_CONTROL_TOKEN")
+        authority=authority, control_token=config.get("TSUNAGOU_CONTROL_TOKEN"),
+        liveness=session_liveness,
     )
     application = create_app(
         dispatcher, authenticator=authenticator,
@@ -215,6 +221,7 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
             artifacts=artifacts,
             project_root=project_root,
             wake_dispatcher=wake_dispatcher,
+            session_liveness=session_liveness,
         ),
         wake_dispatcher=wake_dispatcher,
         hostwake_provider=hostwake_provider,
@@ -307,6 +314,21 @@ def _agent_features(authority: AuthorityService, agent_id: str) -> dict[str, Any
     }
 
 
+def _agent_liveness(authority: AuthorityService, liveness: SessionLiveness,
+                    agent_id: str) -> dict[str, Any]:
+    """那个 Agent 当前活着的会话：``session_status`` 与 ``online`` 一起算。
+
+    一次扫描出两份 —— 同一段查找写两遍不仅啰嗦，两遍之间会话还可能变了样。
+    ``online`` 由心跳表判断（见 api/liveness.py），页面据此画「在线/离线」。
+    """
+
+    session = next((s for s in authority.sessions.values()
+                    if s.agent_id == agent_id and s.active), None)
+    status = session.status if session is not None else "inactive"
+    return {"session_status": status,
+            "online": liveness.online(session.session_id if session is not None else "", status)}
+
+
 def _query_provider(
     *, project_id: str | None, registry: ServiceStateRuntime | None,
     database: ProjectDatabase | None, authority: AuthorityService, tasks: TaskService,
@@ -318,8 +340,11 @@ def _query_provider(
     artifacts: ArtifactService | None = None,
     project_root: str | None = None,
     wake_dispatcher: Any | None = None,
+    session_liveness: SessionLiveness | None = None,
 ) -> Any:
     cursor_codec = AuditCursorCodec()
+    # 没传就自带一份：读不到任何上报，于是 online 退回"看会话状态"（老桥不吃亏）。
+    liveness = session_liveness if session_liveness is not None else SessionLiveness()
 
     def can_read_event(event: dict[str, Any], viewer: PrincipalContext) -> bool:
         payload = event.get("payload") or {}
@@ -750,8 +775,7 @@ def _query_provider(
                      # 只把它记成账：远端要干文件活时，工作区就以"外部准备"的形态指向它（D192）。
                      **({"copy_path": item.copy_path} if item.copy_path else {}),
                      **({"copy_baseline": item.copy_baseline} if item.copy_baseline else {}),
-                     "session_status": next((s.status for s in authority.sessions.values()
-                                             if s.agent_id == item.agent_id and s.active), "inactive"),
+                     **_agent_liveness(authority, liveness, item.agent_id),
                      "current_task_ids": [task.task_id for task in tasks.tasks.values()
                                           if task.status in {"claimed", "running", "cancel_requested"}
                                           and (attempt := tasks.attempts.get(task.current_attempt_id or "")) is not None

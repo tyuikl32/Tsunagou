@@ -36,6 +36,35 @@ _selected_project_root: ContextVar[Path | None] = ContextVar("cli_project_root",
 _write_ticket_private = write_ticket_file
 
 
+#: 绑在所有网卡上的写法。它们能 bind，但**不是可连接的地址**。
+_WILDCARD_BIND_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]", "*"})
+
+
+def _probe_url(url: str) -> str:
+    """就绪探测用"能连的地址"，其余场合一律用原样的 URL。
+
+    ``daemon start --host 0.0.0.0`` 绑的是所有网卡，但 ``http://0.0.0.0:2810`` 连不上：
+    探测必然失败，于是 CLI 把一个**已经健康**的 daemon 判成启动超时、反手把它杀掉
+    （2026-10-04 实测：daemon 日志里两次 ``GET /api/v1/health 200 OK``，CLI 仍报
+    ``daemon_start_timeout``）。通配地址改成回环地址探测：进程就在本机，端口也一样。
+    对外地址、清单与邀请里仍然保留用户给的那个地址，不受这里影响。
+    """
+
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return url
+    hostname = parsed.hostname
+    if hostname is not None and hostname not in _WILDCARD_BIND_HOSTS:
+        return url
+    # IPv6 的通配只接 IPv6 的回环；其余（含没写主机名）走 IPv4 回环。
+    loopback = "[::1]" if hostname in {"::", "[::]"} else "127.0.0.1"
+    netloc = f"{loopback}:{parsed.port}" if parsed.port else loopback
+    return urllib.parse.urlunsplit(
+        (parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment)
+    )
+
+
 def _advertised_url(declared: str, bind_host: str) -> str:
     """核对"别人该怎么连我"这句话，返回规范化后的地址（空串 = 没声明）。
 
@@ -695,7 +724,10 @@ if typer is not None:
         return resolve_runtime(coordination_root).state_dir / "endpoint.json"
 
     def _read_daemon_health(url: str) -> dict[str, Any]:
-        with urllib.request.urlopen(url.rstrip("/") + "/api/v1/health", timeout=2) as response:
+        # 探测一律走"能连的地址"（见 `_probe_url`）。清单里存的是**绑定地址**：绑 0.0.0.0 时
+        # 那个 URL 连不上，于是 status 报 `daemon_identity_unverified`、stop 直接拒绝执行 ——
+        # 一个健康的 daemon 变得既看不到也停不掉（2026-10-05 实测，只能 taskkill）。
+        with urllib.request.urlopen(_probe_url(url).rstrip("/") + "/api/v1/health", timeout=2) as response:
             return cast(dict[str, Any], json.load(response))
 
     def _verify_daemon_identity(health: dict[str, Any], manifest: dict[str, Any], project_id: str | None) -> None:

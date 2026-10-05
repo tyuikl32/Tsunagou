@@ -155,6 +155,36 @@ def test_forget_removes_the_record(tmp_path: Path) -> None:
     assert store.payload("p-1", "agents") is None
 
 
+def test_dropping_one_exit_keeps_the_others_and_recomputes_the_stamp(tmp_path: Path) -> None:
+    """控制台自己执行了会改掉某个出口的命令之后，那一份就不能再冒充当前答案。
+
+    实机现场：18:32:30 完工确认成功（随后 daemon 按设计退出），而 decisions 那一份停在
+    18:32:27 —— 项目卡片取的是``latest()``（各来源里最新的一个），面板取的是自己那一份，
+    于是卡片说"已完成"、面板还在说提案"待处理"。
+    """
+
+    store = _store(tmp_path)
+    store.record("p-1", "decisions", {"items": [{"proposal_id": "d-1", "status": "pending"}]},
+                 captured_at="2026-10-04T18:32:27+08:00")
+    store.record("p-1", "overview", {"lifecycle": "active"}, captured_at="2026-10-04T18:32:30+08:00")
+
+    dropped = store.forget_sources("p-1", ("decisions",))
+
+    assert dropped == 1
+    assert store.payload("p-1", "decisions") is None
+    assert store.payload("p-1", "overview") == ({"lifecycle": "active"}, "2026-10-04T18:32:30+08:00")
+    assert store.latest("p-1") == "2026-10-04T18:32:30+08:00", "剩下的那份要重新算时间戳"
+
+
+def test_dropping_the_last_exit_deletes_the_file(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.record("p-1", "decisions", {"items": []}, captured_at="2026-10-04T18:32:27+08:00")
+
+    assert store.forget_sources("p-1", ("decisions",)) == 1
+    assert store.forget_sources("p-1", ("decisions",)) == 0, "已经没有了，不是又删了一次"
+    assert not store.path_for("p-1").exists()
+
+
 def test_an_odd_project_id_cannot_escape_the_directory(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.record("../../etc/passwd", "agents", {"items": []}, captured_at="2026-10-03T13:00:00+08:00")

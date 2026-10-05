@@ -203,6 +203,28 @@ def test_forgetting_a_project_drops_its_index_line_and_its_folder(tmp_path: Path
     assert [item for item in load_index(config.index_path)["projects"] if item["path"] == root.as_posix()] == []
 
 
+def test_forgetting_a_project_removes_read_only_files_too(tmp_path: Path) -> None:
+    """Windows 上 git 把 ``.git/objects`` 下的对象设成只读，删项目不能因此半途而废。
+
+    真实现场（2026-10-04 实机测试）：``POST /api/v1/console/projects/{id}:forget`` 在
+    ``rmtree`` 上抛 ``PermissionError: [WinError 5]``，而它此前已经停了 daemon ——
+    结果是"daemon 没了、文件一个没删、索引还在"，页面随后满屏 503。
+    """
+
+    config, root, project_id = _own_project(tmp_path)
+    objects = root / ".git" / "objects" / "13"
+    objects.mkdir(parents=True)
+    read_only = objects / "243ab4e07786cb1dc7b3cb256ed4a7c1377065"
+    read_only.write_text("git object", encoding="utf-8")
+    read_only.chmod(0o444)  # 在 Windows 上就是"只读"
+
+    report = forget(config, project_id, delete_files=True)
+
+    assert report["status"] == "forgotten"
+    assert report["files"]["deleted"] is True
+    assert not root.exists(), "一个只读文件不该让整个项目删不掉"
+
+
 def test_a_registered_project_outside_projects_root_keeps_its_files(tmp_path: Path) -> None:
     config = _config(tmp_path)
     outside = _existing_project(tmp_path, "somebody-elses")

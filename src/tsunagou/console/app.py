@@ -9,6 +9,7 @@ daemon cannot know (which projects exist, what the person calls their agents).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -103,6 +104,47 @@ def exit_path(project_id: str, source: ExitSource) -> str:
     if isinstance(source, GlobalExit):
         return f"/api/v1{source.route}"
     return f"/api/v1/projects/{project_id}{source}"
+
+
+#: Commands that change what the decision exit answers. Relaying one of these makes the
+#: console's own record of that exit out of date the moment the command lands — and a
+#: confirmed completion then closes the daemon by design, so the exit can never be read
+#: again. Without this the page keeps showing a proposal the user just confirmed as
+#: still waiting for them.
+DECISION_COMMANDS = frozenset({
+    "project.archive", "project.completion.confirm",
+    "project.completion.propose.main", "project.completion.propose.owner",
+    "user_decision.cancel", "user_decision.propose", "user_decision.resolve",
+})
+
+
+def revise_decision_record(
+    entry: Any, endpoint: dict[str, Any] | None, project_id: str, history: HistoryStore, *,
+    read: Callable[..., ForwardResponse] = forward,
+) -> None:
+    """Read the decision exit again after a command changed it, or drop the stale record.
+
+    ``read`` is injected so a test can answer without a daemon. Every failure path ends in
+    the same place on purpose: a record the console knows to be out of date must not be
+    served as the current answer, and "no record" already has an honest reading on screen.
+    """
+
+    path = exit_path(project_id, GlobalExit("/decisions"))
+    try:
+        answered = read(endpoint=endpoint, method="GET", path=path,
+                        token=project_token(entry.path, endpoint))
+    except ConsoleError:
+        history.forget_sources(project_id, ("decisions",))
+        return
+    if answered.status >= 400:
+        history.forget_sources(project_id, ("decisions",))
+        return
+    try:
+        payload = json.loads(answered.body or b"null")
+    except json.JSONDecodeError:
+        history.forget_sources(project_id, ("decisions",))
+        return
+    history.record(project_id, "decisions", payload, captured_at=format_timestamp(now_ms()))
 
 
 class ProjectRequest(BaseModel):
@@ -578,7 +620,13 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
     async def relay_command(command_kind: str, request: Request, project_id: str | None = None) -> Response:
         project_id = _requested_project(request, project_id)
         entry, endpoint = _resolve_project(project_id)
-        return await _relay(entry, endpoint, "POST", f"/api/v1/commands/{command_kind}", request)
+        response = await _relay(entry, endpoint, "POST", f"/api/v1/commands/{command_kind}", request)
+        if response.status_code < 400 and command_kind in DECISION_COMMANDS:
+            # 这一条命令刚改掉了 decisions 出口的答案：能重读就重记，读不到就把旧记录作废，
+            # 绝不能让"确认之前"的那一份继续冒充当前答案（见 revise_decision_record）。
+            await run_in_threadpool(
+                revise_decision_record, entry, endpoint, project_id, history)
+        return response
 
     @app.api_route("/api/v1/projects/{project_id}/{rest:path}", methods=RELAY_METHODS)
     async def relay_project(project_id: str, rest: str, request: Request) -> Response:
