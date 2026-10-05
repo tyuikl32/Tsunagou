@@ -1,6 +1,6 @@
 """文案文件与页面之间必须逐字节往返：改字要生效，没改的不能被动。
 
-前端文案抽出来给人改（``文案.txt``），再由同一个工具写回 ``web/``。这里钉三件事：
+前端文案抽出来给人改（``tsunagou.lang``），再由同一个工具写回 ``web/``。这里钉三件事：
 仓库里那份文案与页面是一致的（``check`` 说不需要改）、改过一行确实写进代码、变量个数不对
 时**拒绝**而不是猜。
 """
@@ -32,7 +32,7 @@ def _tool():
 
 
 def test_the_committed_copy_file_still_matches_the_page() -> None:
-    """仓库里那份 文案.txt 与 web/ 下的代码一致 —— 不一致就说明有人只改了一边。"""
+    """仓库里那份 tsunagou.lang 与 web/ 下的代码一致 —— 不一致就说明有人只改了一边。"""
 
     tool = _tool()
     assert tool.main(["check"]) == 0
@@ -49,7 +49,7 @@ def test_writing_preserves_the_files_own_line_endings(tmp_path: Path) -> None:
     script.parent.mkdir(parents=True)
     before = "const a = '请打开 Codex';\r\nconst b = '别的字';\r\n".encode()
     script.write_bytes(before)
-    copy = tmp_path / "文案.txt"
+    copy = tmp_path / "tsunagou.lang"
     tool = _tool()
 
     assert tool.main(["extract", "--root", str(tmp_path), "--copy", str(copy)]) == 0
@@ -69,7 +69,7 @@ def test_an_untouched_page_is_left_byte_for_byte_alone(tmp_path: Path) -> None:
     script.parent.mkdir(parents=True)
     original = "const a = '请打开 ' + host.label + ' 再继续';\r\nconst b = '已完成';\r\n".encode()
     script.write_bytes(original)
-    copy = tmp_path / "文案.txt"
+    copy = tmp_path / "tsunagou.lang"
     tool = _tool()
 
     assert tool.main(["extract", "--root", str(tmp_path), "--copy", str(copy)]) == 0
@@ -82,7 +82,7 @@ def test_an_edited_line_is_written_back_into_its_own_span(tmp_path: Path) -> Non
     script = tmp_path / "web" / "assets" / "js" / "probe.js"
     script.parent.mkdir(parents=True)
     script.write_text("const a = '请打开 Codex 桌面版';\nconst b = '别的字';\n", encoding="utf-8")
-    copy = tmp_path / "文案.txt"
+    copy = tmp_path / "tsunagou.lang"
     tool = _tool()
 
     assert tool.main(["extract", "--root", str(tmp_path), "--copy", str(copy)]) == 0
@@ -101,7 +101,7 @@ def test_a_variable_survives_the_round_trip_and_is_shown_as_a_placeholder(tmp_pa
     script = tmp_path / "web" / "assets" / "js" / "probe.js"
     script.parent.mkdir(parents=True)
     script.write_text("const a = '请打开 ' + host.label + ' 再继续';\n", encoding="utf-8")
-    copy = tmp_path / "文案.txt"
+    copy = tmp_path / "tsunagou.lang"
     tool = _tool()
 
     assert tool.main(["extract", "--root", str(tmp_path), "--copy", str(copy)]) == 0
@@ -124,7 +124,7 @@ def test_a_changed_number_of_variables_is_refused(tmp_path: Path) -> None:
     script = tmp_path / "web" / "assets" / "js" / "probe.js"
     script.parent.mkdir(parents=True)
     script.write_text("const a = '请打开 ' + host.label + ' 再继续';\n", encoding="utf-8")
-    copy = tmp_path / "文案.txt"
+    copy = tmp_path / "tsunagou.lang"
     tool = _tool()
     assert tool.main(["extract", "--root", str(tmp_path), "--copy", str(copy)]) == 0
 
@@ -141,7 +141,7 @@ def test_a_half_dropped_quote_pair_is_reported(tmp_path: Path, capsys: pytest.Ca
     script = tmp_path / "web" / "assets" / "js" / "probe.js"
     script.parent.mkdir(parents=True)
     script.write_text("const a = '「' + name + '」会被删掉';\n", encoding="utf-8")
-    copy = tmp_path / "文案.txt"
+    copy = tmp_path / "tsunagou.lang"
     tool = _tool()
     assert tool.main(["extract", "--root", str(tmp_path), "--copy", str(copy)]) == 0
 
@@ -160,7 +160,7 @@ def test_a_byte_order_mark_does_not_break_the_file(tmp_path: Path) -> None:
     script = tmp_path / "web" / "assets" / "js" / "probe.js"
     script.parent.mkdir(parents=True)
     script.write_text("const a = '请打开 Codex';\n", encoding="utf-8")
-    copy = tmp_path / "文案.txt"
+    copy = tmp_path / "tsunagou.lang"
     tool = _tool()
     assert tool.main(["extract", "--root", str(tmp_path), "--copy", str(copy)]) == 0
 

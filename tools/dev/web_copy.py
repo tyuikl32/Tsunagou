@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-DEFAULT_COPY = REPOSITORY / "文案.txt"
+DEFAULT_COPY = REPOSITORY / "tsunagou.lang"
 HAN = re.compile(r"[\u4e00-\u9fff]")
 HTML_SOURCES = ("web/index.html",)
 JS_GLOBS = ("web/assets/js/*.js",)
@@ -174,7 +174,7 @@ def _skip_regex(source: str, index: int, previous: str) -> int | None:
     characters and swallows every real literal in between -- those come back looking
     multi-line, get dropped, and their Chinese never reaches the copy file. Worse, the
     entries that *do* survive are renumbered whenever anything before them changes, so
-    adding a comment silently invalidates every ``path#n`` in 文案.txt.
+    adding a comment silently invalidates every ``path#n`` in tsunagou.lang.
 
     Returns ``None`` when the ``/`` is really a division.
     """

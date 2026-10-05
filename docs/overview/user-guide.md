@@ -92,11 +92,18 @@ python -m tsunagou web status         # 看地址：Tsunagou console: running at
 | 任务区 | 每个任务的状态、负责谁、开工条件、**改动范围**；点一行看详情（含任务介绍） |
 | 冲突与协商 | 分歧 / 冲突 / Agent 间协商 / 契约 |
 | 租约审计 | 谁拿到了哪些路径的租约 |
-| 验收与存档点 | 验收结论、存档点 |
+| 验收与存档点 | 验收结论、存档点；等你确认的完成提案也在这里（两者故意合为一屏：确认完成本身就会落成一个存档点） |
+| 工作区 | 隔离出来的工作区，以及文件占用情况 |
+| 总路径 | 任务之间谁等谁，画成一张图 |
 
 ### 第 7 步：收工
 
-在控制台里发起完工，按提示确认（或 `python -m tsunagou project complete`），最后停 daemon。
+在控制台里发起完工，按提示确认，最后停 daemon。确认动作在**主视图的"待用户决定"**里点进
+"验收与存档点"那一屏；命令行的等价写法要带上提案自己的三个值：
+
+```powershell
+python -m tsunagou project complete <提案编号> --expected-project-revision <n> --digest <摘要>
+```
 
 ---
 
