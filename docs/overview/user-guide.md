@@ -41,6 +41,8 @@
 两种方式任选其一：
 
 - **用控制台**：先起控制台（见第 3 步），在页面里"新建协作"。第一次用推荐这条。
+
+  向导会在第 1、2 步之间再问一屏：**协作根目录、端口号、绑定地址、对外地址**。只在主机上用就一路保持默认；要让虚拟机连，选「可网络接入」并填上主机在 VMnet1 上的地址（例如 `http://192.168.32.1:2810`）—— 创建时控制台就会按这些值把协调中心起起来。
 - **用命令**：`python -m tsunagou project init --name "我的协作"`
 
 ### 第 2 步：起协调中心
@@ -118,6 +120,8 @@ python -m tsunagou web status         # 看地址：Tsunagou console: running at
 ### 3.2 主机这边：把协调中心挂到虚拟机能连的地址上
 
 如果 daemon 已经在跑，先停再按下面的方式起：
+
+> 用向导建的项目（选了「可网络接入」）不需要这一步：控制台会按你填的地址把它起起来。这一节是给想自己指定、或改过网卡地址要重启的场合。
 
 ```powershell
 python -m tsunagou daemon start --coordination-root "E:\Tsunagou\projects\我的协作" --host 192.168.32.1 --port 2810 --advertised-url "http://192.168.32.1:2810"

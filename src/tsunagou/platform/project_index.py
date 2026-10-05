@@ -65,6 +65,7 @@ def record_project(
     source: str = "cli",
     index: Path | None = None,
     now: int | None = None,
+    daemon_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Add or refresh one project, returning the entry that is now stored.
 
@@ -72,6 +73,12 @@ def record_project(
     created or started it, ``console`` when the middle layer did) so a reader can
     tell where a line came from. A caller that only knows the path does not erase
     a name or objective an earlier caller did know.
+
+    ``daemon_settings`` is how this project's coordination centre should be
+    started (bind address, port, advertised address) when the console collects it
+    from the new-project wizard. A caller that does not know them leaves whatever
+    an earlier caller recorded in place — restarting the console must not quietly
+    forget that this project is reachable from another machine.
     """
 
     target = index or index_path()
@@ -81,6 +88,7 @@ def record_project(
     current = next((item for item in projects if item.get("project_id") == project_id), None)
     sources = {str(item) for item in (current or {}).get("sources") or []}
     sources.add(source)
+    settings = daemon_settings or (current or {}).get("daemon_settings")
     entry: dict[str, Any] = {
         "project_id": project_id,
         "name": name or (current or {}).get("name"),
@@ -90,6 +98,7 @@ def record_project(
         "sources": sorted(sources),
         "created_at": (current or {}).get("created_at") or stamp,
         "updated_at": stamp,
+        **({"daemon_settings": settings} if settings else {}),
     }
     remaining = [item for item in projects if item.get("project_id") != project_id]
     remaining.append(entry)

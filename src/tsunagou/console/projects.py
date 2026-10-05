@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -54,6 +55,9 @@ class ProjectEntry:
     sources: list[str] = field(default_factory=list)
     available: bool = True
     daemon: dict[str, Any] | None = None
+    # 这个项目的协调中心该怎么起：绑哪张网卡、哪个端口、对外公布哪个地址（向导收的）。
+    # 没记过就是 None，起的时候走 CLI 的默认（回环 + 2810）。
+    daemon_settings: dict[str, Any] | None = None
     # Who works here, as last read from this project's daemon. ``None`` means
     # "this console cannot say" (no daemon, or nobody asked) — never "no agents".
     main_agent_id: str | None = None
@@ -77,6 +81,7 @@ class ProjectEntry:
             "available": self.available,
             "path": self.path.as_posix(),
             "daemon": self.daemon,
+            **({"daemon_settings": self.daemon_settings} if self.daemon_settings else {}),
             "main_agent_id": self.main_agent_id,
             "agents": self.agents,
             "agents_fetched_at": self.agents_fetched_at,
@@ -158,6 +163,7 @@ def discover(
             name=item.get("name"), objective=item.get("objective"),
             sources=[str(source) for source in item.get("sources") or []],
             available=False,
+            daemon_settings=item.get("daemon_settings"),
         )
     for root in config.resolved_scan_roots():
         for manifest_path in _candidate_manifests(root):
@@ -226,21 +232,24 @@ def register(
     return entry
 
 
-def create(config: ConsoleConfig, *, name: str, objective: str = "") -> ProjectEntry:
-    """Create a project under ``projects_root`` and register it.
+def _project_root_for(
+    config: ConsoleConfig, *, name: str, coordination_root: str | Path | None,
+) -> Path:
+    """这个协作的目录放哪：向导给了就用它，没给就按项目名在 projects_root 下找一个没用过的。
 
-    The project is created by the backend's own registry, not by a second copy of
-    the file format here: the console decides *where*, the backend decides *what*.
-
-    A caller that supplies no objective gets the placeholder, not the project's
-    own name: the goal is agreed between the user and the main Agent after the
-    project exists, and a name dressed up as a goal just reads as one.
+    给了目录时它是**新建**的语义：那里不该已经是一个协作（那该走"登记已有协作"那条路）。
+    git 仓库是 ProjectRegistry 的硬要求，所以两个分支都要 git init —— 控制台进程的 PATH 里
+    没有 git 时明确报缺失，不假装建好了。
     """
 
-    from tsunagou.modules.projects import PENDING_OBJECTIVE, ProjectRegistry
-
-    root = _unused_directory(config.projects_root, name)
-    root.mkdir(parents=True, exist_ok=True)
+    if coordination_root:
+        root = Path(str(coordination_root)).expanduser()
+        if read_manifest(root) is not None:
+            raise ConsoleError("project_already_exists_at_path", detail={"path": root.as_posix()})
+        root.mkdir(parents=True, exist_ok=True)
+    else:
+        root = _unused_directory(config.projects_root, name)
+        root.mkdir(parents=True, exist_ok=True)
     try:
         completed = subprocess.run(
             ["git", "init", "--quiet", str(root)], capture_output=True, text=True, check=False,
@@ -257,6 +266,71 @@ def create(config: ConsoleConfig, *, name: str, objective: str = "") -> ProjectE
             "git_initialization_failed", status=500,
             detail={"path": root.as_posix(), "stderr": (completed.stderr or "").strip()[:500]},
         )
+    return root
+
+
+#: 绑在所有网卡上的写法（与 CLI 的 `_WILDCARD_BIND_HOSTS` 是同一套判断）。
+_WILDCARD_BIND_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]", "*"})
+
+
+def _daemon_settings(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """把向导收的四项收拾成"起协调中心时真能用的参数"，收拾不干净就明确报错。
+
+    只做**硬的那几条**：端口像不像端口、对外地址能不能拨。像"绑了回环却公布网卡地址"
+    那类警告的权威判断在 CLI 的 `_advertised_url` 里，这里不复制第二份规则；
+    但"对外地址是通配地址"必须在这里挡住 —— 那种邀请发给谁都没用（2026-10-05 实测过：
+    拨 0.0.0.0 报 WinError 10049，连本机自己都连不上）。
+    """
+
+    data = {
+        str(key): value for key, value in (payload or {}).items()
+        if value is not None and str(value).strip() != ""
+    }
+    if not data:
+        return None
+    settings: dict[str, Any] = {}
+    if "port" in data:
+        try:
+            number = int(str(data["port"]))
+        except (TypeError, ValueError):
+            raise ConsoleError("daemon_port_invalid", detail={"port": str(data["port"])}) from None
+        if not 1 <= number <= 65535:
+            raise ConsoleError("daemon_port_invalid", detail={"port": str(data["port"])})
+        settings["port"] = number
+    host = str(data.get("bind_host") or "").strip()
+    if host:
+        settings["bind_host"] = host
+    advertised = str(data.get("advertised_url") or "").strip()
+    if advertised:
+        candidate = advertised if "://" in advertised else "http://" + advertised
+        parsed = urllib.parse.urlsplit(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ConsoleError("advertised_url_invalid", detail={"advertised_url": advertised})
+        if parsed.hostname in _WILDCARD_BIND_HOSTS:
+            raise ConsoleError("advertised_url_is_wildcard", detail={"advertised_url": advertised})
+        settings["advertised_url"] = candidate
+    return settings or None
+
+
+def create(
+    config: ConsoleConfig, *, name: str, objective: str = "",
+    coordination_root: str | Path | None = None,
+    daemon_settings: dict[str, Any] | None = None,
+) -> ProjectEntry:
+    """Create a project (at ``coordination_root`` when given) and register it.
+
+    The project is created by the backend's own registry, not by a second copy of
+    the file format here: the console decides *where*, the backend decides *what*.
+
+    A caller that supplies no objective gets the placeholder, not the project's
+    own name: the goal is agreed between the user and the main Agent after the
+    project exists, and a name dressed up as a goal just reads as one.
+    """
+
+    from tsunagou.modules.projects import PENDING_OBJECTIVE, ProjectRegistry
+
+    settings = _daemon_settings(daemon_settings)
+    root = _project_root_for(config, name=name, coordination_root=coordination_root)
     registry = ProjectRegistry.initialize(root, name=name, objective=objective or PENDING_OBJECTIVE)
     project = registry.project
     if project is None:  # pragma: no cover - initialize always yields a project
@@ -270,12 +344,24 @@ def create(config: ConsoleConfig, *, name: str, objective: str = "") -> ProjectE
         lifecycle=project.lifecycle, policy_revision=project.policy_revision,
         current_lineage_id=project.current_lineage_id, runtime_epoch=project.runtime_epoch,
         sources=["console"], bootstrap=bootstrap,
+        daemon_settings=settings,
     )
     record_project(
         project_id=entry.project_id, path=root, name=entry.name, objective=entry.objective,
         source="console", index=config.index_path,
+        daemon_settings=settings,
     )
     return entry
+
+
+def _log_tail(path: Path, limit: int = 800) -> str:
+    """起 daemon 那段日志的尾巴 —— 起失败时它是唯一的解释。"""
+
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return text.strip()[-limit:]
 
 
 def ensure_daemon(entry: ProjectEntry, *, autostart: bool, wait_seconds: float = 10.0) -> dict[str, Any]:
@@ -283,7 +369,10 @@ def ensure_daemon(entry: ProjectEntry, *, autostart: bool, wait_seconds: float =
 
     Autostart is off by default: a console that silently starts servers is hard to
     reason about. When it is switched on, the console starts the daemon the same
-    way a person would from the command line.
+    way a person would from the command line -- **including the address this
+    project was set up with** (``daemon_settings``). Starting it with the bare
+    defaults would bind loopback while the invitations already published a NIC
+    address, which is exactly the combination no remote can reach.
     """
 
     state = daemon_state(entry.path, probe=True)
@@ -291,11 +380,32 @@ def ensure_daemon(entry: ProjectEntry, *, autostart: bool, wait_seconds: float =
         return state
     if not autostart:
         raise ConsoleError("daemon_not_running", status=503, detail={"path": entry.path.as_posix()})
+    command = [
+        sys.executable, "-m", "tsunagou", "daemon", "start",
+        "--coordination-root", str(entry.path),
+    ]
+    settings = entry.daemon_settings or {}
+    if settings.get("bind_host"):
+        command += ["--host", str(settings["bind_host"])]
+    if settings.get("port"):
+        command += ["--port", str(settings["port"])]
+    if settings.get("advertised_url"):
+        command += ["--advertised-url", str(settings["advertised_url"])]
+    # 子进程的输出要留下来：以前丢进 DEVNULL，起失败时界面上什么也看不到。
+    log_path = entry.path / ".tsunagou" / "local" / "daemon-console-start.log"
+    log_handle = None
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = log_path.open("a", encoding="utf-8")
+    except OSError:
+        log_handle = None
     process = subprocess.Popen(
-        [sys.executable, "-m", "tsunagou", "daemon", "start", "--coordination-root", str(entry.path)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-        start_new_session=True,
+        command,
+        stdout=(log_handle or subprocess.DEVNULL), stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL, start_new_session=True,
     )
+    if log_handle is not None:
+        log_handle.close()
     deadline = time.time() + wait_seconds
     while time.time() < deadline:
         state = daemon_state(entry.path, probe=True)
@@ -304,7 +414,16 @@ def ensure_daemon(entry: ProjectEntry, *, autostart: bool, wait_seconds: float =
         if process.poll() is not None:
             break
         time.sleep(0.2)
-    raise ConsoleError("daemon_start_failed", status=503, detail={"path": entry.path.as_posix()})
+    tail = _log_tail(log_path)
+    raise ConsoleError(
+        "daemon_start_failed", status=503,
+        detail={
+            "path": entry.path.as_posix(),
+            "command": " ".join(command[1:]),
+            **({"log": log_path.as_posix()} if log_handle is not None else {}),
+            **({"output": tail} if tail else {}),
+        },
+    )
 
 
 def stop_daemon(root: Path, *, kill: Callable[[int], None] | None = None) -> dict[str, Any]:

@@ -296,3 +296,102 @@ def test_stopping_a_live_daemon_kills_the_pid_from_the_endpoint_file(
 
     assert report["status"] == "stopped"
     assert killed == [4242]
+
+def test_daemon_settings_keeps_what_can_be_dialled_and_rejects_the_rest() -> None:
+    """向导收的四项：能拨的留下，拨不通的明确报错。
+
+    `0.0.0.0` 作为**对外地址**是这里必须挡住的一种 —— 2026-10-05 实测：拨它报
+    WinError 10049，连本机自己都连不上，写成邀请发给谁都没用。
+    """
+
+    from tsunagou.console.projects import ConsoleError, _daemon_settings
+
+    assert _daemon_settings({
+        "port": 2810, "bind_host": "0.0.0.0", "advertised_url": "http://192.168.32.1:2810",
+    }) == {"port": 2810, "bind_host": "0.0.0.0", "advertised_url": "http://192.168.32.1:2810"}
+    # 空的一律当作"没给"，交给 CLI 的默认
+    assert _daemon_settings({}) is None
+    assert _daemon_settings({"port": "", "bind_host": None, "advertised_url": "  "}) is None
+    # 只给端口也行（其余走默认）
+    assert _daemon_settings({"port": "2820"}) == {"port": 2820}
+
+    for bad in ({"advertised_url": "http://0.0.0.0:2810"}, {"advertised_url": "http://"}, {"port": 70000},
+                {"port": "abc"}):
+        try:
+            _daemon_settings(bad)
+        except ConsoleError:
+            continue
+        raise AssertionError(f"这一组本该被拒绝：{bad}")
+
+
+def test_ensure_daemon_starts_with_the_address_the_project_was_set_up_with(tmp_path, monkeypatch) -> None:
+    """控制台起 daemon 时必须带上记过的地址，并把子进程输出留下来。
+
+    不带地址就会绑回环，而邀请里公布的是网卡地址 —— 远端再也连不上；
+    输出丢进 DEVNULL 的话，起失败时界面上什么也看不到。
+    """
+
+    from tsunagou.console.projects import ConsoleError, ProjectEntry, ensure_daemon
+
+    entry = ProjectEntry(
+        project_id="p-1", path=tmp_path,
+        daemon_settings={"bind_host": "192.168.32.1", "port": 2820,
+                         "advertised_url": "http://192.168.32.1:2820"},
+    )
+    seen: dict[str, object] = {}
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):  # noqa: ANN001 - 就是替身
+            seen["command"] = list(command)
+            seen["stdout"] = kwargs.get("stdout")
+
+        def poll(self):  # noqa: ANN201 - 立刻"退出"，让 ensure_daemon 走到失败分支
+            return 1
+
+    monkeypatch.setattr("tsunagou.console.projects.subprocess.Popen", FakeProcess)
+    monkeypatch.setattr("tsunagou.console.projects.daemon_state", lambda root, probe=True: None)
+
+    try:
+        ensure_daemon(entry, autostart=True, wait_seconds=0.05)
+    except ConsoleError as exc:
+        detail = getattr(exc, "detail", {}) or {}
+        assert "2820" in str(detail.get("command", ""))
+        assert detail.get("log"), "失败详情里要给出日志路径"
+    else:  # pragma: no cover - 上面那个替身必然让它失败
+        raise AssertionError("daemon 没起来时 ensure_daemon 应当抛错")
+
+    command = [str(part) for part in seen["command"]]
+    joined = " ".join(command)
+    assert "--coordination-root" in joined and str(tmp_path) in joined
+    assert "--host 192.168.32.1" in joined
+    assert "--port 2820" in joined
+    assert "--advertised-url http://192.168.32.1:2820" in joined
+    assert seen["stdout"] is not None, "输出要落到文件，不再丢进 DEVNULL"
+    assert (tmp_path / ".tsunagou" / "local" / "daemon-console-start.log").is_file()
+
+
+def test_ensure_daemon_falls_back_to_the_cli_defaults_without_settings(tmp_path, monkeypatch) -> None:
+    """没记过设置的项目照旧：不给 --host/--port/--advertised-url，走 CLI 默认。"""
+
+    from tsunagou.console.projects import ConsoleError, ProjectEntry, ensure_daemon
+
+    entry = ProjectEntry(project_id="p-2", path=tmp_path)
+    seen: dict[str, object] = {}
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):  # noqa: ANN001
+            seen["command"] = list(command)
+
+        def poll(self):  # noqa: ANN201
+            return 1
+
+    monkeypatch.setattr("tsunagou.console.projects.subprocess.Popen", FakeProcess)
+    monkeypatch.setattr("tsunagou.console.projects.daemon_state", lambda root, probe=True: None)
+
+    try:
+        ensure_daemon(entry, autostart=True, wait_seconds=0.05)
+    except ConsoleError:
+        pass
+
+    joined = " ".join(str(part) for part in seen["command"])
+    assert "--host" not in joined and "--port" not in joined and "--advertised-url" not in joined
