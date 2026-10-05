@@ -109,3 +109,43 @@ def test_a_port_in_the_config_file_counts_as_written_down(tmp_path: Path) -> Non
     assert ConsoleConfig.load(written).port_explicit is True
     assert ConsoleConfig.load(silent).port == DEFAULT_PORT
     assert ConsoleConfig.load(silent).port_explicit is False
+
+def test_stopping_a_console_that_is_not_running_just_cleans_up(tmp_path: Path) -> None:
+    """没在跑时 stop 不报错，但要清掉会让人误以为"还在跑"的清单（stale）。"""
+
+    import json
+
+    from tsunagou.console.service import manifest_path, stop
+
+    config = ConsoleConfig(path=tmp_path / "console.json")
+    manifest = manifest_path(config)
+    manifest.write_text(json.dumps({"url": f"http://127.0.0.1:{_free_port()}", "pid": 999999}),
+                        encoding="utf-8")
+
+    result = stop(config)
+
+    assert result["status"] == "stopped" and result["was"] == "stale"
+    assert not manifest.exists(), "过期清单要清掉"
+
+
+def test_stopping_with_nothing_to_stop_says_so(tmp_path: Path) -> None:
+    from tsunagou.console.service import manifest_path, stop
+
+    config = ConsoleConfig(path=tmp_path / "console.json")
+
+    result = stop(config)
+
+    assert result == {"status": "stopped", "was": "stopped", "manifest": str(manifest_path(config))}
+
+
+def test_an_unreadable_manifest_is_hidden_and_reported_unknown(tmp_path: Path) -> None:
+    from tsunagou.console.service import manifest_path, stop
+
+    config = ConsoleConfig(path=tmp_path / "console.json")
+    manifest = manifest_path(config)
+    manifest.write_text("{ not json", encoding="utf-8")
+
+    result = stop(config)
+
+    assert result["status"] == "unknown" and result["was"] == "unknown"
+    assert not manifest.exists()

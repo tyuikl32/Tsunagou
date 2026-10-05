@@ -2402,6 +2402,36 @@ if typer is not None:
         if result["status"] != "running":
             raise typer.Exit(5)
 
+    @web_app.command("stop")
+    def web_stop(
+        ctx: typer.Context,
+        config: Path | None = typer.Option(None, "--config"),  # noqa: B008
+    ) -> None:
+        """Stop this machine's console. The projects' daemons keep running.
+
+        清单文件写在**配置文件旁边**；不给 `--config` 时用的是默认配置位置（`~/.tsunagou/`，
+        2026-10-05 实测：在别处运行时清单也落在那里）。所以 `start`/`status`/`stop` 用同一个
+        `--config`，或者都不用 —— 混用会让它如实回答"本来就没在跑"。
+        """
+        from tsunagou.console.service import stop as console_stop
+
+        settings = _console_settings(ctx, config, None, None)
+        try:
+            result = console_stop(settings)
+        except RuntimeError as exc:
+            if ctx.obj.get("json"):
+                print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
+            else:
+                print(f"Tsunagou console: 停不下来（{exc}）")
+            raise typer.Exit(1) from exc
+        if ctx.obj.get("json"):
+            print(json.dumps(result, sort_keys=True))
+        elif result["status"] == "stopped":
+            pid = result.get("pid")
+            print("Tsunagou console: stopped" + (f" (pid {pid})" if pid else f"（本来就没在跑：{result.get('was')}）"))
+        else:
+            print(f"Tsunagou console: {result['status']}")
+
     main = app
 else:
     def main() -> None:

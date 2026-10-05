@@ -8138,6 +8138,10 @@
             const decisions = sourceItems(sources, 'decisions');
             const pending = decisions.filter(function (d) { return toText(d.status) === 'pending'; });
             const done = tasks.filter(function (t) { return t.status === 'completed'; });
+            /* 取消不是"没做完"：被替代的任务由新任务完成了业务目标，把它和未开工的一起算作
+               未完成，面板读起来就像"还有一半活没干"（2026-10-05 实际遇到：验收 12/12、
+               面板 50%）。这里只把它单独报出来，百分比本身不动 —— 换分母是产品判断。*/
+            const cancelled = tasks.filter(function (t) { return t.status === 'cancelled'; });
             const main = agents.filter(function (a) { return a.role === 'main'; })[0];
             /* 协作目录由中间层知道（daemon 的概况出口不含文件路径），从协作列表里取。*/
             const known = toArray(state.get('projects', [])).filter(function (item) {
@@ -8180,13 +8184,16 @@
                         return {
                             state: t.status === 'completed' ? 'done'
                                 : (['claimed', 'running', 'submitted'].indexOf(t.status) >= 0 ? 'doing' : 'todo'),
-                            text: t.title
+                            /* 已取消的项原本和"还没开始"在清单里长得一模一样。词表里本来就有
+                               "已取消"，所以只用文字说清，不新增样式（CSS 不归这里改）。*/
+                            text: (t.status === 'cancelled' ? '（已取消）' : '') + t.title
                         };
                     })
                 },
                 stats: [
                     { label: 'Agent', value: agents.length + ' 个' },
-                    { label: '任务', value: tasks.length + ' 个（已完成 ' + done.length + '）' },
+                    { label: '任务', value: tasks.length + ' 个（已完成 ' + done.length
+                        + (cancelled.length ? '、已取消 ' + cancelled.length : '') + '）' },
                     { label: '认知报告', value: reports.length + ' 份' },
                     { label: '存档点', value: toArray(checkpoints.items).length + ' 个' }
                 ],

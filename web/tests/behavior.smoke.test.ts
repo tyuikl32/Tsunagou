@@ -1538,6 +1538,73 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(shown()).toBe("待主 Agent 与用户确认");
   });
 
+  /* 取消不等于没做完（2026-10-05 实际遇到：业务验收 12/12、面板 50%）。主视图那个百分比
+     的算法是"已完成 / 全部任务记录"，这次**不动它** —— 换分母是产品判断。要修的是显示：
+     ① 计划进度里已取消的项原本和"还没开始"长得一样；② 统计行只说"已完成 N"，读起来像
+     其余都没做完。两处都用文字说清，不新增样式。*/
+  it("已取消的任务在计划进度里带标记，统计行把取消数单独报出来", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    /* 主视图（#pane-overview）的 sources 就是**概览响应**那一份（'project.current' →
+       render.overview(payload)），所以任务要放在概览响应里。任务那个出口也照样回一份，
+       万一它也被请求了，两边一致。*/
+    let taskItems: unknown[] = [
+      { id: "t1", title: "后端", status: "completed" },
+      { id: "t2", title: "最终读者端", status: "completed" },
+      { id: "t3", title: "原读者端任务", status: "cancelled" },
+    ];
+    const overviewView = () => ({
+      project_id: "p-1", view: "overview", missing: {},
+      sources: {
+        overview: {
+          project_id: "p-1", name: "示例协作", objective: "已确认的目标",
+          lifecycle: "active", policy_revision: 1, roots: [], repositories: [],
+        },
+        agents: { items: [] },
+        tasks: { items: taskItems },
+        cognition: { reports: [] },
+        checkpoints: { items: [] },
+        decisions: { items: [] },
+      },
+    });
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const body = path.indexOf("/console/views/tasks") >= 0
+        ? { project_id: "p-1", view: "tasks", missing: {}, sources: { tasks: { items: taskItems } } }
+        : (path.indexOf("/console/views/overview") >= 0 ? overviewView() : {});
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["project"]);
+
+    const text = () => page.querySelector("#pane-overview")!.textContent || "";
+    /* 已取消的项带标记，没取消的项不带 */
+    expect(text()).toContain("（已取消）原读者端任务");
+    expect(text()).not.toContain("（已取消）后端");
+    /* 统计行把两类分开报，不再让"已取消"混进"没做完"（表格渲染成相邻两格，标签与值之间没有空格） */
+    expect(text()).toContain("3 个（已完成 2、已取消 1）");
+    /* 百分比仍是 已完成 / 全部任务记录：2/3 = 67%，证明这次没有偷改分母 */
+    expect(text()).toContain("67%");
+
+    /* 没有取消的任务时，那一截不出现 —— 不永远挂一句"已取消 0" */
+    taskItems = [
+      { id: "t1", title: "后端", status: "completed" },
+      { id: "t2", title: "最终读者端", status: "running" },
+    ];
+    await win.Tsunagou.refresh(["project"]);
+    expect(text()).toContain("2 个（已完成 1）");
+    expect(text()).not.toContain("已取消");
+  });
+
 });
 
 type EnrollmentApi = ConsoleApi & {
