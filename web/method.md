@@ -289,7 +289,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 |---|---|---|
 | 任务区 | 点任务行 | 第 1 段（任务细节） |
 | 冲突与协商 | 点分歧卡片 / 点**冲突行** / 点**Agent 间协商行** / 点契约卡片；「查看契约」按钮 | 第 1 段＝分歧详情，第 2 段＝契约详情，第 3 段＝冲突详情，第 4 段＝Agent 间协商详情（四段互斥） |
-| 意图与权限审计 | 点租约行 | 第 1 段＝权限租约 |
+| 租约审计 | 点租约行 | 第 1 段＝权限租约 |
 | 工作区 | 点工作区卡片 | 第 1 段 |
 | 总路径 | 点某条记录行 | 第 1 段（路径详情） |
 
@@ -359,7 +359,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `agent.info` | 对象 | 打开并填充 Agent 详情窗口 |
 | `task.list` | 数组 | 任务区 |
 | `conflict.data` | `{dissents, conflicts, messages, contracts}` | 冲突与协商（4 个子标签） |
-| `audit.data` | `{leases}` | 意图与权限审计（**2026-10-04 起只剩「Agent 权限」一栏**；`intents` 已删，见 §7 `render.audit`） |
+| `audit.data` | `{leases}` | 租约审计（**2026-10-05 起页内没有子标签**：只剩一栏就是噪声，整页由 `render.audit` 直接生成进 `#pane-audit`；`intents` 已删，见 §7 `render.audit`） |
 | `workspace.list` | 数组 | 工作区 |
 | `acceptance.data` | `{proposal, taskResults}` | 验收与存档点（段 1、段 2） |
 | `checkpoint.list` | `{latest, history}` | 存档点（三个段落里的前两段） |
@@ -725,6 +725,9 @@ POST /console/enrollments/{enrollment_id}:cancel
 > **改动范围** = 这个任务的**活跃**租约涉及的资源键之和（真出口给的是 `repo:x/**` 这种
 > 资源键字符串；旧演示数据里的 `{key,mode}` 也认）；一条活跃租约都没有时退回任务自己声明的
 > `execution_scope`；另外还有过期的租约时，末尾补一句「（另有 N 条租约已过期）」，不把它们混进范围里。
+> **（2026-10-05：这一格不再直接写对象。** `scopeText` 把它写成一句人话：空声明写「不认领任何路径（不做文件改动）」，
+> path 资源写成 `root/segments（mode）`，`roots` 写成「整根」，认不出的形状退回 JSON —— 以前这里显示的是
+> `[object Object]`（用户实测截图）。任务详情里同时多了一行「任务介绍」，内容就是出口的 `objective`。**）**
 > `status` 直接对应 CSS 的 13 个任务状态，文字由 CSS 生成，不用传：
 > 1 草稿 · 2 已就绪 · 3 待认领 · 4 已认领 · 5 执行中 · 6 卡住了 · 7 待验收 ·
 > 8 被打回 · 9 取消中 · 10 执行者丢失 · 11 已完成 · 12 失败 · 13 已取消
@@ -920,7 +923,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 > 后三段带 `.contentNDP`（CSS 里默认隐藏），由 `ui.aside.load(slug, 段号)` 互斥切换。
 
 `<slug>` 取值：`overview` 主视图 · `agents` Agent 管理 · `tasks` 任务区 ·
-`conflict` 冲突与协商 · `audit` 意图与权限审计 · `workspace` 工作区 · `acceptance` 验收与存档点 ·
+`conflict` 冲突与协商 · `audit` 租约审计 · `workspace` 工作区 · `acceptance` 验收与存档点 ·
 `path` 总路径
 
 窗口 id：`setPanel` `mgrAgent` `mgrAgentInfo` `delPmt` `addProj` `addSubAgent` `netInvite` `loadW`（`delDat` 已删）；
@@ -1176,7 +1179,9 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
   它读的是新出口 `conflicts`——每一次租约被拒一条，含请求方、占用方、涉及的资源键，以及后端**机械推断**的应对情况
   （`retried_and_won` / `gave_up` / `holder_released` / `open`，显示在「处理方案」列）。
   列名、行结构与原设计里那个冲突表一致，只是数据从“认知冲突”换成了真发生过的租约拒绝；
-  一开始我把它放在「意图与权限审计」的第三个子标签，你要求挑回这里，已改回（审计页仍是两个子标签）。
+  一开始我把它放在「意图与权限审计」的第三个子标签，你要求挑回这里，已改回。
+  （**2026-10-05：审计页那条子标签栏整个去掉了** —— 只剩一栏就是噪声；这一屏同时改名为「租约审计」，
+  整页由 `render.audit` 直接生成进 `#pane-audit`，与 Agent 管理 / 工作区那几页同一个写法。）
 - **「每个项目由谁负责」接通**（2026-09-28）：`GET /projects?agents=1` 每条项目带上
   `main_agent_id` / `agents`（只有 id/status/role）/ `agents_fetched_at`。
   **名单由中间层维护**（`console/agents.py`）：第一次读到就拉一次（“打开”），之后只在

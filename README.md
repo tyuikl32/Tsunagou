@@ -37,6 +37,7 @@ Tsunagou 是面向本机多个 Coding Agent 的协作后端。它让 Agent 共�
 | 设计原则与 Agent 运行原则 | [两组原则](docs/overview/principles.md) |
 | 八大模块如何配合 | [项目组成](docs/overview/architecture.md) |
 | 用户和 Agent 实际怎么使用 | [运行流程](docs/overview/runtime-walkthrough.md) |
+| 用户怎么用（含跨机器 / 虚拟机） | [使用手册](docs/overview/user-guide.md) |
 | 用户如何让子Agent加入、分工与恢复 | [子Agent指南](docs/overview/subagent-guide.md) |
 | CLI与HTTP怎么用 | [简明说明书](docs/overview/cli-http-manual.md) |
 | 技术、库与选型理由 | [技术说明](docs/overview/technology.md) |
