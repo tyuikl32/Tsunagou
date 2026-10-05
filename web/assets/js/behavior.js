@@ -1223,7 +1223,7 @@
         if (wizardAccess() === 'network') {
             const advertised = toText(inputs[3] && inputs[3].value).trim();
             if (!advertised) return '选了「可网络接入」就要填对外地址：远端照它来连';
-            if (advertised.indexOf('://') < 0) return '对外地址要写成 http://地址:端口';
+            /* 协议与端口都由中间层补全（缺协议补 http://，缺端口沿用上面那一格），这里只要求非空。*/
         }
         return null;
     }

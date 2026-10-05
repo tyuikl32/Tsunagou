@@ -304,6 +304,36 @@ def _project_root_for(
 _WILDCARD_BIND_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]", "*"})
 
 
+#: daemon 没被指定端口时用的那个（与 CLI 的 DEFAULT_DAEMON_PORT 一致）。
+_DEFAULT_DAEMON_PORT = 2810
+
+
+def _advertised_origin(declared: str, port: int | None) -> str:
+    """把用户写的对外地址补全成一个完整的 origin。
+
+    用户只写 ``192.168.32.1`` 就够：缺协议补 ``http://``，缺端口沿用向导上面那一格
+    （``port``；那一格没填就用默认端口）。**已经写了的原样尊重，不重复加** —— 自己写了
+    ``https://`` 或带端口，就照用户写的来。补端口这一步同时在堵一个坑：origin 不带端口
+    意味着远端去拨 80，那张邀请本来就是坏的（2026-10-05 实测碰到过一次）。
+    """
+
+    text = declared.strip()
+    if not text:
+        return ""
+    candidate = text if "://" in text else "http://" + text
+    parsed = urllib.parse.urlsplit(candidate)
+    hostname = parsed.hostname or ""
+    if parsed.scheme not in {"http", "https"} or not hostname:
+        raise ConsoleError("advertised_url_invalid", detail={"advertised_url": declared})
+    if hostname in _WILDCARD_BIND_HOSTS:
+        raise ConsoleError("advertised_url_is_wildcard", detail={"advertised_url": declared})
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ConsoleError("advertised_url_must_be_an_origin", detail={"advertised_url": declared})
+    if parsed.port:
+        return f"{parsed.scheme}://{hostname}:{parsed.port}"
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    return f"{parsed.scheme}://{host}:{port or _DEFAULT_DAEMON_PORT}"
+
 def _daemon_settings(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     """把向导收的四项收拾成"起协调中心时真能用的参数"，收拾不干净就明确报错。
 
@@ -333,13 +363,7 @@ def _daemon_settings(payload: dict[str, Any] | None) -> dict[str, Any] | None:
         settings["bind_host"] = host
     advertised = str(data.get("advertised_url") or "").strip()
     if advertised:
-        candidate = advertised if "://" in advertised else "http://" + advertised
-        parsed = urllib.parse.urlsplit(candidate)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            raise ConsoleError("advertised_url_invalid", detail={"advertised_url": advertised})
-        if parsed.hostname in _WILDCARD_BIND_HOSTS:
-            raise ConsoleError("advertised_url_is_wildcard", detail={"advertised_url": advertised})
-        settings["advertised_url"] = candidate
+        settings["advertised_url"] = _advertised_origin(advertised, settings.get("port"))
     return settings or None
 
 

@@ -426,3 +426,35 @@ def test_a_wildcard_bind_address_is_probed_and_forwarded_on_the_loopback(tmp_pat
     assert endpoint is not None
     assert endpoint["url"] == "http://127.0.0.1:2810"
     assert endpoint["advertised_url"] == "http://192.168.32.1:2810"
+
+def test_the_advertised_address_is_completed_from_what_the_user_typed() -> None:
+    """对外地址可以不写协议、不写端口：中间层补全成完整 origin。
+
+    缺协议补 http://；缺端口沿用向导上面那一格（那一格没填就用默认端口）。已经写了的
+    原样尊重。补端口这一步同时在堵"邀请指向 80 端口"那个坑。
+    """
+
+    from tsunagou.console.projects import ConsoleError, _daemon_settings
+
+    assert _daemon_settings({"port": 2810, "advertised_url": "192.168.32.1"}) == {
+        "port": 2810, "advertised_url": "http://192.168.32.1:2810"}
+    assert _daemon_settings({"port": 2820, "advertised_url": "192.168.32.1"})["advertised_url"] == (
+        "http://192.168.32.1:2820")
+    # 自己带了端口：照用户写的，不覆盖
+    assert _daemon_settings({"port": 2810, "advertised_url": "192.168.32.1:9000"})["advertised_url"] == (
+        "http://192.168.32.1:9000")
+    # 自己带了协议：不重复加
+    assert _daemon_settings({"advertised_url": "http://192.168.32.1"})["advertised_url"] == (
+        "http://192.168.32.1:2810")
+    assert _daemon_settings({"advertised_url": "https://box.example.com:8443"})["advertised_url"] == (
+        "https://box.example.com:8443")
+    # 端口那一格也没填：用默认端口
+    assert _daemon_settings({"advertised_url": "box.example.com"})["advertised_url"] == (
+        "http://box.example.com:2810")
+    # 通配地址与"带路径的"仍然被拒
+    for bad in ("0.0.0.0", "http://0.0.0.0:2810", "192.168.32.1/abc"):
+        try:
+            _daemon_settings({"advertised_url": bad})
+        except ConsoleError:
+            continue
+        raise AssertionError(f"本该被拒绝：{bad}")
