@@ -895,7 +895,12 @@ async function main(): Promise<void> {
   process.stderr.write("[tsunagou-bridge] ready; credentials are selected per request\n");
 }
 
-main().catch(() => {
-  process.stderr.write("[tsunagou-bridge] startup_failed\n");
+main().catch((error: unknown) => {
+  // A bare "startup_failed" left the host reporting only mcp_transport_closed:1, with no way to
+  // tell a startup failure from the host closing stdio. The reason goes to stderr now.
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  const detail = (error as { detail?: unknown } | null | undefined)?.detail;
+  const suffix = detail === undefined ? "" : ` detail=${JSON.stringify(detail).slice(0, 300)}`;
+  process.stderr.write(`[tsunagou-bridge] startup_failed ${message.slice(0, 300)}${suffix}\n`);
   process.exit(1);
 });

@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tsunagou.platform.endpoints import connectable_url
+
 
 def read_object(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -81,7 +83,7 @@ def resolve_runtime(
     if project_id and endpoint.get("project_id") not in {None, project_id}:
         raise RuntimeError("project_context_conflict")
     configured_url = env.get("TSUNAGOU_DAEMON_URL", "").rstrip("/")
-    recorded_url = str(endpoint.get("url") or "").rstrip("/")
+    recorded_url = connectable_url(str(endpoint.get("url") or "")).rstrip("/")
     if configured_url and recorded_url and configured_url != recorded_url:
         raise RuntimeError("daemon_context_conflict")
     integration = read_object(root / ".tsunagou/project-integration.json")

@@ -30,6 +30,7 @@ from tsunagou.console.errors import ConsoleError
 from tsunagou.console.history import HistoryStore
 from tsunagou.platform import host_registration
 from tsunagou.platform.bridge_files import bridge_identities
+from tsunagou.platform.endpoints import connectable_url as _shared_connectable_url
 from tsunagou.platform.project_index import forget_project as forget_index_entry
 from tsunagou.platform.project_index import load_index, record_project
 
@@ -108,24 +109,9 @@ _WILDCARD_URL_HOSTS = frozenset({"0.0.0.0", "::", "[::]", "*"})
 
 
 def connectable_url(url: str) -> str:
-    """把 daemon 自报的**绑定地址**换成能连的地址，其余原样。
+    """Kept as this module's name for the shared rule (see platform.endpoints)."""
 
-    控制台拿这个地址探活、转发浏览器的请求；**对外公布**的那个地址在
-    ``advertised_url`` 里，是另一件事，不经过这里。
-    """
-
-    try:
-        parsed = urllib.parse.urlsplit(url)
-    except ValueError:
-        return url
-    # 没写主机名（`http://:2810`）也算通配：那种串同样不是一个能拨的地址。
-    if parsed.hostname is not None and parsed.hostname not in _WILDCARD_URL_HOSTS:
-        return url
-    loopback = "[::1]" if parsed.hostname in {"::", "[::]"} else "127.0.0.1"
-    netloc = f"{loopback}:{parsed.port}" if parsed.port else loopback
-    return urllib.parse.urlunsplit(
-        (parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment)
-    )
+    return _shared_connectable_url(url)
 
 
 def read_endpoint(root: Path) -> dict[str, Any] | None:
