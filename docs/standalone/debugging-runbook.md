@@ -22,7 +22,7 @@ corepack pnpm exec vitest run
 if ($LASTEXITCODE -ne 0) { throw 'Existing TypeScript tests failed' }
 ```
 
-测试现状（2026-10-05 实测）：Python **1108** 条（`tests/unit` 921、`tests/protocol` 58、`tests/architecture` 8、`tests/integration` 121）、页面端 **121** 条（`pnpm test`）。⚠️ `tests/unit` 里那批工作区用例会 `git init`：**PATH 里没有 git 时会整体失败**，那是环境不是回归。精确依赖由当前锁文件决定，不手工换较新版本绕过安装错误。测试通过不表示完整 M1 协作闭环已经解决。
+测试现状（2026-10-05 实测）：Python 全量以实测为准（`pytest tests --collect-only -q`，最近一次全量 1141 条（unit 953、protocol 58、architecture 8、integration 122））、页面端 **126** 条（`pnpm test`）。⚠️ `tests/unit` 里那批工作区用例会 `git init`：**PATH 里没有 git 时会整体失败**，那是环境不是回归。精确依赖由当前锁文件决定，不手工换较新版本绕过安装错误。测试通过不表示完整 M1 协作闭环已经解决。
 
 ## A2. 一条命令复现真实运行缺口
 

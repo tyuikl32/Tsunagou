@@ -50,7 +50,10 @@ try {
   const result = await client.callTool({
     name: 'context__project_read', arguments: {}, _meta: {'ai.opencode/sessionID': sessionId},
   });
-  const text = (result.content || []).filter((item) => item.type === 'text').map((item) => item.text).join(' ');
+  // 只取第一条 text（就是 JSON）：桥会在结果后面附提醒文本，join 起来会把提醒粘在 JSON
+  // 后面，解析必然失败（同 test_remote_machine_end_to_end.py 里那次实测）。
+  const first = (result.content || []).find((item) => item.type === 'text');
+  const text = first ? first.text : '';
   if (result.isError) process.stdout.write(JSON.stringify({error: text}));
   else {
     const context = JSON.parse(text);
@@ -86,10 +89,11 @@ def test_a_console_prepared_opencode_session_is_the_one_that_arrives(tmp_path: P
         ),
     )
 
-    def cli(*args: str) -> dict[str, Any]:
+    def cli(*args: str, env: dict[str, str] | None = None) -> dict[str, Any]:
         result = subprocess.run(
             [sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
             cwd=source, capture_output=True, text=True, timeout=90,
+            env={**os.environ, **(env or {})},
         )
         assert result.returncode == 0, result.stderr or result.stdout
         return json.loads(result.stdout)
@@ -120,16 +124,22 @@ def test_a_console_prepared_opencode_session_is_the_one_that_arrives(tmp_path: P
             entry, endpoint, vendor="opencode", role="worker", nickname="熊猫",
             profile="worker-a", directory=directory, token=project_token(entry.path, endpoint),
         )
-        session = json.loads(Path(str(prepared["ticket_file"])).read_text(encoding="utf-8"))["conversation_id"]
-        assert str(session).startswith("ses_"), "OpenCode 认的是开会话时用的那个名字"
-        assert str(session) in str(prepared["next"]), "页面要把这个名字说给人听"
+        # 2026-10-05 起 OpenCode 的本机接入是"控制台只留申请 → 聊天 `agent join` 认领"：
+        # 控制台不签票、也不写桥配置（见 adapter-opencode.md 第 7 行）。所以这里照真实形态，
+        # 用另一个进程跑 join，再拿它写下的桥配置去调桥。会话名也按新规矩每次唯一。
+        assert prepared["status"] == "prepared" and "ticket_file" not in prepared, \
+            "本机 OpenCode 这条路上，控制台只留申请，不该签票"
+        session = f"ses_flow-{os.urandom(4).hex()}"
+        joined = cli("agent", "join", "--adapter", "opencode",
+                     env={"TSUNAGOU_HOST_CONVERSATION_ID": session})
 
         # Another session in the same project must not be able to spend this ticket.
-        stranger = call_bridge(str(prepared["bridge_config"]), "ses_some-other-session")
+        stranger = call_bridge(str(joined["bridge_config"]), "ses_some-other-session")
         assert "not_enrolled" in str(stranger.get("error", "")), stranger
-        assert Path(str(prepared["ticket_file"])).is_file(), "被拒的会话不许把票用掉"
 
-        arrived = call_bridge(str(prepared["bridge_config"]), str(session))
+        # 被拒的那条没有把票用掉 —— 紧接着这条原会话照常入席就是证据。旧版本这里读的是
+        # prepared["ticket_file"]，而控制台在本机这条路上并不返回它（失败的原因也在此）。
+        arrived = call_bridge(str(joined["bridge_config"]), str(session))
         assert arrived["project_id"] == project["project_id"]
         assert arrived["role"] == "worker" and arrived["agent_id"]
 

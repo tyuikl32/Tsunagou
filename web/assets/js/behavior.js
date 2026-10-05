@@ -7459,6 +7459,23 @@
             shown[1].textContent = '一次性、约 ' + minutes + ' 分钟内有效（到 ' +
                 formatTime(toText(prepared.expires_at)) + '）；过期就回来重新生成一张。';
         }
+        /* 仅 OpenCode：它的会话名由主机起（随机 ASCII），那条聊天必须用这个名字开会话 ——
+           否则身份对不上，第一次调用只会得到 not_enrolled。Codex 与深寻自己报号，不显示这一块。
+           显示清成空串交回 CSS，隐藏写 none（与页面别处同一套）。*/
+        const sessionBlock = byId('netInviteSession');
+        if (sessionBlock) {
+            const sessionId = toText(prepared.conversation_id);
+            const isOpencode = toText((host || {}).adapter).toLowerCase() === 'opencode';
+            if (isOpencode && sessionId) {
+                const idBox = byId('netInviteSessionId');
+                const cmdBox = byId('netInviteSessionCmd');
+                if (idBox) idBox.value = sessionId;
+                if (cmdBox) cmdBox.value = 'opencode --session ' + sessionId;
+                sessionBlock.style.display = '';
+            } else {
+                sessionBlock.style.display = 'none';
+            }
+        }
         return new Promise(function (resolve) {
             networkInvite = {
                 resolve: resolve, enrollment_id: toText(prepared.enrollment_id),
@@ -8121,6 +8138,10 @@
             const decisions = sourceItems(sources, 'decisions');
             const pending = decisions.filter(function (d) { return toText(d.status) === 'pending'; });
             const done = tasks.filter(function (t) { return t.status === 'completed'; });
+            /* 取消不是"没做完"：被替代的任务由新任务完成了业务目标，把它和未开工的一起算作
+               未完成，面板读起来就像"还有一半活没干"（2026-10-05 实际遇到：验收 12/12、
+               面板 50%）。这里只把它单独报出来，百分比本身不动 —— 换分母是产品判断。*/
+            const cancelled = tasks.filter(function (t) { return t.status === 'cancelled'; });
             const main = agents.filter(function (a) { return a.role === 'main'; })[0];
             /* 协作目录由中间层知道（daemon 的概况出口不含文件路径），从协作列表里取。*/
             const known = toArray(state.get('projects', [])).filter(function (item) {
@@ -8163,13 +8184,16 @@
                         return {
                             state: t.status === 'completed' ? 'done'
                                 : (['claimed', 'running', 'submitted'].indexOf(t.status) >= 0 ? 'doing' : 'todo'),
-                            text: t.title
+                            /* 已取消的项原本和"还没开始"在清单里长得一模一样。词表里本来就有
+                               "已取消"，所以只用文字说清，不新增样式（CSS 不归这里改）。*/
+                            text: (t.status === 'cancelled' ? '（已取消）' : '') + t.title
                         };
                     })
                 },
                 stats: [
                     { label: 'Agent', value: agents.length + ' 个' },
-                    { label: '任务', value: tasks.length + ' 个（已完成 ' + done.length + '）' },
+                    { label: '任务', value: tasks.length + ' 个（已完成 ' + done.length
+                        + (cancelled.length ? '、已取消 ' + cancelled.length : '') + '）' },
                     { label: '认知报告', value: reports.length + ' 份' },
                     { label: '存档点', value: toArray(checkpoints.items).length + ' 个' }
                 ],

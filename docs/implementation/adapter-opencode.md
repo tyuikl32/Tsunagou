@@ -26,6 +26,8 @@ OpenCode 适配器翻译官方 Sessions、plugin 事件和 MCP 工具入口到 b
 
 2026-10-02 的旧控制台申请中，会话名由**控制台先发**（新本机申请已由上述入口替代）：票绑 `ses_<profile>`，页面的等待提示就是"用这个名字开会话"。这不是额外机制，而是把"先签票、后连接"用在需要它的地方——bridge 只认宿主每次调用报上来的 `_meta` 会话 id，控制台编一个别的 id 写进票，票会被当成"别人的"而丢掉（详见[控制台接入形态](../decisions/2026-10-02-console-enroll-modes.md)）。名字记在 bridge 目录的 `host-identity.json` 里，重试沿用同一个，不会一次换一个会话。
 
+2026-10-05 跨机器实测补一条硬约束：**会话名必须纯 ASCII。** 票绑的 `ses_<名字>` 会进宿主的 HTTP 头（OpenCode 用 `x-opencode-session-id` 往外发），中文会被宿主直接拒绝（`invalid value`）。而这一路此前**没有任何一层拦它** —— 控制台照签、`import` 照成功，直到宿主构造请求才炸，报错里还看不出跟 Tsunagou 有关。所以给"会话名由主机定"的宿主（OpenCode）发邀请时，名称只用 ASCII；改名字也没用，旧名会被 `host-identity.json` 沿用（见上）。
+
 注册路径上实测出来的四个约束（OpenCode v2.0.21，都写进了 `platform/host_registration.py`）：
 
 - `add` 写的是**当前目录**的 `opencode.json`（不是“最近的 git 仓库”），所以命令必须在**项目根目录**下执行；

@@ -101,7 +101,9 @@ function commandSchema(name: string, includeCommandId = false): Tool["inputSchem
  * own violations and next_steps) must not be duplicated or overwritten here.
  */
 const ENROLLMENT_GUIDANCE = [
-  "enrollment is driven by the user in the hosting window: ask them to re-run `tsunagou agent connect`",
+  "enrolment is the user's decision, and there are two different flows -- say which one applies:",
+  "on the host machine: the user prepares the agent in the console, then re-run `tsunagou agent connect`",
+  "from another machine: the host mints an invitation and this machine runs `tsunagou agent import <invitation>`; `agent connect` is not part of that flow",
   "never construct, copy or paste a ticket or session token yourself",
 ] as const;
 

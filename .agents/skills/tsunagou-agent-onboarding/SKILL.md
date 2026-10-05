@@ -166,3 +166,24 @@ Inspect `daemon status`, `doctor` and `agent list --json` yourself where authori
 Use the installed source's `docs/overview/cli-http-manual.md` for real command syntax. Do not copy old profile-based onboarding examples from historical documents. Never print control.token, ticket.json, session tokens, Authorization headers or raw pipe addresses.
 
 End with actual project_id, agent_id, role and state, or the exact unresolved error and one next action. Do not claim successful automatic wake from enrollment alone; wake is demonstrated by a daemon message causing the original conversation to run.
+
+
+## 跨机器接入（邀请 + import） vs 本机接入（申请 + connect）
+
+两条路不是一回事，先分清再动手：
+
+| | 谁发起 | 远端/本机动作 | 用什么 |
+|---|---|---|---|
+| 本机接入 | 控制台或 `agent prepare` 准备申请 | 宿主认领 | `tsunagou_connect` |
+| 跨机器接入 | 主机发邀请（`agent invite`） | 远端 `agent import` | **不需要** `tsunagou_connect` |
+
+`not_enrolled:run_agent_connect` 只说明"这条会话在桥这边没有身份"。跨机器场景下**不要**去跑 `agent connect` —— 那是本机那条路的入口；请回到"主机发邀请 → 远端 import"。
+
+### 跨机器接入的硬约束（2026-10-05 实测）
+
+- **会话名必须纯 ASCII。** 邀请里的 `conversation_id` 会进 OpenCode 的 HTTP 头（`x-opencode-session-id`），中文会被宿主直接拒（`invalid value`）。名称在控制台里填，或用 `agent invite --conversation-id "ses_<ASCII>"` 显式指定。
+- **会话名会被记住并沿用**（bridge 目录的 `host-identity.json`）。所以"在前端改名后重发，邀请看起来没变"是正常的：要换名字就用 `--conversation-id` 重发，或先取消那条申请。两张同名邀请只有**尾部**（`expires_at`/`secret`）不同，前半段逐字符相同 —— 用过期时间判断新旧。
+- **远端不需要 git。** GitHub 的 ZIP 快照可用：项目级 `opencode.json` 在没有 `.git` 的目录里照常生效（2026-10-02 跨机器实测）。`--baseline` 只是登记标签，填提交号即可。
+- **谁需要报号**：会话名由主机定的（OpenCode）直接发邀请；名字只有宿主自己知道的（Codex、DeepSeek Harness）先 `agent whoami --adapter <宿主>` 报号。
+- **OpenCode 的 MCP 条目是项目级的。** `opencode mcp add` 写的是**当前目录**的 `opencode.json`，所以注册命令**必须在会话所在的项目根目录里执行**；改完 `opencode reload`（配置有缓存），核对用 `opencode debug config`（别用 `mcp list`，它会真去启动条目且没有 `--json`）。
+- **`--copy` 的语义**：它是"这台机器上**项目代码**在哪"，不是"Tsunagou 装在哪"。登记了才能接涉及文件的活，不登记只能做不需要文件的活；**只在接入那一次有效**（票一次性，无补报命令）。建议让 **OpenCode 打开的项目 = 代码副本 = `--copy`** 三者同目录。

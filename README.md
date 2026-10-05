@@ -20,7 +20,7 @@ Tsunagou 是面向本机多个 Coding Agent 的协作后端。它让 Agent 共�
 
 **当前状态（2026-10-05）：独立安装的协作后端已跑通真实跨机器协作，仍在按实测结果逐项修。**
 
-测试现状：Python **1108** 条（`tests/unit` 921、`tests/protocol` 58、`tests/architecture` 8、`tests/integration` 121）；`tests/unit` 在 PATH 里有 git 的环境下全绿 —— 那批工作区用例会 `git init`，PATH 里没有 git 时会整体失败，不是产品缺陷。页面端 **121** 条（`pnpm test`，`web/tests/behavior.smoke.test.ts`）。
+测试现状：Python 全量以实测为准（`pytest tests --collect-only -q`，最近一次全量 1141 条（unit 953、protocol 58、architecture 8、integration 122））；`tests/unit` 在 PATH 里有 git 的环境下全绿 —— 那批工作区用例会 `git init`，PATH 里没有 git 时会整体失败，不是产品缺陷。页面端 **126** 条（`pnpm test`，`web/tests/behavior.smoke.test.ts`）。
 
 实测进展：主机 + 一台 Windows VM 上完成过一次真实闭环（远端入席 → 派活 → 交付 → 验收通过）。那一次两个任务都声明了**空范围**，所以租约/工作区/冲突这套机制**没有被触发** —— 这是下一步要专门验的事。本轮修复以[实测修复方案](docs/implementation/live-test-repair-plan.md)为准：FX1/FX2/FX7 已完成，FX3–FX6 进行中；实测暴露的新问题按证据逐个修，记录见 git 历史与 `web/method.md`。
 
