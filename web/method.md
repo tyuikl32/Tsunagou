@@ -199,11 +199,13 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 
 > `setAgentNetwork(id, online)` / `clearAgentNetwork(id)` 是**跨机器协作**里「这个 Agent 是从网络
 > 接进来的」那个标记（2026-10-02）。中间层（控制台）知道一个**子 Agent** 的桥不在本机时调它：
-> `online` 给 `true`/`false`（网络在线 / 网络离线），也可以给 `{network, online}` 两个都说；
-> `clearAgentNetwork(id)` 等于撤回（回到“本机接入”）。**本机接入的不用调** —— 默认就不画徽标
-> （「网络在线 / 网络离线」和右边那个 `<i class="fa-solid fa-circle-nodes">` **一个都不出现**）。
+> `online` 给 `true`/`false`（就是**在线 / 离线**这两个词，2026-10-05 起），也可以给 `{network, online}`
+> 两个都说；`clearAgentNetwork(id)` 等于撤回（回到“本机接入”）。**本机接入的不用调** —— 默认就不画徽标
+> （「在线 / 离线」和右边那个 `<i class="fa-solid fa-circle-nodes">` **一个都不出现**）。
 > 只动状态与徽标，**不发请求**；主 Agent 必须在 daemon 所在机器上，推了也不画。
 > 接口里带 `network`/`online` 字段（随刷新到）也行，两条通道等价 —— 推来的优先于数据里的。
+> `online` 现在**真有生产者**（见下面徽标那一节）：它是 daemon 按心跳算出来的事实，**字段缺席按离线算**，
+> 不要再拿 `session_status === 'ready'` 当“在线” —— ready 只说明这个座位还能干活。
 
 > `wizardPrev()` 现在**只提示未实现**（2026-09-28）：向导的「上一步」想做的事 = 撤回上一步的效果，
 > 而项目建好不能删、接上的 Agent 也不能撤回。低层导航仍可用 `ui.wizard.prev()`（给宿主脚本），
@@ -686,10 +688,17 @@ POST /console/enrollments/{enrollment_id}:cancel
   basic: [{text, ok}], ops: [{text, ok}],
   actions: [{text, kind:'active'|'', action}] }   // action 为空则是纯占位按钮
 ```
-> **右上角那句「网络在线 / 网络离线」（跨机器协作，2026-10-02；机器名 2026-10-03）**：只有**网络接入**
+> **右上角那句「在线 / 离线」（跨机器协作；2026-10-05 起就是这两个词）**：只有**网络接入**
 > 的 Agent 才画 （`network:true` 或带 `machine`），`online` 定在线还是离线；**本机接入的什么都不画** ——
 > 连右边那个 `<i>` 图标也不出现，所以本机接入的卡片和加这个功能之前一模一样。
-> 远端自报的机器名跟着写在同一个 `<p class="right">` 里：「网络在线 · 工位-七」。
+> **机器名不在这一句里**（2026-10-05 移走）：卡面那一行放不下，写了会把别的字挤掉；它在 Agent
+> 详情/修改窗口的「在哪台机器」那一行（`#agentInfoMachine`，只在远端且有名字时出现）。
+> `online` 从哪来：daemon 把**每一次已认证的调用**都当成一次心跳（`src/tsunagou/api/liveness.py`；
+> 只记内存、不落库、不写审计、重启后为空），桥对见过的会话每 30 秒做一次**已有的便宜读取**
+> （`packages/bridge-server` 的 `heartbeatOnce`），agents 出口据此公布 `online`，控制台原样透出。
+> 90 秒（三个间隔）没再来过就算离线；**从未上报过也按离线算** —— 没有证据就是没有证据（用户
+> 2026-10-05 定的口径），远端机器关着时页面因此立刻显示离线，代价是 daemon 重启后到各桥第一次
+> 上报之间（最多一个间隔）远端会短暂显示离线。
 > 主 Agent 永远不算网络接入（它必须与 daemon 同机）。判断值来自接口字段，或中间层随时推的
 > `app.setAgentNetwork(id, online)` / dispatch `agent.network`（推来的优先），见 §3.7。
 > `basic` / `ops` 是 `agents` 出口里那 11 项能力的现场快照（`session_status` +
@@ -766,7 +775,7 @@ POST /console/enrollments/{enrollment_id}:cancel
 > 四个子标签各自对应 `#aside-conflict` 里的一段：分歧 → 第 1 段，契约 → 第 2 段，
 > 冲突 → 第 3 段，Agent 间协商 → 第 4 段（见 §4.3）。
 
-### 意图与权限审计 `render.audit`
+### 租约审计 `render.audit`
 ```
 { leases:  [{id, agent, scope, lease:{text, ok}}] }
 ```
@@ -774,7 +783,10 @@ POST /console/enrollments/{enrollment_id}:cancel
 > （`container.py`）**无条件返回 `{"items": []}`**：资源 intent 模型已被显式 reservation
 > 取代（`docs/decisions/2026-09-28-explicit-resource-release.md`），没有 intent 对象可读，
 > 重建一个就是第二套资源模型 —— 它自己在注释里把"这屏该怎么读新模型"交给前端设计。
-> 于是这屏只保留真拿得到的租约：子标签「Agent 权限」、`panels[0]` 一张租约表、侧栏第 1 段。
+> 于是这屏只保留真拿得到的租约。（**2026-10-05：那条只剩一个选项的子标签栏也去掉了** ——
+> 留着只是噪声；整页由 `render.audit` 直接生成进 `#pane-audit`，与 Agent 管理 / 工作区那几页
+> 同一个写法，侧栏仍是第 1 段。租约表同时去掉 `tableboxC`、表标题从 `title3` 收到 `title2`，
+> 页内那句副标题删掉。）
 > **租约那几行也跟着键名对齐了一次**：数据来自 `resources` 出口（显式预约模型），
 > 行身份是 `reservation_id`（`lease_set_id` 是租约集合时代的旧拼法，只有 `conflicts`
 > 出口还在兼容它）—— 以前只读旧拼法，于是每行的 `data-row-id` 都是空的、点哪一行都
@@ -782,8 +794,8 @@ POST /console/enrollments/{enrollment_id}:cancel
 > 那一行）一并去掉。
 > 中间层 `CONSOLE_VIEWS["audit"]` 里那个 `intents` 来源**留着没动**（它没有害处，而且
 > `tests/unit/test_console_relay.py` 与 `tools/dev/console_smoke.py` 都钉着那份名单）；
-> 页面不再读 `sources.intents`，也就不会再为它画一格。（页面抬头仍叫「意图与权限审计」，
-> 名字与 `index.html` 的 `title2` 是用户可见口径，另行决定是否一起改。）
+> 页面不再读 `sources.intents`，也就不会再为它画一格。（**2026-10-05：页面抬头与左栏大标签已改名
+> 为「租约审计」**，用户拍板；`block-audit`/子标签那一层随之删除，点击绑定也不再去找 `.tabContent`。）
 > 原来的 `waiting`（等待租约的 Agent）已按决定 11 砍掉：daemon 没把等待队列做成出口。
 > 租约冲突账本不在这里 —— 它在「冲突与协商 → 冲突」那一栏（形状就是上面 `render.conflicts` 的 `conflicts`）。
 
@@ -1126,7 +1138,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 归档 / 退席 / 路径记录 | **暂不实现**（归档按钮已于 2026-09-29 从验收页撤掉）：`project.archive` / `agent.retire` 未装配；路径记录后端没这个事实
 | 存档点回退 | **不做**（2026-09-28 你定的，撤掉）：没有 restore 命令，界面也不做"假装回退"；存档点只读不漏 |
 | Agent 删除 / agent 地位变更（完整版） | **暂不实现**（不是待做项）：`agent.retire` 未装配；「撤销主 Agent / 代次上限」那一整套没人实现 —— 「设为主 Agent」本身仍然能用 |
-| ~~「网络在线 / 离线」徽标在真数据下还不会出现~~ | **已补（2026-10-03）**：跨机器接入的 Agent 会自报一个机器名（`agent import --machine`），经 `descriptor_ref` 入席、由 agents 出口公布为 `machine`；页面据此画「网络在线 · 工位-七」。本机接入从来没有这一项，所以照旧什么都不画。`network`/`online` 两条通道仍然都在（`app.setAgentNetwork` / dispatch `agent.network`） |
+| ~~「网络在线 / 离线」徽标在真数据下还不会出现~~ | **已补（机器名 2026-10-03；心跳 2026-10-05）**：跨机器接入的 Agent 会自报一个机器名（`agent import --machine`），经 `descriptor_ref` 入席、由 agents 出口公布为 `machine`；`online` 现在**真有生产者** —— daemon 把每一次已认证调用当心跳（`src/tsunagou/api/liveness.py`，只记内存）、桥每 30 秒上报一次、agents 出口公布，页面据此画「在线 / 离线」。**从未上报过按离线算**（用户 2026-10-05 定稿），机器名 2026-10-05 移到详情窗口的「在哪台机器」那一行。`network`/`online` 两条推送通道仍然都在（`app.setAgentNetwork` / dispatch `agent.network`） |
 
 ### 12.4 新补的界面
 

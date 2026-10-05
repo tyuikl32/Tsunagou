@@ -18,7 +18,15 @@ After installation, continue with [Agent 快速接入](docs/overview/agent-quick
 
 Tsunagou 是面向本机多个 Coding Agent 的协作后端。它让 Agent 共享任务事实、公开理解与假设、发现分歧、协商契约，并在暂停、断线和换人之后继续工作。
 
-**当前状态（2026-09-20）：可启动的功能原型，尚非独立成品。** 已有102个Python测试、29个TS测试通过，但真实HTTP审计复现任务/契约重启丢失、幂等和主从任务边界等14项缺口，wheel独立安装还缺协议资源。当前优先完成[独立成品实施与调试](docs/standalone/README.md)，按实际业务闭环验收，不以宿主能力报告代替运行结果。T01–T17、T22的旧完成标记表示分项产物，不等于所有模块已接入运行时。
+**当前状态（2026-10-05）：独立安装的协作后端已跑通真实跨机器协作，仍在按实测结果逐项修。**
+
+测试现状：Python **1108** 条（`tests/unit` 921、`tests/protocol` 58、`tests/architecture` 8、`tests/integration` 121）；`tests/unit` 在 PATH 里有 git 的环境下全绿 —— 那批工作区用例会 `git init`，PATH 里没有 git 时会整体失败，不是产品缺陷。页面端 **121** 条（`pnpm test`，`web/tests/behavior.smoke.test.ts`）。
+
+实测进展：主机 + 一台 Windows VM 上完成过一次真实闭环（远端入席 → 派活 → 交付 → 验收通过）。那一次两个任务都声明了**空范围**，所以租约/工作区/冲突这套机制**没有被触发** —— 这是下一步要专门验的事。本轮修复以[实测修复方案](docs/implementation/live-test-repair-plan.md)为准：FX1/FX2/FX7 已完成，FX3–FX6 进行中；实测暴露的新问题按证据逐个修，记录见 git 历史与 `web/method.md`。
+
+跨机器注意：`daemon` 与远端桥的协议指纹（`schema_bundle_digest`）必须一致 —— 改了 `docs/implementation/command-catalog.md` 或协议目录，各机器都要同步更新，否则跨机器调用会被拒。
+
+文档自检 `python tools/docs/validate_docs.py` 当前通过。
 
 ## 阅读入口
 

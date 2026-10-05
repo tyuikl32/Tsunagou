@@ -164,7 +164,7 @@ tsunagou agent import <邀请>               # 收下邀请：写自己的票/�
 在那条会话里调一次 `context__project_read` 才算数。DeepSeek Harness 的聊天只能通过插件动手，所以那里用
 `tsunagou_remote`（`action=whoami` / `action=import`）。
 
-`--machine` 报出来的名字会显示在名单里（「网络在线 · 工位-七」）。它是**自报**：不参与任何权限判断，
+`--machine` 报出来的名字会显示在 Agent 详情/修改窗口的「在哪台机器」那一行。它是**自报**：不参与任何权限判断，
 填坏了只当没报。
 
 **地址与端口**（主机侧 `daemon start`）：端口固定 **2810**；被占用时打印一条警告并改用随机空闲端口，
