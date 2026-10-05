@@ -441,16 +441,20 @@
                             <input class="inner" value="2810" placeholder="端口号（默认 2810）" />
                         </div>
                         <div class="descbox">绑定地址</div>
-                        <!--输入框与选择框同在一个 .textbox2 里：它本身是 flex，.inner 又是 flex-grow:1，
-                            所以右边这个选择框自然贴在输入框右侧 —— 不用新写 CSS。-->
-                        <div class="textbox2">
-                            <input class="inner" placeholder="绑定地址（默认为127.0.0.1）" />
-                            <div class="choosebox chooseboxE" data-target="newXzSetupAccess">
+                        <!--外框 .chooseboxTOG 是一条 flex 行，宽度由它里面那两条通用规则决定：
+                            `.chooseboxTOG .TOG1 { flex-grow: 1 }`（左边输入框撑满）
+                            `.chooseboxTOG .TOG0 { flex-grow: 0 }`（右边选择框只占自己那点宽）。
+                            与 addSubAgent 那一对选择框同一套摆法，仍然不用新写 CSS。-->
+                        <div class="chooseboxTOG">
+                            <div class="textbox2 TOG1">
+                                <input class="inner" placeholder="绑定地址（默认为127.0.0.1）" />
+                            </div>
+                            <div class="choosebox chooseboxE TOG0" data-target="newXzSetupAccess">
                                 <div class="left">仅本机</div>
                                 <div class="right"></div>
                             </div>
                         </div>
-                        <!--面板必须放在 .textbox2 外面：它自己有 overflow:hidden，放里面会被裁掉
+                        <!--面板必须放在这个外框外面：选择框自己有 overflow:hidden，放里面会被裁掉
                             （addSubAgent 那两个选择框也是这么摆的）。-->
                         <div class="chooseboxOpen" id="newXzSetupAccess">
                             <p data-default="true">仅本机</p>
