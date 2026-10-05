@@ -412,11 +412,22 @@
                 /* 只给中间层它真有的三项：name / objective / path。
                    向导收集的 mainAgent / subAgents 这里给不了 —— Agent 要由本机 CLI 签票接入，
                    中间层不创建 Agent（也不会假装建了）。*/
-                return {
+                const payload = {
                     name: toText(body.name).trim(),
                     objective: toText(body.objective),
                     path: toText(body.path)
                 };
+                /* 2026-10-05：中间层新收了四项 —— 这个协作放哪、协调中心绑哪张网卡、对外公布哪个地址。
+                   留空一律不发，由中间层用自己的默认（它知道 projects_root 在哪）。*/
+                const root = toText(body.coordination_root).trim();
+                const host = toText(body.bind_host).trim();
+                const advertised = toText(body.advertised_url).trim();
+                const port = Number(body.port);
+                if (root) payload.coordination_root = root;
+                if (isFinite(port) && Math.floor(port) === port && port > 0) payload.port = port;
+                if (host) payload.bind_host = host;
+                if (advertised) payload.advertised_url = advertised;
+                return payload;
             }
         },
         /* 准备一个 Agent 接入（Codex 保存待领取申请；其他宿主签票并登记）。
@@ -1152,25 +1163,120 @@
        第 2/3 步要人打开或重载宿主的窗口（宿主只在自己启动时读配置），
        遮罩上给了「取消等待」：确认后请求中间层取消，已领取时按服务端拒绝继续等。*/
 
-    /* 结构约定：#newXz1..4 是每步的正文，#xz1..4 是每步的按钮组。*/
-    const WIZARD_STEPS = 4;
+    /* 结构约定：#newXz* 是每步的正文，#xz* 是每步的按钮组，顺序由下面两张表定。
+       第 2 步「协作放哪、怎么连」是 2026-10-05 插进来的：它必须排在"创建协作"之前，
+       因为项目一落地，中间层紧接着就把 daemon 起起来 —— 那时监听地址与对外地址就已经定了。
+       这一步的 id 用 newXzSetup / xzSetup，后面几步的 id 与编号原样不动，
+       省得整片重编号（测试里钉着的那些 id 也就跟着不用动）。*/
+    const WIZARD_PANES = [null, 'newXz1', 'newXzSetup', 'newXz2', 'newXz3', 'newXz4'];
+    const WIZARD_OPTIONS = [null, 'xz1', 'xzSetup', 'xz2', 'xz3', 'xz4'];
+    const WIZARD_STEPS = WIZARD_PANES.length - 1;
     let wizardStep = 1;
 
-    /* 每一步的输入框（按 DOM 顺序）*/
-    function wizardInputs(step) { return qsa('#newXz' + step + ' input'); }
+    /* 每一步的输入框（按 DOM 顺序）。第 2 步依次是：协作根目录 / 端口 / 绑定地址 / 对外地址。*/
+    function wizardInputs(step) {
+        const pane = WIZARD_PANES[step];
+        return pane ? qsa('#' + pane + ' input') : [];
+    }
 
-    /* 每一步的必填校验：返回错误文案，null 表示通过 */
+    /* 每一步的必填校验：返回错误文案，null 表示通过。
+       第 2 步有自己的规则（见 wizardSetupError），不在这张表里。*/
     const WIZARD_REQUIRED = {
         1: ['协作的名字'],
-        2: ['主 Agent 名称']
+        3: ['主 Agent 名称']
     };
 
-    /* 第 2 步的"厂商"现在是从选择框里挑的（HTML 里已默认选中一项），
+    /* 主 Agent 那一步的"厂商"从选择框里挑（HTML 里已默认选中一项），
        所以不再要求那个"API 地址"输入框。*/
-    function wizardVendorBox(step) { return qs('#newXz' + step + ' .choosebox'); }
+    function wizardVendorBox(step) { return qs('#' + WIZARD_PANES[step] + ' .choosebox'); }
     function wizardVendor(step) { return ui.choosebox.value(wizardVendorBox(step)); }
 
+    /* 第 2 步的"绑定地址"选择框：只有选到「可网络接入」才要对外地址。*/
+    const WIZARD_NETWORK_ACCESS = '可网络接入';
+    const WIZARD_LOCAL_ACCESS = '仅本机';
+    function wizardAccessBox() { return qs('#newXzSetup .choosebox'); }
+    function wizardAccess() {
+        return toText(ui.choosebox.value(wizardAccessBox())).trim() === WIZARD_NETWORK_ACCESS
+            ? 'network' : 'local';
+    }
+
+    /* 对外地址那一格跟着选择框显/隐。显示清成空串交回 CSS，隐藏写 none ——
+       不往元素上写布局样式（与 addSubAgent 那个编号框同一套，见 syncSubAgentPlace）。*/
+    function syncWizardSetupFields() {
+        const field = byId('newXzSetupAdvertised');
+        if (!field) return null;
+        field.style.display = wizardAccess() === 'network' ? '' : 'none';
+        return field;
+    }
+
+    /* 第 2 步的校验：端口要像端口；跨机器时对外地址必填、且要写成完整地址。
+       回环/通配那两条由中间层与 CLI 把关（它们有权威报错），这里只拦明显写错的。*/
+    function wizardSetupError() {
+        const inputs = wizardInputs(2);
+        const port = toText(inputs[1] && inputs[1].value).trim();
+        if (port) {
+            const value = Number(port);
+            if (!isFinite(value) || Math.floor(value) !== value || value < 1 || value > 65535) {
+                return '端口要写 1 到 65535 之间的整数';
+            }
+        }
+        if (wizardAccess() === 'network') {
+            const advertised = toText(inputs[3] && inputs[3].value).trim();
+            if (!advertised) return '选了「可网络接入」就要填对外地址：远端照它来连';
+            if (advertised.indexOf('://') < 0) return '对外地址要写成 http://地址:端口';
+        }
+        return null;
+    }
+
+    /* 第 2 步收集到的四项。留空一律表示"用默认"，不在这里编默认值 ——
+       只有一处例外，而且是必须的：选了「可网络接入」却没写绑定地址时绑 0.0.0.0。
+       因为"只听回环、却对外公布网卡地址"这一种组合，远端一定连不上（CLI 专门警告过），
+       与其偷偷起一个连不上的 daemon，不如绑所有网卡并在确认页上写明。*/
+    function wizardSetup() {
+        const inputs = wizardInputs(2);
+        const access = wizardAccess();
+        const host = toText(inputs[2] && inputs[2].value).trim();
+        return {
+            access: access,
+            root: toText(inputs[0] && inputs[0].value).trim(),
+            port: toText(inputs[1] && inputs[1].value).trim(),
+            host: host || (access === 'network' ? '0.0.0.0' : ''),
+            advertised: access === 'network' ? toText(inputs[3] && inputs[3].value).trim() : ''
+        };
+    }
+
+    /* 第 2 步那四项写成一句话，给"请确定以下配置"那一屏看 */
+    function setupSummary(setup) {
+        const data = setup || {};
+        const port = toText(data.port) || '2810';
+        const where = toText(data.host) || '127.0.0.1';
+        if (data.access === 'network') {
+            return where + ':' + port + '（对外地址 ' + (toText(data.advertised) || '（没填）') + '）';
+        }
+        return where + ':' + port + '（仅本机）';
+    }
+
+    /* 再回到第 2 步时，把已经用掉的那套设置拨回界面：否则看到的是一屏能改的输入框，
+       改了却不生效 —— 那是骗人。*/
+    function applyWizardSetup() {
+        const saved = state.get('wizard.setup', null);
+        if (!saved) { syncWizardSetupFields(); return null; }
+        const inputs = wizardInputs(2);
+        if (inputs[0]) inputs[0].value = toText(saved.root);
+        if (inputs[1]) inputs[1].value = toText(saved.port);
+        if (inputs[2]) inputs[2].value = toText(saved.host);
+        if (inputs[3]) inputs[3].value = toText(saved.advertised);
+        ui.choosebox.setValue(
+            wizardAccessBox(),
+            saved.access === 'network' ? WIZARD_NETWORK_ACCESS : WIZARD_LOCAL_ACCESS,
+            { silent: true }
+        );
+        syncWizardSetupFields();
+        return saved;
+    }
+
     function wizardValidate(step) {
+        if (step === 2) return wizardSetupError();
         const labels = WIZARD_REQUIRED[step];
         if (!labels) return null;
         const inputs = wizardInputs(step);
@@ -1181,44 +1287,57 @@
         return null;
     }
 
-    /* 第 1 步的输入框在协作建好之后只读：那一行已经变成"这个协作的名字"了 */
+    /* 第 1、2 步的输入框在协作建好之后只读：那两屏写下的值已经落到磁盘与 daemon 上了。
+       （选择框没有 readOnly，所以再回到第 2 步时由 applyWizardSetup 把它拨回记下的那一项。）*/
     function freezeWizardStepOne(frozen) {
         wizardInputs(1).forEach(function (input) { input.readOnly = !!frozen; });
+        wizardInputs(2).forEach(function (input) { input.readOnly = !!frozen; });
     }
 
-    /* 第 1 步的「创建」：真建协作。建过一次就不再建第二个（按钮从此只是"下一步"）*/
+    /* 第 2 步的「创建」：真建协作，并把这一屏的四项一起交给中间层。
+       建过一次就不再建第二个（按钮从此只是"下一步"）。*/
     function wizardCreateProject() {
         const done = state.get('wizard.project', null);
-        if (done && toText(done.id)) { ui.wizard.go(2); return Promise.resolve(true); }
+        if (done && toText(done.id)) { ui.wizard.go(3); return Promise.resolve(true); }
         const draft = ui.wizard.collect();
-        /* 这一步确实往磁盘上写（中间层建协作目录 + 登记索引），但**不弹二次确认**
-           （2026-09-29 你定的）：向导本身就是多步表单，"下一步"已经是一次明确动作，
-           再叠一个确认框只会多一次点击。见 §4.6 的确认分工表。*/
-        return Promise.resolve(actions.createProject({ name: draft.name }))
+        const setup = draft.setup || {};
+        /* 这一步确实往磁盘上写（中间层建协作目录 + git init + 登记索引 + 顺手起 daemon），
+           但**不弹二次确认**（2026-09-29 你定的）：向导本身就是多步表单，"下一步"已经是一次
+           明确动作，再叠一个确认框只会多一次点击。见 §4.6 的确认分工表。*/
+        return Promise.resolve(actions.createProject({
+            name: draft.name,
+            /* 留空一律不传，由中间层用自己的默认（它知道 projects_root 在哪）。*/
+            coordination_root: setup.root || undefined,
+            port: setup.port ? Number(setup.port) : undefined,
+            bind_host: setup.host || undefined,
+            advertised_url: setup.advertised || undefined
+        }))
             .then(function (project) {
                 const id = toText(project && project.project_id);
                 if (!project || !id) return false;
                 /* 描述从后端那份协作里回读，不用草稿里的值：没有目标时它就是后端写的占位，
-                   第 4 步看到的就是磁盘上真正那句话。*/
+                   最后一步看到的就是磁盘上真正那句话。*/
                 state.set('wizard.project', {
                     id: id,
                     name: toText(project.name) || draft.name,
                     objective: toText(project.objective)
                 });
+                /* 这一屏已经用掉了：记下来，回到第 2 步时把界面拨回这一套（见 applyWizardSetup）*/
+                state.set('wizard.setup', setup);
                 freezeWizardStepOne(true);
-                /* 建完就切进这个协作：第 2/3 步的接入请求是协作作用域的，必须要"当前协作" */
+                /* 建完就切进这个协作：后面几步的接入请求是协作作用域的，必须要"当前协作" */
                 app.openProject(id);
-                ui.wizard.go(2);
+                ui.wizard.go(3);
                 return true;
             });
     }
 
-    /* 第 2 步的「下一步」：真的去接一个主 Agent。
+    /* 主 Agent 那一步（现在是第 3 步）的「下一步」：真的去接一个主 Agent。
        重试时沿用上一次的 profile：宿主那边的登记名由 profile 定，沿用才不会越堆越多。*/
     function wizardConnectMain() {
-        const inputs = wizardInputs(2);
+        const inputs = wizardInputs(3);
         const nickname = toText(inputs[0] && inputs[0].value).trim();
-        const vendor = wizardVendor(2);
+        const vendor = wizardVendor(3);
         const icon = agentIconFor(vendor);
         const host = hostFor(vendor);
         if (!host) {
@@ -1252,7 +1371,7 @@
             });
             if (reached === 'manual') notify.info(manualNote(outcome.registration, host));
             else notify.success({ title: '主 Agent 已接入', sub: typeof outcome.nickname === 'string' ? outcome.nickname : nickname });
-            ui.wizard.go(3);
+            ui.wizard.go(4);
             return true;
         });
     }
@@ -1263,11 +1382,13 @@
             const value = clampNum(Number(step) || 1, 1, WIZARD_STEPS);
             wizardStep = value;
             for (let i = 1; i <= WIZARD_STEPS; i++) {
-                const pane = byId('newXz' + i);
+                const pane = byId(WIZARD_PANES[i]);
                 if (pane) { if (i === value) revealEl(pane, 'flex'); else concealEl(pane); }
-                const options = byId('xz' + i);
+                const options = byId(WIZARD_OPTIONS[i]);
                 if (options) { if (i === value) displayEl(options, 'flex'); else hideEl(options); }
             }
+            /* 回到第 2 步时把已经用掉的那套设置拨回界面（改不动，但看得见）*/
+            if (value === 2) applyWizardSetup();
             /* 最后一步是"接入结果"：每次进来都按当前状态重画，避免看到上一次的残留 */
             if (value === WIZARD_STEPS) render.wizardReview(ui.wizard.collect());
             emit('ui:wizard', { step: value });
@@ -1277,10 +1398,11 @@
         next: function () {
             const error = wizardValidate(wizardStep);
             if (error) { notify.info(error); return wizardStep; }
-            /* 第 1 步要先把协作建出来，第 2 步要把主 Agent 接上：这两步都可能失败，
+            /* 第 2 步要把协作建出来，第 3 步要把主 Agent 接上：这两步都可能失败，
                失败就停在原地（协作已经建好了，不会白费）。*/
-            if (wizardStep === 1) return wizardCreateProject();
-            if (wizardStep === 2) return wizardConnectMain();
+            if (wizardStep === 1) return ui.wizard.go(2);
+            if (wizardStep === 2) return wizardCreateProject();
+            if (wizardStep === 3) return wizardConnectMain();
             return ui.wizard.go(wizardStep + 1);
         },
         prev: function () { return ui.wizard.go(wizardStep - 1); },
@@ -1289,12 +1411,19 @@
         open: function () {
             state.set('wizard.project', null);
             state.set('wizard.main', null);
+            state.set('wizard.setup', null);
             state.set('wizard.draftSubAgents', []);
             state.set('wizard.detectedMainAgent', null);
             ui.window.open('addProj');
             ui.window.clearInputs('addProj');
             freezeWizardStepOne(false);
-            resetCsBox(wizardVendorBox(2));
+            resetCsBox(wizardVendorBox(3));
+            /* 第 2 步：接入方式回到「仅本机」，端口回到 HTML 里写的默认值 2810，
+               对外地址那一格先收起（选到「可网络接入」才出现）。*/
+            resetCsBox(wizardAccessBox());
+            const portInput = wizardInputs(2)[1];
+            if (portInput) portInput.value = '2810';
+            syncWizardSetupFields();
             ui.wizard.reset();
             render.wizardSubAgents([]);
             /* "检测到的 Agent"跟着选择框当前值走（不再有后端探测）*/
@@ -1307,18 +1436,20 @@
            没有 objective：向导不问目标，目标是用户与主 Agent 确认之后才存在的事实。*/
         collect: function () {
             const first = wizardInputs(1);
-            const mainInputs = wizardInputs(2);
-            const vendor = wizardVendor(2);
+            const mainInputs = wizardInputs(3);
+            const vendor = wizardVendor(3);
             const detected = state.get('wizard.detectedMainAgent', null);
             return {
                 name: toText(first[0] && first[0].value).trim(),
+                /* 第 2 步那四项：协作放哪、端口、绑定地址、对外地址（留空=用默认）*/
+                setup: wizardSetup(),
                 mainAgent: {
                     name: toText(mainInputs[0] && mainInputs[0].value).trim(),
                     /* 厂商来自选择框（原来是"API 地址"输入框）*/
                     vendor: vendor,
                     icon: (detected && detected.icon) || agentIconFor(vendor)
                 },
-                /* 第 3 步已经接上的子 Agent 记在 state.data.wizard.draftSubAgents */
+                /* 第 4 步已经接上的子 Agent 记在 state.data.wizard.draftSubAgents */
                 subAgents: toArray(state.get('wizard.draftSubAgents', [])).slice()
             };
         },
@@ -5136,6 +5267,11 @@
             '<div class="title">' + esc(toText(project.name) || data.name || '（还没创建）') + '</div>' +
             '<div class="descbox">协作描述</div>' +
             '<div class="descbox">' + esc(toText(project.objective) || '（没有填写）') + '</div>' +
+            /* 第 2 步那四项：建好之后就在这一屏核对（当时留空的这里显示成默认值）*/
+            '<div class="descbox">协作根目录</div>' +
+            '<div class="descbox">' + esc(toText((data.setup || {}).root) || '（默认位置）') + '</div>' +
+            '<div class="descbox">协调中心</div>' +
+            '<div class="descbox">' + esc(setupSummary(data.setup)) + '</div>' +
             '<div class="descbox">主 Agent</div>' +
             (main && toText(main.name)
                 ? listFieldHtml([{
@@ -5380,8 +5516,8 @@
            选择框一变、或名称输入框一改，都调这里刷新。
            顺便把这一整块（标签 + 预览框）的显隐一起定了：两样都没给就不显示。*/
         detectMainAgent: function () {
-            const vendor = wizardVendor(2);
-            const input = wizardInputs(2)[0];
+            const vendor = wizardVendor(3);
+            const input = wizardInputs(3)[0];
             const name = toText(input && input.value).trim();
             wizardAgentPreview(!!name && !!vendor);
             if (!name) {
@@ -6300,6 +6436,9 @@
         if (place) place.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
         const vendor = subAgentVendorBox();
         if (vendor) vendor.addEventListener('choosebox:change', function () { syncSubAgentPlace(); });
+        /* 向导第 2 步：接入方式一变，「对外地址」那一格跟着显/隐 */
+        const access = wizardAccessBox();
+        if (access) access.addEventListener('choosebox:change', function () { syncWizardSetupFields(); });
         delegateClick(['#addSubAgent .options .buttonbox2active'], function () {
             /* 窗口里有一个名称输入框 + 厂商/位置两个选择框（网络+那两个厂商时多一个编号输入框）*/
             const input = qs('#addSubAgent input');
@@ -6327,9 +6466,9 @@
 
     /* 向导第 2 步：厂商选择框一变、名称输入框一改，"你所选的 Agent"预览框跟着刷新 */
     function bindWizardDetect() {
-        const box = wizardVendorBox(2);
+        const box = wizardVendorBox(3);
         if (box) box.addEventListener('choosebox:change', function () { actions.detectMainAgent(); });
-        const input = wizardInputs(2)[0];
+        const input = wizardInputs(3)[0];
         if (input) input.addEventListener('input', function () { actions.detectMainAgent(); });
     }
 
