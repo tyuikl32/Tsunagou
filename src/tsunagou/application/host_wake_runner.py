@@ -60,6 +60,7 @@ def _interpreter_version(executable: str) -> str | None:
 
 def run_host_operation(
     action: str, *, adapter: str, conversation_id: str, project_root: str | Path, message_id: str,
+    project_id: str = "", agent_id: str = "",
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "host": adapter, "version": None, "state": "unknown", "can_queue": "unknown",
@@ -68,8 +69,13 @@ def run_host_operation(
     }
     if action not in {"status", "wake"}:
         return {**result, "error_code": "host_action_invalid"}
+    if adapter == "deepseek":
+        from tsunagou.application.deepseek_wake_runner import run_deepseek_operation
+
+        return run_deepseek_operation(action, project_id=project_id, agent_id=agent_id,
+                                     conversation_id=conversation_id, message_id=message_id)
     if adapter != "opencode":
-        return {**result, "error_code": "deepseek_form_unverified" if adapter == "deepseek" else "host_runner_unsupported"}
+        return {**result, "error_code": "host_runner_unsupported"}
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if powershell is None:
         return {**result, "error_code": "powershell_unavailable"}

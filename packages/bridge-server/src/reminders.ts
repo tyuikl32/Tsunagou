@@ -4,9 +4,9 @@ import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
 
 /** Presentation-only guidance. Explicit wake tools alone execute host operations. */
-export const GUIDE_VERSION = "wake-v5-compact-guidance-2026-10-04";
-export const WAKE_INSTRUCTIONS = "使用 coordination__peer_hosts 核对真实宿主；Codex 双方沿用原生通道，其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。";
-export const WAKE_REMINDER = "main 和 worker 均可在已有权限内唤醒协作者。先用 coordination__peer_hosts 核实并记住宿主、版本和机器，不凭模型品牌猜测。Codex → Codex 只走现有 Tsunagou Codex 通道（默认开启，尊重明确关闭）；其他宿主先查 coordination__wake_status {message_id}，按返回入口操作。当前工具不支持不等于宿主不能唤醒；独立宿主操作须核实原会话、授权及同一消息无在途或结果未知的执行，不绕过认证。入队不等于已处理；失败核对宿主与错误，勿循环重试，不要求用户手动唤醒。操作指南：docs/overview/agent-wake-guide.md（本机安装源码优先）；https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md。";
+export const GUIDE_VERSION = "wake-v6-dsh-plugin-2026-10-05";
+export const WAKE_INSTRUCTIONS = "使用 coordination__peer_hosts 核对真实宿主；Codex 双方沿用原生通道，DSH Desktop 初始化接入后通过插件后台唤醒，无需窗口操作；其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。";
+export const WAKE_REMINDER = "main 和 worker 均可在已有权限内唤醒协作者。先用 coordination__peer_hosts 核实并记住宿主、版本和机器，不凭模型品牌猜测。Codex → Codex 只走现有 Tsunagou Codex 通道（默认开启，尊重明确关闭）；其他宿主先查 coordination__wake_status {message_id}，按返回入口操作。DSH Desktop 初始化接入后由插件后台排队，无需打开窗口或粘贴发送。当前工具不支持不等于宿主不能唤醒；独立宿主操作须核实原会话、授权及同一消息无在途或结果未知的执行，不绕过认证。入队不等于已处理；失败核对宿主与错误，勿循环重试，不要求用户手动唤醒。操作指南：docs/overview/agent-wake-guide.md（本机安装源码优先）；https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md。";
 export const COMPLETION_REMINDER = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
 
 type Row = Record<string, unknown>;
@@ -66,7 +66,13 @@ function compactHint(status: Row, kind: string): string {
     next += "无法解决时保留错误，worker 向 main 升级一次，main 记录阻塞。";
   }
   else if (row(status.entry).tool === "coordination__wake") {
-    next = `需唤醒时调用 coordination__wake ${reference}（内部通过 PowerShell 执行）。`;
+    next = `需唤醒时调用 coordination__wake ${reference}` + (target.host === "deepseek"
+      ? "（DSH 插件后台排队，无需打开窗口或粘贴发送；受理不等于已执行）。"
+      : "（由对应宿主入口执行）。");
+  }
+  if (target.host === "deepseek" && ["deepseek_wake_setup_required", "deepseek_wake_binding_required",
+    "deepseek_wake_plugin_not_running", "deepseek_wake_runtime_invalid", "deepseek_wake_unauthorized"].includes(text(status.error_code))) {
+    next += "检查 DSH Desktop 初始化及原会话接入是否完成、插件是否已加载；配置与宿主启动是前置条件，不需要手动打开对话唤醒。见 docs/overview/agent-wake-guide.md。";
   }
   const diagnostic = (value: unknown): string => {
     const info = row(value);

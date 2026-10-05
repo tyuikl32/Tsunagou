@@ -1,0 +1,16 @@
+# DSH packaged wake integration — 2026-10-05
+
+User authorized integrating the independently delivered DSH plugin into Tsunagou initialization and correcting misleading hooks. External source/report under `D:\AB\测试文档记录\dsh` are read-only. Delivery report proves one original-session background business roundtrip plus busy queue/dedup; cold resume, idle startup and reload have remaining live evidence gaps. No claim of universal support or new live acceptance is implied.
+
+## Minimal implementation boundary
+
+- Ship zero-runtime-dependency ESM plugin at `packages/dsh-wake-plugin`, preserving sessionController.prompt(queue), fixed reminder and exact stable request ID. Do not copy live e2e scripts/history/secrets into automated tests.
+- Existing Desktop prepare installs the shipped plugin using the existing managed profile registration approach. It creates private `~/.tsunagou/hosts/deepseek-wake/managed.json`: `{format_version:1,key,bindings:[{project_id,agent_id,session_id}]}`. Initial bindings may be empty. Key never appears in YAML/environment/tool output. Repeated prepare preserves key and bindings.
+- Plugin config gets only absolute `managedFile`. Managed mode reads key and exact bindings per request, fail closed on invalid data; legacy standalone keyEnv/static config remains supported when managedFile absent. Parent directory is created/protected by Python private-file facilities. Plugin publishes nonsecret sibling `runtime.json` with format_version, contract_version, plugin_version, endpoint, instance_id and pid from actual bound loopback webServer. Atomic publication inherits private parent ACL. Dispose removes only its own instance descriptor. Do not invent an observed DSH version.
+- After authenticated Desktop enrollment verifies project/role/current conversation, update exact binding automatically using trusted context, never model arguments. No new identity or network binding-registration API.
+- Existing authenticated coordination wake status/wake uses a minimal internal HTTP client for DSH after unchanged message/identity/machine fences. Load private config/runtime, validate literal loopback HTTP URL, refuse redirects/proxies, keep key private. Translate unloaded separately and permit original-session queue admission; accepted is not turn-start evidence. Existing unknown outcome guard remains, no new scheduler/dedup store.
+- Shared hook and generated context point DSH to integrated background tool; eliminate default DSH unsupported/UI instructions for supported Desktop initialization. Missing plugin/setup gets actionable initialization error, not host-wide impossibility. Codex native and main completion behavior unchanged.
+
+## Verification / handoff
+
+Targeted plugin, initialization/idempotence, authenticated runner, loopback/secret safety and real stdio reminder tests; build/type/lint/docs and packaging checks. Simulated HTTP tests do not replace external live report. Do not restart live hosts, enroll Agents, send live messages or modify external report/plugin deliverables. Parent owns task/spec/docs/hook; separate workers own repository plugin and initialization; independent review after implementation. User has authorized source/Git changes; do not touch unrelated work.

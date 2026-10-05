@@ -96,6 +96,25 @@ def test_worker_can_wake_peer_with_private_identity_and_separate_progress(tmp_pa
     assert str(tmp_path) not in rendered
 
 
+@pytest.mark.parametrize("state", ["idle", "running", "unloaded"])
+def test_dsh_original_session_uses_authenticated_ids_and_existing_duplicate_fence(tmp_path: Path, state: str) -> None:
+    f = Fixture(tmp_path, ("opencode", "deepseek"))
+    f.host_state.update(state=state, version=None)
+    original = f.runner
+
+    def checked(action: str, **kwargs: Any) -> dict[str, Any]:
+        assert kwargs["project_id"] == "project"
+        assert kwargs["agent_id"] == f.agents[1].agent_id
+        return original(action, **kwargs)
+
+    f.service.runner = checked
+    message = f.message()
+    assert f.invoke(message)["entry"]["tool"] == "coordination__wake"
+    assert f.invoke(message, wake=True)["result"] == "queued"
+    assert f.invoke(message, wake=True)["result"] == "queued"
+    assert f.calls == ["status", "status", "wake"]
+
+
 def test_replay_restart_and_native_future_never_double_dispatch(tmp_path: Path) -> None:
     f = Fixture(tmp_path)
     message = f.message()

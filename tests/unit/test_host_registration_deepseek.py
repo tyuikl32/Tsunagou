@@ -64,6 +64,7 @@ def dsh_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     provides one; the refusal path has its own test, which removes it again.
     """
 
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     home = tmp_path / "dsh-home"
     for name in ("headless", "main"):
         profile = home / "profiles" / name
@@ -550,7 +551,12 @@ def test_desktop_prepare_preserves_user_patch_and_is_idempotent(dsh_home, tmp_pa
     assert patch.read_text(encoding="utf-8") == text and patch.stat().st_mtime_ns == stamp
     assert text.startswith(original.replace("[]\n", ""))
     row = next(line.removeprefix("- insert: ") for line in text.splitlines() if line.startswith("- insert:"))
-    entry = json.loads(row)[0]
+    entries = json.loads(row)
+    assert entries[1]["id"] == "tsunagou-wake"
+    managed = Path(entries[1]["config"]["managedFile"])
+    assert managed.is_file()
+    assert json.loads(managed.read_text())["key"] not in text
+    entry = entries[0]
     assert entry["name"].startswith("file:") and entry["name"].endswith("/index.js")
     assert set(entry["config"]["env"]) == {"TSUNAGOU_ROUTING_DIR", "TSUNAGOU_HOST_META_KEY"}
     assert "TSUNAGOU_SESSION_FILE" not in text and "TSUNAGOU_TICKET_FILE" not in text
@@ -600,3 +606,19 @@ def test_desktop_unregister_removes_only_selected_private_route(dsh_home, tmp_pa
     assert (routes / "sibling.json").exists() and (routes / "foreign.json").exists()
     assert (routes / "codex.json").exists()
     assert patch.read_text(encoding="utf-8") == "# installation-wide provider\n[]\n"
+
+
+@pytest.mark.parametrize("original", [
+    "# TSUNAGOU:WAKE:START\n- insert: []\n# TSUNAGOU:WAKE:END\n",
+    "- insert: [{id: tsunagou-wake, name: custom-plugin}]\n",
+])
+def test_desktop_prepare_preserves_external_wake_configuration(dsh_home, tmp_path, original):
+    profile = dsh_home / "profiles/desktop"
+    profile.mkdir()
+    (profile / "package.json").write_text("{}")
+    patch = profile / "cordis.patch.yml"
+    patch.write_text(original)
+    result = host_registration.register_deepseek_desktop(_desktop_bridge(tmp_path))
+    assert result.status == FAILED and "conflict" in result.note
+    assert patch.read_text() == original
+    assert not (tmp_path / ".tsunagou/hosts/deepseek-wake/managed.json").exists()

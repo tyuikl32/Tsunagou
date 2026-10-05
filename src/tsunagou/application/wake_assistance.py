@@ -328,7 +328,9 @@ class WakeAssistance:
                 return base
             if observed.get("request_associated") or observed.get("result") != "observed" or observed.get("error_code"):
                 return base
-            if observed.get("state") != "idle":
+            if observed.get("state") == "unloaded" and target["host"] == "deepseek" and observed.get("can_queue") is True:
+                pass  # The plugin resumes this bound original session, never creates one.
+            elif observed.get("state") != "idle":
                 if observed.get("state") != "running" or observed.get("can_queue") is not True:
                     return base
             base["entry"] = {"tool": "coordination__wake", "arguments": {"message_id": message_id}}
@@ -371,8 +373,9 @@ class WakeAssistance:
         if self.runner is None:
             return {"state": "unknown", "result": "unsupported", "error_code": "host_runner_unavailable"}
         try:
+            private_ids = {"project_id": self.project_id, "agent_id": target["agent_id"]} if target["host"] == "deepseek" else {}
             result = dict(self.runner(action, adapter=target["host"], conversation_id=route["conversation_id"],
-                                      project_root=str(self.project_root), message_id=message_id))
+                                      project_root=str(self.project_root), message_id=message_id, **private_ids))
             diagnostics = sanitize_diagnostics(result.pop("diagnostics", None))
             if diagnostics:
                 result["diagnostics"] = diagnostics

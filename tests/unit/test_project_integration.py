@@ -82,7 +82,7 @@ def test_bootstrap_reminder_matches_bridge_and_refreshes_without_main_instructio
     context_path = root / ".tsunagou/agent-context.md"
     wake = (
         "使用 coordination__peer_hosts 核对真实宿主；Codex 双方沿用原生通道，"
-        "其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。"
+        "DSH Desktop 初始化接入后通过插件后台唤醒，无需窗口操作；其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。"
     )
     bridge_rules = Path(__file__).resolve().parents[2] / "packages/bridge-server/src/reminders.ts"
     assert wake in bridge_rules.read_text(encoding="utf-8")

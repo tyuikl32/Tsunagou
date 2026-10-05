@@ -650,3 +650,25 @@ Shortened hook/template guidance; unsupported is tool-path specific. Documented 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 27: Integrate DSH background wake plugin
+<!-- trellis-session: v=2 fp=62570ec105a337c1 -->
+
+**Date**: 2026-10-05
+**Task**: Integrate DSH background wake plugin
+**Branch**: `elysia`
+
+### Summary
+
+Ship DSH npm plugin through Desktop prepare and authenticated binding; add private loopback wake client and correct hooks. 147 Python tests, 30 plugin tests, 3 stdio suites, type/lint/docs and frozen install passed. External report preserved; no live profile changes or wakes. Managed-mode live acceptance and broader task gaps remain, so task stays active.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `80ce3c8` | feat(dsh): integrate background wake plugin with onboarding |
+
+### Status
+
+[OK] **Completed**

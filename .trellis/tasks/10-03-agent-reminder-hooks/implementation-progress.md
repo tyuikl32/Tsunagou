@@ -1,3 +1,13 @@
+# DSH packaged background wake integration — 2026-10-05
+
+Integrated the user-delivered zero-dependency plugin into Desktop prepare and authenticated original-session onboarding. Private managed credentials/bindings update without environment variables; plugin publishes its actual loopback endpoint. Existing message-scoped status/wake tools invoke the plugin, preserving native fencing and unknown-outcome guards. No UI, clipboard, new scheduler or duplicate queue. DSH hook instructions now point to background plugin tools; setup failure does not mean host-wide unsupported, and setup advice never replaces no-repeat advice.
+
+Verification: combined Python suite **147 passed** (configuration, onboarding, runner, service, generated context, actual CLI integration and assembled Python → actual Node plugin → HTTP contract); plugin **30 passed**; actual stdio reminder suites **3 passed**. Reviewer passed workspace type checks, mypy across 98 source files and targeted Ruff. Docs validation and npm pack dry-run passed. Frozen pnpm installation passed after adding the no-dependency plugin importer to the workspace YAML document, with no dependency updates.
+
+Review fixed an assertion placed in the wrong host fixture and setup text overriding unknown-result advice. See [integration design](dsh-integration.md) and [evidence boundary](../../../docs/acceptance/dsh-wake-integration-2026-10-05.md). Source distribution retains the packaged plugin alongside existing Node adapters. Existing independent plugin blocks fail with an explicit conflict rather than loading two routes.
+
+External deliverables remain read-only. No live profile changes, Desktop restart, enrollment, real messages or wakes. External standalone live evidence proves background reply and busy dedup; the new managed-mode integration has isolated regression evidence, not new live-host acceptance. Cold restore/idle-first/reload and broader task acceptance gaps are retained; task is not archived as complete.
+
 # Guidance simplification — 2026-10-04
 
 Based on the user's read-only historical cross-host wake record, shortened shared reminders and synchronized generated context. Unsupported now describes the current tool path, not a host-wide impossibility. Guide includes verified historical OpenCode CLI shapes and DSH original-window evidence with current-verification conditions; no executor/UI automation or permission changes. Native lane, unknown-result fences, diagnostic facts and main completion reminder preserved. Source record SHA256 unchanged. Existing 3 stdio suites, 9 project integration tests, bridge type check, targeted Ruff and docs validation passed. No runtime reload or live wake; prior live acceptance limits remain.

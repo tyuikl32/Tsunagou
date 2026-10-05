@@ -1,6 +1,6 @@
 # On-demand Agent reminders and host wake assistance
 
-Current follow-up: [default-wake-followup.md](default-wake-followup.md). User approved default-on for missing settings, preserving explicit false, and authorized source edits and Git submission.
+Current follow-up: [dsh-integration.md](dsh-integration.md). User authorized shipping the delivered DSH background plugin through initialization and correcting hooks. This supersedes the earlier Desktop unsupported downgrade; unverified forms and live acceptance limits remain explicit. Prior [default-on change](default-wake-followup.md) remains in force.
 
 ## Goal and approval
 The user approved implementation of [approved-v2.md](approved-v2.md) on 2026-10-04. That complete plan is the authoritative requirement and acceptance checklist, replacing the historical always-repeated reminder design.
@@ -13,4 +13,4 @@ The existing completion reminder applies to the authenticated main of each proje
 Implement and test every applicable requirement in approved-v2.md, including actual shared bridge responses, current identity checks, authorization, concurrency/restart, native-lane exclusion and fixed runner packaging. Record controlled real OpenCode original-session evidence separately from synthetic authenticated project Agent fixtures. DSH forms without verified support explicitly downgrade; do not claim live success from mocks.
 
 ## Environment
-The source checkout has no .tsunagou/agent-context.md or enrolled current project session. Native Trellis helpers are not enrolled project members. Controlled host testing uses a disposable original session, not an existing user conversation. No Git commit or publishing requested.
+The source checkout has no .tsunagou/agent-context.md or enrolled current project session. Native Trellis helpers are not enrolled project members. The current DSH integration uses isolated host doubles and does not change live profiles. Source/Git changes are authorized; publishing is not requested.

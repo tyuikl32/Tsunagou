@@ -6,3 +6,4 @@
 {"file": ".trellis/tasks/10-03-agent-reminder-hooks/default-wake-followup.md", "reason": "User-approved default-on wake and honest native hook guidance supersede old absent-setting policy"}
 {"file": ".trellis/tasks/10-03-agent-reminder-hooks/windows-runner-followup.md", "reason": "Real acceptance exposed PS5.1 compatibility and opaque failing-runner guidance"}
 {"file": ".trellis/tasks/10-03-agent-reminder-hooks/simplification-followup.md", "reason": "User-approved presentation simplification based on read-only historical host evidence"}
+{"file": ".trellis/tasks/10-03-agent-reminder-hooks/dsh-integration.md", "reason": "Approved integration of delivered DSH background wake plugin into initialization and hints"}

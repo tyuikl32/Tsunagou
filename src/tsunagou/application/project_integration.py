@@ -23,7 +23,7 @@ START_MARKER = "<!-- TSUNAGOU:START -->"
 END_MARKER = "<!-- TSUNAGOU:END -->"
 WAKE_REMINDER = (
     "使用 coordination__peer_hosts 核对真实宿主；Codex 双方沿用原生通道，"
-    "其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。"
+    "DSH Desktop 初始化接入后通过插件后台唤醒，无需窗口操作；其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。"
 )
 
 

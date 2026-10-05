@@ -25,6 +25,7 @@ from tsunagou.application.onboarding import (
 from tsunagou.hostwake.port import HostWakeError
 from tsunagou.platform.bridge_files import HOST_META_KEYS, write_ticket_file
 from tsunagou.platform.db.sqlite import ProjectLock
+from tsunagou.platform.deepseek_wake import bind_deepseek_wake
 from tsunagou.platform.host_registration import DEEPSEEK_HOST_META_KEY
 from tsunagou.platform.private_files import write_private_bytes
 from tsunagou.platform.runtime_context import RuntimeContext, read_object, running_source_root
@@ -175,6 +176,8 @@ def connect_agent(
                 raise RuntimeError("current_agent_is_main:explicit_revoke_required")
             # This verifies enrollment through a helper bridge. Original-host
             # MCP readiness remains a separate observation after connect.
+            if desktop:
+                bind_deepseek_wake(context["project_id"], context["agent_id"], conversation_id)
             enrolled_at = wall_time.format_timestamp(wall_time.now_ms())
             launch_command = ""
             if register_host and adapter == "codex":
@@ -212,6 +215,8 @@ def connect_agent(
             }
             if adapter == "deepseek":
                 connected["host_ready"] = False
+                if desktop:
+                    connected["wake_configuration"] = "configured_unverified"
             if adapter == "deepseek" and launch_command:
                 # Legacy launch profiles retain their explicit conversation overlay.
                 connected["launch_command"] = launch_command

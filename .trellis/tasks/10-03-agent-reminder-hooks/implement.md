@@ -1,6 +1,6 @@
 # Implementation plan — v2
 
-Current follow-up: [default-wake-followup.md](default-wake-followup.md). User approved default-on for missing settings, preserving explicit false, and authorized source edits and Git submission.
+Current follow-up: [dsh-integration.md](dsh-integration.md). User authorized shipping the delivered DSH background plugin through initialization and correcting hooks. This supersedes the earlier Desktop unsupported downgrade; unverified forms and live acceptance limits remain explicit. Prior [default-on change](default-wake-followup.md) remains in force.
 
 - [x] Narrow authenticated message-query and explicit PowerShell invocation contract.
 - [x] Backend current message/grant/host identity validation, independent progress facts and native/fallback fencing.

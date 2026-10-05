@@ -1,0 +1,46 @@
+{
+  "name": "@tsunagou/dsh-wake-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Loopback wake endpoint that admits a fixed Tsunagou read reminder into an existing DeepSeek Harness Desktop session.",
+  "license": "MIT",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "example/client.mjs",
+    "example/cordis.patch.example.yml",
+    "test/plugin.test.mjs"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node --check index.js",
+    "test": "node --test test/plugin.test.mjs"
+  },
+  "dependencies": {},
+  "dsh": {
+    "compatibility": {
+      "runtime": "DeepSeek Harness Desktop",
+      "runtimeVersion": "0.2.0-rc.2",
+      "services": [
+        "sessionController",
+        "webServer",
+        "credentials",
+        "agents"
+      ],
+      "verifiedAgainst": {
+        "@deepseek-ai/cordis": "4.0.4",
+        "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
+        "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
+        "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
+        "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2"
+      }
+    }
+  }
+}

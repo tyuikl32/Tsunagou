@@ -29,7 +29,7 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 2. 返回补位执行入口且状态允许时，发送方自行调用 `coordination__wake`，使用同一个消息 ID。
 3. 结果不明时回到状态查询。不要重复执行，不用 main 代办每一次 Worker 间唤醒。
 
-这两个入口通过 MCP 认证原发送方，补位执行内部调用固定 PowerShell 脚本。**不要从终端伪造 sender、复制 bridge session 或使用用户 control token 代替 Agent**。当前入口不适用时，参照下方已实测宿主操作；先确认没有同一请求正在派发或执行、没有未查清的执行结果。权限拒绝、身份不明或跨机器限制不能通过换入口绕过。
+这两个入口通过 MCP 认证原发送方，OpenCode 补位内部调用固定 PowerShell 脚本，DSH Desktop 调用初始化时配置的本机插件。**不要从终端伪造 sender、复制 bridge session 或使用用户 control token 代替 Agent**。当前入口不适用时，参照下方已实测宿主操作；先确认没有同一请求正在派发或执行、没有未查清的执行结果。权限拒绝、身份不明或跨机器限制不能通过换入口绕过。
 
 ## 如何理解状态
 
@@ -50,7 +50,12 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 
 脚本返回统一状态、执行结果及错误，不能把提示已提交冒充回合已启动。当前 OpenCode 活动接口不提供本消息对应的回合关联，因此通用返回不会仅凭活动状态把 `host_turn_started` 设为真。实际测试的范围及限制见 [本轮验收记录](../acceptance/agent-wake-assistance-2026-10-04.md)。
 
-**DeepSeek Harness**：Desktop、Web、TUI 分别核实。历史 Web `session/prompt` 的 `queue|steer` 证据不证明普通 Desktop 可用同一接口。未验证形态返回明确的 `unsupported` 和原因，这属于本轮明确接受的降级；不让 Agent 无限研究或临时下载其他版本。证据背景见 [DSH 验收记录](../acceptance/deepseek-harness-11-baseline-2026-10-01.md)。
+**DeepSeek Harness Desktop**：已接入后台唤醒插件，实测基线为 **0.2.0-rc.2 / Windows**。`tsunagou agent prepare --adapter deepseek --profile desktop` 注册随安装交付的插件并创建私有配置；原会话完成正常接入后，系统自动添加已认证的项目/Agent/会话绑定。无需用户手填密钥、端口或会话 ID。插件从实际宿主发布 loopback 地址，调用端按现有消息权限校验后执行 `coordination__wake_status` / `coordination__wake`。
+
+插件使用 `sessionController.prompt(queue)`，原会话忙碌时排队；已保存但未加载状态保留为 `unloaded`，由宿主恢复原会话。无需打开窗口、抢焦点、粘贴或点击发送。HTTP 202 只证明受理，不证明新回合或业务完成。独立插件的真实业务回复及忙碌去重已经用户验收；idle 首轮、冷恢复配置保持仍有实测缺口，见 [集成验收边界](../acceptance/dsh-wake-integration-2026-10-05.md)。Web/TUI 和其他版本不因这一事实自动成为已验证支持。
+
+初始化沿用安装目录中的标准 npm 包，通过正式 file URL 加载，与现有身份插件一致；目录须随 Tsunagou 安装保留。私有配置通过文件读取，不依赖新增环境变量进入已运行 Desktop。初始化完成仅表示已配置；只有插件已加载且状态调用成功才证明入口可用。已有手工 `TSUNAGOU:WAKE` 块返回明确配置冲突并保留原文，避免加载两份同名路由；先核对并移除旧独立插件加载行，再重新 prepare，重新接入需要继续保留的原会话。不要删除原会话或盲目清理凭据。
+
 
 **Codex**：双方均为 Codex 时继续使用 [已有通道](../implementation/codex-host-wake.md)，补位脚本不调用它。其他宿主发往 Codex 时，也只能使用已有验证路径或明确返回未覆盖，不猜测 Desktop 通用恢复命令。
 
@@ -60,7 +65,7 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 
 **OpenCode 2.0.18**：在现场核实的原会话工作目录中，先用 `opencode api session.get --param sessionID=<原会话ID>` 验证原会话，再用 `opencode run --session <原会话ID> --format json '<读取自己上下文和收件箱的提示>'` 驱动。通过 PowerShell 执行，不加 `--auto`、不更换模型或审批模式。先检查已安装版本的帮助；不要用 run 探测会话是否存在。该命令可能长时间运行，读取同一进程输出，不重复启动。业务目录下列表为空、旧 idle 时间都不能单独证明会话不存在或当前空闲。
 
-**DSH Desktop**：该轮成功使用已核实原窗口的“编辑→粘贴→发送” UI 操作，不是 Web prompt API。精确调用与失败经验见上述本机记录的第五节；本项目不新增 UI 自动化脚本。只有当前交互式桌面、目标原会话、控件和已有授权都可核实时才适用，保护已有草稿及剪贴板。发送按钮调用返回不等于唤醒成功，仍需原会话新回合及 Worker 自身回应证明。当前固定执行器对 DSH 的 unsupported 仅说明它未覆盖这一操作方式。
+**DSH Desktop 的窗口操作记录仅为历史经验**。当前 Desktop 插件后台路径已接通，正常协作使用上方工具入口，不再把窗口粘贴作为初始化后的必要步骤，也不在插件失败时自动改走 UI。
 
 ## 失败时自行核实并收口
 
