@@ -425,6 +425,46 @@
                         </div>
                     </div>
                 </div>
+                <!--第 2 步（2026-10-05 插进来的）：这个协作放哪、协调中心怎么对外。
+                    步骤顺序见 behavior.js 的 WIZARD_PANES（1 名称 → 2 这里 → 3 主 Agent → 4 子 Agent → 5 确认），
+                    这一步的 id 用 newXzSetup 而不是 newXz2，是为了不去动后面几步的 id 与编号。-->
+                <div class="right" id="newXzSetup">
+                    <div class="uiBlock">
+                        <div class="title">协作放哪、怎么连</div>
+                        <div class="descbox">这一屏决定协作目录，以及协调中心在哪张网卡上听、对外公布哪个地址。只在本机用就全部保持默认。</div>
+                        <div class="descbox">协作根目录</div>
+                        <div class="textbox2">
+                            <input class="inner" placeholder="协作根目录（留空则用默认位置）" />
+                        </div>
+                        <div class="descbox">端口号</div>
+                        <div class="textbox2">
+                            <input class="inner" value="2810" placeholder="端口号（默认 2810）" />
+                        </div>
+                        <div class="descbox">绑定地址</div>
+                        <!--外框 .chooseboxTOG 是一条 flex 行，宽度由它里面那两条通用规则决定：
+                            `.chooseboxTOG .TOG1 { flex-grow: 1 }`（左边输入框撑满）
+                            `.chooseboxTOG .TOG0 { flex-grow: 0 }`（右边选择框只占自己那点宽）。
+                            与 addSubAgent 那一对选择框同一套摆法，仍然不用新写 CSS。-->
+                        <div class="chooseboxTOG">
+                            <div class="textbox2 TOG1">
+                                <input class="inner" placeholder="绑定地址（默认为127.0.0.1）" />
+                            </div>
+                            <div class="choosebox chooseboxE TOG0" data-target="newXzSetupAccess">
+                                <div class="left">仅本机</div>
+                                <div class="right"></div>
+                            </div>
+                        </div>
+                        <!--面板必须放在这个外框外面：选择框自己有 overflow:hidden，放里面会被裁掉
+                            （addSubAgent 那两个选择框也是这么摆的）。-->
+                        <div class="chooseboxOpen" id="newXzSetupAccess">
+                            <p data-default="true">仅本机</p>
+                            <p>可网络接入</p>
+                        </div>
+                        <div class="textbox2" id="newXzSetupAdvertised" style="display: none;">
+                            <input class="inner" placeholder="对外地址" />
+                        </div>
+                    </div>
+                </div>
                 <div class="right" id="newXz2">
                     <div class="uiBlock">
                         <div class="title">接入主 Agent</div>
@@ -503,6 +543,10 @@
             </div>
             <div class="options" id="xz1">
                 <div class="buttonbox2" onclick="Tsunagou.app.closeWindow('addProj')">取消</div>
+                <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.wizardNext()">下一步</div>
+            </div>
+            <div class="options" id="xzSetup">
+                <div class="buttonbox2" onclick="Tsunagou.app.wizardPrev()">上一步</div>
                 <div class="buttonbox2 buttonbox2active" onclick="Tsunagou.app.wizardNext()">创建</div>
             </div>
             <div class="options" id="xz2">

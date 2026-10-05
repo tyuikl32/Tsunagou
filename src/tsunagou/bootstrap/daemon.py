@@ -21,6 +21,7 @@ from starlette.types import Message, Receive, Scope, Send
 from tsunagou import __version__
 from tsunagou.bootstrap.container import build_application
 from tsunagou.interfaces.runtime import completion_receipts
+from tsunagou.platform.endpoints import connectable_url
 from tsunagou.platform.private_files import write_private_bytes
 from tsunagou.platform.runtime_context import read_object, running_source_root
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
@@ -107,7 +108,8 @@ class ProjectDaemon:
 
     def endpoint(self, project_id: str) -> dict[str, Any]:
         return {
-            "url": self.config["TSUNAGOU_DAEMON_URL"], "pid": os.getpid(), "project_id": project_id,
+            "url": connectable_url(self.config["TSUNAGOU_DAEMON_URL"]),
+            "bind_url": self.config["TSUNAGOU_DAEMON_URL"], "pid": os.getpid(), "project_id": project_id,
             "state_dir": self.projects[project_id]["state_dir"], "runtime_id": self.runtime_id,
             "source_root": str(running_source_root()), "started_at": self.started_at,
             "host_wake": self.config.get("TSUNAGOU_HOST_WAKE") or "disabled",

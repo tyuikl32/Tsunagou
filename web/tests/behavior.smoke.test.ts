@@ -1004,6 +1004,118 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(inner().scrollTop).toBe(240);
   });
 
+  /* 2026-10-05 用户要求：向导第 1、2 步之间插一步，交代"协作放哪、协调中心怎么对外"。
+     这一步必须排在"创建协作"之前 —— 项目一落地，中间层紧接着就把 daemon 起起来了。*/
+  it("向导新第 2 步：默认值、跨机器时才要对外地址、创建时把四项一起发给中间层", async () => {
+    const win = dom.window as unknown as {
+      fetch: (url: string, init?: { body?: string; method?: string }) => Promise<unknown>;
+      Tsunagou: {
+        ui: {
+          wizard: { open: () => boolean; go: (n: number) => number; next: () => Promise<unknown>; current: () => number };
+          choosebox: { setValue: (ref: string, value: string, options?: unknown) => boolean };
+        };
+      };
+    };
+    const posts: { url: string; body: Record<string, unknown> }[] = [];
+    win.fetch = (url: string, init?: { body?: string; method?: string }) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      if (init && init.method === "POST") {
+        posts.push({ url: path, body: JSON.parse(String(init.body || "{}")) as Record<string, unknown> });
+      }
+      const body: Record<string, unknown> = init && init.method === "POST" && path.indexOf("/projects") >= 0
+        ? { status: "created", project: { project_id: "p-9", name: "示例协作", objective: "" } }
+        : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+
+    win.Tsunagou.ui.wizard.open();
+    const pane = page.getElementById("newXzSetup")!;
+    expect(pane).not.toBeNull();
+    const inputs = [...pane.querySelectorAll("input")] as HTMLInputElement[];
+    expect(inputs[0]!.getAttribute("placeholder")).toBe("协作根目录（留空则用默认位置）");
+    expect(inputs[1]!.value).toBe("2810");
+    expect(inputs[2]!.getAttribute("placeholder")).toBe("绑定地址（默认为127.0.0.1）");
+    expect(inputs[3]!.getAttribute("placeholder")).toBe("对外地址");
+    expect(page.getElementById("newXzSetupAdvertised")!.style.display).toBe("none");
+
+    win.Tsunagou.ui.choosebox.setValue("newXzSetupAccess", "可网络接入");
+    expect(page.getElementById("newXzSetupAdvertised")!.style.display).toBe("");
+
+    (page.querySelector("#newXz1 input") as HTMLInputElement).value = "示例协作";
+    win.Tsunagou.ui.wizard.next();
+    expect(win.Tsunagou.ui.wizard.current()).toBe(2);
+    expect(posts).toHaveLength(0);
+
+    await win.Tsunagou.ui.wizard.next();
+    expect(win.Tsunagou.ui.wizard.current()).toBe(2);
+    expect(posts).toHaveLength(0);
+
+    inputs[0]!.value = "E:\\Tsunagou\\projects\\示例协作";
+    inputs[1]!.value = "2820";
+    inputs[2]!.value = "192.168.32.1";
+    inputs[3]!.value = "http://192.168.32.1:2820";
+    await win.Tsunagou.ui.wizard.next();
+
+    const created = posts.filter((item) => item.url.indexOf("/projects") >= 0)[0];
+    expect(created).toBeTruthy();
+    expect(created!.body).toMatchObject({
+      name: "示例协作",
+      coordination_root: "E:\\Tsunagou\\projects\\示例协作",
+      port: 2820,
+      bind_host: "192.168.32.1",
+      advertised_url: "http://192.168.32.1:2820",
+    });
+    expect(win.Tsunagou.ui.wizard.current()).toBe(3);
+  });
+
+  /* 跨机器但没写绑定地址时绑 0.0.0.0：只绑回环却对外公布网卡地址，远端一定连不上。
+     这一条不能偷偷替用户决定，所以它同时出现在确认页上。*/
+  it("向导新第 2 步：跨机器没写绑定地址时绑 0.0.0.0，并在确认页写明", async () => {
+    const win = dom.window as unknown as {
+      fetch: (url: string, init?: { body?: string; method?: string }) => Promise<unknown>;
+      Tsunagou: {
+        ui: {
+          wizard: { open: () => boolean; next: () => Promise<unknown>; go: (n: number) => number };
+          choosebox: { setValue: (ref: string, value: string, options?: unknown) => boolean };
+        };
+      };
+    };
+    const posts: Record<string, unknown>[] = [];
+    win.fetch = (url: string, init?: { body?: string; method?: string }) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      if (init && init.method === "POST" && path.indexOf("/projects") >= 0) {
+        posts.push(JSON.parse(String(init.body || "{}")) as Record<string, unknown>);
+      }
+      const body = init && init.method === "POST" && path.indexOf("/projects") >= 0
+        ? { status: "created", project: { project_id: "p-9", name: "示例协作", objective: "" } }
+        : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+
+    win.Tsunagou.ui.wizard.open();
+    (page.querySelector("#newXz1 input") as HTMLInputElement).value = "示例协作";
+    win.Tsunagou.ui.wizard.next();
+    win.Tsunagou.ui.choosebox.setValue("newXzSetupAccess", "可网络接入");
+    const inputs = [...page.getElementById("newXzSetup")!.querySelectorAll("input")] as HTMLInputElement[];
+    inputs[3]!.value = "http://192.168.32.1:2810";
+    await win.Tsunagou.ui.wizard.next();
+
+    expect(posts[0]).toMatchObject({ bind_host: "0.0.0.0", advertised_url: "http://192.168.32.1:2810" });
+    win.Tsunagou.ui.wizard.go(5);
+    const review = page.getElementById("newXz4")!;
+    expect(review.textContent).toContain("0.0.0.0:2810");
+    expect(review.textContent).toContain("http://192.168.32.1:2810");
+  });
   /* 2026-10-04 用户实测：设置窗口的格子会原样显示后端值（旧档案里存的是 `dark`）。
      口径：先归一到界面标签，对不上任何一项就回落**默认项**，不把它当标签用。*/
   it("设置窗口：主题是后端值也显示中文标签，认不出的值回落到默认项", () => {
@@ -1517,7 +1629,7 @@ describe("控制台接入等待与取消", () => {
     ]);
     enrollmentApi.state.set("currentProjectId", "p-1");
     enrollmentApi.state.set("wizard.project", { id: "p-1", name: "示例协作" });
-    enrollmentApi.ui.wizard.go(2);
+    enrollmentApi.ui.wizard.go(3);
     (enrollmentPage.querySelector("#newXz2 input") as HTMLInputElement).value = "熊猫";
   });
 
@@ -1535,12 +1647,12 @@ describe("控制台接入等待与取消", () => {
     expect(text()).not.toContain("主 Agent 身份");
     expect(calls.find((call) => call.url.includes("agents:prepare"))?.body.role).toBe("main");
     await vi.advanceTimersByTimeAsync(2000);
-    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
     expect(enrollmentApi.state.get("wizard.main")).toBeNull();
     statusBody = { status: "arrived", enrollment_id: "e-1", agent_id: "a-own", role: "main" };
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
-    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.ui.wizard.current()).toBe(4);
     expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ agent_id: "a-own", status: "arrived" });
   });
 
@@ -1553,7 +1665,7 @@ describe("控制台接入等待与取消", () => {
     const pending = enrollmentApi.ui.wizard.next();
     await vi.advanceTimersByTimeAsync(2000);
     expect(text()).toBe(note);
-    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
     enrollmentApi.notify.loadingEnd();
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
@@ -1724,12 +1836,12 @@ describe("控制台接入等待与取消", () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(text()).toContain("角色是子 Agent");
     expect(text()).toContain("以主 Agent 身份接入");
-    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
     /* 中间层说到了：遮罩收起、主 Agent 落到第 3 步 */
     observeBody = { status: "arrived", adapter: "deepseek", agent: { agent_id: "a-own" } };
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
-    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.ui.wizard.current()).toBe(4);
     expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ agent_id: "a-own", status: "arrived" });
     expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
   });
@@ -1769,7 +1881,7 @@ describe("控制台接入等待与取消", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(tip()).toContain("还没实现");
     expect(calls.filter((call) => call.url.includes("agents:prepare"))).toHaveLength(0);
-    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
   });
 
   it("拒绝确认保留取消入口，确认后以服务端 cancelled 为准", async () => {
@@ -1783,7 +1895,7 @@ describe("控制台接入等待与取消", () => {
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
     expect(calls.filter((call) => call.url.includes(":cancel"))).toHaveLength(1);
-    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
     expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
   });
 
@@ -1801,7 +1913,7 @@ describe("控制台接入等待与取消", () => {
     statusBody = { status: "arrived", enrollment_id: "e-1", agent_id: "a-own", role: "main" };
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
-    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.ui.wizard.current()).toBe(4);
     expect(enrollmentApi.state.get("wizard.main")).toMatchObject({ status: "arrived" });
   });
 
@@ -1817,7 +1929,7 @@ describe("控制台接入等待与取消", () => {
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
     expect(calls.filter((call) => call.url.includes("e-1:cancel"))).toHaveLength(1);
-    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
     expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
   });
 
@@ -1833,7 +1945,7 @@ describe("控制台接入等待与取消", () => {
     statusBody = { status: "arrived", enrollment_id: "e-1", agent_id: "a-own", role: "main" };
     await vi.advanceTimersByTimeAsync(2000);
     await pending;
-    expect(enrollmentApi.ui.wizard.current()).toBe(3);
+    expect(enrollmentApi.ui.wizard.current()).toBe(4);
     releaseCancel();
     await vi.advanceTimersByTimeAsync(0);
     expect(enrollmentApi.ui.window.isOpen("loadW")).toBe(false);
@@ -1861,7 +1973,7 @@ describe("控制台接入等待与取消", () => {
     expect(enrollmentPage.querySelector("#AnnounceMent2 .aText")?.textContent).toContain("p-2");
     expect(enrollmentPage.querySelector("#AnnounceMent2 .aText")?.textContent).toContain("子 Agent");
     expect(enrollmentPage.querySelector("#AnnounceMent2 .aText")?.textContent).toContain("原聊天继续");
-    expect(enrollmentApi.ui.wizard.current()).toBe(2);
+    expect(enrollmentApi.ui.wizard.current()).toBe(3);
     expect(calls.some((call) => call.url.includes("e-other"))).toBe(false);
   });
 

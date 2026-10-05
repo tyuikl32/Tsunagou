@@ -296,3 +296,165 @@ def test_stopping_a_live_daemon_kills_the_pid_from_the_endpoint_file(
 
     assert report["status"] == "stopped"
     assert killed == [4242]
+
+def test_daemon_settings_keeps_what_can_be_dialled_and_rejects_the_rest() -> None:
+    """向导收的四项：能拨的留下，拨不通的明确报错。
+
+    `0.0.0.0` 作为**对外地址**是这里必须挡住的一种 —— 2026-10-05 实测：拨它报
+    WinError 10049，连本机自己都连不上，写成邀请发给谁都没用。
+    """
+
+    from tsunagou.console.projects import ConsoleError, _daemon_settings
+
+    assert _daemon_settings({
+        "port": 2810, "bind_host": "0.0.0.0", "advertised_url": "http://192.168.32.1:2810",
+    }) == {"port": 2810, "bind_host": "0.0.0.0", "advertised_url": "http://192.168.32.1:2810"}
+    # 空的一律当作"没给"，交给 CLI 的默认
+    assert _daemon_settings({}) is None
+    assert _daemon_settings({"port": "", "bind_host": None, "advertised_url": "  "}) is None
+    # 只给端口也行（其余走默认）
+    assert _daemon_settings({"port": "2820"}) == {"port": 2820}
+
+    for bad in ({"advertised_url": "http://0.0.0.0:2810"}, {"advertised_url": "http://"}, {"port": 70000},
+                {"port": "abc"}):
+        try:
+            _daemon_settings(bad)
+        except ConsoleError:
+            continue
+        raise AssertionError(f"这一组本该被拒绝：{bad}")
+
+
+def test_ensure_daemon_starts_with_the_address_the_project_was_set_up_with(tmp_path, monkeypatch) -> None:
+    """控制台起 daemon 时必须带上记过的地址，并把子进程输出留下来。
+
+    不带地址就会绑回环，而邀请里公布的是网卡地址 —— 远端再也连不上；
+    输出丢进 DEVNULL 的话，起失败时界面上什么也看不到。
+    """
+
+    from tsunagou.console.projects import ConsoleError, ProjectEntry, ensure_daemon
+
+    entry = ProjectEntry(
+        project_id="p-1", path=tmp_path,
+        daemon_settings={"bind_host": "192.168.32.1", "port": 2820,
+                         "advertised_url": "http://192.168.32.1:2820"},
+    )
+    seen: dict[str, object] = {}
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):  # noqa: ANN001 - 就是替身
+            seen["command"] = list(command)
+            seen["stdout"] = kwargs.get("stdout")
+
+        def poll(self):  # noqa: ANN201 - 立刻"退出"，让 ensure_daemon 走到失败分支
+            return 1
+
+    monkeypatch.setattr("tsunagou.console.projects.subprocess.Popen", FakeProcess)
+    monkeypatch.setattr("tsunagou.console.projects.daemon_state", lambda root, probe=True: None)
+
+    try:
+        ensure_daemon(entry, autostart=True, wait_seconds=0.05)
+    except ConsoleError as exc:
+        detail = getattr(exc, "detail", {}) or {}
+        assert "2820" in str(detail.get("command", ""))
+        assert detail.get("log"), "失败详情里要给出日志路径"
+    else:  # pragma: no cover - 上面那个替身必然让它失败
+        raise AssertionError("daemon 没起来时 ensure_daemon 应当抛错")
+
+    command = [str(part) for part in seen["command"]]
+    joined = " ".join(command)
+    assert "--coordination-root" in joined and str(tmp_path) in joined
+    assert "--host 192.168.32.1" in joined
+    assert "--port 2820" in joined
+    assert "--advertised-url http://192.168.32.1:2820" in joined
+    assert seen["stdout"] is not None, "输出要落到文件，不再丢进 DEVNULL"
+    assert (tmp_path / ".tsunagou" / "local" / "daemon-console-start.log").is_file()
+
+
+def test_ensure_daemon_falls_back_to_the_cli_defaults_without_settings(tmp_path, monkeypatch) -> None:
+    """没记过设置的项目照旧：不给 --host/--port/--advertised-url，走 CLI 默认。"""
+
+    from tsunagou.console.projects import ConsoleError, ProjectEntry, ensure_daemon
+
+    entry = ProjectEntry(project_id="p-2", path=tmp_path)
+    seen: dict[str, object] = {}
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):  # noqa: ANN001
+            seen["command"] = list(command)
+
+        def poll(self):  # noqa: ANN201
+            return 1
+
+    monkeypatch.setattr("tsunagou.console.projects.subprocess.Popen", FakeProcess)
+    monkeypatch.setattr("tsunagou.console.projects.daemon_state", lambda root, probe=True: None)
+
+    try:
+        ensure_daemon(entry, autostart=True, wait_seconds=0.05)
+    except ConsoleError:
+        pass
+
+    joined = " ".join(str(part) for part in seen["command"])
+    assert "--host" not in joined and "--port" not in joined and "--advertised-url" not in joined
+
+def test_a_wildcard_bind_address_is_probed_and_forwarded_on_the_loopback(tmp_path) -> None:
+    """daemon 绑 0.0.0.0 时自报的 url 是 http://0.0.0.0:2810 —— 那不是能拨的地址。
+
+    2026-10-05 用户实测：控制台拿它探活与转发，十项协作作用域数据全 503，页面上只看到
+    "有 10 项数据拉取失败"。探活与转发都改走回环；**advertised_url 一个字都不动** ——
+    那是写进邀请、给别人照着拨的。
+    """
+
+    import json
+
+    from tsunagou.console.projects import connectable_url, read_endpoint
+
+    assert connectable_url("http://0.0.0.0:2810") == "http://127.0.0.1:2810"
+    assert connectable_url("http://[::]:2810") == "http://[::1]:2810"
+    assert connectable_url("http://:2810") == "http://127.0.0.1:2810"
+    assert connectable_url("http://192.168.32.1:2810") == "http://192.168.32.1:2810"
+    assert connectable_url("http://127.0.0.1:2810") == "http://127.0.0.1:2810"
+
+    local = tmp_path / ".tsunagou" / "local"
+    local.mkdir(parents=True)
+    (local / "endpoint.json").write_text(json.dumps({
+        "url": "http://0.0.0.0:2810",
+        "advertised_url": "http://192.168.32.1:2810",
+        "pid": 1, "project_id": "p-1", "state_dir": str(local),
+    }), encoding="utf-8")
+
+    endpoint = read_endpoint(tmp_path)
+    assert endpoint is not None
+    assert endpoint["url"] == "http://127.0.0.1:2810"
+    assert endpoint["advertised_url"] == "http://192.168.32.1:2810"
+
+def test_the_advertised_address_is_completed_from_what_the_user_typed() -> None:
+    """对外地址可以不写协议、不写端口：中间层补全成完整 origin。
+
+    缺协议补 http://；缺端口沿用向导上面那一格（那一格没填就用默认端口）。已经写了的
+    原样尊重。补端口这一步同时在堵"邀请指向 80 端口"那个坑。
+    """
+
+    from tsunagou.console.projects import ConsoleError, _daemon_settings
+
+    assert _daemon_settings({"port": 2810, "advertised_url": "192.168.32.1"}) == {
+        "port": 2810, "advertised_url": "http://192.168.32.1:2810"}
+    assert _daemon_settings({"port": 2820, "advertised_url": "192.168.32.1"})["advertised_url"] == (
+        "http://192.168.32.1:2820")
+    # 自己带了端口：照用户写的，不覆盖
+    assert _daemon_settings({"port": 2810, "advertised_url": "192.168.32.1:9000"})["advertised_url"] == (
+        "http://192.168.32.1:9000")
+    # 自己带了协议：不重复加
+    assert _daemon_settings({"advertised_url": "http://192.168.32.1"})["advertised_url"] == (
+        "http://192.168.32.1:2810")
+    assert _daemon_settings({"advertised_url": "https://box.example.com:8443"})["advertised_url"] == (
+        "https://box.example.com:8443")
+    # 端口那一格也没填：用默认端口
+    assert _daemon_settings({"advertised_url": "box.example.com"})["advertised_url"] == (
+        "http://box.example.com:2810")
+    # 通配地址与"带路径的"仍然被拒
+    for bad in ("0.0.0.0", "http://0.0.0.0:2810", "192.168.32.1/abc"):
+        try:
+            _daemon_settings({"advertised_url": bad})
+        except ConsoleError:
+            continue
+        raise AssertionError(f"本该被拒绝：{bad}")

@@ -148,11 +148,22 @@ def revise_decision_record(
 
 
 class ProjectRequest(BaseModel):
-    """Either create a project under ``projects_root``, or register one that exists."""
+    """Either create a project under ``projects_root``, or register one that exists.
+
+    The last four fields come from the wizard's "where does it live, how is it
+    reachable" step (2026-10-05): they decide where the project is created and how
+    this project's daemon is started later, so a host-only VM can reach it. All
+    optional: leaving them out keeps the old behaviour (a directory under
+    ``projects_root``, and a daemon started with the CLI's defaults).
+    """
 
     name: str | None = None
     objective: str | None = None
     path: str | None = None
+    coordination_root: str | None = None
+    port: int | None = None
+    bind_host: str | None = None
+    advertised_url: str | None = None
 
 
 class AgentPrepareRequest(BaseModel):
@@ -508,7 +519,15 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
             return {"status": "registered", "project": _woken(entry)}
         if not payload.name:
             raise ConsoleError("project_name_required")
-        entry = create(settings, name=payload.name, objective=payload.objective or "")
+        entry = create(
+            settings, name=payload.name, objective=payload.objective or "",
+            coordination_root=payload.coordination_root,
+            daemon_settings={
+                "port": payload.port,
+                "bind_host": payload.bind_host,
+                "advertised_url": payload.advertised_url,
+            },
+        )
         return {"status": "created", "project": _woken(entry)}
 
     @app.post("/api/v1/console/projects/{project_id}:forget")

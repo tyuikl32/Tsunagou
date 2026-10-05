@@ -21,6 +21,7 @@ from tsunagou.application.onboarding import conversation_key
 from tsunagou.modules.projects import PENDING_OBJECTIVE
 from tsunagou.platform import host_registration
 from tsunagou.platform.bridge_files import write_bridge_config, write_ticket_file
+from tsunagou.platform.endpoints import connectable_url
 from tsunagou.platform.runtime_context import RuntimeContext, resolve_runtime, running_source_root
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
@@ -41,28 +42,9 @@ _WILDCARD_BIND_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]", "*"})
 
 
 def _probe_url(url: str) -> str:
-    """就绪探测用"能连的地址"，其余场合一律用原样的 URL。
+    """The address a readiness probe may dial (see platform.endpoints)."""
 
-    ``daemon start --host 0.0.0.0`` 绑的是所有网卡，但 ``http://0.0.0.0:2810`` 连不上：
-    探测必然失败，于是 CLI 把一个**已经健康**的 daemon 判成启动超时、反手把它杀掉
-    （2026-10-04 实测：daemon 日志里两次 ``GET /api/v1/health 200 OK``，CLI 仍报
-    ``daemon_start_timeout``）。通配地址改成回环地址探测：进程就在本机，端口也一样。
-    对外地址、清单与邀请里仍然保留用户给的那个地址，不受这里影响。
-    """
-
-    try:
-        parsed = urllib.parse.urlsplit(url)
-    except ValueError:
-        return url
-    hostname = parsed.hostname
-    if hostname is not None and hostname not in _WILDCARD_BIND_HOSTS:
-        return url
-    # IPv6 的通配只接 IPv6 的回环；其余（含没写主机名）走 IPv4 回环。
-    loopback = "[::1]" if hostname in {"::", "[::]"} else "127.0.0.1"
-    netloc = f"{loopback}:{parsed.port}" if parsed.port else loopback
-    return urllib.parse.urlunsplit(
-        (parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment)
-    )
+    return connectable_url(url)
 
 
 def _advertised_url(declared: str, bind_host: str) -> str:

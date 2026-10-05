@@ -61,8 +61,12 @@ def _read(path: Path) -> str | None:
 
 
 def _replace_block(
-    existing: str | None, block: str, *, path: Path,
-    start_marker: str = START_MARKER, end_marker: str = END_MARKER,
+    existing: str | None,
+    block: str,
+    *,
+    path: Path,
+    start_marker: str = START_MARKER,
+    end_marker: str = END_MARKER,
 ) -> tuple[str, str]:
     if existing is None:
         return block, "created"
@@ -84,7 +88,10 @@ def _git_commit(source_root: Path | None) -> str | None:
     try:
         completed = subprocess.run(
             ["git", "-C", str(source_root), "rev-parse", "HEAD"],
-            capture_output=True, check=False, text=True, timeout=5,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -114,7 +121,7 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 - `project_id`: `{project_id}`
 - daemon: 本机 Tsunagou daemon；项目入口不创建全局单例，当前项目始终由 `project_id` 区分。
   一个安装 checkout 可服务多个项目；daemon 是否启用多项目运行由实际 runtime/doctor 结果证明。
-- Tsunagou source: {source['repository']}（ref `{source['ref']}`，commit `{source.get('commit') or 'unknown'}`）
+- Tsunagou source: {source["repository"]}（ref `{source["ref"]}`，commit `{source.get("commit") or "unknown"}`）
 - 本机 source path 仅为诊断提示：`{source_hint}`
 
 ## Agent 工作边界
@@ -153,7 +160,7 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 - 规范源码（本机可用时）：`{local_docs}/overview/agent-quick-start.md`、`{local_docs}/overview/subagent-guide.md`。
   任务和身份规范：`{local_docs}/implementation/modules/02-agents.md`、`{local_docs}/implementation/modules/03-tasks.md`。
 - 宿主唤醒操作指南（优先读取本机安装源码）：`{local_docs}/overview/agent-wake-guide.md`。
-- 在线来源：`{source['repository']}`；项目入口不复制 Tsunagou 源码。
+- 在线来源：`{source["repository"]}`；项目入口不复制 Tsunagou 源码。
 
 ## 运行数据边界
 
@@ -283,7 +290,8 @@ class ProjectIntegration:
             _ManagedFile(self.root / f".{host}/skills/tsunagou-project/SKILL.md", skill)
             # DeepSeek Harness discovers project skills at `<projectRoot>/.agents/skills`
             # with no vendor-specific root, so it needs no extra copy of the same file.
-            for host in selected_hosts if host not in {"generic", "codex", "deepseek"}
+            for host in selected_hosts
+            if host not in {"generic", "codex", "deepseek"}
         ]
         host_config: str | None = None
         if "codex" in selected_hosts:
@@ -293,16 +301,21 @@ class ProjectIntegration:
                 raise ProjectIntegrationError("installation_bridge_not_built")
             host_config = (
                 '# TSUNAGOU:START\n[mcp_servers.tsunagou]\ncommand = "node"\n'
-                f'args = {json.dumps([str(source_path / "packages/bridge-server/dist/server.js")])}\n'
+                f"args = {json.dumps([str(source_path / 'packages/bridge-server/dist/server.js')])}\n"
                 'env_vars = ["CODEX_APP_TOOLS_PIPE_PATH"]\n'
-                '[mcp_servers.tsunagou.env]\n'
-                f'TSUNAGOU_ROUTING_DIR = {json.dumps(str(codex_routing_directory()))}\n# TSUNAGOU:END'
+                "[mcp_servers.tsunagou.env]\n"
+                f"TSUNAGOU_ROUTING_DIR = {json.dumps(str(codex_routing_directory()))}\n# TSUNAGOU:END"
             )
-        content_digest = canonical_digest({
-            "context": context, "skill": skill,
-            "agents_block": agents_block, "gitignore_block": gitignore_block,
-            "hosts": selected_hosts, "host_config": host_config,
-        })
+        content_digest = canonical_digest(
+            {
+                "context": context,
+                "skill": skill,
+                "agents_block": agents_block,
+                "gitignore_block": gitignore_block,
+                "hosts": selected_hosts,
+                "host_config": host_config,
+            }
+        )
         previous = read_object(self.state_dir / "project-integration.json")
         updated_at = previous.get("updated_at") if previous.get("content_digest") == content_digest else None
         try:
@@ -316,11 +329,14 @@ class ProjectIntegration:
             "source": source,
             "generated_by": GENERATOR_VERSION,
             "managed_files": [
-                "AGENTS.md#TSUNAGOU", ".agents/skills/tsunagou-project/SKILL.md",
-                ".tsunagou/agent-context.md", ".tsunagou/project-integration.json",
+                "AGENTS.md#TSUNAGOU",
+                ".agents/skills/tsunagou-project/SKILL.md",
+                ".tsunagou/agent-context.md",
+                ".tsunagou/project-integration.json",
                 ".gitignore#TSUNAGOU",
-            ] + [str(item.path.relative_to(self.root)).replace("\\", "/") for item in host_files]
-              + ([".codex/config.toml#TSUNAGOU"] if host_config else []),
+            ]
+            + [str(item.path.relative_to(self.root)).replace("\\", "/") for item in host_files]
+            + ([".codex/config.toml#TSUNAGOU"] if host_config else []),
             "content_digest": content_digest,
             "updated_at": updated_at or format_timestamp(now_ms()),
         }
@@ -332,21 +348,18 @@ class ProjectIntegration:
             _ManagedFile(self.state_dir / "agent-context.md", context),
             _ManagedFile(self.root / ".agents" / "skills" / "tsunagou-project" / "SKILL.md", skill),
         ] + host_files
-        planned: list[tuple[Path, str, str]] = [
-            self._plan_exact(item, refresh=refresh, force_managed=force_managed)
-            for item in managed
-        ]
-        planned.append(
-            self._plan_block(self.root / "AGENTS.md", agents_block, refresh=refresh, force_managed=force_managed)
-        )
-        planned.append(
-            self._plan_block(self.root / ".gitignore", gitignore_block, refresh=refresh, force_managed=force_managed)
-        )
+        planned: list[tuple[Path, str, str]] = [self._plan_exact(item, refresh=refresh, force_managed=force_managed) for item in managed]
+        planned.append(self._plan_block(self.root / "AGENTS.md", agents_block, refresh=refresh, force_managed=force_managed))
+        planned.append(self._plan_block(self.root / ".gitignore", gitignore_block, refresh=refresh, force_managed=force_managed))
         if host_config:
             config_path = self.root / ".codex/config.toml"
             config_plan = self._plan_block(
-                config_path, host_config, refresh=refresh, force_managed=force_managed,
-                start_marker="# TSUNAGOU:START", end_marker="# TSUNAGOU:END",
+                config_path,
+                host_config,
+                refresh=refresh,
+                force_managed=force_managed,
+                start_marker="# TSUNAGOU:START",
+                end_marker="# TSUNAGOU:END",
             )
             try:
                 tomllib.loads(config_plan[1])
@@ -361,10 +374,14 @@ class ProjectIntegration:
                 _atomic_text(path, content)
             statuses.append({"path": str(path.relative_to(self.root)), "status": status})
         return {
-            "status": "bootstrapped", "project_id": registry.project.project_id,
-            "coordination_root": str(self.root), "source": source,
-            "hosts": selected_hosts, "content_digest": content_digest,
-            "files": statuses, "secrets_written": False,
+            "status": "bootstrapped",
+            "project_id": registry.project.project_id,
+            "coordination_root": str(self.root),
+            "source": source,
+            "hosts": selected_hosts,
+            "content_digest": content_digest,
+            "files": statuses,
+            "secrets_written": False,
         }
 
     def _plan_exact(self, item: _ManagedFile, *, refresh: bool, force_managed: bool) -> tuple[Path, str, str]:
@@ -378,8 +395,14 @@ class ProjectIntegration:
         return item.path, item.content, "updated"
 
     def _plan_block(
-        self, path: Path, block: str, *, refresh: bool, force_managed: bool,
-        start_marker: str = START_MARKER, end_marker: str = END_MARKER,
+        self,
+        path: Path,
+        block: str,
+        *,
+        refresh: bool,
+        force_managed: bool,
+        start_marker: str = START_MARKER,
+        end_marker: str = END_MARKER,
     ) -> tuple[Path, str, str]:
         existing = _read(path)
         if existing is not None and start_marker in existing and end_marker in existing:
