@@ -118,7 +118,8 @@ def connectable_url(url: str) -> str:
         parsed = urllib.parse.urlsplit(url)
     except ValueError:
         return url
-    if parsed.hostname not in _WILDCARD_URL_HOSTS:
+    # 没写主机名（`http://:2810`）也算通配：那种串同样不是一个能拨的地址。
+    if parsed.hostname is not None and parsed.hostname not in _WILDCARD_URL_HOSTS:
         return url
     loopback = "[::1]" if parsed.hostname in {"::", "[::]"} else "127.0.0.1"
     netloc = f"{loopback}:{parsed.port}" if parsed.port else loopback
