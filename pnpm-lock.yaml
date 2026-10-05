@@ -218,6 +218,8 @@ importers:
         specifier: ^24.0.0
         version: 24.13.5
 
+  packages/dsh-wake-plugin: {}
+
   packages/protocol-ts: {}
 
 packages:

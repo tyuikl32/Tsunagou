@@ -1,6 +1,6 @@
 # Design
 
-Current follow-up: [default-wake-followup.md](default-wake-followup.md). User approved default-on for missing settings, preserving explicit false, and authorized source edits and Git submission.
+Current follow-up: [dsh-integration.md](dsh-integration.md). User authorized shipping the delivered DSH background plugin through initialization and correcting hooks. This supersedes the earlier Desktop unsupported downgrade; unverified forms and live acceptance limits remain explicit. Prior [default-on change](default-wake-followup.md) remains in force.
 
 The authoritative scope is [approved-v2.md](approved-v2.md); concrete tradeoffs are in [implementation-v2.md](implementation-v2.md).
 

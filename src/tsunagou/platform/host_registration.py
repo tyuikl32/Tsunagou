@@ -350,6 +350,10 @@ def register_deepseek_desktop(bridge: Mapping[str, Any]) -> ConfigChange:
     that the running Desktop has loaded it: the original conversation verifies readiness.
     """
     from tsunagou.platform.db.sqlite import ProjectLock
+    from tsunagou.platform.deepseek_wake import (
+        deepseek_wake_managed_path,
+        ensure_deepseek_wake_configuration,
+    )
     from tsunagou.platform.private_files import write_private_bytes
 
     profile = find_dsh_home() / "profiles/desktop"
@@ -359,6 +363,9 @@ def register_deepseek_desktop(bridge: Mapping[str, Any]) -> ConfigChange:
         return ConfigChange(FAILED, note="deepseek_desktop_profile_missing")
     if package is None or not (package / "index.js").is_file():
         return ConfigChange(FAILED, note="deepseek_provider_package_missing")
+    wake_package = Path(__file__).resolve().parents[3] / "packages/dsh-wake-plugin"
+    if not (wake_package / "index.js").is_file():
+        return ConfigChange(FAILED, note="deepseek_wake_package_missing")
     environment = bridge.get("env")
     connect = bridge.get("connect")
     if (not isinstance(environment, Mapping) or not environment.get("TSUNAGOU_ROUTING_DIR")
@@ -370,9 +377,13 @@ def register_deepseek_desktop(bridge: Mapping[str, Any]) -> ConfigChange:
         "serverName": DEEPSEEK_SERVER_NAME, "transport": "stdio", "command": bridge["command"],
         "args": bridge["args"], "env": dict(environment), "connect": dict(connect),
     }}
-    block = f"{DEEPSEEK_DESKTOP_BEGIN}\n- insert: {json.dumps([entry], ensure_ascii=False)}\n{DEEPSEEK_DESKTOP_END}\n"
+    wake_entry = {"id": "tsunagou-wake", "name": (wake_package / "index.js").as_uri(),
+                  "config": {"managedFile": str(deepseek_wake_managed_path().resolve())}}
+    block = f"{DEEPSEEK_DESKTOP_BEGIN}\n- insert: {json.dumps([entry, wake_entry], ensure_ascii=False)}\n{DEEPSEEK_DESKTOP_END}\n"
     with ProjectLock(profile / ".tsunagou-registration.lock"):
         original = path.read_text(encoding="utf-8") if path.exists() else ""
+        if "# TSUNAGOU:WAKE:" in original:
+            return ConfigChange(FAILED, (path,), "deepseek_wake_legacy_configuration_conflict")
         if DEEPSEEK_DESKTOP_BEGIN in original or DEEPSEEK_DESKTOP_END in original:
             if original.count(DEEPSEEK_DESKTOP_BEGIN) != 1 or original.count(DEEPSEEK_DESKTOP_END) != 1:
                 return ConfigChange(FAILED, (path,), "deepseek_desktop_managed_block_invalid")
@@ -381,10 +392,14 @@ def register_deepseek_desktop(bridge: Mapping[str, Any]) -> ConfigChange:
                 return ConfigChange(FAILED, (path,), "deepseek_desktop_managed_block_invalid")
             suffix = original[end + len(DEEPSEEK_DESKTOP_END):]
             remainder = original[:start] + suffix.lstrip("\r\n")
+            if "tsunagou-wake" in remainder:
+                return ConfigChange(FAILED, (path,), "deepseek_wake_entry_conflict")
             if DEEPSEEK_ENTRY_ID in remainder:
                 return ConfigChange(FAILED, (path,), "deepseek_desktop_entry_conflict")
             updated = original[:start] + block + suffix.lstrip("\r\n")
         else:
+            if "tsunagou-wake" in original:
+                return ConfigChange(FAILED, (path,), "deepseek_wake_entry_conflict")
             if DEEPSEEK_ENTRY_ID in original:
                 return ConfigChange(FAILED, (path,), "deepseek_desktop_entry_conflict")
             lines = original.splitlines(keepends=True)
@@ -394,6 +409,7 @@ def register_deepseek_desktop(bridge: Mapping[str, Any]) -> ConfigChange:
             elif active and not active[0].startswith("- "):
                 return ConfigChange(FAILED, (path,), "deepseek_desktop_patch_not_a_list")
             updated = original + ("\n" if original and not original.endswith("\n") else "") + block
+        ensure_deepseek_wake_configuration()
         if not path.exists() or path.read_text(encoding="utf-8") != updated:
             write_private_bytes(path, updated.encode())
     return ConfigChange(REGISTERED, (path,), "configured:verify_in_original_conversation")

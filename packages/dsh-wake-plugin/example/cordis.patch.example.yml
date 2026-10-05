@@ -1,0 +1,36 @@
+# Example: enable the wake plugin in the Desktop profile.
+#
+# Append this to  ~/.dsh/profiles/desktop/cordis.patch.yml
+# The file is a top-level YAML array of loader patch entries, applied after
+# every bundle layer, so `insert:` extends the tree rather than replacing it.
+#
+# Replace the three placeholder identifiers with the real binding. The plugin
+# rejects any (project_id, agent_id, session_id) that is not listed here
+# verbatim; network requests can never add a binding.
+#
+# The bearer key is read per request from the reference named by `keyEnv`
+# (default TSUNAGOU_WAKE_KEY) through the host credential service. Never put the
+# key itself in this file.
+
+- insert:
+    - id: tsunagou-wake
+      name: '@tsunagou/dsh-wake-plugin'
+      config:
+        keyEnv: TSUNAGOU_WAKE_KEY
+        bindings:
+          - project_id: 'REPLACE_WITH_TSUNAGOU_PROJECT_ID'
+            agent_id: 'REPLACE_WITH_TSUNAGOU_AGENT_ID'
+            session_id: 'REPLACE_WITH_DSH_SESSION_ID'
+
+# Alternative: load straight from a source directory instead of installing the
+# package. Useful while developing. Note `file:///` with three slashes.
+#
+# - insert:
+#     - id: tsunagou-wake
+#       name: 'file:///path/to/dsh-wake-plugin/index.js'
+#       config:
+#         keyEnv: TSUNAGOU_WAKE_KEY
+#         bindings:
+#           - project_id: 'REPLACE_WITH_TSUNAGOU_PROJECT_ID'
+#             agent_id: 'REPLACE_WITH_TSUNAGOU_AGENT_ID'
+#             session_id: 'REPLACE_WITH_DSH_SESSION_ID'

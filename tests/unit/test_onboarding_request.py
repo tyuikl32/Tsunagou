@@ -320,6 +320,7 @@ def test_daemon_launch_failure_keeps_the_specific_public_error(monkeypatch, tmp_
 @pytest.mark.parametrize("explicit_role,expected_code", [(None, 0), ("main", 0), ("worker", 4)])
 def test_deepseek_connect_preserves_existing_main_unless_role_is_explicit(tmp_path, monkeypatch, explicit_role, expected_code):
     cli = importlib.import_module("tsunagou.cli.app")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     native = "native-session"
     monkeypatch.setenv("DSH_SESSION_ID", native)
     monkeypatch.setenv("TSUNAGOU_ROUTING_DIR", str(tmp_path / "routes"))
@@ -355,5 +356,10 @@ def test_deepseek_connect_preserves_existing_main_unless_role_is_explicit(tmp_pa
         assert value["status"] == "enrolled" and value["agent_id"] == "existing-agent" and value["role"] == "main"
         assert value["installation_id"] == "existing-installation" and value["host_ready"] is False
         assert "launch_command" not in value and "private-token" not in result.output
+        managed = json.loads((tmp_path / ".tsunagou/hosts/deepseek-wake/managed.json").read_text())
+        assert managed["bindings"] == [{"project_id": "project-a", "agent_id": "existing-agent", "session_id": native}]
+        assert managed["key"] not in result.output
+        assert value["wake_configuration"] == "configured_unverified"
     else:
         assert value["error"] == "current_agent_is_main:explicit_revoke_required"
+        assert not (tmp_path / ".tsunagou/hosts/deepseek-wake/managed.json").exists()

@@ -117,6 +117,7 @@ def test_deepseek_native_connect_preserves_identity_and_role_without_an_overlay(
     root = tmp_path / "deepseek-project"
     subprocess.run(["git", "init", "--quiet", str(root)], check=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith(("TSUNAGOU_", "CODEX_", "DSH_"))}
+    env["HOME"] = env["USERPROFILE"] = str(tmp_path / "home")
     if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
         env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
     env["TSUNAGOU_ROUTING_DIR"] = str(tmp_path / "routes")
@@ -148,6 +149,9 @@ def test_deepseek_native_connect_preserves_identity_and_role_without_an_overlay(
             route = json.loads(route_path.read_bytes())
             assert route["conversation_id"] == name and "endpoint" not in route
             assert not (Path(route["state_dir"]) / "dsh-overlay.yml").exists()
+            managed = json.loads((tmp_path / "home/.tsunagou/hosts/deepseek-wake/managed.json").read_text())
+            assert {"project_id": first["project_id"], "agent_id": first["agent_id"], "session_id": name} in managed["bindings"]
+            assert managed["key"] not in json.dumps(first)
             connected.append(first)
         assert connected[0]["agent_id"] != connected[1]["agent_id"]
         assert not (tmp_path / "routes" / (conversation_key("unrelated-codex") + ".json")).exists()
@@ -168,6 +172,7 @@ def test_deepseek_pending_selection_controls_real_bridge_and_rejects_rebinding(t
     (other / ".tsunagou").mkdir()
     (other / ".tsunagou/project.json").write_text(json.dumps({"project_id": "other-project"}), encoding="utf-8")
     env = {key: value for key, value in os.environ.items() if not key.startswith(("TSUNAGOU_", "CODEX_", "DSH_"))}
+    env["HOME"] = env["USERPROFILE"] = str(tmp_path / "home")
     if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
         env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
     env["TSUNAGOU_ENROLLMENT_DIR"] = str(tmp_path / "enrollments")

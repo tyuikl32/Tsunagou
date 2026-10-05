@@ -189,6 +189,23 @@ for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessio
     const prior = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
     assert.ok(prior.content[1].text.includes("上次执行诊断：阶段=process"));
     assert.ok(prior.content[1].text.includes("无新证据不循环查询，结果未知不再次唤醒"));
+    f.state.wake = {...f.state.wake,target:{host:"deepseek",agent_id:"dsh-worker"},lane:"fallback",state:"unloaded",
+      result:"observed",error_code:null,prior_result:undefined,retry_allowed:undefined,
+      entry:{tool:"coordination__wake"},diagnostics:undefined,prior_diagnostics:undefined};
+    const dsh = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
+    assert.ok(dsh.content[1].text.includes("DSH 插件后台排队"));
+    assert.ok(dsh.content[1].text.includes("无需打开窗口或粘贴发送"));
+    assert.ok(!dsh.content[1].text.includes("PowerShell"));
+    f.state.wake = {...f.state.wake,result:"failed",error_code:"deepseek_wake_setup_required",entry:undefined};
+    const setup = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
+    assert.ok(setup.content[1].text.includes("初始化及原会话接入"));
+    assert.ok(!setup.content[1].text.includes("当前工具路径不支持"));
+    f.state.wake = {...f.state.wake,error_code:"deepseek_wake_plugin_not_running",
+      prior_result:"unknown",retry_allowed:false};
+    const missingAfterUnknown = await f.call("coordination.wake_status", "agent-a", {message_id:"submitted-message"});
+    assert.ok(missingAfterUnknown.content[1].text.includes("初始化及原会话接入"));
+    assert.ok(missingAfterUnknown.content[1].text.includes("无新证据不循环查询，结果未知不再次唤醒"));
+    assert.ok(!missingAfterUnknown.content[1].text.includes("尚未执行唤醒操作"));
     for (const invalid of [{}, {agent_id:"",main_agent_id:""}, {agent_id:1,main_agent_id:1}]) {
       f.state.context = invalid;
       check(await f.call("context.project_read"), invalid, []);

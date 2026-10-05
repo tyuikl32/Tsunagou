@@ -17,9 +17,9 @@ from tsunagou.application.host_wake_runner import run_host_operation, sanitize_d
 
 
 def test_unknown_host_and_deepseek_fail_closed(tmp_path: Path) -> None:
-    for host, code in [("deepseek", "deepseek_form_unverified"), ("unknown", "host_runner_unsupported")]:
+    for host, code in [("deepseek", "deepseek_wake_identity_required"), ("unknown", "host_runner_unsupported")]:
         value = run_host_operation("wake", adapter=host, conversation_id="ses_example", project_root=tmp_path, message_id="m1")
-        assert value["result"] == "unsupported"
+        assert value["result"] == ("failed" if host == "deepseek" else "unsupported")
         assert value["error_code"] == code
         assert value["turn_started"] is False
 
