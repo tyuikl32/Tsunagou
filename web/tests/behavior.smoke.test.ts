@@ -285,6 +285,52 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(shown).toContain("有结果待验收");
   });
 
+  /* 2026-10-04 用户要求：消息表最左边加一栏时间，并按时间排序（新的在上）。*/
+  it("消息表最左边是时间，且按时间倒序", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const message = (id: string, summary: string, createdAt: string) => ({
+      message_id: id, sender_agent_id: "a-1", recipient_agent_id: "user_control",
+      summary: summary, status: "none", obligations: [], created_at: createdAt,
+    });
+    const replies: [string, unknown][] = [
+      ["/console/views/collaboration", { sources: {
+        agents: { items: [{ agent_id: "a-1", status: "active", role: "worker" }] },
+        // 故意乱序给进来：排序是页面的事，不能指望后端按时间给。
+        messages: { items: [
+          message("m-old", "最早的一条", "2026-10-04T02:00:00.000Z"),
+          message("m-new", "最新的一条", "2026-10-04T04:00:00.000Z"),
+          message("m-mid", "中间那条", "2026-10-04T03:00:00.000Z"),
+        ] },
+      } }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const rows = [...page.querySelectorAll("#block-conflict [data-row-id]")]
+      .filter((node) => String(node.getAttribute("data-row-id")).indexOf("m-") === 0);
+    expect(rows.map((node) => node.getAttribute("data-row-id")))
+      .toEqual(["m-new", "m-mid", "m-old"]);
+    // 最左边那一格是时间（本地时区，页面统一的颗粒度里带"月日"）。
+    expect(rows[0]!.querySelector(".colu-m")!.textContent).toContain("月");
+  });
+
   it("「验收结果」格里的多行内容套在 .colu-t 里（200px 宽的格子靠它竖排）", () => {
     api.dispatch("checkpoint.list", { latest: [], history: [] });
     const result = api.dispatch("acceptance.data", {
@@ -485,8 +531,8 @@ describe("控制台页面（web/）结构冒烟", () => {
 
     const rail = page.querySelector("#projList")!;
     /* 左栏结构：两组各自「标题（带本组自己的放大镜与齿轮）→ 本组搜索条 → 本组卡片 →
-       本组那句『没有协作』」，全都画在 #projList 里；空文案是一行真实元素（.title2），
-       不借 .emptybox（那句话写死在 CSS 的 content 里，两组换不了字）。
+       本组那句空文案」，全都画在 #projList 里；空文案借 `.emptybox`，**自己不带字**
+       —— 那句话由 CSS 的 ::before 填，两组共用同一句（2026-10-04 用户选定的口径）。
        本组有卡片时那句空文案只是被 display:none 藏着 —— 元素一直在，才能按组切换显隐。*/
     const label = (node: Element) => node.classList.contains("wkTitle")
       ? `${node.getAttribute("data-proj-group")}:${node.textContent!.trim()}`
@@ -613,9 +659,36 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["projects"]);
 
     const card = page.querySelector('.projItem[data-project-id="p-1"]')!;
-    // 端点文件还在、进程已经没了 —— 中间层如实说"无响应"，并补上"上次记录"。
-    expect(card.textContent).toContain("服务无响应");
+    // 端点文件还在、进程已经没了。这一份是**已完工**的协作：它的 daemon 是完工确认成功后
+    // 按设计退出的（自动关闭、把端口让出来），所以文案说"已退出"而不是"无响应"——
+    // 后者是故障的说法，把正常收尾说成故障会让人以为出了问题。并补上"上次记录"。
+    expect(card.textContent).toContain("服务已退出（完工后自动关闭）");
+    expect(card.textContent).not.toContain("服务无响应");
     expect(card.textContent).toContain("上次记录（记录到 2026-10-03 06:14）");
+  });
+
+  it("还没完工的协作、daemon 却没了：这才叫服务无响应", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: { refresh: (keys?: string[]) => Promise<unknown> };
+    };
+    const body = {
+      items: [{
+        project_id: "p-2", name: "还在进行", lifecycle: "active", available: true,
+        main_agent_id: "a-1", daemon: { url: "http://127.0.0.1:1" },
+        history: { captured_at: "2026-10-03T06:14:00.000Z", sources: 6 },
+      }],
+    };
+    win.fetch = () => Promise.resolve({
+      ok: true, status: 200,
+      json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)),
+    });
+    await win.Tsunagou.refresh(["projects"]);
+
+    const card = page.querySelector('.projItem[data-project-id="p-2"]')!;
+    // 没完工就没了 = 真的没响应，这一句必须留着，别被上一条改宽了。
+    expect(card.textContent).toContain("服务无响应");
+    expect(card.textContent).not.toContain("服务已退出");
   });
 
   it("这一屏是从记录里拿的：面板上写明记录时刻，不装作现在", async () => {
@@ -688,8 +761,10 @@ describe("控制台页面（web/）结构冒烟", () => {
 
   /* 2026-10-02：Agent 的「网络接入」标记（跨机器协作）——
      **本机接入的 Agent 什么都不画**（连右侧那个 <i> 图标都不出现），
-     只有中间层说它是从网络接进来的才画「网络在线 / 网络离线」。
-     中间层有两条通道，这里都要认：接口带 `network`/`online` 字段（随刷新到），
+     只有中间层说它是从网络接进来的才画这个标记；写出来的那句是**会话状态**
+     （就绪/降级中/已结束 —— 2026-10-04 起取代了"网络在线/网络离线"，
+     因为协议里没有心跳，谁也不知道对端机器还在不在）。
+     中间层有两条通道，这里都要认：接口带 `network` 字段（随刷新到），
      以及运行时推送（dispatch `agent.network` / app.setAgentNetwork）。
      主 Agent 必须在 daemon 所在机器上 —— 它永远不算网络接入。*/
   it("网络接入标记：本机不画；接口字段与运行时推送都认，主 Agent 永远不算", async () => {
@@ -703,12 +778,90 @@ describe("控制台页面（web/）结构冒烟", () => {
     };
     const replies: [string, unknown][] = [
       ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      /* 词表这一份是给页面别处的机械替换用的（角色/状态词）。徽标本身不看它了 ——
+         徽标现在只认心跳算出来的 online。*/
+      ["/console/glossary", { version: 2, domains: {
+        session_status: { ready: "就绪", degraded: "降级中", ended: "已结束" },
+      } }],
       ["/projects/p-1/agents", {
         items: [
           { agent_id: "a-1", role: "main", status: "active" },
-          { agent_id: "a-2", role: "worker", status: "active" },
-          { agent_id: "a-3", role: "worker", status: "active", network: true, online: true },
-          { agent_id: "a-4", role: "worker", status: "active", network: true },
+          { agent_id: "a-2", role: "worker", status: "active", session_status: "ended" },
+          /* 会话 ready 但没有**任何心跳证据** → 离线：ready 只说明"这个座位还能干活"，
+             不是"那台机器还在"（用户 2026-10-04 定的口径，也是远端关机后立刻显示离线的原因）。*/
+          { agent_id: "a-3", role: "worker", status: "active", network: true,
+            session_status: "ready" },
+          /* 心跳说它在，才是在线。*/
+          { agent_id: "a-4", role: "worker", status: "active", network: true,
+            session_status: "ready", online: true },
+        ],
+        main_agent_id: "a-1",
+      }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["agents", "settings", "glossary"]);
+
+    const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
+    const badge = (index: number) => cards()[index]!.querySelector(".header .right");
+    expect(cards()).toHaveLength(4);
+
+    // 本机接入（主 Agent、以及中间层没表态的子 Agent）：连图标都不许出现。
+    expect(badge(0)).toBeNull();
+    expect(cards()[0]!.querySelector(".header")!.textContent).toBe("main");
+    expect(badge(1)).toBeNull();
+
+    // 中间层说是网络接入：卡面上只有机器状态（在线/离线）——机器名不在这儿（放不下）。
+    expect(badge(2)!.textContent).toBe("离线");   // 会话 ready，但没有任何心跳证据
+    expect(badge(2)!.querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
+    expect(badge(3)!.textContent).toBe("在线");   // 心跳说它在
+    expect(badge(3)!.textContent).not.toContain("ready");
+
+    // 运行时推送：能把一个本机 Agent 标成网络接入，也能顺带说它的机器状态。
+    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-2", online: true }).ok).toBe(true);
+    expect(badge(1)!.textContent).toBe("在线");   // 推来的 online 优先
+    expect(win.Tsunagou.dispatch("agent.network",
+      { agent_id: "a-2", network: true, online: false }).ok).toBe(true);
+    expect(badge(1)!.textContent).toBe("离线");
+    // 主 Agent 必须在 daemon 所在机器上：中间层推了也不画。
+    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-1", online: true }).ok).toBe(true);
+    expect(badge(0)).toBeNull();
+    // 撤回 → 回到本机（不画）。
+    expect(win.Tsunagou.dispatch("agent.network.clear", { agent_id: "a-2" }).ok).toBe(true);
+    expect(badge(1)).toBeNull();
+  });
+
+  /* 2026-10-04：卡面上只写机器状态（在线/离线）—— 机器名放不下，写了会把别的字挤掉；
+     它放进**详细信息窗口**的「在哪台机器」那一行。名字是"入席者说自己是谁"，
+     不是系统认证出来的，所以它只影响那一行。*/
+  it("卡面只写在线/离线；机器名在详细信息窗口里，本机接入什么都不画", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+        app: { openAgentInfo: (id: string) => boolean };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/projects/p-1/agents", {
+        items: [
+          { agent_id: "a-1", role: "main", status: "active" },
+          { agent_id: "a-2", role: "worker", status: "active", project_id: "p-1",
+            machine: "工位-七", session_status: "ready", online: true },
+          { agent_id: "a-3", role: "worker", status: "active", project_id: "p-1",
+            machine: "NAS", session_status: "ended" },
         ],
         main_agent_id: "a-1",
       }],
@@ -729,34 +882,23 @@ describe("控制台页面（web/）结构冒烟", () => {
 
     const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
     const badge = (index: number) => cards()[index]!.querySelector(".header .right");
-    expect(cards()).toHaveLength(4);
-
-    // 本机接入（主 Agent、以及中间层没表态的子 Agent）：连图标都不许出现。
+    /* 有机器名 = 远端：卡面上只有机器状态，机器名不在那儿。*/
+    expect(badge(1)!.textContent).toBe("在线");
+    expect(badge(1)!.textContent).not.toContain("工位-七");
+    expect(badge(2)!.textContent).toBe("离线");
+    expect(badge(2)!.textContent).not.toContain("NAS");
+    /* 本机接入没有这一项 —— 连标记都不出现。*/
     expect(badge(0)).toBeNull();
-    expect(cards()[0]!.querySelector(".header")!.textContent).toBe("main");
-    expect(badge(1)).toBeNull();
 
-    // 中间层说是网络接入：在线/离线由 online 决定，图标在文字右侧。
-    expect(badge(2)!.textContent).toBe("网络在线");
-    expect(badge(2)!.querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
-    expect(badge(3)!.textContent).toBe("网络离线");
-
-    // 运行时推送：改的是同一个徽标，不用等下一次刷新。
-    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-2", online: true }).ok).toBe(true);
-    expect(badge(1)!.textContent).toBe("网络在线");
-    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-2", online: false }).ok).toBe(true);
-    expect(badge(1)!.textContent).toBe("网络离线");
-    // 主 Agent 必须在 daemon 所在机器上：中间层推了也不画。
-    expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-1", online: true }).ok).toBe(true);
-    expect(badge(0)).toBeNull();
-    // 撤回 → 回到本机（不画）。
-    expect(win.Tsunagou.dispatch("agent.network.clear", { agent_id: "a-2" }).ok).toBe(true);
-    expect(badge(1)).toBeNull();
+    /* 机器名在详细信息窗口的「在哪台机器」那一行。*/
+    win.Tsunagou.app.openAgentInfo("p-1/a-2");
+    expect(page.querySelector("#agentInfoMachine")!.textContent).toBe("工位-七");
   });
 
-  /* 2026-10-03：远端**自报**的机器名跟着一起显示 —— 名单里要能看出是哪台机器。
-     名字是"入席者说自己是谁"，不是系统认证出来的，所以它只影响这一句话。*/
-  it("远端自报的机器名写在同一个标记里，本机接入仍然什么都不画", async () => {
+  /* 2026-10-04 用户要求：主 Agent 排在 Agent 列表最前面 —— 它是这个协作的调度者，
+     混在子 Agent 里得翻着找。后端给的顺序里它可能在后面，所以排序在前端做，
+     其余保持后端原顺序。*/
+  it("Agent 列表把主 Agent 排最前，其余保持后端顺序", async () => {
     const win = dom.window as unknown as {
       fetch: unknown;
       Tsunagou: {
@@ -768,9 +910,10 @@ describe("控制台页面（web/）结构冒烟", () => {
       ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
       ["/projects/p-1/agents", {
         items: [
+          { agent_id: "b-1", role: "worker", status: "active" },
+          { agent_id: "b-2", role: "worker", status: "active" },
           { agent_id: "a-1", role: "main", status: "active" },
-          { agent_id: "a-2", role: "worker", status: "active", machine: "工位-七", online: true },
-          { agent_id: "a-3", role: "worker", status: "active", machine: "NAS" },
+          { agent_id: "b-3", role: "worker", status: "active" },
         ],
         main_agent_id: "a-1",
       }],
@@ -789,14 +932,297 @@ describe("控制台页面（web/）结构冒烟", () => {
     win.Tsunagou.state.set("currentProjectId", "p-1");
     await win.Tsunagou.refresh(["agents", "settings"]);
 
-    const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
-    const badge = (index: number) => cards()[index]!.querySelector(".header .right");
-    /* 有机器名 = 远端：在线与否照旧由 online 说，名字跟在后面。*/
-    expect(badge(1)!.textContent).toBe("网络在线 · 工位-七");
-    expect(badge(1)!.querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
-    expect(badge(2)!.textContent).toBe("网络离线 · NAS");
-    /* 本机接入没有这一项 —— 连标记都不出现。*/
-    expect(badge(0)).toBeNull();
+    const order = [...page.querySelectorAll("#pane-agents .boxerbox > .item")]
+      .map((node) => node.getAttribute("data-agent-id"));
+    expect(order.slice(0, 4)).toEqual(["a-1", "b-1", "b-2", "b-3"]);
+  });
+
+  /* 2026-10-04 用户实测：自动重画会把滚动位置清掉 —— 正读到一半就被拉回顶部。
+     这里把"重画把滚动归零"这件事在请求里做掉（jsdom 没有布局，不这么做就测不到），
+     刷新结束时那个位置必须回来。*/
+  it("刷新前后把滚动位置放回去，读到一半不会被拉回顶部", async () => {
+    const win = dom.window as unknown as {
+      fetch: (url: string) => Promise<unknown>;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/console/projects", { items: [] }],
+    ];
+    const answer = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    const host = page.getElementById("projList")!;
+    host.scrollTop = 120;
+    win.fetch = (url: string) => {
+      // 模拟"重画把容器内容换掉"：滚动被浏览器归零。
+      host.scrollTop = 0;
+      return answer(url);
+    };
+
+    await win.Tsunagou.refresh(["projects"]);
+
+    expect(host.scrollTop).toBe(120);
+  });
+
+  /* 2026-10-04 用户实测复现的那一屏：**总路径 → 线性时间图**。
+     render.timeline 把整页拼成 html 后 fill(pane, html)，于是 `.taskFlow > .inner`
+     （真正的滚动条在你滚的那个）每次都是**新节点** —— 记"节点自己 + 祖先"救不了它，
+     只能按路径在新内容里找回同一个位置。这条测试不需要模拟什么：新节点的 scrollTop
+     本来就是 0，所以没有那段逻辑它必然变红。*/
+  it("总路径的线性时间图：重画后内层滚动区的位置还在", () => {
+    const win = dom.window as unknown as {
+      Tsunagou: { render: { timeline: (data: unknown) => unknown } };
+    };
+    const data = [{
+      era: "第一阶段",
+      items: [{
+        id: "t-1", time: "10月4日 18:21",
+        actor: { ref: "daf0f222-687c-4946-a282-6e49256d3279" },
+        task: "写 HTML", action: "已提交",
+      }],
+    }];
+    win.Tsunagou.render.timeline(data);
+
+    const inner = () => page.querySelector("#pane-path .taskFlow .inner")!;
+    expect(inner()).not.toBeNull();
+    inner().scrollTop = 240;
+
+    win.Tsunagou.render.timeline(data);   // 就是每几秒发生一次的那次重画
+
+    expect(inner().scrollTop).toBe(240);
+  });
+
+  /* 2026-10-04 用户实测：设置窗口的格子会原样显示后端值（旧档案里存的是 `dark`）。
+     口径：先归一到界面标签，对不上任何一项就回落**默认项**，不把它当标签用。*/
+  it("设置窗口：主题是后端值也显示中文标签，认不出的值回落到默认项", () => {
+    const win = dom.window as unknown as {
+      Tsunagou: { render: { settings: (data: unknown) => unknown } };
+    };
+    const label = () => page.querySelector("#uSet1 .choosebox .left")!.textContent!.trim();
+
+    win.Tsunagou.render.settings({ theme: "dark" });
+    expect(label()).toBe("深色");
+    win.Tsunagou.render.settings({ theme: "light" });
+    expect(label()).toBe("浅色");
+    win.Tsunagou.render.settings({ theme: "深色" });   // 已经是界面标签也认
+    expect(label()).toBe("深色");
+
+    win.Tsunagou.render.settings({ theme: "purple" }); // 认不出的：回落第一项
+    expect(label()).toBe("深色");
+    expect(label()).not.toContain("purple");
+  });
+
+  /* 2026-10-04 用户实测：任务区两个任务的「改动范围」都写成 [object Object] —— 出口给的是
+     对象（声明为空就是 `{}`），页面直接把它当文本用了。顺带补上详情页缺的「任务介绍」：
+     那段介绍一直在出口里（objective），只是详情没画它。*/
+  it("任务区：改动范围写成人话，详情页给出任务介绍", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/console/views/tasks", { sources: {
+        agents: { items: [{ agent_id: "a-1", role: "worker", status: "active" }] },
+        tasks: { items: [
+          { task_id: "t-1", title: "写 HTML", status: "completed", owner_agent_id: "a-1",
+            objective: "产出一个纯静态介绍 Microsoft Windows 11 的网页的 HTML 部分。",
+            execution_scope: {}, revision: 7, created_at: "2026-10-04T10:19:52.809Z" },
+          { task_id: "t-2", title: "写 CSS", status: "running", owner_agent_id: "a-1",
+            objective: "产出 CSS 部分。",
+            execution_scope: { resources: [{ kind: "path", root_id: "site",
+              segments: ["styles.css"], mode: "exclusive_write" }] },
+            revision: 3, created_at: "2026-10-04T10:20:00.000Z" },
+        ] },
+      } }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["tasks"]);
+
+    const pane = page.getElementById("pane-tasks")!;
+    // 空声明说清"不认领任何路径"，有声明就写出路径与模式 —— 反正不能再是 [object Object]。
+    expect(pane.textContent).not.toContain("[object Object]");
+    expect(pane.textContent).toContain("不认领任何路径");
+    expect(pane.textContent).toContain("site/styles.css");
+    expect(pane.textContent).toContain("exclusive_write");
+
+    // 点开那一行 → 详情页多出一行「任务介绍」，内容就是出口那段 objective。
+    const row = pane.querySelector('.tablebox .tr[data-row-id="t-1"]')!;
+    row.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    const aside = page.getElementById("aside-tasks")!;
+    expect(aside.textContent).toContain("任务介绍");
+    expect(aside.textContent).toContain("产出一个纯静态介绍 Microsoft Windows 11");
+  });
+
+  /* 2026-10-04 用户要求：总路径线性时间图里**主 Agent 的小图标始终是白色** ——
+     主 Agent 的胶囊是品牌深蓝底、文字本来就是白的（`.id-mAgent`），深色 logo 在上面
+     几乎看不见；子 Agent 是浅底深字，图标必须保持原样（套白滤镜反而看不见）。*/
+  it("时间图里主 Agent 的图标变白，子 Agent 的图标不动", () => {
+    const win = dom.window as unknown as {
+      Tsunagou: {
+        render: { timeline: (data: unknown) => unknown };
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    win.Tsunagou.state.set("agents", [
+      { id: "a-main", isMain: true, name: "总管", icon: "assets/icons/dark.svg" },
+      { id: "a-child", isMain: false, name: "小弟", icon: "assets/icons/dark.svg" },
+    ]);
+    win.Tsunagou.render.timeline([{
+      era: "第一阶段",
+      items: [
+        { id: "t-1", time: "10月4日 18:21", actor: { ref: "a-main" },
+          task: "写 HTML", action: "已提交" },
+        { id: "t-2", time: "10月4日 18:22", actor: { ref: "a-child" },
+          task: "写 CSS", action: "已提交" },
+      ],
+    }]);
+
+    const chips = [...page.querySelectorAll("#pane-path .itemS")];
+    const chipOf = (id: string) =>
+      chips.filter((node) => node.getAttribute("data-agent-id") === id)[0]!;
+
+    expect(chipOf("a-main").classList.contains("id-mAgent")).toBe(true);
+    expect(chipOf("a-main").querySelector("img")!.getAttribute("style") ?? "")
+      .toContain("invert(1)");
+    // 子 Agent：出口不动，图标也不许被改。
+    expect(chipOf("a-child").querySelector("img")!.getAttribute("style")).toBeNull();
+  });
+
+  /* 2026-10-04 用户实测：点 Agent 卡片的「修改」，窗口里「协作名称」空着，
+     远端那个也不显示「在哪台机器」。实机形状是关键：中间层的 /projects 只给 project_id
+     （**没有 id**），成员只给 agent_id（也没有 id）—— 适配器要负责把 id 补出来，
+     窗口才找得到人和协作。这条测试就按实机形状喂。*/
+  it("编辑窗口：协作名称与「在哪台机器」都填得上（只有 project_id / agent_id 的实机形状）", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+        app: { editAgent: (id: string) => boolean };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/projects?", { items: [{
+        project_id: "p-1", name: "跨机器测试", lifecycle: "active", main_agent_id: "a-main",
+        path: "E:/Tsunagou/projects/x",
+        agents: [{ agent_id: "a-main", role: "main", status: "active" }],
+      }] }],
+      ["/projects/p-1/agents", { items: [
+        { agent_id: "a-main", role: "main", status: "active", session_status: "ready", online: true },
+        { agent_id: "a-remote", role: "worker", status: "active", session_status: "ready",
+          online: true, machine: "DESKTOP-K03DV8N" },
+      ], main_agent_id: "a-main" }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh(["projects", "agents", "settings"]);
+
+    win.Tsunagou.app.editAgent("a-remote");
+
+    const node = page.getElementById("mgrAgentInfo")!;
+    expect([...node.querySelectorAll(".dspText2")][0]!.textContent).toBe("跨机器测试");
+    const machine = page.getElementById("agentInfoMachine")!;
+    expect(machine.style.display).not.toBe("none");
+    expect(machine.textContent).toBe("DESKTOP-K03DV8N");
+  });
+
+  /* 同一个窗口的**另一条入口**：跨协作的「Agent 列表」窗口（它不需要先选协作，
+     所以那时 state.agents 是空的）。「修改」带的是裸 agent_id，而那份跨协作名单里的 id
+     是「协作/Agent」—— 两边对不上时窗口会退化成空壳：昵称照旧有（按 id 从档案现算），
+     协作名称、当前任务、在哪台机器全空（2026-10-04 用户实测就是这个现象）。*/
+  it("跨协作列表点「修改」：协作名称与「在哪台机器」也要填上", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void; get: (path: string) => unknown };
+        app: { editAgent: (id: string) => boolean };
+      };
+    };
+    const replies: [string, unknown][] = [
+      ["/console/profile", { version: 1, nickname: "", theme: "", agents: {} }],
+      ["/console/agents", { items: [{
+        agent_id: "a-remote", project_id: "p-1", project_name: "跨机器测试", task: "",
+        machine: "DESKTOP-K03DV8N", session_status: "ready", online: true,
+      }] }],
+    ];
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const hit = replies.filter((pair) => path.indexOf(pair[0]) >= 0)[0];
+      const body = hit ? hit[1] : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+    };
+    // 故意不设 currentProjectId：跨协作窗口本来就不要求先选协作。
+    await win.Tsunagou.refresh(["agentsWindow", "settings"]);
+
+    /* 页面在整个文件里共用 —— 状态和 DOM 都要先清，否则断言到的是上一个用例的残留，
+       测试会"假通过"（我前两版就是这样骗过自己的：同一个协作还选着、字段还留着值）。*/
+    win.Tsunagou.state.set("currentProjectId", null);
+    win.Tsunagou.state.set("projects", []);
+    win.Tsunagou.state.set("project", {});
+    win.Tsunagou.state.set("agents", []);
+    const node = page.getElementById("mgrAgentInfo")!;
+    [...node.querySelectorAll(".dspText2")].forEach((el) => { el.textContent = ""; });
+    node.querySelectorAll(".dspText2").forEach((el) => { (el as HTMLElement).style.display = "none"; });
+    page.getElementById("agentInfoMachine")!.textContent = "";
+    page.getElementById("agentInfoMachine")!.style.display = "none";
+
+    win.Tsunagou.app.editAgent("a-remote");   // 列表窗口那条路传的就是裸 agent_id
+
+    // 前提也要钉住：跨协作名单真的拉到了（否则下面测的就不是"合并字段"而是"没数据"）。
+    expect(win.Tsunagou.state.get("agentsWindow")).toHaveLength(1);
+    // 适配器那一层先把协作名映射出来（实机的 /console/agents 给的是 project_name）。
+    expect((win.Tsunagou.state.get("agentsWindow") as Record<string, unknown>[])[0]!.project)
+      .toBe("跨机器测试");
+    // 然后是窗口：协作名称那一格（第一个 .dspText2）接到了它。
+    expect([...node.querySelectorAll(".dspText2")].map((el) => el.textContent).slice(0, 2))
+      .toEqual(["跨机器测试", ""]);
+    const machine = page.getElementById("agentInfoMachine")!;
+    expect(machine.style.display).not.toBe("none");
+    expect(machine.textContent).toBe("DESKTOP-K03DV8N");
   });
 
   /* 主 Agent 必须和协调中心同一台机器：远端的按钮不画（后端也拒，两道门都要）。*/
@@ -839,7 +1265,7 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(cards[0]).not.toContain("设为主 Agent");  /* 已经是主 Agent */
     expect(cards[1]).toContain("设为主 Agent");      /* 本机子 Agent */
     expect(cards[2]).not.toContain("设为主 Agent");  /* 远端子 Agent */
-    expect(cards[2]).toContain("网络");              /* 徽标照旧画 */
+    expect(cards[2]).toMatch(/在线|离线/);          /* 徽标照旧画（写的是机器状态） */
   });
 
   /* 2026-10-03：Agent 详细窗口里的两行"跨机器才出现"—— 在哪台机器、这台机器做不到什么。
@@ -1919,23 +2345,30 @@ describe("回归：本轮修掉的若干条（失焦提交 / 原型链 / 机器�
 
   it("BUG-5：远端自报的机器名会被转义（塞不进 HTML）", async () => {
     await loadFix();
-    /* 机器名是远端 `agent import --machine` 自报的，中间层原样透出 —— 属外部输入。*/
+    /* 机器名是远端 `agent import --machine` 自报的，中间层原样透出 —— 属外部输入。
+       2026-10-04 起它画在**详细信息窗口**的「在哪台机器」那一行（卡面只写在线/离线）。*/
     const machine = 'x<img src="x" onerror="window.__pwned=1">';
-    fixApi.dispatch("agent.list", [{
+    const row = {
       id: "a-9", isMain: false, role: "子 Agent", name: "远端甲",
-      network: true, online: true, machine: machine,
+      network: true, online: true, machine: machine, session: "ready",
       icon: "", statusText: "已领取", statusOk: true,
       desc: "", currentTask: "", basic: [], ops: [], actions: [],
-    }]);
+    };
+    fixApi.dispatch("agent.list", [row]);
 
-    /* 机器名就拼在这张卡片的 .header 里：转义了就不会多出一个元素。
-       没修之前这台机器上会真的多出一个 <img src="x" onerror=…>。*/
-    const header = fixPage.querySelector("#pane-agents .header")!;
-    expect(header.querySelector("img")).toBeNull();
+    /* 卡面上只有机器状态 —— 机器名不再拼进卡片，那里自然也不会多出元素。*/
+    const badge = fixPage.querySelector("#pane-agents .header .right")!;
+    expect(badge.textContent).toBe("在线");
+    expect(badge.querySelector("img")).toBeNull();
+
+    /* 机器名在窗口里，同样必须转义：没修之前这台机器上会真的多出一个
+       <img src="x" onerror=…>。*/
+    fixApi.dispatch("agent.info", row);
+    const shown = fixPage.querySelector("#agentInfoMachine")!;
+    expect(shown.querySelector("img")).toBeNull();
     expect((fixDom.window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
     // 转义不是"吞掉"：字面量照旧显示给人看。
-    expect(header.textContent).toContain("网络在线");
-    expect(header.textContent).toContain('x<img src="x"');
+    expect(shown.textContent).toContain('x<img src="x"');
   });
 
   /* ---- 下面这几条钉的是同一轮修掉的另外一批 -------------------------------- */
@@ -2076,16 +2509,32 @@ describe("回归：本轮修掉的若干条（失焦提交 / 原型链 / 机器�
 
   /* ---- 阶段 2 第 8 条：几处静默成功 -------------------------------------- */
 
-  it("阶段2-8：详情窗昵称没改就如实说一句，不静默关窗、也不发请求", async () => {
+  it("阶段2-8：详情窗昵称没改就安静关窗，不发请求也不弹提示", async () => {
     await loadFix();
     const info = fixPage.getElementById("mgrAgentInfo")!;
     info.setAttribute("data-agent-id", "a-7");
     info.setAttribute("data-nickname", "熊猫");
     info.querySelector("input")!.value = "熊猫";
+    fixApi.ui.window.open("mgrAgentInfo");
 
     await fixApi.app.saveAgentInfo();
-    expect(tipText()).toContain("昵称没有改动");
+    /* 点确定却没动过任何字 = 取消：窗口关掉、没有请求、也不该弹一句话打扰。
+       2026-10-04 用户实测要求，覆盖此前"如实说一句、不静默关窗"的旧口径。*/
+    expect(fixApi.ui.window.isOpen("mgrAgentInfo")).toBe(false);
+    expect(tipText()).not.toContain("没有改动");
     expect(writes()).toEqual([]);
+  });
+
+  it("从列表点进一个名单里查不到的 id：窗口仍认下改的是谁，改名才存得下去", async () => {
+    await loadFix();
+    fixApi.state.set("agentsWindow", []);
+
+    // 名单有两种形状：「协作/Agent」与裸 agent_id，查不到时要取斜杠后面那一段做身份 ——
+    // 否则窗口连"改谁"都不知道，一个字没改也会弹"这条记录里没有 Agent 号"。
+    fixApi.app.openAgentInfo("p-9/a-9");
+
+    const info = fixPage.getElementById("mgrAgentInfo")!;
+    expect(info.getAttribute("data-agent-id")).toBe("a-9");
   });
 
   it("阶段2-8：协作名字没变就不发重命名请求，也不报「已重命名」", async () => {
@@ -2446,11 +2895,13 @@ describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
     expect(card!.textContent).not.toContain("[object");
   });
 
-  it("审计页：没有「Agent 意图」子标签了，唯一的子标签画的是租约，点某一行开的是那一行的侧栏", async () => {
+  it("审计页：只剩一栏所以没有子标签，标题是「租约审计」，点某一行开的是那一行的侧栏", async () => {
     /* 后端仍然把 /intents 列为这一屏的一个来源（中间层 CONSOLE_VIEWS 与它自己的
        测试都钉着那份名单）—— 页面不再读它，也不为它画一格。
        resources 出口给的是 `reservation_id`（显式预约模型），行身份就用它；
-       `lease_set_id` / `revision` 是租约集合时代的旧拼法，出口里已经没有。*/
+       `lease_set_id` / `revision` 是租约集合时代的旧拼法，出口里已经没有。
+       2026-10-04：这一屏只剩一栏，那条只剩一个选项的子标签栏被去掉，整页直接生成
+       （与 Agent 管理 / 工作区同一个写法）。*/
     serve([
       ["/console/views/audit", {
         sources: {
@@ -2477,24 +2928,22 @@ describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
     profile();
     await win.Tsunagou.refresh(["audits"]);
 
-    const block = page.getElementById("block-audit")!;
-    expect([...block.querySelectorAll(".tabPlace > .tabItem")].map((tab) => tab.textContent))
-      .toEqual(["Agent 权限"]);
-    const panels = [...block.querySelectorAll(".tabContent")];
-    expect(panels).toHaveLength(1);
-    // 租约表现在就画在**第一个**（唯一一个）面板里，不再挂在第 2 个隐藏面板上。
-    expect(panels[0]!.textContent).toContain("已经获得的租约");
-    const rows = [...panels[0]!.querySelectorAll(".tablebox .tr")];
+    const pane = page.getElementById("pane-audit")!;
+    // 没有子标签栏、也没有藏着的面板：内容直接铺在这一页上。
+    expect(pane.querySelectorAll(".tabPlace, .tabItem, .tabContent")).toHaveLength(0);
+    expect(pane.textContent).toContain("租约审计");
+    expect(pane.textContent).toContain("已经获得的租约");
+    const rows = [...pane.querySelectorAll(".tablebox .tr")];
     expect(rows).toHaveLength(2);
     // 每一行都认得出自己是谁（以前读 lease_set_id，出口没有这个键 → 行号是空的，
     // 点哪一行都只会打开第一条租约）。
     expect(rows.map((node) => node.getAttribute("data-row-id"))).toEqual(["R-1", "R-2"]);
     // 出口不给 revision，所以「声明版本」那一列不许再摆着（原来恒空）。
-    expect([...panels[0]!.querySelectorAll(".tablebox .th .colu")].map((cell) => cell.textContent))
+    expect([...pane.querySelectorAll(".tablebox .th .colu")].map((cell) => cell.textContent))
       .toEqual(["Agent", "批准范围", "租约"]);
     // 出口给了 intents 数据，页面也不攒它、不画它 —— 那是被显式 reservation 取代的旧模型。
     expect(win.Tsunagou.state.get("audits")).not.toHaveProperty("intents");
-    expect(block.textContent).not.toContain("i-1");
+    expect(pane.textContent).not.toContain("i-1");
 
     rows[1]!.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
     const aside = page.getElementById("aside-audit")!;
@@ -2503,7 +2952,46 @@ describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
     expect(aside.textContent).toContain("file:src/y.py");
     expect(aside.textContent).not.toContain("file:src/x.py");
 
-    // 静态骨架上也不再留着那半个标签。
-    expect(readWeb("index.html")).not.toContain("Agent 意图");
+    // 静态骨架上既不再留着那半个标签，也不再叫旧名字。
+    const html = readWeb("index.html");
+    expect(html).not.toContain("Agent 意图");
+    expect(html).not.toContain("Agent 权限");
+    expect(html).not.toContain("意图与权限审计");
+    expect(html).toContain("租约审计");
+  });
+
+  /* 2026-10-04 用户实测：滚动条还是会被打回顶部。根因是"谁在滚"认错了 ——
+     子标签内容区 `.tabContent` 声明了 overflow:auto 却**没有 id**，原来按 `[id]` 收位置的
+     写法漏掉它；而页面所有重绘都从 fill() 出去，被填的正是这个节点自己。
+     jsdom 没有布局，所以这里把"浏览器换掉内容就把 scrollTop 归零"**显式做掉** ——
+     不做，这条测试只会恒过，与真浏览器里的表现无关。*/
+  it("重绘不把人弹回顶部：没有 id 的滚动节点也记得住位置", async () => {
+    serve([
+      ["/console/views/collaboration", { sources: {
+        agents: { items: [{ agent_id: "a-1", status: "active", role: "worker" }] },
+        messages: { items: [{
+          message_id: "m-1", sender_agent_id: "a-1", recipient_agent_id: "a-1",
+          summary: "一条消息", status: "none", obligations: [],
+        }] },
+      } }],
+    ]);
+    const win = collabWin();
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    profile();
+    await win.Tsunagou.refresh(["conflicts"]);
+
+    const pane = page.querySelector("#block-conflict .tabContent")!;   // 就是没有 id 的那个
+    pane.scrollTop = 180;
+    const proto = Object.getOwnPropertyDescriptor(dom.window.Element.prototype, "innerHTML")!;
+    Object.defineProperty(pane, "innerHTML", {
+      configurable: true,
+      get() { return proto.get!.call(pane); },
+      // 模拟真浏览器：innerHTML 一换，这个节点的滚动位置就归零。
+      set(value: string) { proto.set!.call(pane, value); (pane as HTMLElement).scrollTop = 0; },
+    });
+
+    await win.Tsunagou.refresh(["conflicts"]);   // 再画一次 = 真浏览器里每几秒发生一次
+
+    expect(pane.scrollTop).toBe(180);
   });
 });

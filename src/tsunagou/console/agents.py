@@ -133,6 +133,9 @@ def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
             # 以及谁真的就绪了（下面两项）。中断校验要用后者：一个还在 degraded 的会话
             # 也在名单里，但它既不持有角色、也干不了活。
             "session_status": str(item.get("session_status") or ""),
+            # 「那台机器最近还活着」：daemon 按"最近一次已认证的会话调用"（桥的心跳）算出来的
+            # 布尔值。页面拿它画「在线/离线」；没有这一项就退回 session_status（见 behavior.js）。
+            **({"online": item["online"]} if type(item.get("online")) is bool else {}),
             **({"connection_epoch": item["connection_epoch"]} if type(item.get("connection_epoch")) is int else {}),
             "missing_admission": [
                 str(name) for name in (item.get("missing_admission") or []) if str(name)

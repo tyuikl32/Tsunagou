@@ -8,11 +8,32 @@ from pathlib import Path
 import pytest
 
 from tsunagou.cli.app import (
+    _probe_url,
     _profile_identity,
     _resolve_codex_executable,
     _write_ticket_private,
 )
 from tsunagou.platform.bridge_files import write_bridge_config
+
+
+@pytest.mark.parametrize(
+    ("given", "probed"),
+    [
+        # 通配绑定：能 bind，但那个地址连不上 —— 探测换成回环，端口与路径都保留。
+        ("http://0.0.0.0:2810", "http://127.0.0.1:2810"),
+        ("http://0.0.0.0:2810/api/v1/health?x=1", "http://127.0.0.1:2810/api/v1/health?x=1"),
+        ("http://[::]:2810", "http://[::1]:2810"),
+        # 具体地址原样：探测与对外地址在这件事上不该分叉。
+        ("http://127.0.0.1:2810", "http://127.0.0.1:2810"),
+        ("http://192.168.32.1:2810", "http://192.168.32.1:2810"),
+        ("http://localhost:2810", "http://localhost:2810"),
+    ],
+)
+def test_readiness_probe_uses_a_connectable_address(given: str, probed: str) -> None:
+    """`daemon start --host 0.0.0.0` 曾经必然超时：CLI 拿不可连接的 0.0.0.0 去探测，
+    于是把一个已经健康的 daemon 判成启动失败并反手杀掉（2026-10-04 实测）。"""
+
+    assert _probe_url(given) == probed
 
 
 @pytest.mark.parametrize("adapter", ["opencode", "codex"])

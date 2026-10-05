@@ -188,6 +188,8 @@ importers:
         specifier: workspace:*
         version: link:../bridge-sdk
 
+  packages/adapter-deepseek-host: {}
+
   packages/adapter-opencode:
     dependencies:
       '@tsunagou/bridge-sdk':

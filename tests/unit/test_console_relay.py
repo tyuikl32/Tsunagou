@@ -26,7 +26,7 @@ from tsunagou.console.app import create_console_app
 from tsunagou.console.config import ConsoleConfig
 from tsunagou.console.errors import ConsoleError
 from tsunagou.console.projects import ensure_daemon, find
-from tsunagou.console.proxy import ensure_matching_project, forward, project_token
+from tsunagou.console.proxy import ForwardResponse, ensure_matching_project, forward, project_token
 from tsunagou.modules.projects import ProjectRegistry
 
 CONTROL_SENTINEL = "control-sentinel"
@@ -477,3 +477,53 @@ def test_forgetting_a_project_deletes_its_record(tmp_path: Path) -> None:
 
     assert report["history_removed"] is True
     assert store.payload(project_id, "console.project") is None
+
+
+def test_an_unreadable_decision_exit_drops_the_stale_record(tmp_path: Path) -> None:
+    """完工确认成功后 daemon 按设计退出：那一份"确认之前"的决定记录不能再当现在用。
+
+    实机现场（2026-10-04 18:32）：确认完工 → daemon 自动关闭 → ``/decisions`` 再也读不到，
+    而屏幕上已确认的提案还挂在「待用户决定」里。读不到新答案时正确做法是**把旧记录作废**
+    （面板如实变成"没有记录"），而不是继续把已知为假的那一份当当前答案端上去。
+    """
+
+    from tsunagou.console.app import revise_decision_record
+    from tsunagou.console.history import HistoryStore
+
+    _, project_id = _project(tmp_path)
+    config = _config(tmp_path)
+    store = HistoryStore.beside_index(config.index_path)
+    store.record(project_id, "decisions", {"items": [{"proposal_id": "d-1", "status": "pending"}]},
+                 captured_at="2026-10-04T18:32:27+08:00")
+    entry = find(config, project_id)
+
+    def gone(**_kwargs: Any) -> ForwardResponse:
+        raise ConsoleError("daemon_not_running", status=503)
+
+    revise_decision_record(entry, None, project_id, store, read=gone)
+
+    assert store.payload(project_id, "decisions") is None, \
+        "读不到新的那一份，旧记录就必须作废，不能让已确认的提案继续显示为待处理"
+
+
+def test_a_readable_decision_exit_replaces_the_record(tmp_path: Path) -> None:
+    from tsunagou.console.app import revise_decision_record
+    from tsunagou.console.history import HistoryStore
+
+    _, project_id = _project(tmp_path)
+    config = _config(tmp_path)
+    store = HistoryStore.beside_index(config.index_path)
+    store.record(project_id, "decisions", {"items": [{"proposal_id": "d-1", "status": "pending"}]},
+                 captured_at="2026-10-04T18:32:27+08:00")
+    entry = find(config, project_id)
+    fresh = {"items": [{"proposal_id": "d-1", "status": "confirmed"}]}
+
+    def answered(**_kwargs: Any) -> ForwardResponse:
+        return ForwardResponse(status=200, body=json.dumps(fresh).encode("utf-8"),
+                               content_type="application/json")
+
+    revise_decision_record(entry, None, project_id, store, read=answered)
+
+    payload, captured_at = store.payload(project_id, "decisions")
+    assert payload == fresh, "daemon 还在答的时候要重记新的那一份"
+    assert captured_at, "重记必须带新的时间戳"

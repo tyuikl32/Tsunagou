@@ -773,6 +773,34 @@ async function restoreDesktopBindings(): Promise<void> {
   }
 }
 
+/* 心跳：桥每隔一会儿用**已有的一次便宜读取**向主机证明"这台机器还在"。
+
+   它不新增协议命令（也就不动协议指纹，远端不用因为这件事重装）：主机把**每一次已认证的
+   调用**都当成一次心跳（见 daemon 的 `api/liveness.py`），出口据此算 `online` —— 页面上的
+   「在线/离线」于是真的跟着机器走（拔电源后三个间隔内翻离线）。
+
+   只对**这个进程见过的**会话发（第一次工具调用时登记），所以没事不会凭空发请求；
+   计时器 unref，桥该退出时照样能退出。 */
+const HEARTBEAT_INTERVAL_MS = 30_000;
+type RequestConfiguration = ReturnType<typeof configurationForRequest>;
+const heartbeatSessions = new Map<string, RequestConfiguration>();
+
+function registerHeartbeat(cfg: RequestConfiguration): void {
+  if (!cfg.sessionFile || heartbeatSessions.has(cfg.sessionFile)) return;
+  heartbeatSessions.set(cfg.sessionFile, cfg);
+}
+
+async function heartbeatOnce(): Promise<void> {
+  for (const cfg of heartbeatSessions.values()) {
+    try {
+      await executeTool(cfg, "context.project_read", {}, randomUUID());
+    } catch {
+      // 心跳失败不是工具调用失败：静默跳过，下一个间隔再试。
+      // 真连不上时，宿主会在它自己的那次调用上看到错误 —— 不该由心跳来报。
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const server = new Server(
     { name: "tsunagou", version: "0.1.0" },
@@ -809,6 +837,8 @@ async function main(): Promise<void> {
         declareContracts(args, "expected_revisions");
       }
       const result = await executeTool(cfg, tool.command_kind, args, commandId);
+      // 这个会话从此算"见过"：之后每 30 秒由心跳替它说一句"我还在"（见 heartbeatOnce）。
+      registerHeartbeat(cfg);
       void restoreDesktopBindings();
       if (tool.command_kind === "context.project_read") rememberContracts(result);
       let reminderContext = tool.command_kind === "context.project_read" ? result : undefined;
@@ -857,6 +887,9 @@ async function main(): Promise<void> {
       return { content: [{ type: "text" as const, text: JSON.stringify(buildToolError(safe, detail)) }], isError: true };
     }
   });
+  // 心跳：每 30 秒替见过的会话说一句"我还在"（见 heartbeatOnce）。
+  // unref 掉 —— 计时器不该把桥的退出拖住。
+  setInterval(() => void heartbeatOnce(), HEARTBEAT_INTERVAL_MS).unref();
   await server.connect(new StdioServerTransport());
   void restoreDesktopBindings();
   process.stderr.write("[tsunagou-bridge] ready; credentials are selected per request\n");
