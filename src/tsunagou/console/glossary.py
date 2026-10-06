@@ -311,6 +311,7 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "discrepancy.create": "记分歧",
         "discrepancy.advance": "推进分歧",
         "discrepancy.resolve": "了结分歧",
+        "discrepancy.request_arbitration": "请裁决",
         "contract.propose": "提议契约",
         "contract.accept": "接受契约",
         "contract.accept_proxy": "代签契约",

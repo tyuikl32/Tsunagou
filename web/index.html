@@ -116,14 +116,14 @@
         </div>
         <!--总标签页-->
         <div class="tabArea">
-            <div class="tabS tabSactive" id="tab-overview">主视图</div>
-            <div class="tabS" id="tab-agents">Agent 管理</div>
-            <div class="tabS" id="tab-tasks">任务区</div>
-            <div class="tabS" id="tab-conflict">冲突与协商</div>
-            <div class="tabS" id="tab-audit">租约审计</div>
-            <div class="tabS" id="tab-workspace">工作区</div>
-            <div class="tabS" id="tab-acceptance">验收与存档点</div>
-            <div class="tabS" id="tab-path">总路径</div>
+            <div class="tabS tabSactive" id="tab-overview"><i class="fa-solid fa-font-awesome"></i>主视图</div>
+            <div class="tabS" id="tab-agents"><i class="fa-solid fa-cog"></i>Agent 管理</div>
+            <div class="tabS" id="tab-tasks"><i class="fa-solid fa-list-check"></i>任务区</div>
+            <div class="tabS" id="tab-conflict"><i class="fa-solid fa-message"></i>冲突与协商</div>
+            <div class="tabS" id="tab-audit"><i class="fa-solid fa-file-pen"></i>租约审计</div>
+            <div class="tabS" id="tab-workspace"><i class="fa-solid fa-clapperboard"></i>工作区</div>
+            <div class="tabS" id="tab-acceptance"><i class="fa-solid fa-box"></i>验收与存档点</div>
+            <div class="tabS" id="tab-path"><i class="fa-solid fa-circle-nodes"></i>总路径</div>
         </div>
         <!--主要内容区域-->
         <div class="inner">
@@ -150,7 +150,7 @@
             <!--冲突与协商MAIN-->
             <div class="tabMain" id="pane-conflict">
                 <div class="title">
-                    <p class="left">冲突与协商</p>
+                    <p class="left"><i class="fa-solid fa-message"></i>冲突与协商</p>
                 </div>
                 <p class="title2">Agent 间的冲突与协商</p>
                 <div class="tabblock" id="block-conflict">
@@ -347,6 +347,11 @@
                     <div class="dspText2">这是一个协作这是一个协作这是一个协作这是一个协作这是一个协作这是一个协作这是一个协作</div>
                     <div class="title2">任务名称</div>
                     <div class="dspText2">这是一个任务</div>
+                    <!-- Agent 的机器事实（`agent_id` 的短号，人靠它跟日志、协议对上）。
+                         2026-10-06 从 Agent 卡片的「说明」搬到这里：卡面只留给人看的东西。
+                         值是 shortId(agent_id)，由 render.agentInfoWindow 回填。-->
+                    <div class="title2" id="agentInfoCodenameTitle">后端代号</div>
+                    <div class="dspText2" id="agentInfoCodename">7f9b429a</div>
                     <!-- 下面两行只有跨机器接入的 Agent 才显示（本机接入的 Agent 界面完全不变）：
                          它在哪台机器、这台机器有什么做不到的事。显隐由 render.agentInfoWindow 定。-->
                     <div class="title2" id="agentInfoMachineTitle" style="display: none;">在哪台机器</div>
@@ -430,8 +435,8 @@
                     这一步的 id 用 newXzSetup 而不是 newXz2，是为了不去动后面几步的 id 与编号。-->
                 <div class="right" id="newXzSetup">
                     <div class="uiBlock">
-                        <div class="title">协作放哪、怎么连</div>
-                        <div class="descbox">这一屏决定协作目录，以及协调中心在哪张网卡上听、对外公布哪个地址。只在本机用就全部保持默认。</div>
+                        <div class="title">协作的基础信息</div>
+                        <div class="descbox">填写 Tsunagou 的协作目录、端口号、绑定地址和对外公布地址。如果不需要跨机器协作，可以保持默认。</div>
                         <div class="descbox">协作根目录</div>
                         <div class="textbox2">
                             <input class="inner" placeholder="协作根目录（留空则用默认位置）" />

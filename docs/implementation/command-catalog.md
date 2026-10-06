@@ -61,7 +61,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | session.end | `/sessions/{id}:end` | D / — | reason,stop_evidence? | HostSession；self，撤Grant/处理Attempts |
 | authority.appoint | `/control/authority:appoint` | U / — | agent_id,expected_authority_epoch,ceiling_template,reason | Authority；ready且baseline通过 |
 | authority.revoke | `/control/authority:revoke` | U / — | expected_authority_epoch,reason | Authority unassigned，撤权 |
-| context.project_read | `/context:project-read` | B / coordination.read | — | 脱敏项目上下文；仅当前会话与授权可见 |
+| context.project_read | `/context:project-read` | B / coordination.read | since_revision? | 脱敏项目上下文；仅当前会话与授权可见；带上一次的 revision 且其间无变化时只回 `{revision, unchanged}` |
 | authority.handoff | `/authority:handoff` | M / authority.handoff | target_agent_id,expected_authority_epoch,adoption_plan,reason | AuthorityTransition |
 | authority.transition.report | `/authority-transitions/{id}:report` | H / authority.converge | stopped_refs,evidence_refs | Transition；只允许收敛对象 |
 | authority.transition.adopt | `/authority-transitions/{id}:adopt` | H / authority.converge | adopted_refs,expected_revisions,reason | Transition；target且scope可覆盖 |
@@ -75,7 +75,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 |---|---|---|---|---|
 | task.create | `/tasks` | M / task.create | title,objective,execution_scope,parent_task_id?,required_contract_ids?,blocks? | Task draft；execution_scope 必填但可为 `{}`（空=不额外限制：不声明 path，begin 不准备 workspace、不产生占用）；parent非终态或明确follow-up |
 | task.create.user | `/control/tasks` | U / — | 同task.create | Task；不自动任命自己owner |
-| task.update_plan | `/tasks/{id}:update-plan` | M / task.coordinate | title?,objective?,required_contract_ids?,reason? | Task；仅无执行的可编辑态 |
+| task.update_plan | `/tasks/{id}:update-plan` | M / task.coordinate | title?,objective?,acceptance?,required_contract_ids?,reason? | Task；仅无执行的可编辑态 |
 | task.ready | `/tasks/{id}:ready` | M / task.publish | reason? | Task ready；完整结构检查 |
 | task.publish | `/tasks/{id}:publish` | M / task.publish | reason? | Task open；ready或changes_requested关闭旧Attempt后 |
 | task.edge.add | `/task-edges` | M / task.coordinate | source_task_id,target_task_id,kind,expected_revisions | TaskEdge；blocks无环 |
@@ -113,6 +113,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | discrepancy.create | `/discrepancies` | B / cognition.discuss | subject_ref,report_refs,severity,participants,summary,affected_actions | Discrepancy；有subject参与关系 |
 | discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | discrepancy_id,status:clarifying\|negotiating,reason?,evidence_refs? | Discrepancy；participant |
 | discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | discrepancy_id,kind:consensus\|dismissal\|override,reason?,evidence_refs?,accepted_by?,input_digest? | Resolution；override不冒充共识 |
+| discrepancy.request_arbitration | `/discrepancies/{id}:request-arbitration` | U / — | discrepancy_id,note? | 用户请求主 Agent 裁决；只投一条"需行动"的协作消息，裁决权限仍属主 Agent |
 | contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,subject_ref?,contract_kind?,payload,participants_required,participants_optional?,input_refs?,supersedes_id? | 两组元素为 {slot,agent_id}；required 至少一项、slot 全局唯一、Agent 属于本项目；替代只允许原提议者 |
 | contract.accept | `/contract-proposals/{id}:accept` | B / contract.accept | participant_slot,proposal_digest,evidence_refs? | self slot；仅 proposed；status 表示本 slot 接受，proposal_status 表示整个契约 |
 | contract.accept_proxy | `/contract-proposals/{id}:accept-proxy` | M / contract.accept_proxy | participant_slot_id,proposal_digest,proxy_policy_ref?,reason?,evidence_refs? | 仅 proposed；返回 proposal_status、real_actor_id 与 represented_participant（实际 Agent ID） |

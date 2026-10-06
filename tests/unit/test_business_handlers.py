@@ -561,6 +561,10 @@ def test_canonical_message_payloads_complete_recipient_reply_flow(tmp_path: Path
     payload["recipient_agent_id"] = recipient.agent_id
     sent = invoke("message.send", payload, sender)
     message_id = sent["message_id"]
+    # 发送者必须知道这条消息会不会唤醒对方：唤醒花掉对方一整轮，名单只由 messaging.WAKE_WORTHY_KINDS 决定。
+    # fixture 的 kind=request 不在名单里，但它带了 response_contract.required=true，
+    # 因此它只是 coordination.wake_candidates 的候选，需要显式 coordination.wake。
+    assert "不会唤醒对方" in sent["next"] and "wake_candidates" in sent["next"]
     claimed = invoke("inbox.claim", {}, recipient)
     assert claimed["count"] == 1 and "payload" not in claimed["messages"][0]
     fetched = invoke("inbox.fetch", {"message_id": message_id}, recipient)
@@ -783,3 +787,32 @@ def test_unknown_payload_field_rejected(tmp_path: Path) -> None:
         }, receipt)
     assert exc.value.status_code == 400
     assert exc.value.detail["code"] == "unknown_payload_field"
+
+def test_message_send_says_whether_it_wakes_the_recipient(tmp_path):
+    """发送者必须知道这条消息会不会打断对方 —— 唤醒的代价是对方一整个宿主回合。
+
+    三种情况各断言一条**区分得开的**句子（不用 "会唤醒" 这种子串：第三分支里也含它）。
+    """
+
+    from uuid import uuid4
+
+    _, authority, _, _, _, endpoint = _harness(tmp_path)
+    sender = _enroll_ready(authority, installation="wake-sender", conversation="wake-sender-conversation")
+    recipient = _enroll_ready(authority, installation="wake-recipient", conversation="wake-recipient-conversation")
+
+    def send(payload):
+        request = _request(payload).model_copy(update={"command_id": uuid4().hex})
+        return endpoint("message.send", request, Response(), f"Bearer {sender.secret_token}",
+                        sender.session_id, sender.connection_epoch)["result"]
+
+    assigned = send({"recipient_agent_id": recipient.agent_id, "kind": "task.assigned", "summary": "有任务可领"})
+    assert "这类消息会唤醒对方的宿主" in assigned["next"]
+
+    plain = send({"recipient_agent_id": recipient.agent_id, "kind": "notice", "summary": "只是知会"})
+    assert "这类消息不会唤醒对方" in plain["next"]
+    assert "task.assigned" in plain["next"], "要告诉它哪些形态才值得打断对方"
+
+    required = send({"recipient_agent_id": recipient.agent_id, "kind": "notice", "summary": "需要回执",
+                     "response_contract": {"required": True}})
+    assert "不会唤醒对方" in required["next"]
+    assert "wake_candidates" in required["next"], "带 required 的只是候选，要显式 wake"

@@ -301,7 +301,9 @@
       "uri": "/reports"
     },
     "context.project_read": {
-      "payload_fields": [],
+      "payload_fields": [
+        "since_revision"
+      ],
       "principal": "B",
       "required_fields": [],
       "schema": "commands/context/project_read.schema.json",
@@ -484,6 +486,18 @@
       ],
       "schema": "commands/discrepancy/create.schema.json",
       "uri": "/discrepancies"
+    },
+    "discrepancy.request_arbitration": {
+      "payload_fields": [
+        "discrepancy_id",
+        "note"
+      ],
+      "principal": "U",
+      "required_fields": [
+        "discrepancy_id"
+      ],
+      "schema": "commands/discrepancy/request_arbitration.schema.json",
+      "uri": "/discrepancies/{id}:request-arbitration"
     },
     "discrepancy.resolve": {
       "payload_fields": [
@@ -1388,6 +1402,7 @@
     },
     "task.update_plan": {
       "payload_fields": [
+        "acceptance",
         "objective",
         "reason",
         "required_contract_ids",
@@ -1575,6 +1590,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:4ad2aa8642d824670ee2e6ccb8009d5009a2d785ffb1d151d595bcbc1c6ec229",
+  "schema_bundle_digest": "sha256:0d7214cd2b451aafcb1f8c6b94fbbaf921b0e8e241c6ce19d0af6c14aece1ea7",
   "supported_previous_version": "0.9"
 }

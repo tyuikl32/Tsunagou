@@ -6,6 +6,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
+from tsunagou.shared_kernel.errors import CommandRefused
 from tsunagou.shared_kernel.ids import new_id
 from tsunagou.shared_kernel.time import now_ms
 
@@ -92,7 +93,16 @@ class CoordinationService:
     def require_assigned_worker(self, task_id: str, worker_id: str) -> CoordinationAssignment | None:
         assignment = self.assignment_for_task(task_id)
         if assignment is not None and worker_id != (assignment.takeover_agent_id or assignment.assigned_worker_id):
-            raise PermissionError("assignment_worker_mismatch")
+            # 拒绝要带上"为什么"，否则被接管的那位只看到一个错误码，会以为只是权限抖动而继续试
+            # （2026-10-05 事件 R001：接管后原 Worker 仍在写共享文件，补丁验证失败）。
+            if assignment.takeover_agent_id:
+                raise CommandRefused("assignment_worker_mismatch", {
+                    "note": f"这条活已被 {assignment.takeover_agent_id} 接管：请停止改动、把手上未提交的内容交回，"
+                            "不要再写共享文件。",
+                })
+            raise CommandRefused("assignment_worker_mismatch", {
+                "note": f"这条活属于 {assignment.assigned_worker_id}，不是你的 Attempt。",
+            })
         return assignment
 
     def takeover(self, assignment_id: str, *, main_agent_id: str, reason: str) -> CoordinationAssignment:

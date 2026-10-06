@@ -249,6 +249,28 @@ class WakeAssistance:
             base["error_code"] = "native_wake_disabled"
         base["native"] = native
 
+    def recorded_progress(self, message_id: str) -> dict[str, Any]:
+        """这份通知**已经记录在本地**的投递事实，不探测宿主。
+
+        ``status()`` 为了回答"对方宿主开始这一轮没有"会去问宿主，逐条调用太重；而分派记录
+        （``records``）与投递状态（``messages.deliveries``）里已有的那部分，足够回答
+        "它到了吗、它开始了吗" —— 主 Agent 以前正是靠反复调用 ``coordination.wake_status``
+        才敢判断这些（那些轮次本身就是成本）。
+
+        ``wake_recorded`` 与 ``host_turn_started`` 一起给，是为了不让"还没派发过唤醒"与
+        "派发了但宿主没开始"被读成同一件事。
+        """
+
+        record = self.records.get(message_id) or {}
+        delivery = self.messages.deliveries.get(message_id)
+        return {
+            "delivered": delivery is not None,
+            "presented": bool(delivery and delivery.presented_at is not None),
+            "acked": bool(delivery and delivery.status == "acked"),
+            "wake_recorded": bool(record),
+            "host_turn_started": bool(record.get("turn_started")),
+        }
+
     def status(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         return self._run(payload, context, wake=False)
 

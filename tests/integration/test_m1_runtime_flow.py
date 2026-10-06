@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi import HTTPException, Response
 
 from tsunagou.api.app import CommandRequest
@@ -272,6 +273,10 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
         },
         main,
     )
+    # 待确认的完成提案要出现在主 Agent 自己的上下文里：桥据此不再重复那句完成提醒，
+    # 而主 Agent 也能自己看到"已经在等用户确认"（方案整改 7）。
+    waiting = agent_call("context.project_read", {}, main)
+    assert waiting["completion"]["pending_proposal_id"] == completion["proposal_id"]
     confirmed = call(
         "project.completion.confirm",
         {
@@ -653,6 +658,40 @@ def test_cognition_discrepancy_and_contract_resolution_are_public_and_scoped(
         },
         worker,
     )
+    # 调用者给的人话与参与人不能只是摘要输入：丢弃它们，记录里就只剩规则 id 与主体，
+    # 控制台那一屏也就没东西可读（2026-10-05 之后复查认知机制时发现的原始缺口）。
+    recorded = app.state.state_runtime.cognition.discrepancies[
+        next(key for key, item in app.state.state_runtime.cognition.discrepancies.items()
+             if item.discrepancy_id == discrepancy["discrepancy_id"])]
+    assert recorded.summary == "different design readings"
+    assert recorded.participants == (worker["agent_id"],)
+    assert recorded.affected_actions == ("task.begin",)
+    # 主 Agent 在自己的上下文里就能看到未解决的分歧，不必先去翻控制台
+    main_view = agent_call("context.project_read", {}, main)
+    listed = main_view["cognition"]["discrepancies"]
+    assert [item["discrepancy_id"] for item in listed] == [discrepancy["discrepancy_id"]]
+    assert listed[0]["summary"] == "different design readings" and listed[0]["status"] == "open"
+    # 控制台以**用户**身份请求主 Agent 裁决这条分歧（用户 2026-10-06 的决定）：
+    # `discrepancy.resolve` 保持主 Agent 专属，用户侧只发一条"请裁决"，由主 Agent 执行 resolve。
+    asked = call(
+        "discrepancy.request_arbitration",
+        {"discrepancy_id": discrepancy["discrepancy_id"], "note": "用户认为接口口径要先定下来"},
+        "control",
+    )
+    assert asked["recipient_agent_id"] == main["agent_id"]
+    notice = app.state.state_runtime.messages.messages[asked["message_id"]]
+    assert notice.kind == "discrepancy.arbitration_requested"
+    assert notice.recipient_agent_id == main["agent_id"]
+    # 它是"需要行动"的消息：进唤醒白名单，否则用户点了按钮主 Agent 也不会醒
+    from tsunagou.modules.messaging import WAKE_WORTHY_KINDS
+    assert notice.kind in WAKE_WORTHY_KINDS
+    # 而 Agent 自己不能冒充用户发起这条请求 —— 而且拦得比处理函数更早：API 层按注册表的
+    # principal（U）就把它挡了，处理函数里的 user_only 只是第二道。
+    with pytest.raises(HTTPException) as not_user:
+        agent_call("discrepancy.request_arbitration",
+                   {"discrepancy_id": discrepancy["discrepancy_id"]}, worker)
+    assert not_user.value.detail["code"] == "authentication_failed", not_user.value.detail
+
     advanced = agent_call(
         "discrepancy.advance",
         {

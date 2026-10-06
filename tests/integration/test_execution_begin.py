@@ -330,12 +330,26 @@ def test_preparation_and_patch_materialization_run_outside_sqlite_transaction(ru
 
 def test_assignment_needs_no_ready_and_takeover_revokes_old_owner(runtime):
     app, call, main, worker = runtime
+    # 计划里每条任务必须写清"什么算合格"。2026-10-05 那轮最贵的返工（管理员端交来错误业务域
+    # 与 mock 实现）根因就是工单上根本没有这一栏 —— 验收只能事后靠人判断。
+    with pytest.raises(HTTPException):
+        call(
+            "coordination.plan",
+            {
+                "objective": "one worker is sufficient",
+                "assignments": [
+                    {"title": "work", "task_objective": "finish", "assigned_worker_id": worker["agent_id"]},
+                ],
+            },
+            main,
+        )
     plan = call(
         "coordination.plan",
         {
             "objective": "one worker is sufficient",
             "assignments": [
-                {"title": "work", "task_objective": "finish", "assigned_worker_id": worker["agent_id"]},
+                {"title": "work", "task_objective": "finish", "assigned_worker_id": worker["agent_id"],
+                 "acceptance": "npm test 全绿，且重置后 12 项验收脚本逐条通过"},
             ],
         },
         main,
@@ -351,16 +365,47 @@ def test_assignment_needs_no_ready_and_takeover_revokes_old_owner(runtime):
     main_context = call("context.project_read", {}, main)
     assert assignment["task_id"] in {row["task_id"] for row in worker_context["open_tasks"]}
     assert assignment["task_id"] not in {row["task_id"] for row in main_context["open_tasks"]}
+    # 验收标准要跟着任务走到 Worker 手上，否则它只能猜"什么算做完"
+    declared = next(row for row in worker_context["open_tasks"] if row["task_id"] == assignment["task_id"])
+    assert declared["acceptance"] == "npm test 全绿，且重置后 12 项验收脚本逐条通过"
+
+    def assignment_row(context, assignment_id):
+        return next(item for item in context["coordination"]["assignments"]
+                    if item["assignment_id"] == assignment_id)
+
+    # 分配里直接带投递事实与当前 Attempt：主 Agent 不必为了"对方收到没有、开工没有"反复轮询
+    # wake_status（2026-10-05 实测它就是这样反复查的），而 E017 那种"投递了但从未 begin"的形态
+    # 当时只能靠人发现。
+    row = assignment_row(worker_context, assignment["assignment_id"])
+    assert set(row["delivery"]) >= {"delivered", "presented", "acked", "host_turn_started", "wake_recorded"}
+    assert row["delivery"]["wake_recorded"] is False, "这条测试里还没派发过唤醒"
+    assert row["attempt"] is None, "还没 begin，就不该有 Attempt"
     task = {"task_id": assignment["task_id"], "revision": state.tasks.tasks[assignment["task_id"]].revision}
     with pytest.raises(HTTPException) as exc:
         begin(call, task, main)
     assert exc.value.detail["code"] == "assignment_worker_mismatch"
     started = begin(call, task, worker)
+    # 开工之后同一个视图里就能看到 Attempt —— "它已经在跑"这件事不需要额外轮询
+    started_row = assignment_row(call("context.project_read", {}, worker), assignment["assignment_id"])
+    assert started_row["attempt"] and started_row["attempt"]["attempt_id"] == started["attempt_id"]
+    assert started_row["attempt"]["status"] in {"claimed", "running"}
     takeover = call(
         "coordination.takeover", {"assignment_id": assignment["assignment_id"], "takeover_reason": "worker requested help"}, main
     )
-    with pytest.raises(HTTPException):
+    # 接管必须**主动**告诉原 Worker 停手：它不会再收到任何"你还在干这活"的提示，于是会继续写
+    # （2026-10-05 事件 R001：接管后原 Worker 继续写共享文件，主 Agent 的补丁验证因此失败，
+    # 最后靠人工发停止消息才恢复）。
+    notices = [message for message in state.messages.messages.values()
+               if message.kind == "task.taken_over" and message.recipient_agent_id == worker["agent_id"]]
+    assert notices, "接管后应当主动给原 Worker 发一条停止通知"
+    assert notices[0].message_id in {item.message_id for item in state.messages.waiting(worker["agent_id"])}, \
+        "这条通知要真的进对方的收件箱（否则它下一轮也看不到）"
+    assert "接管" in notices[0].summary
+    with pytest.raises(HTTPException) as turned_away:
         begin(call, takeover, worker)
+    assert turned_away.value.detail["code"] == "assignment_worker_mismatch"
+    # 被接管者要读到一句人话，而不是只有一个错误码
+    assert "接管" in str(turned_away.value.detail.get("note", "")), turned_away.value.detail
     replacement = begin(call, takeover, main)
     assert replacement["attempt_id"] != started["attempt_id"]
     assert state.coordination.coverage({key: task.status for key, task in state.tasks.tasks.items()})["by_status"] == {"running": 1}
@@ -385,3 +430,82 @@ def test_user_wait_notifies_owner_without_releasing_running_work(runtime):
     assert "user_decision_pending" in str(exc.value.detail)
     independent = published(call, main)
     assert begin(call, independent, worker)["status"] == "running"
+
+def test_superseding_a_task_links_the_replacement(runtime):
+    """"换成新任务"要留下承接关系，而不是只把旧的取消掉。
+
+    2026-10-05 的实际做法是"取消旧任务 + 新建替代任务"（事件 E012/E014）：旧任务在看板上永远算
+    "没做完"，也没人能从记录里看出它是被谁替代的。
+    """
+
+    app, call, main, worker = runtime
+    first = call("coordination.plan", {"objective": "first try", "assignments": [
+        {"title": "old", "task_objective": "do it", "assigned_worker_id": worker["agent_id"],
+         "acceptance": "旧任务：文件存在"},
+    ]}, main)["assignments"][0]
+    second = call("coordination.plan", {"objective": "second try", "assignments": [
+        {"title": "new", "task_objective": "do it properly", "assigned_worker_id": worker["agent_id"],
+         "acceptance": "新任务：npm test 全绿",
+         "supersedes_task_id": first["task_id"]},
+    ]}, main)["assignments"][0]
+
+    state = app.state.state_runtime
+    old = state.tasks.tasks[first["task_id"]]
+    assert old.status == "cancelled", "被替代的旧任务应当退出领取队列"
+    assert old.superseded_by == second["task_id"], "旧任务要记下是谁替代了它"
+    assert state.tasks.tasks[second["task_id"]].superseded_by == "", "新任务自己不是被替代者"
+    # 控制台的任务出口就是读 describe_task，所以这一条同时证明页面能看到承接关系
+    assert state.tasks.describe_task(first["task_id"])["superseded_by"] == second["task_id"]
+
+def test_context_read_can_be_asked_whether_anything_changed(runtime):
+    """主 Agent 每轮都要读一遍上下文，而多数轮次其实没有任何新情况。
+
+    快照本身带一个 token：把它原样交回来，没变化时只回一个结论，而不是再走一遍完整快照。
+    不带这个参数的调用行为不变（只是多了一个 token 字段）。
+    """
+
+    app, call, main, worker = runtime
+    first = call("context.project_read", {}, main)
+    token = first["revision"]
+    assert isinstance(token, str) and token.startswith("sha256:"), token
+
+    same = call("context.project_read", {"since_revision": token}, main)
+    # 命令结果外层还有 daemon 自己的信封字段（host_binding），所以不断言"只有两个键"，
+    # 只断言真正要紧的事：没有重发快照。
+    assert same["unchanged"] is True and same["revision"] == token
+    assert "tasks" not in same and "contracts" not in same
+
+    # 光建一条 draft 任务不会改变主 Agent 的快照：它没有 Attempt（不在 owned_tasks），
+    # 也没发布（不在 open_tasks）。要让它出现，就得走完 ready + publish。
+    fresh = call("task.create", {"title": "新情况", "objective": "变一下", "execution_scope": {}}, main)
+    call("task.ready", {"task_id": fresh["task_id"]}, main)
+    call("task.publish", {"task_id": fresh["task_id"]}, main)
+    changed = call("context.project_read", {"since_revision": token}, main)
+    assert changed["revision"] != token
+    assert "tasks" in changed and "unchanged" not in changed
+
+def test_declaring_a_cross_module_boundary_requires_a_contract(runtime):
+    """声明了"跨模块交界"，就必须同时给出契约（用户 2026-10-06 的决定）。
+
+    实测里最贵的语义冲突（读者端 /requests 对后端 /api/applications）**不重叠任何文件**，
+    所以"只在文件重叠时强制契约"拦不住它。这里沿用刚验证有效的 acceptance 模式：由计划声明、
+    机制强制，并且**在计划时就拒绝**，不等到集成阶段才发现。
+    """
+
+    app, call, main, worker = runtime
+    with pytest.raises(HTTPException) as missing:
+        call("coordination.plan", {"objective": "cross-module without a contract", "assignments": [
+            {"title": "reader", "task_objective": "读接口", "assigned_worker_id": worker["agent_id"],
+             "acceptance": "接口联调通过", "cross_module": True},
+        ]}, main)
+    assert missing.value.detail["code"] == "cross_module_contract_required", missing.value.detail
+
+    planned = call("coordination.plan", {"objective": "cross-module declared", "assignments": [
+        {"title": "reader", "task_objective": "读接口", "assigned_worker_id": worker["agent_id"],
+         "acceptance": "接口联调通过", "cross_module": True, "required_contract_ids": ["contract-1"]},
+    ]}, main)
+    row = planned["assignments"][0]
+    assert row["cross_module"] is True
+    described = app.state.state_runtime.tasks.describe_task(row["task_id"])
+    assert described["cross_module"] is True
+    assert described["required_contract_ids"] == ["contract-1"]

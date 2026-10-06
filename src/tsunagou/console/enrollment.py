@@ -815,7 +815,9 @@ def status(enrollment_id: str, *, settings: ConsoleConfig, directory: AgentDirec
                 "agent_id": candidate["agent_id"],
                 "role": candidate["role"],
                 "session_status": candidate["session_status"],
-                "missing_admission": list(candidate["missing_admission"]),
+                # 这一栏是"还没就位"的提示，缺项列表拿不到就写空表：名单行里的 null 是
+                # "没有活动会话，不知道"（见 agents._capabilities），不是列表。
+                "missing_admission": list(candidate.get("missing_admission") or []),
             },
             "note": "已经连上，但还没就位。",
         }

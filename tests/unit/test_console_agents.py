@@ -174,8 +174,14 @@ def test_reading_a_daemon_parses_its_answer_without_a_token(monkeypatch: pytest.
         body = json.dumps({
             "items": [
                 {"agent_id": "agent-main", "status": "active", "role": "main", "conversation_digest": "sha256:x",
-                 "session_status": "ready", "missing_admission": []},
+                 "session_status": "ready", "missing_admission": [],
+                 "missing_operational": ["claim_ownership"]},
                 {"agent_id": "agent-worker", "status": "provisioning", "role": "worker"},
+                # 没有活动会话的 Agent：daemon 这两项给 **null**（"不知道"，见 container.py 的
+                # _agent_capabilities）。它不能折成 []：[] 在页面上是"样样都会"，
+                # 而 null 才会让那两栏干脆不画。
+                {"agent_id": "agent-idle", "status": "provisioning", "role": "worker",
+                 "missing_admission": None, "missing_operational": None},
                 "not-an-object",
                 {"status": "active"},
             ],
@@ -193,12 +199,16 @@ def test_reading_a_daemon_parses_its_answer_without_a_token(monkeypatch: pytest.
     assert roster.main_agent_id == "agent-main"
     assert roster.agents == (
         {"agent_id": "agent-main", "status": "active", "role": "main", "conversation_digest": "sha256:x",
-         "session_status": "ready", "missing_admission": []},
-        # 名单行带着会话状态与缺哪几项准入能力：等接入的人靠这两项分辨"到了"和"就位"。
+         "session_status": "ready", "missing_admission": [], "missing_operational": ["claim_ownership"]},
+        # 名单行带着会话状态与缺哪几项能力：基础能力看 missing_admission、运营能力看
+        # missing_operational，两项都要透传（运营能力那 7 个标签以前恒为空，就是这里漏了）。
         # daemon 没答那两项时补空串/空表 —— 空串不等于 "ready"，也就是"没就位"，
         # 比默认成"就绪"安全（那会把还没就位的会话报到成功里）。
         {"agent_id": "agent-worker", "status": "provisioning", "role": "worker", "conversation_digest": "",
-         "session_status": "", "missing_admission": []},
+         "session_status": "", "missing_admission": [], "missing_operational": []},
+        # 明确给了 null 的照原样透出：页面上"不知道"与"都会"必须长得不一样。
+        {"agent_id": "agent-idle", "status": "provisioning", "role": "worker", "conversation_digest": "",
+         "session_status": "", "missing_admission": None, "missing_operational": None},
     )
 
 

@@ -347,6 +347,8 @@ def test_review_changes_requested_closes_execution_lease_and_grant() -> None:
     )
 
     assert reviewed["status"] == "changes_requested"
+    # 退回之后必须把"下一步"交给调用者：任务不会自己回到可领取状态，2026-10-05 实测因此卡了约 6 分钟
+    assert "task.ready" in reviewed["next"] and "task.publish" in reviewed["next"]
     assert tasks.tasks[task.task_id].current_attempt_id is None
     assert tasks.attempts[attempt.attempt_id].status == "orphaned"
     assert resources.reservations[reservation.reservation_id].status == "released"

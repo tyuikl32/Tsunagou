@@ -16,6 +16,11 @@
       "type": "string",
       "minLength": 1
     },
+    "acceptance": {
+      "type": "string",
+      "minLength": 1,
+      "description": "How this task will be judged done; see task.create / coordination.plan."
+    },
     "required_contract_ids": {
       "type": "array",
       "items": {

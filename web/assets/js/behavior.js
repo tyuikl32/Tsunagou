@@ -460,6 +460,15 @@
             kind: 'authority.appoint',
             payload: function (b) { return { agent_id: b.id, reason: 'set main from console' }; }
         },
+        dissentArbitrate: {
+            /* 「请裁决」：分歧的裁决权在主 Agent（`discrepancy.resolve` 是 M 权限，控制台持的是
+               U 令牌，发过去会被拒）。用户能做的是请它裁 —— 后端据此给主 Agent 投**一条需行动的
+               协作消息**（kind=discrepancy.arbitration_requested，在唤醒白名单里）。*/
+            kind: 'discrepancy.request_arbitration',
+            payload: function (b) {
+                return { discrepancy_id: toText((b || {}).discrepancy_id) };
+            }
+        },
         checkpointRetry: {
             /* 存档点「重试」：重跑那次失败的**记账**，不是 reconcile ——
                `durability.reconcile` 是 M 权限（控制台持的是 U 令牌，发过去会被拒）。
@@ -830,15 +839,18 @@
        slug 用来拼 id：标签按钮 #tab-<slug>、主视图 #pane-<slug>、侧栏 #aside-<slug>。
        「协作验收」与「存档点」已合并成一屏（slug 仍是 acceptance）：确认完成本来就会落成一个
        存档点，拆两栏反而让人在两张卡之间找关系 —— 见图下那条注释。*/
+    /* `icon` 是 Font Awesome 的类名（`fa-solid` 由渲染处补）。2026-10-06 用户要求：
+       标签栏每一项带小图标、每个标签页的大标题带**同一个**图标。两边都从这张表取，
+       所以不可能长出两个不同的图标 —— 这里的 `icon` 是唯一映射。*/
     const PROJECT_TABS = [
-        { slug: 'overview', title: '主视图' },
-        { slug: 'agents', title: 'Agent 管理' },
-        { slug: 'tasks', title: '任务区' },
-        { slug: 'conflict', title: '冲突与协商' },
-        { slug: 'audit', title: '租约审计' },
-        { slug: 'workspace', title: '工作区' },
-        { slug: 'acceptance', title: '验收与存档点' },
-        { slug: 'path', title: '总路径' }
+        { slug: 'overview', title: '主视图', icon: 'fa-font-awesome' },
+        { slug: 'agents', title: 'Agent 管理', icon: 'fa-cog' },
+        { slug: 'tasks', title: '任务区', icon: 'fa-list-check' },
+        { slug: 'conflict', title: '冲突与协商', icon: 'fa-message' },
+        { slug: 'audit', title: '租约审计', icon: 'fa-file-pen' },
+        { slug: 'workspace', title: '工作区', icon: 'fa-clapperboard' },
+        { slug: 'acceptance', title: '验收与存档点', icon: 'fa-box' },
+        { slug: 'path', title: '总路径', icon: 'fa-circle-nodes' }
     ];
 
     const TAB_ACTIVE_CLASS = 'tabSactive';
@@ -3040,14 +3052,26 @@
 
     /* 页面标题（tabMain 的直接子级）。CSS 是 .tabMain > .title > .left：
        标题文字要套一层 .left（品牌色标签），右侧 .right 留给工具区（选择框之类）。
-       卡片 / 窗口 / 侧栏里的 titleHtml 不是这个结构，别动它们。*/
-    function pageTitleHtml(text) {
-        return '<div class="title"><p class="left">' + esc(text) + '</p></div>';
+       卡片 / 窗口 / 侧栏里的 titleHtml 不是这个结构，别动它们。
+
+       图标与中文标题都按 slug 从 `PROJECT_TABS` 取：标签栏那一项与大标题是同一个来源，
+       改图标只改那张表。传进来的 slug 认不出来时原样印 slug（宁可难看，也不编标题）。*/
+    function pageTitleLeftHtml(slug) {
+        const meta = PROJECT_TABS.filter(function (item) { return item.slug === slug; })[0];
+        if (!meta) return '<p class="left">' + esc(slug) + '</p>';
+        return '<p class="left"><i class="fa-solid ' + esc(meta.icon) + '"></i>' + esc(meta.title) + '</p>';
+    }
+
+    function pageTitleHtml(slug) {
+        return '<div class="title">' + pageTitleLeftHtml(slug) + '</div>';
     }
 
     function textZHtml(text) { return '<p class="textZ">' + esc(text) + '</p>'; }
 
-    function textZboxHtml(text) { return '<div class="textZbox">' + nl2br(text) + '</div>'; }
+    /* 文字块一律用 `textNHtml`（`.textN`）。曾经有个 `textZboxHtml`（`.textZbox`，CSS 里
+       `max-height:140px` 会**截断**长文），2026-10-06 用户要求统一成 `.textN`，它最后一个
+       调用点也改掉后就没有调用者了 —— 一并删掉，别留一个没人用的包装。
+       CSS 里那两条 `.textZbox` 规则现在没有 JS 引用了（style.css 归用户维护，未动）。*/
 
     /* 任务声明的改动范围（`execution_scope`）写成一句人话。
 
@@ -3326,8 +3350,10 @@
         openSelectionAnchor = null;
     }
 
-    /* 把菜单贴到触发它的那个东西旁边。两种菜单贴法不同：
-       · 卡片菜单（#projMenu）：贴在右上角那支笔的**右边**，顶部与**卡片**齐平；
+    /* 把菜单贴到触发它的那个东西旁边。三种贴法：
+       · 卡片菜单（#projMenu）从卡片那支笔打开时：贴在那支笔的**右边**，顶部与**卡片**齐平；
+       · 同一个菜单从顶部齿轮打开时（触发它的东西不在卡片里）：**右对齐到它、落在它下方**
+          —— 与排序菜单同一条规则。照卡片那条算的话，菜单会顶到窗口右上角外面；
        · 排序菜单（#sortMenu）：贴在被点的设置键下方，右对齐到那个键。
        量尺寸必须在 syncSortMenu() **之后**：第一次打开时对勾是 JS 现加的，
        先量再摆会量到"还没有对勾"的宽高，位置就偏了。 */
@@ -3338,7 +3364,7 @@
         const height = menu.offsetHeight || 90;
         let left;
         let top;
-        if (menu.id === 'projMenu') {
+        if (menu.id === 'projMenu' && closest(anchor, '.projItem')) {
             const card = closest(anchor, '.projItem');
             /* 与"看得见的卡片"上沿齐平：量 .inner —— 它带着外边距，那才是那张卡片真正的框；
                量 .projItem 外层会连着外边距一起算进去，菜单就比卡片高出一截。 */
@@ -3630,7 +3656,7 @@
             toArray(data.stats).length || toArray(data.storage).length ||
             toArray(data.pending).length);
         if (!hasAny) {
-            const blank = pageTitleHtml('主视图') + '<p class="title2">协作名称/描述</p>' + EMPTY_BOX;
+            const blank = pageTitleHtml('overview') + '<p class="title2">协作名称/描述</p>' + EMPTY_BOX;
             fill(byId('pane-overview'), blank);
             return blank;
         }
@@ -3662,7 +3688,7 @@
             })))
             : '';
         const html =
-            pageTitleHtml('主视图') +
+            pageTitleHtml('overview') +
             '<p class="title2">协作名称/描述</p>' +
             '<div class="bgTxt">' + esc(data.name) + '</div>' +
             '<p class="textArea">' + esc(data.description) + '</p>' +
@@ -3768,22 +3794,51 @@
         if (open) render.agentInfoWindow(open);
     }
 
+    /* Agent 卡片顶部那块品牌色 hero：厂商 logo + 名字，底下一行三格。
+       三格的图标规则（2026-10-06 用户定）：
+         · 角色：主 Agent 用 `fa-font-awesome`，其余（子 Agent）用 `fa-code`；
+         · 本机还是网络：网络接入写「网络在线 / 网络离线」+ `fa-circle-nodes`，
+           本机接入写「本地」+ `fa-laptop`（判据仍走 agentNetworkOf，不在这里另立一份）；
+         · 可用性：可用 `fa-check`，不可用 `fa-minus`（会话降级时 statusOk 就是 false）。
+       logo 一律**染白**（内联 filter，与 chipHtml 处理主 Agent 胶囊同一个写法）：这一块底色
+       永远是品牌蓝，深色 logo 在上面几乎看不见 —— 这里锁死白色，不跟随主题。*/
+    function agentHeroHtml(agent) {
+        const info = agentNetworkOf(agent);
+        const slot = function (icon, text) {
+            return '<div class="item"><i class="fa-solid ' + icon + '"></i>' + esc(text) + '</div>';
+        };
+        const place = info.network
+            ? { icon: 'fa-circle-nodes', text: info.online ? '网络在线' : '网络离线' }
+            : { icon: 'fa-laptop', text: '本地' };
+        return '<div class="hero">' +
+            '<div class="top"><img src="' + esc(iconOf(agent)) + '" style="filter:brightness(0) invert(1);">'
+                + esc(agent.name) + '</div>' +
+            '<div class="bottom">' +
+                slot(agent.isMain ? 'fa-font-awesome' : 'fa-code', agent.role) +
+                slot(place.icon, place.text) +
+                slot(agent.statusOk ? 'fa-check' : 'fa-minus', agent.statusText) +
+            '</div></div>';
+    }
+
     function agentCardHtml(agent) {
         const abilities = function (title, list) {
             if (!toArray(list).length) return '';
-            return titleHtml(title) + tagsHtml(list, { });
+            return titleHtml(title) + tagsHtml(list);
         };
         return {
-            cls: 'item',
+            /* 主 Agent 的卡片多一个 `itemMI`：hero 底色与悬停描边走主 Agent 那一套
+               （style.css 的 `.boxerbox > .itemMI`）。身份标记仍然挂在同一个节点上。*/
+            cls: agent.isMain ? 'item itemMI' : 'item',
             /* 卡片本体也要带身份标记：点卡片（不只是点里面那个头像胶囊）就该能开详情。
                这是 JS 生成的节点，允许挂 data-*（见 §5 开头那条约定）。*/
             attrs: ' data-agent-id="' + esc(agent.id) + '"',
             parts: [
-                '<div class="header">' + esc(agent.role) + agentNetworkHtml(agent) + '</div>',
-                listFieldHtml([{ name: agent.name, icon: agent.icon, id: agent.id }]),
-                titleHtml('当前状态'),
-                '<div class="textZ">' + tagsHtml([{ text: agent.statusText, ok: agent.statusOk }], { container: false }) + '</div>',
-                titleHtml('说明'), textZHtml(agent.desc),
+                /* 2026-10-06 用户重新设计：角色 / 本机还是网络 / 可用性这三格都收进 hero，
+                   原来那三块（身份胶囊、当前状态、网络徽标）不再各占一行。*/
+                agentHeroHtml(agent),
+                /* 有说明才画这一行（现在只有已退役的 Agent 有）：空标题底下什么都没有，
+                   比不写更糟 —— 与详情窗口里「后端代号」那一行同一个口径。*/
+                agent.desc ? titleHtml('说明') + textZHtml(agent.desc) : '',
                 titleHtml('当前任务'), textZHtml(agent.currentTask),
                 abilities('基础能力', agent.basic),
                 abilities('运营能力', agent.ops),
@@ -3811,7 +3866,7 @@
            再摆一句"这里暂时还没有内容"是重复的。*/
         const cards = list.length ? list.map(agentCardHtml) : [];
         if (!projectFinished()) cards.push({ cls: 'itemAdd', parts: [] });
-        const html = pageTitleHtml('Agent 管理') +
+        const html = pageTitleHtml('agents') +
             '<p class="title2">管理现有的 Agent</p>' +
             /* 收尾之后不再往协作里接 Agent，所以那时连加号卡片都不画；
                要是这样一个 Agent 也没接入过，整页会一片空白 —— 用一句话说清楚。*/
@@ -3824,7 +3879,7 @@
     /* ---- 任务区 ---------------------------------------------------------- */
 
     render.tasks = function (tasks) {
-        const html = pageTitleHtml('任务区') +
+        const html = pageTitleHtml('tasks') +
             '<p class="title2">当前子 Agent 的任务清单</p>' +
             tableBoxHtml({
                 columns: [{ text: '任务', cls: 'colu-l' }, { text: '状态' },
@@ -3867,7 +3922,7 @@
        时间那一行干脆不画：分歧没有时间戳可读，拿报告时间顶替就是编。*/
     function dissentCardHtml(dissent) {
         const understandings = toArray(dissent.understandings).map(function (item) {
-            return titleHtml(item.agent + '的理解') + '<p class="textZbox">' + esc(item.text) + '</p>';
+            return titleHtml(item.agent + '的理解') + '<p class="textN">' + esc(item.text) + '</p>';
         }).join('');
         const agents = toArray(dissent.agents);
         const actions = toArray(dissent.actions);
@@ -4032,7 +4087,7 @@
            标题只留一个：整页标题 + 表标题，中间那句副标题已按用户要求删掉（2026-10-04）。
            只列真实拿到的租约：daemon 没把"等着拿"的队列做成出口，所以不摆一个永远为空的表。
            租约冲突不在本页：它在「冲突与协商 → 冲突」里（render.conflicts）。*/
-        fill(pane, pageTitleHtml('租约审计') +
+        fill(pane, pageTitleHtml('audit') +
             leaseTable('已经获得的租约', data.leases));
         return true;
     };
@@ -4048,13 +4103,13 @@
                     '<div class="header">' + esc(item.name) + '</div>',
                     titleHtml('修改者'), listFieldHtml([item.agent]),
                     titleHtml('隔离方式'), textZHtml(item.isolation),
-                    titleHtml('改动的文件'), textZboxHtml(toArray(item.files).join('\n')),
+                    titleHtml('改动的文件'), textNHtml(toArray(item.files).join('\n')),
                     titleHtml('当前状态'), tagsHtml(item.states),
                     titleHtml('补丁'), textZHtml(item.patch)
                 ]
             };
         });
-        const html = pageTitleHtml('工作区') +
+        const html = pageTitleHtml('workspace') +
             '<p class="title2">Agent 所做的改动</p>' +
             boxerHtml(cards);
         fill(byId('pane-workspace'), html);
@@ -4126,7 +4181,7 @@
         const store = state.get('checkpoints', {}) || {};
         const failures = toArray((state.get('checkpointFailures', {}) || {}).items);
         const html =
-            pageTitleHtml('验收与存档点') +
+            pageTitleHtml('acceptance') +
             /* 这一屏是从记录里拿的（daemon 不在了）就先说清楚：验收结果最容易让人
                以为"刚看过"，而记录可能已经是几天前的。*/
             (data.recordDetail ? boxerHtml([{
@@ -4140,7 +4195,7 @@
                 parts: [
                     headerHtml(proposal.title, 'header-ok'),
                     timeHtml(proposal.time),
-                    textZboxHtml(proposal.text),
+                    textNHtml(proposal.text),
                     optionHtml(toArray(proposal.actions).map(function (action) {
                         return { text: action.text, kind: action.kind, action: action.action };
                     }))
@@ -4268,7 +4323,7 @@
                     return '<p>' + esc(option) + '</p>';
                 }).join('') + '</div>';
         }).join('');
-        return '<div class="title"><p class="left">总路径</p>' +
+        return '<div class="title">' + pageTitleLeftHtml('path') +
             '<div class="right">' + boxes + '</div></div>';
     }
 
@@ -4925,11 +4980,23 @@
         node.setAttribute('data-nickname', nickname);
         /* 这个窗口的版式是「标签 + 值」自上而下排（.title2 / .textbox2 / .dspText2），
            没有 .item、也没有 .fword，所以按位置回填而不是按标签文字：
-           唯一那个输入框是昵称，四个 .dspText2 依次是协作、任务、在哪台机器、这台机器的限制。*/
+           唯一那个输入框是昵称，两个**没有 id** 的 .dspText2 依次是协作、任务；
+           其余各行都按 id 回填（后端代号 / 在哪台机器 / 代码副本 / 这台机器的限制）。
+           往中间插行时要看清插在谁前面 —— 那两个按位置的不能被挤动。*/
         form.fill(node, [nickname]);
         const shown = qsa('.dspText2', node);
         if (shown[0]) shown[0].textContent = toText(data.project);
         if (shown[1]) shown[1].textContent = toText(data.task);
+        /* 后端代号（2026-10-06 从 Agent 卡片的「说明」搬来）：值就是 shortId(agent_id)，
+           没有第二个来源。**只写值节点** —— 标题是固定标签，一起写会变成两行一样的代号
+           （那条 bug 的截图就是这么来的）。没有 agent_id 时整行藏起来，
+           只剩一个空标题比不写更糟。*/
+        const codename = shortId(agentId);
+        [byId('agentInfoCodenameTitle'), byId('agentInfoCodename')].forEach(function (target) {
+            if (target) target.style.display = codename ? '' : 'none';
+        });
+        const codenameValue = byId('agentInfoCodename');
+        if (codenameValue && codename) codenameValue.textContent = codename;
         /* 跨机器才有「在哪台机器 / 这台机器的限制」这两行：
            有自报的机器名就是远端（本机接入从来不写它）。本机接入的 Agent 连标题都不出现，
            与加这个功能之前一模一样。 */
@@ -5003,8 +5070,11 @@
             /* 详情比表格细一级：这里给到毫秒 */
             { title: '时间', text: data.timePrecise || data.time },
             /* 任务介绍 = 出口的 objective（发布时主 Agent 写下的那段要求与约定）。
-               放在最后：它可能很长（实测近 1500 字），前面那几行才是"一眼要看的事实"。*/
-            { title: '任务介绍', html: textZboxHtml(data.detail) }
+               放在最后：它可能很长（实测近 1500 字），前面那几行才是"一眼要看的事实"。
+               走 `text` 这条路 —— 这一栏别的文字块都走它（asideFieldsHtml → textNHtml），
+               于是统一渲染成 `.textN`。以前这里单独指定了 `.textZbox`（还会截断长文），
+               同一张列表里只有它长得不一样（2026-10-06 用户要求统一用 textN）。*/
+            { title: '任务介绍', text: data.detail }
         ], { title: '任务细节' });
     };
 
@@ -5662,6 +5732,15 @@
 
         /* 归档：已砍掉（决定 11），daemon 也没装配 project.archive；页面上连按钮都已撤掉。*/
 
+        dissentArbitrate: function (id) {
+            return notify.track('正在请求主 Agent 裁决', api.post('dissentArbitrate', { discrepancy_id: id }))
+                .then(function () {
+                    notify.success({ title: '已请主 Agent 裁决' });
+                    Tsunagou.refresh(['conflicts']);
+                    return true;
+                }, function () { return false; });
+        },
+
         checkpointRetry: function (id) {
             return confirmThen({
                 title: '重试存档',
@@ -5783,6 +5862,7 @@
         openDetail('conflict', id, 3);
         return true;
     });
+    registerAction('dissent.arbitrate', function (id) { return actions.dissentArbitrate(id); });
     registerAction('dissent.negotiate', function () {
         /* 「Agent 间协商」（消息与义务）现在是第 3 个子标签。*/
         ui.blockTabs.conflict(2);
@@ -6273,6 +6353,15 @@
             const card = closest(node, '.projItem');
             return toggleSelection('projMenu', node, card && card.getAttribute('data-project-id'));
         });
+        /* 顶部那支齿轮（`.navArea .right`，图形是 CSS 的 ::before 画的）开的是**同一个**
+           协作菜单：重命名 / 删除协作，作用于**当前打开的那个协作**（齿轮就在它的标题行上）。
+           没有当前协作就什么都不开 —— 菜单里的动作认的是"当前这一个"，不能拿上一次的目标凑数。
+           贴法与卡片那支笔不同：见 positionSelection 里那条"不在卡片里"的分支。*/
+        delegateClick(['.secProjPanel .navArea .right'], function (node) {
+            const current = toText(state.get('currentProjectId'));
+            if (!current) return null;
+            return toggleSelection('projMenu', node, current);
+        });
         /* 每组标题右边那个设置按钮：只排**这一组**的序（菜单里的对勾也照这一组画）。
            再点一次收起 —— 开着的时候点它必须能关掉。*/
         delegateClick(['#projList .wkTbtn[data-tg-role="project-sort"]'], function (node) {
@@ -6354,6 +6443,9 @@
                 if (!openSelectionId) return;
                 if (closest(event.target, '.selection')) return;
                 if (closest(event.target, '.projItem .edit')) return;
+                /* 顶部那支齿轮也开协作菜单：它在放行名单里，否则这一击会先被关掉、
+                   再被它自己打开，"再点一次收起"就永远不成立（这是个捕获阶段的监听）。*/
+                if (closest(event.target, '.secProjPanel .navArea .right')) return;
                 if (closest(event.target, '.wkTbtn[data-tg-role="project-sort"]')) return;
                 closeSelections();
             }, true);
@@ -8140,8 +8232,12 @@
             const done = tasks.filter(function (t) { return t.status === 'completed'; });
             /* 取消不是"没做完"：被替代的任务由新任务完成了业务目标，把它和未开工的一起算作
                未完成，面板读起来就像"还有一半活没干"（2026-10-05 实际遇到：验收 12/12、
-               面板 50%）。这里只把它单独报出来，百分比本身不动 —— 换分母是产品判断。*/
-            const cancelled = tasks.filter(function (t) { return t.status === 'cancelled'; });
+               面板 50%）。这里只把它单独报出来，百分比本身不动 —— 换分母是产品判断。
+               "被替代"与"被取消"是两件事，所以两者互不重叠。*/
+            const superseded = tasks.filter(function (t) { return t.superseded_by; });
+            const cancelled = tasks.filter(function (t) {
+                return t.status === 'cancelled' && !t.superseded_by;
+            });
             const main = agents.filter(function (a) { return a.role === 'main'; })[0];
             /* 协作目录由中间层知道（daemon 的概况出口不含文件路径），从协作列表里取。*/
             const known = toArray(state.get('projects', [])).filter(function (item) {
@@ -8185,14 +8281,17 @@
                             state: t.status === 'completed' ? 'done'
                                 : (['claimed', 'running', 'submitted'].indexOf(t.status) >= 0 ? 'doing' : 'todo'),
                             /* 已取消的项原本和"还没开始"在清单里长得一模一样。词表里本来就有
-                               "已取消"，所以只用文字说清，不新增样式（CSS 不归这里改）。*/
-                            text: (t.status === 'cancelled' ? '（已取消）' : '') + t.title
+                               "已取消"，所以只用文字说清，不新增样式（CSS 不归这里改）。
+                               被替代的另说一句：那是"换条任务接着做"，不是没人管。*/
+                            text: (t.superseded_by ? '（已被替代）'
+                                : (t.status === 'cancelled' ? '（已取消）' : '')) + t.title
                         };
                     })
                 },
                 stats: [
                     { label: 'Agent', value: agents.length + ' 个' },
                     { label: '任务', value: tasks.length + ' 个（已完成 ' + done.length
+                        + (superseded.length ? '、已被替代 ' + superseded.length : '')
                         + (cancelled.length ? '、已取消 ' + cancelled.length : '') + '）' },
                     { label: '认知报告', value: reports.length + ' 份' },
                     { label: '存档点', value: toArray(checkpoints.items).length + ' 个' }
@@ -8283,8 +8382,10 @@
                         ? glossText('session_status', a.session_status)
                         : glossText('agent_status', a.status),
                     statusOk: !sessionBroken && a.status === 'active',
-                    desc: '后端代号：' + codename
-                          + (a.status === 'retired' ? '　已退役（不可恢复），记录保留。' : ''),
+                    /* 后端代号搬去 Agent 详细信息窗口了（2026-10-06 用户要求）：卡面只留
+                       给人看的东西，「说明」这一行只剩"已退役"这种真该在名单上提醒的事，
+                       别的 Agent 就没有这一行（见 agentCardHtml 里的条件）。*/
+                    desc: a.status === 'retired' ? '已退役（不可恢复），记录保留。' : '',
                     currentTask: mine.length ? mine[0].title : '',
                     /* 基础能力 = 4 项准入，运营能力 = 7 项运营（名单与中文都在中间层词表里）。
                        出口的 missing_admission / missing_operational 说缺哪几项；
@@ -8455,18 +8556,31 @@
                             understandings.push({ agent: agentChip(actorId).name, text: said.join('；') });
                         }
                     });
+                    const declared = toArray(d.participants).map(toText).filter(Boolean);
                     return {
                         id: d.discrepancy_id,
-                        title: glossText('discrepancy_rule', d.rule_id),
+                        /* 抬头优先用调用方给的那句人话（2026-10-06 起后端会存下来）；出口没给才
+                           退回规则的中文说法 —— 词表里没有就原样印代号。*/
+                        title: toText(d.summary) || glossText('discrepancy_rule', d.rule_id),
                         ruleId: toText(d.rule_id),
                         severity: d.severity ? glossText('discrepancy_severity', d.severity) : '',
                         status: d.status ? glossText('discrepancy_status', d.status) : '',
-                        agents: actors.map(agentChip),
+                        /* 参与人优先读出口的 participants；只有它没给时才退回 claim_ids→reports 的
+                           join（自动判定只记触发它的那一份报告，join 可能少一半人）。*/
+                        agents: (declared.length ? declared : actors).map(agentChip),
                         scope: subjectText(d.subject_key),
                         understandings: understandings,
-                        /* 出口不导出 actions；daemon 那两条命令（discrepancy.advance /
-                           discrepancy.resolve）控制台还没有入口，所以这里是空的。*/
-                        actions: []
+                        /* 动作由出口给：现在只有一条用户可发的「请裁决」（discrepancy.resolve 是
+                           M 权限，控制台持 U 令牌发过去会被拒，所以裁决权仍在主 Agent）。
+                           按钮的约定是 `名字:参数`（见 runAction），参数就是这条分歧的 id —— 出口
+                           只说动作名，行号由这一层拼上，免得出口去背页面的编码约定。*/
+                        actions: toArray(d.actions).map(function (action) {
+                            return {
+                                text: toText(action.text),
+                                kind: toText(action.kind),
+                                action: toText(action.action) + ':' + toText(d.discrepancy_id)
+                            };
+                        })
                     };
                 }),
                 messages: sourceItems(sources, 'messages').map(function (m) {
