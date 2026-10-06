@@ -76,6 +76,11 @@ class Discrepancy:
     input_digest: str
     claim_ids: tuple[str, ...]
     status: str = "open"
+    # 调用者给的人话、参与人与受影响动作。它们此前只参与 input_digest 的计算，没进记录，
+    # 于是控制台只能显示规则 id 与主体 —— 人读不懂，也就没人去解决。
+    summary: str = ""
+    participants: tuple[str, ...] = ()
+    affected_actions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +267,8 @@ class CognitionService:
         discrepancy = Discrepancy(
             new_id(), "manual.discrepancy", "1", subject_ref, severity,
             input_digest, refs,
+            summary=summary, participants=tuple(str(item) for item in (participants or ())),
+            affected_actions=tuple(str(item) for item in (affected_actions or ())),
         )
         self.discrepancies[key] = discrepancy
         return discrepancy

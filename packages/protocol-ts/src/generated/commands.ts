@@ -33,6 +33,7 @@ export type CommandKind =
   | "coordination.wake_status"
   | "discrepancy.advance"
   | "discrepancy.create"
+  | "discrepancy.request_arbitration"
   | "discrepancy.resolve"
   | "durability.reconcile"
   | "inbox.ack"

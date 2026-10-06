@@ -47,6 +47,7 @@ Tsunagou 项目 前端 Web UI - CSS 文件
     --active-col: #ff793d;
     --active-col-2: #ffcc41;
     --error-col: #90180b;
+    --green-col: #54b46d;
     interpolate-size: allow-keywords;
 }
 
@@ -758,6 +759,8 @@ body {
         width: 100%;
         align-items: center;
         background-color: var(--col-2);
+        justify-content: space-between;
+        
 
         .left {
             color: var(--col-7-5);
@@ -791,6 +794,28 @@ body {
             }
 
         }
+
+        .right {
+            margin-right:10px;
+        }
+
+        .right::before {
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            content: "\f013";
+            color:var(--col-7);
+            padding:8px;
+            border-radius:6px;
+            transition:background-color 0.15s;
+        }
+
+        .right:hover::before {
+            background-color:var(--col-4);
+        }
+
+        .right:active::before {
+            background-color:var(--col-3);
+        }
     }
 
     .tabArea {
@@ -800,8 +825,22 @@ body {
         background-color: var(--col-2);
         border-bottom: 1px solid var(--col-4);
         color: var(--col-7);
-        gap: 4px;
+        gap: 6px;
         user-select: none;
+        padding-left: 16px;
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
         .tabS {
             padding: 10px 14px;
@@ -811,6 +850,11 @@ body {
             border-radius: 8px;
             border-bottom-left-radius: 0;
             border-bottom-right-radius: 0;
+            i {
+                margin-right: 8px;
+                /* width:14px; */
+                text-align:center;
+            }
         }
 
         .tabS:hover {
@@ -862,6 +906,12 @@ body {
                     padding: 6px 30px 6px 30px;
                     border-radius: 0 20px 20px 0;
                     margin: 0;
+
+                    i {
+                        margin-right:16px;
+                        width:30px;
+                        text-align:center;
+                    }
                 }
 
                 >.right {
@@ -2367,7 +2417,7 @@ body {
     }
 
     .citem1 {
-        font-weight: 600;
+        /* font-weight: 600; */
         display: flex;
         flex-direction: row;
         gap: 10px;
@@ -2392,7 +2442,7 @@ body {
 
     .lev-active {
         color: var(--active-col);
-        font-weight: 600;
+        /* font-weight: 600; */
     }
 
     .st::before {
@@ -2528,23 +2578,94 @@ body {
         background-color: var(--col-2);
         border-radius: 10px;
         border: 1px solid var(--col-3);
-        padding: 14px;
+        padding-bottom: 14px;
         display: flex;
         flex-direction: column;
-        transition: background-color 0.15s;
+        transition: border-color 0.15s;
         gap: 10px;
         user-select: none;
         justify-content: space-between;
+        overflow: hidden;
+
+        >.hero {
+            color: white;
+            display: flex;
+            padding: 10px 14px;
+            background-color: var(--col-3);
+            flex-direction: column;
+            gap: 14px;
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+                
+                >.top {
+                    display:flex;
+                    align-items: center;
+                    gap: 10px;
+                    font-size: 23px;
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    img {
+                        height: 26px;
+                    }
+
+                }
+
+                >.bottom {
+                    font-size: 14px;
+                    display: flex;
+                    align-items: center;
+                    /* gap: 10px; */
+                    justify-content: space-between;
+                    >.item {
+                        display:flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+                }
+
+        }
 
         >.header {
             color: var(--col-8);
             font-size: 20px;
             font-weight: 600;
-            padding-bottom: 10px;
             border-bottom: 1px solid var(--col-4);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 10px 14px 10px 14px;
 
             >.right {
                 font-size: 16px;
@@ -2552,7 +2673,8 @@ body {
                 align-items: center;
                 gap: 10px;
                 color: var(--col-6);
-
+                word-break: break-all;
+                
                 i {
                     font-size: 18px;
                 }
@@ -2561,6 +2683,7 @@ body {
 
         .title {
             color: var(--col-6);
+            padding: 0 14px;
         }
 
         .textZ {
@@ -2568,6 +2691,7 @@ body {
             text-align: justify;
             word-break: break-all;
             max-height: 200px;
+            padding: 0 14px;
         }
 
         .textZbox {
@@ -2588,19 +2712,30 @@ body {
             gap: 6px;
             flex-wrap: wrap;
             flex-direction: row;
+            padding: 0 14px;
         }
 
         .option {
             display: flex;
             justify-content: space-between;
-            padding-top: 10px;
             border-top: 1px solid var(--col-4);
             flex-direction: row-reverse;
+            padding: 10px 14px 0 14px;
+        }
+
+        >.listfieldbox {
+            padding:0 14px;
         }
     }
 
     >.item:hover {
-        background-color: var(--col-3);
+        border:1px solid var(--brand-col);
+    }
+
+    >.itemMI {
+        >.hero {
+            background-color: var(--brand-col);
+        }
     }
 
     >.itemL {
@@ -2645,6 +2780,11 @@ body {
             overflow: hidden;
             text-align: justify;
             /* word-break: break-all; */
+        }
+
+        .textN {
+            text-align: justify;
+            word-break: break-all;
         }
 
         .option {
@@ -2702,6 +2842,7 @@ body {
     font-size: 13px;
     border: 1px solid var(--col-5);
     color: var(--col-6);
+    width: max-content;
 }
 
 .tagZ::before {
@@ -2717,6 +2858,17 @@ body {
 
 .tagZOK {
     color: var(--col-8);
+    /* background-color: var(--brand-col-0); */
+    1px:
+    solid;
+    solid;
+    soli;
+    sol;
+    so;
+    unset;
+    unset;
+    s;
+    /* border: 1px solid var(--brand-col-0); */
 }
 
 .tagZOK::before {
@@ -2809,13 +2961,12 @@ body {
                 gap: 5px;
 
                 .taskF {
-                    color: var(--brand-col-2);
+                    color: var(--green-col);
                 }
 
                 .taskF::before {
                     font-family: "Font Awesome 6 Free";
                     content: "\f00c";
-                    color: var(--brand-col-2);
                     font-weight: 900;
                     margin-right: 10px;
                 }

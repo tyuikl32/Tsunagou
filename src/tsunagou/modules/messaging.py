@@ -23,9 +23,11 @@ WAKE_WORTHY_KINDS = frozenset({
     "task.assigned",           # work was handed to the recipient
     "task.submitted",          # a result is waiting to be reviewed
     "task.reviewed",           # a verdict the executor has to act on
+    "task.taken_over",         # the work was taken away: the recipient must stop, not finish
     "contract.proposed",       # the recipient's answer is required for a contract to exist
     "contract.revised",        # a version is in force that the executor has to catch up with
     "user_decision.resolved",  # the answer unblocks work that was paused for it
+    "discrepancy.arbitration_requested",  # the user asked main to arbitrate; nothing moves until it does
 })
 # Deliberately absent: plain ``message``/``notice`` peer traffic (nothing is blocked), and
 # ``user_decision.pending`` — its recipient is a running attempt by construction, so the

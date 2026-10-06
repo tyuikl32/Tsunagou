@@ -28,7 +28,7 @@ from tsunagou.modules.artifacts import ArtifactService
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.cognition import Claim, CognitionService
 from tsunagou.modules.coordination import CoordinationService
-from tsunagou.modules.messaging import Message, MessageStore
+from tsunagou.modules.messaging import WAKE_WORTHY_KINDS, Message, MessageStore
 from tsunagou.modules.projects import ProjectRegistry, physical_identity
 from tsunagou.modules.resources import ResourceService
 from tsunagou.modules.tasks import TaskService
@@ -40,6 +40,27 @@ from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.errors import CommandRefused
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+
+
+def _delivery_next_step(kind: str, *, required: bool) -> str:
+    """告诉发送者：这条消息会不会唤醒对方，以及要它立刻动手该怎么办。
+
+    唤醒花掉的是对方一整个宿主回合，所以唤醒名单是特意收窄的白名单
+    （``modules/messaging.py`` 的 ``WAKE_WORTHY_KINDS``）—— "什么算紧急"只由一处决定，
+    不交给每个调用方各自判断。发送者看不到这条规则时，2026-10-05 的实测结果是它绕道
+    取消旧任务、新建替代任务来把对方叫醒（多花约 13 分钟）。
+    """
+
+    if kind in WAKE_WORTHY_KINDS:
+        return f"已投递（kind={kind}）：这类消息会唤醒对方的宿主。"
+    if required:
+        return (f"已投递（kind={kind}）：这类消息本身不会唤醒对方，但它带了 "
+                "response_contract.required=true —— 它会出现在 coordination.wake_candidates 里，"
+                "可以对它显式调用 coordination.wake。")
+    return (f"已投递（kind={kind}）：这类消息不会唤醒对方。要它立刻动手，请用会唤醒的形态"
+            "（task.assigned / task.submitted / task.reviewed / contract.proposed / "
+            "contract.revised / user_decision.resolved；例如让它返工用 task.review.request_changes），"
+            "或者带上 response_contract.required=true 之后显式 coordination.wake。")
 
 
 def _conversation_id(evidence: Any) -> str:
@@ -514,6 +535,7 @@ def build_handlers(
             _required_str(payload, "task_id"),
             title=payload.get("title"), objective=payload.get("objective"),
             required_contract_ids=_required_contracts(payload) if "required_contract_ids" in payload else None,
+            acceptance=payload.get("acceptance") if "acceptance" in payload else None,
         )
         return {"task_id": task.task_id, "status": task.status, "revision": task.revision}
 
@@ -692,7 +714,14 @@ def build_handlers(
             messages.send(command_id=context["command_id"] + ":review", sender_agent_id=context["principal_id"],
                           recipient_agent_id=result.submitted_by, kind="task.reviewed", subject_ref="task/" + task_id,
                           summary=decision, payload={"task_id": task_id, "result_id": result_id, "decision": decision})
-        return {"task_id": task_id, "result_id": result_id, "decision": review.decision, "status": tasks.tasks[task_id].status}
+        outcome = {"task_id": task_id, "result_id": result_id, "decision": review.decision,
+                   "status": tasks.tasks[task_id].status}
+        if decision == "changes_requested":
+            # 退回不会把任务送回可领取状态。不说清这一点，调用者会以为"等 Worker 返工就行"，
+            # 而 Worker 其实建不了新 Attempt —— 2026-10-05 实测就这样空等了约 6 分钟。
+            outcome["next"] = ("任务已退回。下一步：先 task.ready、再 task.publish，Worker 才能建立新 Attempt"
+                               "（退回不会自动回到可领取状态）；这条 task.reviewed 通知本身会唤醒对方。")
+        return outcome
 
     def user_decision_propose(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "user.decision.propose")
@@ -721,6 +750,38 @@ def build_handlers(
         return {"decision_id": decision.decision_id, "proposal_digest": decision.input_digest,
                 "revision": decision.expected_revision, "status": decision.status,
                 "related_task_id": related_task.task_id if related_task is not None else None}
+
+    def discrepancy_request_arbitration(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        """控制台以**用户**身份请求主 Agent 裁决一条分歧。
+
+        `discrepancy.resolve` 保持主 Agent 专属：用户能做的是"请你去裁"，而不是代替它裁 ——
+        这样不动任何固定权限边界（用户 2026-10-06 的决定）。消息进唤醒白名单，否则用户点了
+        按钮主 Agent 也不会醒。
+        """
+
+        if context["kind"] != "U":
+            raise PermissionError("user_only")
+        discrepancy_id = _required_str(payload, "discrepancy_id")
+        item = next((row for row in cognition.discrepancies.values()
+                     if row.discrepancy_id == discrepancy_id), None)
+        if item is None:
+            raise KeyError(discrepancy_id)
+        if item.status in {"resolved", "dismissed"}:
+            raise ValueError("discrepancy_already_settled")
+        if authority.main_agent_id is None:
+            raise RuntimeError("main_agent_not_appointed")
+        notice = messages.send(
+            command_id=context["command_id"] + ":arbitration",
+            sender_agent_id=context["principal_id"], recipient_agent_id=authority.main_agent_id,
+            kind="discrepancy.arbitration_requested", subject_ref="discrepancy/" + item.discrepancy_id,
+            summary="用户请求你裁决一条分歧：" + (item.summary or item.subject_key),
+            payload={"discrepancy_id": item.discrepancy_id, "subject_key": item.subject_key,
+                     "severity": item.severity, "status": item.status,
+                     "participants": list(item.participants),
+                     "affected_actions": list(item.affected_actions), "note": payload.get("note")},
+        )
+        return {"discrepancy_id": item.discrepancy_id, "message_id": notice.message_id,
+                "recipient_agent_id": notice.recipient_agent_id, "status": item.status}
 
     def user_decision_resolve(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         if context["kind"] != "U" or lifecycle is None:
@@ -1110,6 +1171,8 @@ def build_handlers(
     def message_send(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "message.send")
         recipient_agent_id = _required_str(payload, "recipient_agent_id")
+        contract = payload.get("response_contract")
+        required = bool(contract.get("required")) if isinstance(contract, dict) else False
         message = messages.send(
             command_id=context["command_id"],
             sender_agent_id=context["principal_id"],
@@ -1122,7 +1185,8 @@ def build_handlers(
             response_contract=payload.get("response_contract"),
             in_reply_to=payload.get("in_reply_to"),
         )
-        return {"message_id": message.message_id, "recipient_agent_id": recipient_agent_id}
+        return {"message_id": message.message_id, "recipient_agent_id": recipient_agent_id,
+                "next": _delivery_next_step(message.kind, required=required)}
 
     def assist_wake(payload: dict[str, Any], context: dict[str, Any], action: str) -> dict[str, Any]:
         _authorize(context, "coordination.read" if action == "peers" else "message.send")
@@ -1160,14 +1224,32 @@ def build_handlers(
             raise ValueError("auto_wake_boolean_required")
         specs = []
         for row in normalized:
+            contracts = _required_contracts(row)
+            cross_module = bool(row.get("cross_module"))
+            if cross_module and not contracts:
+                # 声明了跨模块交界却没有契约。实测里最贵的语义冲突（读者端 /requests 对后端
+                # /api/applications）**不重叠任何文件**，所以"只在文件重叠时强制契约"拦不住它；
+                # 在计划时就拒绝，好过等到集成阶段靠人发现（用户 2026-10-06 的决定）。
+                raise CommandRefused("cross_module_contract_required", {
+                    "note": f"任务「{row.get('title') or ''}」声明了跨模块交界（cross_module），"
+                            "必须在同一行给出 required_contract_ids：双方先就接口达成契约再开工。",
+                })
             task = tasks.create_task(_required_str(row, "title"), _required_str(row, "task_objective"),
                                      parent_task_id=row.get("parent_task_id"), blocks=set(row.get("dependencies") or ()),
                                      execution_scope=row.get("execution_scope") or {},
-                                     required_contract_ids=_required_contracts(row))
+                                     required_contract_ids=contracts,
+                                     acceptance=_required_str(row, "acceptance"),
+                                     cross_module=cross_module)
             if row.get("workspace"):
                 execution.select_workspace({**row["workspace"], "task_id": task.task_id}, context)
             tasks.ready(task.task_id)
             tasks.publish(task.task_id)
+            if row.get("supersedes_task_id"):
+                # "换成新任务"是一步：替代者先建好并发布，再让旧任务记下承接关系、退出领取队列。
+                # 2026-10-05 是先取消再新建（两步），旧任务因此在看板上永远算"没做完"。
+                tasks.supersede(_required_str(row, "supersedes_task_id"),
+                                superseded_by_task_id=task.task_id,
+                                reason=f"被 {task.task_id} 替代")
             specs.append({**row, "task_id": task.task_id})
         plan = coordination.create_plan(main_agent_id=context["principal_id"], objective=_required_str(payload, "objective"),
                                         assignments=specs, auto_wake=auto_wake)
@@ -1182,7 +1264,8 @@ def build_handlers(
                 item.message_id = message.message_id
             result.append({"assignment_id": item.assignment_id, "task_id": item.task_id,
                            "assigned_worker_id": item.assigned_worker_id, "status": tasks.tasks[item.task_id].status,
-                           "message_id": item.message_id})
+                           "message_id": item.message_id, "acceptance": tasks.tasks[item.task_id].acceptance,
+                           "cross_module": tasks.tasks[item.task_id].cross_module})
         return {"plan_id": plan.plan_id, "objective": plan.objective, "assignments": result,
                 "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}, plan.plan_id)}
 
@@ -1201,8 +1284,27 @@ def build_handlers(
             execution.release(previous_id, "coordination_takeover")
         assignment = coordination.takeover(assignment.assignment_id, main_agent_id=context["principal_id"],
                                            reason=_required_str(payload, "takeover_reason"))
+        # 接管之后要**主动**让原 Worker 停手。接管本身只是协调事实：它拦得住对方的命令，拦不住
+        # 对方的文件写入（Tsunagou 不是沙箱）。2026-10-05 事件 R001 里主 Agent 只能事后人工发一条
+        # 停止消息，期间补丁验证两次失败；这条通知把那个动作变成机制的一部分。
+        notified: dict[str, Any] | None = None
+        previous_worker = assignment.assigned_worker_id
+        if previous_worker and previous_worker != context["principal_id"]:
+            notice = messages.send(
+                command_id=context["command_id"] + ":taken-over",
+                sender_agent_id=context["principal_id"],
+                recipient_agent_id=previous_worker,
+                kind="task.taken_over",
+                subject_ref="task/" + assignment.task_id,
+                summary="这条活已被主 Agent 接管：请停止改动、把手上未提交的内容交回，不要再写共享文件。",
+                payload={"task_id": assignment.task_id, "assignment_id": assignment.assignment_id,
+                         "takeover_agent_id": context["principal_id"],
+                         "takeover_reason": assignment.takeover_reason},
+            )
+            notified = {"worker_id": previous_worker, "message_id": notice.message_id}
         return {"assignment_id": assignment.assignment_id, "task_id": task.task_id, "status": task.status,
-                "takeover_reason": assignment.takeover_reason, "revision": task.revision}
+                "takeover_reason": assignment.takeover_reason, "revision": task.revision,
+                "notified": notified}
 
 
     def context_project_read(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -1233,6 +1335,13 @@ def build_handlers(
                 or agent_id == (assignment.takeover_agent_id or assignment.assigned_worker_id)
             )
         ]
+        def _attempt_view(task_id: str) -> dict[str, Any] | None:
+            task = tasks.tasks.get(task_id)
+            attempt = tasks.attempts.get(task.current_attempt_id or "") if task is not None else None
+            if attempt is None:
+                return None
+            return {"attempt_id": attempt.attempt_id, "status": attempt.status}
+
         visible_assignments = [
             {
                 "assignment_id": assignment.assignment_id,
@@ -1243,6 +1352,13 @@ def build_handlers(
                 "message_id": assignment.message_id,
                 "takeover_agent_id": assignment.takeover_agent_id,
                 "takeover_reason": assignment.takeover_reason,
+                # 三件事分开报：通知到了吗 / 对方宿主开始了这一轮吗 / 活已经在跑吗。
+                # 主 Agent 以前靠反复调用 coordination.wake_status 才敢判断（那些轮次本身就是成本），
+                # 而"投递了但从未 begin"（2026-10-05 事件 E017）当时只能靠人发现。
+                # 这里只读本地状态；要现场探测宿主，仍然走 coordination.wake_status。
+                "delivery": (wake_assistance.recorded_progress(assignment.message_id)
+                             if wake_assistance is not None and assignment.message_id else None),
+                "attempt": _attempt_view(assignment.task_id),
             }
             for assignment in coordination.assignments.values()
             if agent_id == authority.main_agent_id or assignment.assigned_worker_id == agent_id
@@ -1283,7 +1399,7 @@ def build_handlers(
                 for participant in proposal.participants
             )
         ]
-        return {
+        snapshot: dict[str, Any] = {
             **({"project_id": project_id} if project_id else {}),
             "agent_id": agent_id,
             "role": agent.role if agent is not None else "worker",
@@ -1295,6 +1411,30 @@ def build_handlers(
             "tasks": owned_tasks,
             "open_tasks": open_tasks,
             "contracts": {"tasks": contracts_by_task, "participating": participating_contracts},
+            # 未解决的分歧要出现在主 Agent（以及当事 Worker）自己的上下文里：机制建好了却没人
+            # 看得见，等于没有 —— 复查认知机制时控制台那几屏是空的，因为根本没人写报告、
+            # 写了的也没法一眼看到。这里只给未解决的，解决了的不再占注意力。
+            "cognition": {
+                "discrepancies": [
+                    {"discrepancy_id": item.discrepancy_id, "rule_id": item.rule_id,
+                     "subject_key": item.subject_key, "severity": item.severity, "status": item.status,
+                     "summary": item.summary, "participants": list(item.participants),
+                     "affected_actions": list(item.affected_actions)}
+                    for item in sorted(cognition.discrepancies.values(), key=lambda row: row.discrepancy_id)
+                    if item.status not in {"resolved", "dismissed"}
+                    and (agent_id == authority.main_agent_id or agent_id in item.participants)
+                ],
+            },
+            # 待用户确认的完成提案。桥据此不再重复"记得发起完成提案"那句提醒（它自己就写着
+            # "不要重复提交"），主 Agent 也能自己看到"已经在等用户确认"（方案整改 7）。
+            "completion": {
+                "pending_proposal_id": next(
+                    (item.decision_id for item in sorted(lifecycle.decisions.values(),
+                                                         key=lambda decision: decision.decision_id)
+                     if item.kind == "project.complete" and item.status == "pending"),
+                    None,
+                ) if lifecycle is not None else None,
+            },
             "coordination": {
                 "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}),
                 "assignments": visible_assignments,
@@ -1305,6 +1445,14 @@ def build_handlers(
                 ),
             },
         }
+        # 快照自带一个 token：主 Agent 每轮都要读一遍上下文，而多数轮次其实没有任何新情况
+        # —— 2026-10-05 那轮它每轮都读，其中不少只是确认"有没有新东西"。把 token 原样交回来，
+        # 没变化就只回一个结论。按段落做真正的差量需要每段各自的游标，是另一件事，这里不做：
+        # 不带这个参数的调用拿到的东西和以前完全一样，只是多了一个 revision 字段。
+        revision = canonical_digest(snapshot)
+        if payload.get("since_revision") == revision:
+            return {"revision": revision, "unchanged": True}
+        return {**snapshot, "revision": revision}
 
     return {
         "agent.enroll": enroll,
@@ -1342,6 +1490,7 @@ def build_handlers(
         "discrepancy.create": discrepancy_create,
         "discrepancy.advance": discrepancy_advance,
         "discrepancy.resolve": discrepancy_resolve,
+        "discrepancy.request_arbitration": discrepancy_request_arbitration,
         "contract.propose": contract_propose,
         "contract.accept": contract_accept,
         "contract.accept_proxy": contract_accept_proxy,

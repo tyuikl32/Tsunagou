@@ -39,6 +39,15 @@ class Task:
     scope_revision: int = 1
     execution_scope: dict[str, Any] = field(default_factory=dict)
     required_contract_ids: tuple[str, ...] = ()
+    # "什么算合格"。2026-10-05 那轮最贵的返工就是工单上没有这一栏：管理员端交来错误业务域与
+    # mock 实现，只有在集成之后才被人发现。它跟着任务走，Worker 在自己的上下文里就能读到。
+    acceptance: str = ""
+    # 被哪条任务替代了。2026-10-05 的做法是"取消旧的 + 新建替代的"，那条旧任务于是在看板上
+    # 永远算"没做完"，也没人能从记录里看出它是被谁替代的（事件 E012/E014）。
+    superseded_by: str = ""
+    # 主 Agent 声明的"这条任务跨模块交界"。声明了就**必须**同时给出契约（在计划时强制），
+    # 因为实测里最贵的语义冲突不重叠任何文件；这里记下来，是为了事后能看出到底声明过没有。
+    cross_module: bool = False
     block_reason: str | None = None
     orphan_reason: str | None = None
     suspension_snapshot: SuspensionSnapshot | None = None
@@ -122,7 +131,7 @@ class TaskService:
     def create_task(
         self, title: str, objective: str, *, parent_task_id: str | None = None,
         blocks: set[str] | None = None, execution_scope: dict[str, Any] | None = None,
-        required_contract_ids: tuple[str, ...] = (),
+        required_contract_ids: tuple[str, ...] = (), acceptance: str = "", cross_module: bool = False,
     ) -> Task:
         with self._lock:
             if parent_task_id is not None and parent_task_id not in self.tasks:
@@ -130,7 +139,7 @@ class TaskService:
             task = Task(
                 new_id(), title, objective, parent_task_id=parent_task_id,
                 blocks=set(blocks or ()), execution_scope=dict(execution_scope or {}),
-                required_contract_ids=required_contract_ids,
+                required_contract_ids=required_contract_ids, acceptance=acceptance, cross_module=cross_module,
             )
             self.tasks[task.task_id] = task
             self._validate_dag()
@@ -169,7 +178,7 @@ class TaskService:
 
     def update_plan(
         self, task_id: str, *, title: str | None = None, objective: str | None = None,
-        required_contract_ids: tuple[str, ...] | None = None,
+        required_contract_ids: tuple[str, ...] | None = None, acceptance: str | None = None,
     ) -> Task:
         with self._lock:
             task = self._task(task_id)
@@ -183,6 +192,8 @@ class TaskService:
                 task.objective = objective
             if required_contract_ids is not None:
                 task.required_contract_ids = required_contract_ids
+            if acceptance is not None:
+                task.acceptance = acceptance
             task.revision += 1
             return task
 
@@ -201,6 +212,25 @@ class TaskService:
                     attempt.ended_at = time.time()
                     attempt.revision += 1
             task.block_reason = reason
+            task.revision += 1
+            return task
+
+    def supersede(self, task_id: str, *, superseded_by_task_id: str, reason: str) -> Task:
+        """记下"这条任务被另一条替代了"，并让它退出领取队列。
+
+        RLock 可重入，所以直接复用 ``request_cancel`` 的取消语义，不必抄一遍。已经是终态时
+        （例如调用者先取消了它）只补记录 —— 那一步不该让承接关系变得无法追溯。
+        """
+
+        with self._lock:
+            task = self._task(task_id)
+            if superseded_by_task_id == task_id:
+                raise ValueError("task_cannot_supersede_itself")
+            if superseded_by_task_id not in self.tasks:
+                raise KeyError(superseded_by_task_id)
+            if task.status not in TASK_TERMINAL:
+                self.request_cancel(task_id, reason)
+            task.superseded_by = superseded_by_task_id
             task.revision += 1
             return task
 
@@ -619,6 +649,9 @@ class TaskService:
             "blocks": sorted(task.blocks), "current_attempt_id": task.current_attempt_id,
             "owner_agent_id": attempt.owner_agent_id if attempt is not None else None,
             "block_reason": task.block_reason,
+            "acceptance": task.acceptance,
+            "superseded_by": task.superseded_by,
+            "cross_module": task.cross_module,
             "requires_workspace": requires_workspace,
         }
 

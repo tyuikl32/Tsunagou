@@ -112,6 +112,100 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(rail!.querySelectorAll(".projItemSelected .title")).toHaveLength(1);
   });
 
+  /* 2026-10-06 用户要求：标签栏每一项带 Font Awesome 小图标，且每个标签页的大标题用
+     **同一个**图标。映射只存一处（behavior.js 的 `PROJECT_TABS`），这条用例把
+     "标签栏 / 映射表"两边钉在一起 —— 只改一边就会被它抓住。*/
+  it("标签栏每一项都带小图标，且图标来自 PROJECT_TABS 的唯一映射", () => {
+    const tabs = (dom.window as unknown as {
+      Tsunagou: { ui: { tabs: { list: () => { slug: string; title: string; icon: string }[] } } };
+    }).Tsunagou.ui.tabs.list();
+    expect(tabs).toHaveLength(8);
+    tabs.forEach((tab) => {
+      const button = page.getElementById("tab-" + tab.slug);
+      expect(button, "缺少标签按钮 tab-" + tab.slug).not.toBeNull();
+      // 中文标题还是它自己：图标加在前面，不替换文字。
+      expect(button!.textContent).toBe(tab.title);
+      const icon = button!.querySelector("i");
+      expect(icon, tab.slug + " 这一项没有图标").not.toBeNull();
+      expect(icon!.getAttribute("class")).toBe("fa-solid " + tab.icon);
+    });
+  });
+
+  /* 大标题的样子是用户给的：<div class="title"><p class="left"><i …></i>主视图</p></div>。
+     空数据也要画标题，所以这条能把 8 个页面**全数**过一遍，而不是抽查一两屏。*/
+  it("8 个标签页的大标题都带图标，种类与它对应的标签页小图标一致", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => unknown };
+        ui: { tabs: { list: () => { slug: string; title: string; icon: string }[] } };
+      };
+    };
+    win.fetch = () => Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve("{}"),
+    });
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    await win.Tsunagou.refresh();
+
+    const tabs = win.Tsunagou.ui.tabs.list();
+    tabs.forEach((tab) => {
+      const pane = page.getElementById("pane-" + tab.slug);
+      expect(pane, "缺少主视图 pane-" + tab.slug).not.toBeNull();
+      const left = pane!.querySelector(".title > .left");
+      expect(left, tab.slug + " 的大标题不在 .title > .left 里").not.toBeNull();
+      const icon = left!.querySelector("i");
+      expect(icon, tab.slug + " 的大标题没有图标").not.toBeNull();
+      expect(icon!.getAttribute("class")).toBe("fa-solid " + tab.icon);
+      // 标题文字还在（图标加在它前面）。
+      expect(left!.textContent!.trim()).toBe(tab.title);
+    });
+  });
+
+  /* 2026-10-06 用户要求：协作标题行右边那个齿轮（CSS 用 `.right::before` 画的）点开的是
+     **同一个**协作菜单（重命名 / 删除协作），但贴法与卡片上那支笔不同 —— 它不在卡片里，
+     所以改成"右对齐到它、落在它下方"（与排序菜单同一条规则）。*/
+  it("顶部齿轮开当前协作的菜单，菜单贴在它下方（不是卡片旁边）", () => {
+    const win = dom.window as unknown as {
+      Tsunagou: { state: { set: (path: string, value: unknown) => unknown } };
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+    win.Tsunagou.state.set("projects", [{ id: "p-1", name: "Tsunagou 跨机器测试" }]);
+
+    const gear = page.querySelector(".secProjPanel .navArea .right")!;
+    expect(gear, "标题行右边那个齿轮不在 .navArea .right 里").not.toBeNull();
+    /* jsdom 里所有 rect 都是 0，位置就没法断言；给它一个假矩形（宽 30、右边 1000、下边 50）。
+       菜单宽度在 jsdom 里也量不出来，代码会退回 150 —— 于是左 = 1000-150、上 = 50+6。*/
+    (gear as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () => ({
+      right: 1000, bottom: 50, top: 20, left: 970, width: 30, height: 30, x: 970, y: 20,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+    const menu = page.getElementById("projMenu")!;
+    expect(menu.style.display).not.toBe("flex");
+
+    gear.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(menu.style.display).toBe("flex");
+    expect(menu.style.left).toBe("850px");   // 右对齐到齿轮
+    expect(menu.style.top).toBe("56px");     // 落在它下方 6px
+
+    // 再点一次齿轮 = 收起（与卡片那支笔同一个开关逻辑）。
+    gear.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(menu.style.display).not.toBe("flex");
+
+    /* 菜单里那一项作用于**当前协作**：重命名窗口的输入框预填它的名字。
+       （点菜单项本身会先收起菜单 —— 这是既有的口径，所以这一击要重新打开。）*/
+    gear.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    menu.querySelector('[data-proj-action="rename"]')!
+      .dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(page.getElementById("renamePmt")!.style.display).not.toBe("none");
+    expect((page.getElementById("renamePmtInput") as HTMLInputElement).value)
+      .toBe("Tsunagou 跨机器测试");
+  });
+
   it("总路径的行仍然是 .taskFlow > .inner > .item（两级选择器点得开的前提）", () => {
     const result = api.dispatch("timeline.list", [
       {
@@ -386,10 +480,15 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(readWeb("assets/css/style.css")).toMatch(/\.colu-t\s*\{[^}]*flex-direction:\s*column/);
   });
 
-  /* 2026-09-30：胶囊写**昵称**、说明写**后端代号**、图标跟**厂商**走。
+  /* 2026-09-30：胶囊写**昵称**、图标跟**厂商**走。2026-10-06：卡面的「说明」不再写后端代号
+     （用户要求搬到 Agent 详细信息窗口）—— 卡面只留给人看的东西。
      这里连后端形状一起过一遍（不联调后端，只把 fetch 换成应答表）——
      名字/图标是渲染时按 agent_id 从用户档案现算的，改坏任何一半这张卡就残。*/
-  it("Agent 卡片：胶囊=昵称、说明=后端代号、图标=厂商（厂商未知时不冒充 DeepSeek）", async () => {
+  /* 2026-10-06 用户重新设计了这张卡片：顶部一块品牌色 hero（厂商 logo + 名字，底下一行三格
+     ——角色 / 本机还是网络 / 可用性），下面是当前任务、基础能力、运营能力、动作。
+     三条图标规则也钉在这里：主 Agent 用 fa-font-awesome、网络 Agent 那格写「网络在线/离线」
+     用 fa-circle-nodes、不可用时用 fa-minus。logo 一律染白（那块底色永远是品牌蓝）。*/
+  it("Agent 卡片：hero 三格（角色/本机或网络/可用性）与图标规则", async () => {
     const win = dom.window as unknown as {
       fetch: unknown;
       Tsunagou: {
@@ -402,10 +501,24 @@ describe("控制台页面（web/）结构冒烟", () => {
         version: 1, nickname: "", theme: "",
         agents: { "a-1": { nickname: "熊猫", vendor: "Codex" } },
       }],
+      ["/console/glossary", { version: 1, domains: {
+        agent_role: { main: "主 Agent", worker: "子 Agent" },
+        agent_status: { active: "可用", provisioning: "接入中" },
+        session_status: { ready: "就绪", degraded: "降级" },
+        capability_admission: { session_isolation: "会话隔离", typed_tools: "类型化工具" },
+        capability_operational: { task_flow: "任务流转", cognition_report: "认知报告" },
+      } }],
       ["/projects/p-1/agents", {
         items: [
-          { agent_id: "a-1", role: "worker", status: "active" },
-          { agent_id: "a-2", role: "worker", status: "active" },
+          { agent_id: "a-1", role: "main", status: "active", session_status: "ready",
+            missing_admission: [], missing_operational: [] },
+          { agent_id: "a-2", role: "worker", status: "active", session_status: "ready",
+            missing_admission: ["typed_tools"], missing_operational: ["cognition_report"] },
+          { agent_id: "a-3", role: "worker", status: "active", session_status: "ready",
+            network: true, machine: "工位-七", online: true,
+            missing_admission: [], missing_operational: [] },
+          { agent_id: "a-4", role: "worker", status: "provisioning", session_status: "degraded",
+            missing_admission: [], missing_operational: [] },
         ],
         main_agent_id: "a-1",
       }],
@@ -422,28 +535,76 @@ describe("控制台页面（web/）结构冒烟", () => {
       });
     };
     win.Tsunagou.state.set("currentProjectId", "p-1");
-    await win.Tsunagou.refresh(["agents", "settings"]);
+    await win.Tsunagou.refresh(["agents", "settings", "glossary"]);
 
     const cards = page.querySelectorAll("#pane-agents .boxerbox > .item");
-    expect(cards).toHaveLength(2);
-    const descOf = (card: Element): Element => {
-      const title = [...card.querySelectorAll(".title")].find((node) => node.textContent === "说明");
-      expect(title).toBeDefined();
-      return title!.nextElementSibling!;
-    };
+    expect(cards).toHaveLength(4);
 
-    // 档案里有昵称与厂商：胶囊写昵称，说明写得下后端代号，图标是那家的 logo。
-    const named = cards[0]!;
-    expect(named.querySelector(".listfieldbox .item .right")!.textContent).toBe("熊猫");
-    expect(descOf(named).textContent).toBe("后端代号：a-1");
-    expect(named.querySelector(".listfieldbox .item img")!.getAttribute("src")).toMatch(/codex-[ld]\.png/);
+    const heroOf = (card: Element) => ({
+      top: card.querySelector(".hero > .top")!,
+      slots: [...card.querySelectorAll(".hero > .bottom > .item")],
+    });
+    const iconOfSlot = (slot: Element) => slot.querySelector("i")!.getAttribute("class");
 
-    // 档案里什么都没有：胶囊退回代号（不能是个没字的胶囊），
-    // 厂商未知时摆 Tsunagou 自己的小标 —— 拿 DeepSeek 冒充会让人以为项目里真有个 DeepSeek。
-    const unnamed = cards[1]!;
-    expect(unnamed.querySelector(".listfieldbox .item .right")!.textContent).toBe("a-2");
-    expect(descOf(unnamed).textContent).toBe("后端代号：a-2");
-    expect(unnamed.querySelector(".listfieldbox .item img")!.getAttribute("src")).toMatch(/logo-little-[ld]\.png/);
+    // 主 Agent 排最前；它的卡片根节点多一个 itemMI（hero 底色与描边走主 Agent 那一套，
+    // 见 style.css 的 `.boxerbox > .itemMI`），子 Agent 不带。
+    const mainCard = cards[0]!;
+    expect(mainCard.className).toBe("item itemMI");
+    expect(cards[1]!.className).toBe("item");
+    const mainHero = heroOf(mainCard);
+    expect(mainHero.top.querySelector("img")!.getAttribute("src")).toMatch(/codex-[ld]\.png/);
+    expect(mainHero.top.querySelector("img")!.getAttribute("style")).toContain("brightness(0) invert(1)");
+    expect(mainHero.top.textContent).toBe("熊猫");
+    expect(mainHero.slots).toHaveLength(3);
+    expect(mainHero.slots.map(iconOfSlot)).toEqual([
+      "fa-solid fa-font-awesome", "fa-solid fa-laptop", "fa-solid fa-check",
+    ]);
+    expect(mainHero.slots.map((slot) => slot.textContent)).toEqual(["主 Agent", "本地", "可用"]);
+
+    // 子 Agent 本机：角色是 fa-code，第二格仍是"本地"。
+    const workerHero = heroOf(cards[1]!);
+    expect(workerHero.top.textContent).toBe("a-2");
+    expect(workerHero.top.querySelector("img")!.getAttribute("src")).toMatch(/logo-little-[ld]\.png/);
+    expect(workerHero.slots.map(iconOfSlot)).toEqual([
+      "fa-solid fa-code", "fa-solid fa-laptop", "fa-solid fa-check",
+    ]);
+
+    // 网络接入的 Agent：第二格换成「网络在线/离线」+ fa-circle-nodes。
+    const remoteHero = heroOf(cards[2]!);
+    expect(iconOfSlot(remoteHero.slots[1])).toBe("fa-solid fa-circle-nodes");
+    expect(remoteHero.slots[1].textContent).toBe("网络在线");
+
+    // 不可用（会话降级）：第三格是 fa-minus，不是对勾。
+    const brokenHero = heroOf(cards[3]!);
+    expect(iconOfSlot(brokenHero.slots[2])).toBe("fa-solid fa-minus");
+    expect(brokenHero.slots[2].textContent).toBe("降级");
+
+    /* 能力那两栏由 missing_admission / missing_operational 决定：列出来的那项不画对勾。
+       （中间层漏传 missing_operational 时，运营能力那栏会整片空掉 —— 这里连它一起钉住。）*/
+    const admit = [...cards[1]!.querySelectorAll(".title")].find((node) => node.textContent === "基础能力")!;
+    expect([...admit.nextElementSibling!.querySelectorAll(".tagZ")].map((tag) => [
+      tag.textContent, tag.getAttribute("class"),
+    ])).toEqual([
+      ["会话隔离", "tagZ tagZOK"], ["类型化工具", "tagZ"],
+    ]);
+    const ops = [...cards[1]!.querySelectorAll(".title")].find((node) => node.textContent === "运营能力")!;
+    expect([...ops.nextElementSibling!.querySelectorAll(".tagZ")].map((tag) => tag.textContent))
+      .toEqual(["任务流转", "认知报告"]);
+
+    // 当前任务仍然是 title + textZ 两件；动作按用户给的顺序：修改、退役。
+    const taskTitle = [...cards[1]!.querySelectorAll(".title")].find((node) => node.textContent === "当前任务")!;
+    expect(taskTitle.nextElementSibling!.getAttribute("class")).toBe("textZ");
+    expect([...cards[1]!.querySelectorAll(".option .buttonbox2")].map((button) => [
+      button.textContent, button.getAttribute("data-tg-action"),
+    ])).toEqual([
+      // 本地子 Agent、协作里已有主 Agent：仍然给出「设为主 Agent」（可以换人）。
+      ["设为主 Agent", "agent.setMain:a-2"], ["修改", "agent.edit:a-2"], ["退役", "agent.remove:a-2"],
+    ]);
+    // 主 Agent 只留「修改」（删主 Agent 后端本来就拒，不画一个点了必然失败的按钮）。
+    expect([...cards[0]!.querySelectorAll(".option .buttonbox2")].map((button) => button.textContent))
+      .toEqual(["修改"]);
+    // 未退役的 Agent 不再有「说明」那一行。
+    expect([...cards[1]!.querySelectorAll(".title")].some((node) => node.textContent === "说明")).toBe(false);
   });
 
   /* 左栏项目卡片上那个主 Agent 胶囊走的是同一条"按 agent_id 从档案现算"的路。
@@ -813,32 +974,35 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["agents", "settings", "glossary"]);
 
     const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
-    const badge = (index: number) => cards()[index]!.querySelector(".header .right");
+    /* hero 的第二格就是"本机还是网络"（三格：角色 / 本机或网络 / 可用性）。2026-10-06 起
+       它取代了原来 header 里那个徽标 —— 判据与规则一个字没变，只是位置变了。*/
+    const place = (index: number) => cards()[index]!.querySelectorAll(".hero > .bottom > .item")[1]!;
     expect(cards()).toHaveLength(4);
 
-    // 本机接入（主 Agent、以及中间层没表态的子 Agent）：连图标都不许出现。
-    expect(badge(0)).toBeNull();
-    expect(cards()[0]!.querySelector(".header")!.textContent).toBe("main");
-    expect(badge(1)).toBeNull();
+    // 本机接入（主 Agent、以及中间层没表态的子 Agent）：写「本地」，不画网络那套。
+    expect(place(0).textContent).toBe("本地");
+    expect(place(0).querySelector("i")!.getAttribute("class")).toBe("fa-solid fa-laptop");
+    expect(cards()[0]!.querySelector(".hero > .bottom > .item")!.textContent).toBe("main");
+    expect(place(1).textContent).toBe("本地");
 
-    // 中间层说是网络接入：卡面上只有机器状态（在线/离线）——机器名不在这儿（放不下）。
-    expect(badge(2)!.textContent).toBe("离线");   // 会话 ready，但没有任何心跳证据
-    expect(badge(2)!.querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
-    expect(badge(3)!.textContent).toBe("在线");   // 心跳说它在
-    expect(badge(3)!.textContent).not.toContain("ready");
+    // 中间层说是网络接入：那一格写机器状态（在线/离线）——机器名不在这儿（放不下）。
+    expect(place(2).textContent).toBe("网络离线");   // 会话 ready，但没有任何心跳证据
+    expect(place(2).querySelector("i.fa-solid.fa-circle-nodes")).not.toBeNull();
+    expect(place(3).textContent).toBe("网络在线");   // 心跳说它在
+    expect(place(3).textContent).not.toContain("ready");
 
     // 运行时推送：能把一个本机 Agent 标成网络接入，也能顺带说它的机器状态。
     expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-2", online: true }).ok).toBe(true);
-    expect(badge(1)!.textContent).toBe("在线");   // 推来的 online 优先
+    expect(place(1).textContent).toBe("网络在线");   // 推来的 online 优先
     expect(win.Tsunagou.dispatch("agent.network",
       { agent_id: "a-2", network: true, online: false }).ok).toBe(true);
-    expect(badge(1)!.textContent).toBe("离线");
+    expect(place(1).textContent).toBe("网络离线");
     // 主 Agent 必须在 daemon 所在机器上：中间层推了也不画。
     expect(win.Tsunagou.dispatch("agent.network", { agent_id: "a-1", online: true }).ok).toBe(true);
-    expect(badge(0)).toBeNull();
-    // 撤回 → 回到本机（不画）。
+    expect(place(0).textContent).toBe("本地");
+    // 撤回 → 回到本机。
     expect(win.Tsunagou.dispatch("agent.network.clear", { agent_id: "a-2" }).ok).toBe(true);
-    expect(badge(1)).toBeNull();
+    expect(place(1).textContent).toBe("本地");
   });
 
   /* 2026-10-04：卡面上只写机器状态（在线/离线）—— 机器名放不下，写了会把别的字挤掉；
@@ -881,14 +1045,14 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["agents", "settings"]);
 
     const cards = () => [...page.querySelectorAll("#pane-agents .boxerbox > .item")];
-    const badge = (index: number) => cards()[index]!.querySelector(".header .right");
-    /* 有机器名 = 远端：卡面上只有机器状态，机器名不在那儿。*/
-    expect(badge(1)!.textContent).toBe("在线");
-    expect(badge(1)!.textContent).not.toContain("工位-七");
-    expect(badge(2)!.textContent).toBe("离线");
-    expect(badge(2)!.textContent).not.toContain("NAS");
-    /* 本机接入没有这一项 —— 连标记都不出现。*/
-    expect(badge(0)).toBeNull();
+    const place = (index: number) => cards()[index]!.querySelectorAll(".hero > .bottom > .item")[1]!;
+    /* 有机器名 = 远端：那一格只写机器状态，机器名不在那儿。*/
+    expect(place(1).textContent).toBe("网络在线");
+    expect(place(1).textContent).not.toContain("工位-七");
+    expect(place(2).textContent).toBe("网络离线");
+    expect(place(2).textContent).not.toContain("NAS");
+    /* 本机接入没有这一项 —— 那一格写「本地」。*/
+    expect(place(0).textContent).toBe("本地");
 
     /* 机器名在详细信息窗口的「在哪台机器」那一行。*/
     win.Tsunagou.app.openAgentInfo("p-1/a-2");
@@ -1190,6 +1354,15 @@ describe("控制台页面（web/）结构冒烟", () => {
     const aside = page.getElementById("aside-tasks")!;
     expect(aside.textContent).toContain("任务介绍");
     expect(aside.textContent).toContain("产出一个纯静态介绍 Microsoft Windows 11");
+    /* 2026-10-06 用户要求：这条侧栏的文字块**统一用 `.textN`** —— 「任务介绍」原先单独用了
+       `.textZbox`，同一张列表里只有它长得不一样。`.textN` 正是这一栏 `text` 字段走的那条路
+       （见 asideFieldsHtml），所以正确写法是让它回归那条路，而不是在这里换一个 class 名。*/
+    const detailTitle = [...aside.querySelectorAll(".title")]
+      .find((node) => node.textContent === "任务介绍");
+    expect(detailTitle, "「任务介绍」这一行没找到").toBeDefined();
+    expect(detailTitle!.nextElementSibling!.getAttribute("class")).toBe("textN");
+    // 同一屏其它文字块也都是 .textN（统一口径，不是只改这一行）
+    expect(aside.querySelectorAll(".textZbox")).toHaveLength(0);
   });
 
   /* 2026-10-04 用户要求：总路径线性时间图里**主 Agent 的小图标始终是白色** ——
@@ -1603,6 +1776,18 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["project"]);
     expect(text()).toContain("2 个（已完成 1）");
     expect(text()).not.toContain("已取消");
+
+    /* 被替代的任务要显示成"已被替代"，不能和"被取消"混为一谈：2026-10-05 的返工正是
+       "取消旧的 + 新建替代的"，在那之前旧任务永远算没做完（事件 E012/E014）。*/
+    taskItems = [
+      { id: "t1", title: "原管理员端任务", status: "cancelled", superseded_by: "t2" },
+      { id: "t2", title: "管理员端替代任务", status: "completed" },
+    ];
+    await win.Tsunagou.refresh(["project"]);
+    expect(text()).toContain("（已被替代）原管理员端任务");
+    expect(text()).not.toContain("（已取消）原管理员端任务");
+    /* 统计据此归类：被替代的单独报，且不与"已取消"重复计数 */
+    expect(text()).toContain("2 个（已完成 1、已被替代 1）");
   });
 
 });
@@ -2592,10 +2777,11 @@ describe("回归：本轮修掉的若干条（失焦提交 / 原型链 / 机器�
     };
     fixApi.dispatch("agent.list", [row]);
 
-    /* 卡面上只有机器状态 —— 机器名不再拼进卡片，那里自然也不会多出元素。*/
-    const badge = fixPage.querySelector("#pane-agents .header .right")!;
-    expect(badge.textContent).toBe("在线");
-    expect(badge.querySelector("img")).toBeNull();
+    /* 卡面那一格只写机器状态 —— 机器名不再拼进卡片，那里自然也不会多出元素。
+       （hero 顶部那个 img 是厂商 logo，不是机器名。）*/
+    const place = fixPage.querySelectorAll("#pane-agents .hero > .bottom > .item")[1]!;
+    expect(place.textContent).toBe("网络在线");
+    expect(place.querySelector("img")).toBeNull();
 
     /* 机器名在窗口里，同样必须转义：没修之前这台机器上会真的多出一个
        <img src="x" onerror=…>。*/
@@ -2619,6 +2805,57 @@ describe("回归：本轮修掉的若干条（失焦提交 / 原型链 / 机器�
   }, over);
   const replyWith = (status: number, body: string) =>
     ({ ok: false, status: status, text: () => Promise.resolve(body) });
+
+  /* 2026-10-06 用户要求：工作区卡片与验收页的完成提案正文也统一用 `.textN`，
+     不再用会截断（`max-height:140px`）的 `.textZbox`。两屏一次dispatch 出来再看，
+     断言到"整个面板里一个 .textZbox 都没有"，不是只看那一行。*/
+  it("工作区卡片与完成提案正文都用 .textN，面板里不再出现 .textZbox", async () => {
+    await loadFix();
+    /* dispatch 喂的是**渲染器形状**（适配层在 refresh 那条路上），所以这里给视图字段。
+       这与本文件里 `timeline.list` 那条用例同一个写法。*/
+    fixApi.dispatch("workspace.list", [{
+      id: "ws-1", name: "工作区 ws-1", agent: { ref: "a-1", name: "熊猫" },
+      isolation: "共享目录", files: ["src/a.ts", "src/b.ts"],
+      states: [{ text: "进行中", ok: true }], patch: "sha256:abc",
+    }]);
+    fixApi.dispatch("acceptance.data", {
+      proposal: {
+        id: "dec-1", proposal_id: "dec-1", digest: "sha256:d", revision: 1,
+        title: "协作完成提案", time: "10-06 12:00", timePrecise: "10-06 12:00:00",
+        text: "还剩两项没验收", actions: [],
+      },
+      taskResults: [], recordDetail: "",
+    });
+
+    const workspace = fixPage.getElementById("pane-workspace")!;
+    expect(workspace.querySelectorAll(".textZbox")).toHaveLength(0);
+    const files = [...workspace.querySelectorAll(".title")].find((node) => node.textContent === "改动的文件")!;
+    expect(files).toBeDefined();
+    expect(files.nextElementSibling!.getAttribute("class")).toBe("textN");
+    expect(files.nextElementSibling!.textContent).toContain("src/a.ts");
+
+    const acceptance = fixPage.getElementById("pane-acceptance")!;
+    expect(acceptance.querySelectorAll(".textZbox")).toHaveLength(0);
+    expect(acceptance.textContent).toContain("还剩两项没验收");
+  });
+
+  it("Agent 详细信息窗口写着后端代号：值就是 agent_id 的短号（卡面不再写）", async () => {
+    /* 2026-10-06 用户要求把后端代号从卡面搬进这个窗口。值仍取自同一个地方
+       （`shortId(agent_id)`），没有第二个来源；没有 agent_id 时整行藏起来，
+       不摆一个只有标题、底下空着的「后端代号」。*/
+    await loadFix();
+    fixApi.dispatch("agent.info", agentOf({ id: "7f9b429a-c0de-4f00-9b00-000000000000" }));
+    /* 标题是**标签**、底下那行才是代号：以前这里把两个节点的 textContent 都写成代号，
+       窗口里就出现两行一模一样的 `7f9b429a`（2026-10-06 用户实测截图）。*/
+    expect(fixPage.getElementById("agentInfoCodenameTitle")!.textContent).toBe("后端代号");
+    const value = fixPage.getElementById("agentInfoCodename")!;
+    expect(value.textContent).toBe("7f9b429a");
+    expect(value.style.display).not.toBe("none");
+
+    fixApi.dispatch("agent.info", agentOf({ id: "" }));
+    expect(fixPage.getElementById("agentInfoCodename")!.style.display).toBe("none");
+    expect(fixPage.getElementById("agentInfoCodenameTitle")!.style.display).toBe("none");
+  });
 
   it("BUG-23 + BUG-2：拒绝码真的被翻成中文，而且落在「警告」档", async () => {
     /* 词表的形状是 {version, domains:{…}}。以前查的是 glossary.denial_reason（永远空），
@@ -2940,14 +3177,15 @@ describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
                 }],
               },
             ],
-            /* 出口给的就这 7 个键：没有 actor_agent_id / subject_ref / 任何时间。
-               参与 Agent 只能由 claim_ids 里的报告号 join 回 reports 的 actor_agent_id。
-               注意 claim_ids 装的是**报告号**，而且自动判定出的分歧只记下**触发它的
-               那一份**报告（modules/cognition.py 的 `_record_discrepancy(…, report)`）
-               —— 这里照真实的形状给一条。*/
+            /* 出口给的键：7 个原始字段 + 2026-10-06 起补上的调用方人话、参与人与受影响动作
+               （此前只参与摘要计算就被丢掉），以及一条"请裁决"的用户动作。
+               参与 Agent 优先读 participants；只有出口没给时才退回 claim_ids→reports 的 join。*/
             discrepancies: [{
               discrepancy_id: "d-1", rule_id: "claim.literal_mismatch", subject_key: "接口契约",
               severity: "hard", status: "open", claim_ids: ["r-2"], input_digest: "sha256:d1",
+              summary: "A 说字段必填、B 说可空，接口口径没统一",
+              participants: ["a-1", "a-2"], affected_actions: ["task.begin"],
+              actions: [{ text: "请裁决", kind: "U", action: "dissent.arbitrate" }],
             }],
           },
           contracts: { items: [] },
@@ -2968,12 +3206,12 @@ describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
     );
     expect(card).not.toBeNull();
 
-    // ① 卡头是人话（词表 discrepancy_rule），不是英文规则代号。
-    expect(card!.querySelector(".header")!.textContent).toBe("说法不一致");
+    // ① 卡头是调用方给的人话（此前那句 summary 被后端丢掉，只能退回规则的中文说法）。
+    expect(card!.querySelector(".header")!.textContent).toBe("A 说字段必填、B 说可空，接口口径没统一");
     // ② 规则代号仍然留着 —— 人要靠它跟账本、协议对上（短号那套同一个道理）。
     expect(fieldOf(card!, "规则").textContent).toContain("claim.literal_mismatch");
-    // ③ 参与 Agent 由 claim_ids → reports.actor_agent_id 派生（以前读的键不存在，恒空）。
-    expect(chipNames(card!)).toEqual(["海豚"]);
+    // ③ 参与 Agent 现在来自出口的 participants（两位都在），不再靠 join 猜。
+    expect(chipNames(card!).sort()).toEqual(["海豚", "熊猫"].sort());
     // ④ severity / status 出口早就给了，以前一处没画。
     expect(fieldOf(card!, "严重度").textContent).toContain("严重");
     expect(fieldOf(card!, "处理状态").textContent).toContain("未处理");
@@ -2982,16 +3220,46 @@ describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
     // ⑥ 「…的理解」写的是那份报告在被说岔的主题上说的话（以前恒空）。
     expect(card!.textContent).toContain("海豚的理解");
     expect(card!.textContent).toContain("B 说：字段可空");
-    /* ⑦ 另一半**不补**：熊猫那份报告确实在同一个主题上说了别的话，但这条分歧里没有
-       它的报告号（自动判定只记触发的那一份），页面不能凭"同一主题的另一份报告"去凑
-       一个参与者出来 —— 那是编。要显示双方，得先让后端把对方也存下来。*/
-    expect(card!.textContent).not.toContain("熊猫");
+    /* 2026-10-06 用户要求：这里也统一用 `.textN`（`.textZbox` 会 max-height 截断，
+       同一套文字块不该有两种长相）。*/
+    expect(card!.querySelectorAll(".textZbox")).toHaveLength(0);
+    /* ⑦ 参与人不再靠"同一主题的另一份报告"去凑 —— 第 6 轮起后端把 participants 存下来了，
+       页面直接读它（③ 已断言两位都在）。这条留作回归：出口没给 participants 时才退回 join。*/
+    expect(card!.textContent).toContain("熊猫");
     // ⑧ 分歧没有任何时间戳可读（出口与领域模型里都没有），就不画时间那一行：
     //    宁可少一行，也不拿报告时间冒充"分歧发生的时间"。
     expect(card!.querySelectorAll(".textTime")).toHaveLength(0);
 
+    /* ⑩ "请裁决"是这条卡片上唯一的写动作：`discrepancy.resolve` 属主 Agent，用户能做的是
+       "请你去裁"（2026-10-06 的决定）。点下去必须真的走命令通道发出那条用户命令。*/
+    const w = win as unknown as {
+      fetch: (url: string, init?: { body?: string; method?: string }) => Promise<unknown>;
+    };
+    const posts: { url: string; body: string }[] = [];
+    const passthrough = w.fetch;
+    w.fetch = (url: string, init?: { body?: string; method?: string }) => {
+      if (init && init.method === "POST") posts.push({ url: String(url), body: String(init.body || "") });
+      return passthrough(url, init);
+    };
+    /* 按钮是 optionHtml 画出来的 <div data-tg-action="名字:参数">（不是 <button>），
+       参数就是这条分歧的行号 —— 页面用属性委托点击。*/
+    const ask = card!.querySelector('[data-tg-action="dissent.arbitrate:d-1"]');
+    expect(ask, "卡片上应当有「请裁决」按钮").not.toBeNull();
+    expect(ask!.textContent).toContain("请裁决");
+    ask!.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const sent = posts.find((p) => p.url.indexOf("discrepancy.request_arbitration") >= 0);
+    expect(sent, "点击后应当发出 discrepancy.request_arbitration").not.toBeUndefined();
+    expect(sent!.body).toContain("d-1");
+
     // ⑨ 点卡片开侧栏：细节与卡片同一套字段（以前侧栏里是英文代号 + 一行空时间）。
-    card!.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    //    上面那次点击是写动作，页面按 refresh 重画过一屏，所以要重新取一次卡片 ——
+    //    旧引用已经不在文档里了（真浏览器里也一样）。
+    const again = page.querySelector<HTMLElement>(
+      '#block-conflict .tabContent .boxerbox > .item[data-row-id="d-1"]',
+    );
+    expect(again).not.toBeNull();
+    again!.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
     const aside = page.getElementById("aside-conflict")!;
     expect(aside.style.display).toBe("flex");
     const detail = aside.querySelector(".content")!;

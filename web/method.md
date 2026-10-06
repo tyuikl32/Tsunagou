@@ -19,8 +19,11 @@
    `assets/css/style.css` 相当于一套组件库，`behavior.js` 只是它的调用者；
    `assets/css/dag.css` 是总路径 DAG 图的样式（独立一份、不与前者合并，同样不能改）。
    层级也要照 CSS 的选择器对齐：**页面标题**（`.tabMain` 的直接子级）是 `.title > .left`
-   （品牌色胶囊挂在 `.left` 上，右侧 `.right` 是工具区/选择框），JS 侧对应 `pageTitleHtml()`；
+   （品牌色胶囊挂在 `.left` 上，右侧 `.right` 是工具区/选择框），JS 侧对应 `pageTitleHtml(slug)`；
    卡片 / 窗口 / 侧栏里那些 `.title` 是另一套样式，仍然用 `titleHtml()`。
+   **页面标题传 slug、不传中文**（2026-10-06 起）：标题文字与图标都按 slug 从 `PROJECT_TABS` 取，
+   所以标签栏那一项和大标题共用**同一份映射**（`{slug, title, icon}`）—— 改图标只改那张表，
+   两边不可能长出不同的图标。需要往 `.title` 里再塞别的东西时用 `pageTitleLeftHtml(slug)`（总路径就是这么拼工具区的）。
 3. **对外只挂 `window.Tsunagou`**。旧的全局函数（`openWindow` / `closeWindow` / `setColorTab` 等）已全部删除，
    `index.html` 的 `onclick` 统一指向 `Tsunagou.app.*`。
 
@@ -316,6 +319,12 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 - 渲染出来的按钮都带 `data-tg-action="名字:参数"`，统一由动作表执行；
   **没注册的名字不会被吞掉**，而是以 `action:request` 事件抛给后端/宿主。
 - 点卡片内的 `.listfieldbox` 胶囊不会误触发外层的行点击（选择器用 `>` 限定了层级）。
+- 协作卡片右上角那支笔（`.projItem .edit`）与协作标题行右边的齿轮（`.navArea .right`，图形由 CSS
+  的 `::before` 画）开的是**同一个** `#projMenu`（重命名 / 删除协作）：前者贴卡片旁边，后者右对齐到
+  自己、落在下方 —— 触发它的东西不在卡片里就换这条规则（见 `positionSelection`）。齿轮那一路作用于
+  **当前打开的协作**，没有当前协作就什么都不开。**两个入口都要在"点别处收起"那个捕获监听的放行
+  名单里**（`.selection` / `.projItem .edit` / `.navArea .right` / 排序键）：漏一个的话，同一次点击会
+  先被关掉、再被它自己打开，"再点一次收起"就永远不成立。
 
 ### 4.6 动作与"确认框"的分工
 需要二次确认的动作自己弹 `dialog.confirm()`；**别和界面上已有的确认文案叠加**，否则会出现"点确定又弹一个一模一样的框"。
@@ -1047,7 +1056,7 @@ timeline:    [{ era:'初始化 · 9月26日18:41:17 – 23:41:17',
 
 | 项 | 说明 |
 |---|---|
-| Agent 卡片上的三个按钮 | 2026-09-28 定稿：**「修改」真能用**（开详情窗口改昵称，存中间层用户档案）、**「设为主 Agent」真能用**（`authority.appoint`；主 Agent 自己的卡片不显示它）；**「删除」= 暂不实现**，点了只弹「撤回功能当前尚未实现」。按钮由 `agents[].actions[]` 驱动：后端在那一项里给 `action` 就出现（可用名：`agent.setMain:<id>` / `agent.edit:<id>` / `agent.remove:<id>`，未注册的名字会以 `action:request` 事件抛给宿主兜底）。 |
+| Agent 卡片上的三个按钮 | 2026-09-28 定稿：**「修改」真能用**（开详情窗口改昵称，存中间层用户档案）、**「设为主 Agent」真能用**（`authority.appoint`；主 Agent 自己的卡片不显示它）；**「退役」见下一条**（旧文案里写作「删除」，代码里那件事一直叫退役）。按钮由 `agents[].actions[]` 驱动：后端在那一项里给 `action` 就出现（可用名：`agent.setMain:<id>` / `agent.edit:<id>` / `agent.remove:<id>`，未注册的名字会以 `action:request` 事件抛给宿主兜底）。 |
 | 「改昵称」的两个入口 | Agent 管理卡片上的「修改」→ `app.editAgent(id)`；Agent 列表里点某一行 → `app.openAgentInfo(id)`。两者开的是**同一个** `#mgrAgentInfo`：昵称可改，项目/任务只读，**不列厂商那一栏**（logo 已经标出厂商）。窗口「确定」= 保存昵称（值没变就只关窗，不发请求）。 |
 | 向导的「上一步」与子 Agent 的「×」 | **暂不实现**（2026-09-28 你定）：按钮留着，点了只弹「撤回功能当前尚未实现」。理由：上一步想做的事 = 撤回上一步的效果，而分步后撤不在本轮范围内（子 Agent 那个 `×` 是 CSS 画的 `.itemC::before`，点它就是"删掉这个 Agent"）。低层导航 `ui.wizard.prev()` 仍在，只是页面按钮不再用它。 |
 | 「添加子 Agent」的两个入口 | 已区分：两个入口都走同一条真接入（见 §7.1），只是收尾不同 —— 向导第 3 步的小加号把结果记进向导第 3 步的列表；Agent 管理页的大加号成功后重拉名单/卡片/昵称。 |
@@ -1272,8 +1281,8 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
     空引用丢掉），`agents` 出口再按 `shared_kernel.baseline` 那条**与准入闸门同一条**规则
     算出 `missing_admission` / `missing_operational` + `session_status` + `connection_epoch`。
     页面上每一项叫什么、按什么顺序排从词表两栏来（§7.3），所以后端只说"缺哪几项"。
-    **降级的连锁反应要一起看**：会话不 ready ⇒ `agent.status` 变 `provisioning` ⇒ 卡片「当前状态」
-    显示**「接入中」**（不是「可用」），缺的那几项就是灰的那几个勾 —— 这三件事出自同一个判定，
+    **降级的连锁反应要一起看**：会话不 ready ⇒ `agent.status` 变 `provisioning` ⇒ 卡片 hero 第三格
+    显示**「接入中」**（不是「可用」，图标也从对勾变短横），缺的那几项就是灰的那几个勾 —— 这三件事出自同一个判定，
     演示数据也照这个自洽（主 Agent：可用 + 全勾；子 Agent：接入中 + 1 项准入 + 2 项运营缺）。
     **两个例外照实写**：没有活动会话 → 四个字段都是 `null` → 两栏都不画（不知道 ≠ 都没有）；
     会话降级（`rebind` 带回一份更差的自报）会如实把勾变回灰，并像准入那样撤掉已有的授权。
@@ -1597,13 +1606,14 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 「决定」的写侧 | **2026-09-29 接通**：可答值由提案方自己的 `choices` 决定（没给选项才退回 `approved`/`rejected`，见 §7）—— 但仍有两个不做的东西：① 完成提案的 `payload` 里**没有 `choices`**，所以主视图那张卡答不了（只留一个「查看详情」跳到验收与存档点，见 §12.4）；② 决定**不解封任务**（owner 要自己 `task.resume`，设计与集成测试都是这个口径） |
 | 收尾提案的 `choices` | **保留现状（你定的）**：收尾提案不带 `choices`。2026-09-29 起主视图那张卡不再放一个点不动的「决定」，而是只留「查看详情」→ 验收与存档点；想让主视图也能答，就得让它带 `choices`，或让卡识别 `kind` 改走 `project.completion.confirm` |
 | 「验收标准」 | **这一段已经从界面撤掉**（2026-09-29）：后端没这个概念（`standards` 恒空），而“任务的验收条件”目前只在 `coordination` 的 assignment 里存着、没出口 —— 见 `Tsunagou-前端接入-尚未实现清单.md` §7。等后端补了出口再谈怎么显示 |
-| Agent 详情窗口 | 项目 / 任务两栏是协作事实，**只读**；**昵称那一栏可改**（存中间层用户档案），窗口「确定」= 存昵称再关窗。**不列厂商**（logo 已经标出） |
+| Agent 详情窗口 | 项目 / 任务两栏是协作事实，**只读**；**昵称那一栏可改**（存中间层用户档案），窗口「确定」= 存昵称再关窗。**不列厂商**（logo 已经标出）。**后端代号**（`shortId(agent_id)`，2026-10-06 从卡片「说明」搬来）也在这里 —— 机器事实在详情里看，卡面只留给人看的东西 |
 | 工作区隔离方式 | 只显示后端真有的 `driver_kind`（`shared`）；worktree / external 未接 |
 | 主视图的"计划进度" | 形状照 §7 的 `progress:{total:'12%', plan:[{text,state}]}`：左边是百分数（已完成/全部，没任务就是 0%），右边是可滚动的任务清单（✓ 已完成 / ● 在做 / 无图标 未完成）。**后端没有"计划"这个对象**，这份清单是从任务列表推出来的，不是真计划。**2026-09-29 你定：就这样保持现状（不加"据任务推算"之类的注释）** |
 | 用户档案里的另两项 | **2026-09-29 你定：都不算缺口**。**用户昵称**：用户不必有昵称（档案里那个 `nickname` 就让它空着）；**Agent 图标**：创建协作时选厂商就定了，页面按厂商现算（`agentIconFor(agentVendor(a))`），不拿档案里那个 `icon`。能改的仍是主题（设置窗口）与 Agent 昵称（Agent 管理「修改」） |
 | 降级会话的另外两条路 | `session.reprobe`（原地重出证据）与 `session.end`（自行退场）**只在 registry 里声明、`handlers.py` 没装配**；现在能走的仍只有"带报告重连"（`session.reconnect` + `probe_payload`）与"拿新票重接"（`session.rebind`）。另外降级**不动正在跑的活**（只撤已有 grant），在跑的 Attempt 只由租约到期那条独立机制回收 |
 | 一键演示 / 冒烟 | `uv run python tools/dev/console_smoke.py --reset`（建沙箱项目 + 起 daemon + 起控制台 + 逐个接口与视图源断言） |
-| Agent 卡片的「说明」 | **2026-09-30 改**：以前写「厂商：xxx」，现在写**后端代号**（`agent_id` 的短号）—— 厂商交给胶囊上的 logo 说（§7「Chat agent 图标」那条也是这个口径）。胶囊本身写**昵称**；昵称还没起时退回代号，免得是一个没字的胶囊 |
+| Agent 卡片的「说明」 | **2026-10-06 再改**：不再写后端代号（搬到 Agent 详情窗口），这一行只剩**已退役**那句提醒；未退役的 Agent 干脆不画它 —— 空标题底下什么都没有，比不写更糟。2026-09-30 那次改的是内容（以前写「厂商：xxx」，改成写后端代号）—— 厂商交给胶囊上的 logo 说（§7「Chat agent 图标」那条也是这个口径）。胶囊本身写**昵称**；昵称还没起时退回代号，免得是一个没字的胶囊 |
+| Agent 卡片（2026-10-06 重新设计） | 顶部一块品牌色 `.hero`：`.top` 是厂商 logo + 名字；`.bottom` 三格 ——**角色**（主 Agent `fa-font-awesome`、子 Agent `fa-code`）、**本机还是网络**（本机写「本地」+ `fa-laptop`；网络接入写「网络在线 / 网络离线」+ `fa-circle-nodes`，判据仍然只走 `agentNetworkOf`，不另立一份）、**可用性**（可用 `fa-check`、不可用 `fa-minus`）。logo **内联染白**（`filter:brightness(0) invert(1)`）：那一块底色永远是品牌蓝，深色 logo 在上面看不见 —— 与 `chipHtml` 处理主 Agent 胶囊同一个写法。原来那三块（身份胶囊 / 「当前状态」 / `header` 里的网络徽标）都收进 hero，卡面上不再各占一行；动作仍由 `agents[].actions[]` 驱动 |
 | Agent 图标 | **2026-09-30 修**：厂商未知时不再冒充 DeepSeek，改摆 Tsunagou 自己的小标（`TSUNAGOU_CARD_ICON`）。三处保证档案里有厂商：①中间层到达登记时**即使没有昵称也记下厂商**（`console/enrollment.py`）；②前端接入成功那一刻再写一次（`rememberAgentProfile`，人没等就关掉遮罩也能盖上）；③**中间层读名单时按桥文件回填**（见下一行）|
 | CLI 接入漏下的厂商 | **2026-09-30 补**：`agent connect` 自己写 `.tsunagou/bridges/<adapter>-<profile>/` 下的文件，**从不碰用户档案**，所以那样进来的 Agent 没有厂商。档案里缺厂商时，中间层在**读名单那一步**从本机已有的桥文件里把厂商认回来：`connection.json`（`agent connect` 写的，直接给出 `agent_id`）优先；只有 `host-identity.json` 时，用它的 `conversation_id` 算 `canonical_digest({"conversation_id": …})`，与 daemon 已公开的 `conversation_digest` 对齐。**只补缺失的厂商、只认文件不猜**：人设过的值不动，认不出来就保持保底（Tsunagou 小标）；昵称**不落档** —— 没昵称就显示后端代号 |
 | Agent 昵称与厂商 | **2026-09-30 定**：界面接入必须两者齐备 —— 向导第 2 步的名称、`#addSubAgent` 的名称+厂商、详情窗口的「确定」都拒绝空昵称（`saveAgentInfo` 里那句 `昵称不能为空`）。CLI 接入不走这些表单，它漏下的厂商由中间层的桥文件回填补上，**不需要任何人手工登记** |

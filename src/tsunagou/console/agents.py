@@ -111,6 +111,23 @@ def _get_json(url: str, path: str) -> Any:
         return None
 
 
+def _capabilities(item: dict[str, Any], key: str) -> list[str] | None:
+    """缺哪几项能力，照 daemon 的意思透出去。
+
+    daemon 明确给 ``null`` 是"没有活动会话，所以不知道"（`bootstrap/container.py` 的
+    `_agent_capabilities`）；这时透出 ``None``，页面就**不画**那一栏。折成 ``[]`` 会画成
+    "样样都会"，正好说反。字段**缺失**（旧版 daemon 根本不报这两项）才折成空表 ——
+    那是当时的既有含义，名单里的其它行一直这么用。
+    """
+
+    if key not in item:
+        return []
+    value = item.get(key)
+    if value is None:
+        return None
+    return [str(name) for name in value if str(name)]
+
+
 def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
     """Ask one daemon who its agents are. ``None`` means the answer did not arrive."""
 
@@ -137,9 +154,10 @@ def _read_roster(root: Path, endpoint: dict[str, Any]) -> AgentRoster | None:
             # 布尔值。页面拿它画「在线/离线」；没有这一项就退回 session_status（见 behavior.js）。
             **({"online": item["online"]} if type(item.get("online")) is bool else {}),
             **({"connection_epoch": item["connection_epoch"]} if type(item.get("connection_epoch")) is int else {}),
-            "missing_admission": [
-                str(name) for name in (item.get("missing_admission") or []) if str(name)
-            ],
+            # 两项能力名单都要透传：卡片上的「基础能力」看 missing_admission、「运营能力」看
+            # missing_operational。只传前者时，运营能力那一栏在页面上整片空掉。
+            "missing_admission": _capabilities(item, "missing_admission"),
+            "missing_operational": _capabilities(item, "missing_operational"),
             # The daemon publishes this digest, and ``canonical_digest({"conversation_id": …})``
             # recomputes it — that is how a bridge folder can be matched to an Agent
             # that never went through the console.

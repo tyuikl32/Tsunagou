@@ -335,7 +335,9 @@ class ServiceStateRuntime:
                        "assumptions": tuple(item.get("assumptions", []))}
                 )
             service.discrepancies = {
-                key: Discrepancy(**{**item, "claim_ids": tuple(item.get("claim_ids", []))})
+                key: Discrepancy(**{**item, "claim_ids": tuple(item.get("claim_ids", [])),
+                                    "participants": tuple(item.get("participants", [])),
+                                    "affected_actions": tuple(item.get("affected_actions", []))})
                 for key, item in value.get("discrepancies", {}).items()
             }
             service.proposals = {

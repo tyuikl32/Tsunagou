@@ -14,7 +14,7 @@ COLLECTION_FIELDS: dict[str, dict[str, str]] = {
     "tasks": {
         "tasks": (
             "task_id title objective status parent_task_id blocks current_attempt_id revision scope_revision "
-            "execution_scope block_reason orphan_reason suspension_snapshot"
+            "execution_scope block_reason orphan_reason suspension_snapshot acceptance superseded_by cross_module"
         ),
         "attempts": "attempt_id task_id owner_agent_id status execution_epoch revision started_at ended_at",
         "results": "result_id task_id attempt_id payload digest submitted_by",
@@ -24,7 +24,10 @@ COLLECTION_FIELDS: dict[str, dict[str, str]] = {
     },
     "cognition": {
         "reports": "report_id task_id attempt_id actor_agent_id claims uncertainties assumptions digest created_at",
-        "discrepancies": "discrepancy_id rule_id rule_version subject_key severity input_digest claim_ids status",
+        "discrepancies": (
+            "discrepancy_id rule_id rule_version subject_key severity input_digest claim_ids status "
+            "summary participants affected_actions"
+        ),
         "proposals": "proposal_id payload participants required_slots digest status proposed_by",
         "acceptances": "proposal_id participant_slot proposal_digest real_actor_id represented_participant via_proxy",
         "risk_requests": "request_id attempt_id input_snapshot input_digest candidates deadline_at status",

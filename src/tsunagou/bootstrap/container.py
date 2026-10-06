@@ -737,7 +737,13 @@ def _query_provider(
                     {"discrepancy_id": item.discrepancy_id, "rule_id": item.rule_id,
                      "subject_key": item.subject_key,
                      "severity": item.severity, "status": item.status,
-                     "claim_ids": list(item.claim_ids), "input_digest": item.input_digest}
+                     "summary": item.summary, "participants": list(item.participants),
+                     "affected_actions": list(item.affected_actions),
+                     "claim_ids": list(item.claim_ids), "input_digest": item.input_digest,
+                     # 页面据此画按钮。只有一条，而且是**用户**能发的那条：裁决权在主 Agent
+                     # （discrepancy.resolve 是 M 权限），用户能做的是请它裁 —— 2026-10-06 的决定。
+                     "actions": ([] if item.status in {"resolved", "dismissed"} else
+                                 [{"text": "请裁决", "kind": "U", "action": "dissent.arbitrate"}])}
                     for item in cognition.discrepancies.values()
                 ],
                 "contracts": [

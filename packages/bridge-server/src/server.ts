@@ -77,6 +77,58 @@ function readSchemaBundleDigest(): string {
 
 const SCHEMA_BUNDLE_DIGEST = readSchemaBundleDigest();
 
+/** 哪些命令只有主 Agent 能调 —— 取自协议注册表的 `principal`，不另立一份清单。
+ *
+ * 理由：授权的事实源在 daemon（它按主体与授权逐条判定），手抄一份迟早会与它漂移。*/
+function readMainOnlyCommands(): Set<string> {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, "..", "protocol", "registry", "commands.json"),
+    join(process.cwd(), "protocol", "registry", "commands.json"),
+    join(here, "..", "..", "..", "protocol", "registry", "commands.json"),
+  ];
+  const mainOnly = new Set<string>();
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    const raw = JSON.parse(readFileSync(candidate, "utf-8")) as {
+      commands?: Record<string, { principal?: unknown }>;
+    };
+    for (const [kind, entry] of Object.entries(raw.commands ?? {})) {
+      if (entry?.principal === "M") mainOnly.add(kind);
+    }
+    return mainOnly;
+  }
+  return mainOnly;
+}
+
+/** 这个桥进程是为哪条会话接入的。
+ *
+ * 一个会话一份的桥（配置里有 ticket）在启动时就知道角色；共享桥（宿主里注册一个条目、
+ * 服务那台机器上的每一条会话）**故意不携带**按会话的材料，所以那里角色未知 ——
+ * 见 `write_shared_bridge_config` 的说明。未知就按"全都给"处理。*/
+function readCallerRole(ticketFile: string | undefined): string {
+  if (!ticketFile || !existsSync(ticketFile)) return "";
+  try {
+    return readTicketFile(ticketFile).requested_role ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** 一位调用者能看到哪些工具。
+ *
+ * Worker 不再被展示 daemon 会拒绝它的那些命令（注册表里 `principal` 为 `M` 的）；
+ * 其余情况保持完整清单 —— 共享桥只能如此。**这只是"不给它看"，不是授权**：
+ * 服务端照旧按主体与授权判定，越权调用仍会得到 `capability_denied`。*/
+function toolsForRole(all: readonly ToolSpec[], role: string, mainOnly: Set<string>): ToolSpec[] {
+  if (role !== "worker") return [...all];
+  return all.filter((tool) => !mainOnly.has(tool.command_kind));
+}
+
+/** 启动时读一次：注册表是静态的，ticket 也只在这时一定还在（它在首次接入时被消费）。*/
+const MAIN_ONLY_COMMANDS = readMainOnlyCommands();
+const CALLER_ROLE = readCallerRole(process.env.TSUNAGOU_TICKET_FILE);
+
 function commandSchema(name: string, includeCommandId = false): Tool["inputSchema"] {
   const here = dirname(fileURLToPath(import.meta.url));
   const relative = `schemas/commands/${name.replaceAll(".", "/")}.schema.json`;
@@ -817,7 +869,8 @@ async function main(): Promise<void> {
     },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+    tools: toolsForRole(TOOLS, CALLER_ROLE, MAIN_ONLY_COMMANDS)
+      .map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     const tool = TOOLS.find((candidate) => candidate.name === request.params.name);
@@ -870,11 +923,11 @@ async function main(): Promise<void> {
             statuses.push(await executeTool(cfg, "coordination.wake_status", { message_id: messageId }, randomUUID(), false, false));
           }
         }
-        hints = await reminderContent(tool.command_kind, reminderContext, cfg.daemonStateDir, statuses);
+        hints = await reminderContent(tool.command_kind, reminderContext, cfg.daemonStateDir, statuses, cfg.projectRoot);
       } catch {
         // Presentation and observation failures must preserve the original operation.
         // Completion guidance remains available even if a status query failed.
-        try { hints = await reminderContent(tool.command_kind, reminderContext, cfg.daemonStateDir); } catch { /* best effort */ }
+        try { hints = await reminderContent(tool.command_kind, reminderContext, cfg.daemonStateDir, [], cfg.projectRoot); } catch { /* best effort */ }
       }
       return { content: [
         { type: "text" as const, text: JSON.stringify(result) },

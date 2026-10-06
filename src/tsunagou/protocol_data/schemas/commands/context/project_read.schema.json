@@ -2,7 +2,13 @@
   "$id": "https://tsunagou.local/schema/commands/context.project_read",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "since_revision": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The `revision` of a previous response. When nothing has changed since then, the answer is just {revision, unchanged: true} instead of the whole snapshot."
+    }
+  },
   "required": [],
   "title": "ContextProject_ReadPayload",
   "type": "object"

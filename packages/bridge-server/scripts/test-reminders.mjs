@@ -13,9 +13,10 @@ import { writePrivateJson } from "../dist/private-file.js";
 import { WAKE_REMINDER as wake, WAKE_INSTRUCTIONS } from "../dist/reminders.js";
 
 const completion = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
+const workingRoot = (root) => `你在这台机器上的工作目录是：${root}。只在这个目录里改动；任务声明了范围时，以那个范围为准。`;
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
-async function fixture(t, metaKey) {
+async function fixture(t, metaKey, role = "") {
   const root = mkdtempSync(join(tmpdir(), "tsunagou-reminders-"));
   const calls = [];
   const state = { main: "agent-a", fail: undefined, context: undefined, result: undefined, wake: undefined };
@@ -53,11 +54,18 @@ async function fixture(t, metaKey) {
     });
   }
   writePrivateJson(join(root, "daemon", "endpoint.json"), { url: `http://127.0.0.1:${server.address().port}` });
+  // 一个会话一份的桥，配置里带着自己的 ticket —— 启动时就能知道角色。共享桥没有它。
+  const ticketFile = join(root, "ticket.json");
+  if (role) {
+    writePrivateJson(ticketFile, { installation_id: "installation", conversation_id: "conversation",
+      secret: "secret", requested_role: role });
+  }
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TSUNAGOU_|CODEX_)/.test(key)));
   const connect = async () => {
     const transport = new StdioClientTransport({ command: process.execPath,
       args: [fileURLToPath(new URL("../dist/server.js", import.meta.url))],
-      env: { ...env, TSUNAGOU_ROUTING_DIR: routingDir, TSUNAGOU_HOST_META_KEY: metaKey }, stderr: "pipe" });
+      env: { ...env, TSUNAGOU_ROUTING_DIR: routingDir, TSUNAGOU_HOST_META_KEY: metaKey,
+        ...(role ? { TSUNAGOU_TICKET_FILE: ticketFile } : {}) }, stderr: "pipe" });
     const client = new Client({ name: "reminder-test", version: "1.0.0" }, { capabilities: {} });
     await client.connect(transport);
     return client;
@@ -95,12 +103,13 @@ for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessio
 
     check(await f.call("task.review.accept"), f.result, [completion]);
     assert.equal(existsSync(join(f.root, "agent-a-receipt.json")), false);
-    check(await f.call("context.project_read"), f.context("agent-a"), [wake, completion]);
+    const working = workingRoot(f.root);
+    check(await f.call("context.project_read"), f.context("agent-a"), [working, wake, completion]);
     check(await f.call("context.project_read"), f.context("agent-a"), [completion]);
     const reminders = join(f.root, "daemon", "reminders");
     for (const file of readdirSync(reminders)) writePrivateJson(join(reminders, file), {guide_version:"old-version"});
-    check(await f.call("context.project_read"), f.context("agent-a"), [wake, completion]);
-    check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), [wake]);
+    check(await f.call("context.project_read"), f.context("agent-a"), [working, wake, completion]);
+    check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), [working, wake]);
     await f.restart();
     check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), []);
     check(await f.call("context.project_read"), f.context("agent-a"), [completion]);
@@ -221,3 +230,37 @@ for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessio
     assert.equal(f.calls.some(({kind}) => kind === "coordination.wake"), false);
   });
 }
+
+test("worker bridge: main-only commands are left out of the tool list", async (t) => {
+  const worker = await fixture(t, "threadId", "worker");
+  const workerNames = (await worker.client.listTools()).tools.map((tool) => tool.name);
+  // 主 Agent 专属（协议注册表里 principal=M）不该出现在 Worker 的清单里
+  for (const hidden of ["task__publish", "task__ready", "coordination__takeover", "project__completion_propose"]) {
+    assert.ok(!workerNames.includes(hidden), `${hidden} 是主 Agent 专属，Worker 不该看到`);
+  }
+  // 干活与评审要用的照样在（没有过度裁剪：评审是 task_review 授权，不是主 Agent 专属）
+  for (const kept of ["task__begin", "task__submit", "task__review_accept", "context__project_read", "message__send"]) {
+    assert.ok(workerNames.includes(kept), `${kept} 应当保留`);
+  }
+  // 共享桥（宿主里一个条目服务多条会话，没有 ticket）角色未知 —— 必须保持完整清单
+  const shared = await fixture(t, "threadId");
+  const sharedNames = (await shared.client.listTools()).tools.map((tool) => tool.name);
+  assert.ok(sharedNames.includes("task__publish"), "共享桥不该被裁剪");
+  assert.ok(sharedNames.length > workerNames.length, "Worker 的清单应当更短");
+});
+
+test("threadId: completion reminder is not repeated while a completion proposal is pending", async (t) => {
+  const f = await fixture(t, "threadId");
+  // 还没有待确认提案：主 Agent 照旧收到那句话
+  const plain = await f.call("context.project_read");
+  assert.ok(plain.content.some((item) => item.text === completion),
+    "没有待确认提案时应当照旧提醒主 Agent 发起完成提案");
+
+  // 已有待确认的提案：不再重复（那句话自己就写着"不要重复提交"，而用户确认前 Agent 无事可做）
+  f.state.context = { agent_id: "agent-a", main_agent_id: "agent-a", role: "main", project_id: "project",
+    session: { session_id: "session-agent-a", connection_epoch: 1, status: "ready" },
+    completion: { pending_proposal_id: "decision-1" } };
+  const pending = await f.call("context.project_read");
+  assert.ok(!pending.content.some((item) => item.text === completion),
+    "已有待确认的完成提案时不该再提醒一次");
+});
