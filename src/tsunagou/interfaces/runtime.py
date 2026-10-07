@@ -58,7 +58,9 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "root.register": frozenset({"name", "kind", "repository_id", "required", "binding_request", "reason"}),
     "root.bind": frozenset({"root_id", "absolute_path", "expected_physical_identity", "reason"}),
     "repository.register": frozenset({"name", "root_id", "required"}),
-    "task.create": frozenset({"title", "objective", "parent_task_id", "blocks", "execution_scope", "required_contract_ids"}),
+    "task.create": frozenset({
+        "title", "objective", "parent_task_id", "blocks", "execution_scope",
+        "required_contract_ids", "requires_files"}),
     "task.begin": frozenset({"task_id", "expected_task_revision", "expected_revisions"}),
     "task.ready": frozenset({"task_id", "reason"}),
     "task.publish": frozenset({"task_id", "reason"}),

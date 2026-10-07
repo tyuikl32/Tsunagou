@@ -457,6 +457,92 @@ def test_the_project_list_says_when_a_stopped_project_was_last_seen(
         "记录只能由 daemon 活着时刷新 —— 看列表本身不算"
 
 
+def test_a_stopped_project_still_says_who_worked_here(tmp_path: Path, stub: _StubDaemon) -> None:
+    """完工的服务是**按设计**退出的，但"谁负责这个协作"在它退出以后仍然成立。
+
+    用户 2026-10-07 实测：左栏卡片写着「已完成・服务已退出（完工后自动关闭）・上次记录（…）」，
+    却一个 Agent 图标都没有 —— 名单只问活着的 daemon（``roster`` 对"没在跑"一律回 ``None``，
+    那是"这个控制台说不了"，不是"这儿没有 Agent"）。记录里那一份足以回答，而卡片本来就标着
+    "上次记录"，所以补上它不会把旧数据当成现在。
+    """
+
+    from tsunagou.console.history import HistoryStore
+
+    _, project_id = _project(tmp_path, stub)
+    config = _config(tmp_path)
+    app = create_console_app(config)
+    listing = _endpoint(app, "/api/v1/projects")
+
+    # 先记一份"daemon 当时说的话"（视图出口 "agents" 那一份），再让它下线。
+    # **必须照真实出口的形状写**：daemon 的 /agents 把名单行放在 `items` 里
+    # （见 console/agents.py 的解析）—— 之前这里写成了 {"agents": [...]}，
+    # 那条测试于是对着一个不存在的形状通过，什么也没验到（2026-10-07 发现）。
+    HistoryStore.beside_index(config.index_path).record(
+        project_id, "agents",
+        {"main_agent_id": "a-main",
+         "items": [{"agent_id": "a-main", "role": "main", "status": "active"},
+                   {"agent_id": "a-worker", "role": "worker", "status": "active"}]},
+        captured_at="2026-10-07T04:10:00+08:00",
+    )
+    stub.close()
+
+    row = [item for item in listing(agents=True)["items"] if item["project_id"] == project_id][0]
+    assert row["daemon"]["running"] is False
+    assert row["main_agent_id"] == "a-main", "停了的协作也要说得出主 Agent（来自记录）"
+    assert [agent["agent_id"] for agent in row["agents"]] == ["a-main", "a-worker"], \
+        "名单行照 daemon 出口的 items 取，别按自己另起的字段名读"
+    assert row["agents_fetched_at"] == "2026-10-07T04:10:00+08:00", \
+        "补上的是记录，就得说是记录到什么时候"
+
+
+def test_the_project_list_reports_the_newest_timeline_entry(tmp_path: Path, stub: _StubDaemon) -> None:
+    """卡片上的「数据更新时间」= 总路径（审计出口）里**时间上最新那一条**的时刻。
+
+    用户 2026-10-07 定的口径。判据用控制台记录的那个页面直连出口（`relay:…/history`）：
+    它的 `items` 按 `event_seq` 升序，控制台每次读到就整份覆盖，所以取其中最大的
+    `occurred_at`；万一这一页里就有 watermark 那一条，优先用它。
+    """
+
+    from tsunagou.console.history import HistoryStore
+
+    _, project_id = _project(tmp_path, stub)
+    config = _config(tmp_path)
+    app = create_console_app(config)
+    listing = _endpoint(app, "/api/v1/projects")
+    store = HistoryStore.beside_index(config.index_path)
+    source = f"relay:/api/v1/projects/{project_id}/history"
+
+    store.record(
+        project_id, source,
+        {"as_of_event_seq": 3, "items": [
+            {"event_seq": 1, "occurred_at": "2026-10-03T06:14:00+08:00"},
+            {"event_seq": 2, "occurred_at": "2026-10-03T09:30:00+08:00"},
+            {"event_seq": 3, "occurred_at": "2026-10-03T21:05:00+08:00"},
+        ]},
+        captured_at="2026-10-04T00:00:00+08:00",
+    )
+    row = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert row["updated_at"] == "2026-10-03T21:05:00+08:00", "总路径里最新那一条的时刻"
+
+    # 分页没走到底（watermark 那一条不在这一页）：退回"这一页里最新的那一条"，
+    # 不编一个 tip 的时刻 —— 宁可少说，不假装。
+    store.record(
+        project_id, source,
+        {"as_of_event_seq": 99, "items": [
+            {"event_seq": 1, "occurred_at": "2026-10-03T06:14:00+08:00"},
+            {"event_seq": 2, "occurred_at": "2026-10-03T09:30:00+08:00"},
+        ]},
+        captured_at="2026-10-04T00:00:00+08:00",
+    )
+    again = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert again["updated_at"] == "2026-10-03T09:30:00+08:00"
+
+    # 连记录都没有：不编 —— 页面用它自己的兜底（记录时刻）。
+    store.forget(project_id)
+    empty = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert empty["updated_at"] is None
+
+
 def test_forgetting_a_project_deletes_its_record(tmp_path: Path) -> None:
     """删除项目 = 连记录一起删（使用者明确要求的语义）。
 

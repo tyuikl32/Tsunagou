@@ -25,7 +25,7 @@ from tsunagou.application.workflows.execution_commands import ExecutionCommands
 from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.application.workspace_evidence import WorkspaceEvidence
 from tsunagou.modules.artifacts import ArtifactService
-from tsunagou.modules.authority import AuthorityService
+from tsunagou.modules.authority import Agent, AuthorityService
 from tsunagou.modules.cognition import Claim, CognitionService
 from tsunagou.modules.coordination import CoordinationService
 from tsunagou.modules.messaging import WAKE_WORTHY_KINDS, Message, MessageStore
@@ -433,7 +433,16 @@ def build_handlers(
         root_id = _required_str(payload, "root_id")
         binding = project_registry.local_bindings.get(root_id)
         if not binding or binding.get("status") != "bound":
-            raise ValueError("root_binding_required")
+            # 说清是哪个根、以及它到底登记过没有 —— "根没登记"与"根登记了但没绑"是两回事，
+            # 只回一句 root_binding_required 会让人去猜（2026-10-07 用户要求指名）。
+            registered = (
+                set(project_registry.project.roots) if project_registry.project is not None else set()
+            )
+            raise CommandRefused("root_binding_required", {
+                "root_id": root_id,
+                "registered": root_id in registered,
+                "next": "先 root.bind 把这个根绑到本机绝对路径，再登记它下面的仓库。",
+            })
         repository_id = project_registry.register_repository(
             name, root_id, physical_identity(Path(binding["absolute_path"])),
         )
@@ -490,6 +499,39 @@ def build_handlers(
             "config_revision": project.config.revision if project.config else None,
         }
 
+    #: 空 scope = **这个任务不做文件改动**（user-guide「任务必须声明改动范围」）。建任务与发布
+    #: 时当场说清：主 Agent 2026-10-07 正是把三个文件任务发成了 `{}` —— 没有工作区、没有租约、
+    #: worker 改的文件进不了结果，而它当场看不出任何异常。这里只陈述机械事实，不替它做判断。
+    EMPTY_SCOPE_NEXT = (
+        "这个任务不认领任何路径（execution_scope 为空）：系统按“不做文件改动”处理 —— 不准备工作区、"
+        "不占租约，worker 改动的文件也不会进入结果。文件任务请在 execution_scope 里给出 paths"
+        "（resources:[{kind:'path',root_id,segments,mode}]）或 roots。"
+    )
+
+    def _scope_next(scope: Any) -> str | None:
+        return EMPTY_SCOPE_NEXT if isinstance(scope, dict) and not scope else None
+
+    def _require_registered_roots(scope: dict[str, Any]) -> None:
+        """声明了路径，就必须指向**已登记**的根。
+
+        悬空引用（主 Agent 2026-10-07 写的 `root_id:"workspace"`，而该协作 `roots` 为空）以前会被
+        静默存下，直到 begin / 工作区准备那一刻才炸，报的还是 `root_binding_required` —— 指不出真因。
+        没有项目可查时（只挂了部分处理器的宿主）不在这里判，交给后面的绑定检查。
+        """
+
+        if project_registry is None or project_registry.project is None:
+            return
+        registered = set(project_registry.project.roots)
+        for resource in scope.get("resources") or []:
+            if not isinstance(resource, dict):
+                continue
+            root_id = str(resource.get("root_id") or "")
+            if root_id and root_id not in registered:
+                raise ValueError(f"unknown_root_id:{root_id}")
+        for root_id in scope.get("roots") or []:
+            if str(root_id) not in registered:
+                raise ValueError(f"unknown_root_id:{root_id}")
+
     def task_create(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
         title = _required_str(payload, "title")
@@ -499,11 +541,24 @@ def build_handlers(
         execution_scope = payload.get("execution_scope")
         if execution_scope is not None and not isinstance(execution_scope, dict):
             raise ValueError("invalid_task_execution_scope")
+        if isinstance(execution_scope, dict) and execution_scope:
+            _require_registered_roots(execution_scope)
+        # 主 Agent **自己声明**这活要改文件，却给了空 scope：当场拒绝，不给"发完才发现做不成"
+        # 的机会（用户 2026-10-07 定的规矩的完全机械版）。空 scope 且未声明 → 照既有语义走。
+        requires_files = bool(payload.get("requires_files", False))
+        if requires_files and not execution_scope:
+            raise ValueError("file_task_requires_scope")
         task = tasks.create_task(
             title, objective, parent_task_id=parent_task_id, blocks=blocks,
-            execution_scope=execution_scope, required_contract_ids=_required_contracts(payload),
+            execution_scope=execution_scope, requires_files=requires_files,
+            required_contract_ids=_required_contracts(payload),
         )
-        return {"task_id": task.task_id, "title": title, "objective": objective, "status": task.status, "revision": task.revision}
+        hint = _scope_next(task.execution_scope)
+        return {
+            "task_id": task.task_id, "title": title, "objective": objective,
+            "status": task.status, "revision": task.revision,
+            **({"next": hint} if hint else {}),
+        }
 
     def _check_task_revisions(task: Any, payload: dict[str, Any]) -> None:
         """Retained for callers that carry per-domain expectations; the contract half of
@@ -526,8 +581,16 @@ def build_handlers(
     def task_publish(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
         task_id = _required_str(payload, "task_id")
+        # 防御性的一道：声明要改文件却仍然空着范围（例如建完之后计划被改过）不许发布。
+        existing = tasks.tasks[task_id]
+        if existing.requires_files and not existing.execution_scope:
+            raise ValueError("file_task_requires_scope")
         task = tasks.publish(task_id)
-        return {"task_id": task_id, "status": task.status, "revision": task.revision}
+        hint = _scope_next(task.execution_scope)
+        return {
+            "task_id": task_id, "status": task.status, "revision": task.revision,
+            **({"next": hint} if hint else {}),
+        }
 
     def task_update_plan(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
@@ -1223,9 +1286,22 @@ def build_handlers(
         if not isinstance(auto_wake, bool):
             raise ValueError("auto_wake_boolean_required")
         specs = []
+        contract_notes: list[str] = []
         for row in normalized:
             contracts = _required_contracts(row)
             cross_module = bool(row.get("cross_module"))
+            # 自指形状：任务要求的契约，槽位归**这个任务的执行者**自己 —— 说出来，别等它撞墙
+            # （2026-10-07 实测：没人说，那一步变成 31 条消息的协商）。不是拒绝：main 能代接受。
+            from tsunagou.application.workflows.task_execution import self_referential_contract_note
+
+            for contract_id in contracts:
+                proposal = cognition.proposals.get(contract_id)
+                note = self_referential_contract_note(
+                    contract_id, getattr(proposal, "participants", ()),
+                    _required_str(row, "assigned_worker_id"), str(row.get("title") or ""),
+                )
+                if note and note not in contract_notes:
+                    contract_notes.append(note)
             if cross_module and not contracts:
                 # 声明了跨模块交界却没有契约。实测里最贵的语义冲突（读者端 /requests 对后端
                 # /api/applications）**不重叠任何文件**，所以"只在文件重叠时强制契约"拦不住它；
@@ -1267,7 +1343,8 @@ def build_handlers(
                            "message_id": item.message_id, "acceptance": tasks.tasks[item.task_id].acceptance,
                            "cross_module": tasks.tasks[item.task_id].cross_module})
         return {"plan_id": plan.plan_id, "objective": plan.objective, "assignments": result,
-                "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}, plan.plan_id)}
+                "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}, plan.plan_id),
+                **({"next": "；".join(contract_notes)} if contract_notes else {})}
 
 
     def coordination_takeover(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -1335,6 +1412,28 @@ def build_handlers(
                 or agent_id == (assignment.takeover_agent_id or assignment.assigned_worker_id)
             )
         ]
+        def _member_view(agent: Agent) -> dict[str, Any]:
+            """谁在这个项目里，以及他现在是什么状态。
+
+            2026-10-07 实测（``tsunagou-跨机器协作2``）：一个项目 1 主 3 子全部 active、
+            会话 ready，而主 Agent 的快照里**一个子 Agent 都没有** —— 它能知道项目里还有别人，
+            只因为其中一个 Worker 自己 ``message.send`` 了一条；另外两个从没发过消息，它就
+            永远不知道。而 ``coordination.plan`` 要求它先填 ``assigned_worker_id``，填错只报
+            ``worker_not_member``。名单不能只活在"它得先想起来才会去调的另一个工具"里。
+
+            这里只报 Authority 自己的机械事实：``session_status`` 取自该 Agent 当前活着的会话。
+            心跳表算出来的 ``online`` 是控制台那一侧的词，不在这里重名。
+            """
+
+            session = next((item for item in authority.sessions.values()
+                            if item.agent_id == agent.agent_id and item.active), None)
+            return {"agent_id": agent.agent_id, "role": agent.role, "status": agent.status,
+                    "session_status": session.status if session is not None else "inactive"}
+
+        # 按 agent_id 排序：这份快照进 revision 摘要，顺序不稳就等于"每轮都有变化"。
+        members = [_member_view(agent)
+                   for agent in sorted(authority.agents.values(), key=lambda item: item.agent_id)]
+
         def _attempt_view(task_id: str) -> dict[str, Any] | None:
             task = tasks.tasks.get(task_id)
             attempt = tasks.attempts.get(task.current_attempt_id or "") if task is not None else None
@@ -1404,6 +1503,7 @@ def build_handlers(
             "agent_id": agent_id,
             "role": agent.role if agent is not None else "worker",
             "main_agent_id": authority.main_agent_id,
+            "members": members,
             "session": {"session_id": context["session_id"],
                         "connection_epoch": authority.sessions[context["session_id"]].connection_epoch,
                         "status": authority.sessions[context["session_id"]].status},

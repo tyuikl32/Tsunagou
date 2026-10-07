@@ -25,9 +25,9 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 |---|---|---|---|---|
 | project.initialize | `/api/v1/projects`（全路径） | U / — | name,objective,coordination_root,initial_policy | Project+Operation；已有Git仓库，创建genesis |
 | project.configure | `:configure` | M / project.configure | policy_patch,reason | ProjectPolicy；不能扩大用户ceiling |
-| root.register | `/roots` | M / root.manage | name,kind,repository_id?,required,binding_request,reason | RootRegistration；超边界先用户决定 |
-| root.bind | `/roots/{id}:bind` | M / root.manage | root_id,absolute_path,expected_physical_identity?,reason | RootBinding+Operation；物理验证 |
-| repository.register | `/repositories` | M / root.manage | name,root_id,required | RepositoryRegistration+Operation |
+| root.register | `/roots` | M / root.manage | name,kind,repository_id?,required,binding_request,reason | RootRegistration；超边界先用户决定。**root_id 由本命令生成**（不是调用方起的名字），任务 scope 必须用返回的那个 id |
+| root.bind | `/roots/{id}:bind` | M / root.manage | root_id,absolute_path,expected_physical_identity?,reason | RootBinding+Operation；**物理验证当场发生**：路径不在记 `status:"missing"`、该是目录却是文件记 `"not_a_directory"`（不拒绝 —— 那是有意义的状态），只有验证通过才是 `"bound"` |
+| repository.register | `/repositories` | M / root.manage | name,root_id,required | RepositoryRegistration+Operation；根没绑定时拒绝，detail 带 `root_id`、`registered`（该根登记过没有）与 `next` |
 | project.reconcile | `:reconcile` | M / project.reconcile | scope_refs,reason | Operation；只读观察、合并计划另确认 |
 | ceiling.set | `/control/ceiling:set` | U / — | ceiling,reason | UserCeiling；撤销不再满足范围的Grant |
 | project.trust_change | `/control/trust:change` | U / — | change_kind,proposal_ref,proposal_digest,expected_revisions,reason | UserDecision+Operation；协调根/信任边界/高敏root |
@@ -61,7 +61,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | session.end | `/sessions/{id}:end` | D / — | reason,stop_evidence? | HostSession；self，撤Grant/处理Attempts |
 | authority.appoint | `/control/authority:appoint` | U / — | agent_id,expected_authority_epoch,ceiling_template,reason | Authority；ready且baseline通过 |
 | authority.revoke | `/control/authority:revoke` | U / — | expected_authority_epoch,reason | Authority unassigned，撤权 |
-| context.project_read | `/context:project-read` | B / coordination.read | since_revision? | 脱敏项目上下文；仅当前会话与授权可见；带上一次的 revision 且其间无变化时只回 `{revision, unchanged}` |
+| context.project_read | `/context:project-read` | B / coordination.read | since_revision? | 脱敏项目上下文：本会话身份、角色、`members`（每个 Agent 的 agent_id/role/status/session_status，按 agent_id 排序）、owned/open 任务与在效契约；仅当前会话与授权可见；带上一次的 revision 且其间无变化时只回 `{revision, unchanged}` |
 | authority.handoff | `/authority:handoff` | M / authority.handoff | target_agent_id,expected_authority_epoch,adoption_plan,reason | AuthorityTransition |
 | authority.transition.report | `/authority-transitions/{id}:report` | H / authority.converge | stopped_refs,evidence_refs | Transition；只允许收敛对象 |
 | authority.transition.adopt | `/authority-transitions/{id}:adopt` | H / authority.converge | adopted_refs,expected_revisions,reason | Transition；target且scope可覆盖 |
@@ -73,18 +73,18 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| task.create | `/tasks` | M / task.create | title,objective,execution_scope,parent_task_id?,required_contract_ids?,blocks? | Task draft；execution_scope 必填但可为 `{}`（空=不额外限制：不声明 path，begin 不准备 workspace、不产生占用）；parent非终态或明确follow-up |
+| task.create | `/tasks` | M / task.create | title,objective,execution_scope,parent_task_id?,required_contract_ids?,blocks?,requires_files? | Task draft；`execution_scope` 必填但可为 `{}`（**空 = 不认领任何路径 → 这个任务不做文件改动**：begin 不准备 workspace、不产生占用、改动也不进结果 —— 要改文件就给 `resources`（path/root_id/segments/mode）或 `roots`；为空时结果里带一句 `next` 说清这点）；**声明了路径就必须指向已登记的根，否则 `unknown_root_id:<id>`**（悬空的 root_id 以前要到 begin 才炸）；**`requires_files:true` 而 scope 为空 → 拒绝**（`file_task_requires_scope`，发布时同样拦一道）；parent非终态或明确follow-up |
 | task.create.user | `/control/tasks` | U / — | 同task.create | Task；不自动任命自己owner |
 | task.update_plan | `/tasks/{id}:update-plan` | M / task.coordinate | title?,objective?,acceptance?,required_contract_ids?,reason? | Task；仅无执行的可编辑态 |
 | task.ready | `/tasks/{id}:ready` | M / task.publish | reason? | Task ready；完整结构检查 |
-| task.publish | `/tasks/{id}:publish` | M / task.publish | reason? | Task open；ready或changes_requested关闭旧Attempt后 |
+| task.publish | `/tasks/{id}:publish` | M / task.publish | reason? | Task open；ready或changes_requested关闭旧Attempt后；范围为空时结果里带一句 `next`（与 task.create 同一句） |
 | task.edge.add | `/task-edges` | M / task.coordinate | source_task_id,target_task_id,kind,expected_revisions | TaskEdge；blocks无环 |
 | task.edge.remove | `/task-edges/{id}:remove` | M / task.coordinate | reason,expected_revisions | EdgeRemoved；留事件 |
 | task.begin | `/tasks/{id}:begin` | B / task.claim | expected_task_revision | 一次取得 owner、基线、资源占用和执行授权；同 owner running 可恢复；失败不保留半套准备 |
 | task.progress | `/tasks/{id}:progress` | X / task.execute | summary,evidence_refs | ProgressRecord；running |
 | task.block | `/tasks/{id}:block` | B / task.coordinate_self | attempt_id,reason_code,dependency_refs,checkpoint_summary,evidence_refs | Suspension；current owner claimed/running |
 | task.submit | `/tasks/{id}:submit` | B / task.execute | attempt_id,summary,evidence_refs?,artifact_refs?,validation_metadata? | 自动收集 WorkspaceResult，提交后显式释放资源/撤执行权；submitted 等待 main 审查 |
-| task.review.accept | `/reviews/{id}:accept` | R / task.review | slot_id,result_digest,evidence_refs,reason | ReviewDecision；指定round/slot |
+| task.review.accept | `/reviews/{id}:accept` | R / task.review | slot_id,result_digest,evidence_refs,reason | ReviewDecision；指定round/slot；**任务声明了非空 execution_scope 时，结果里必须有工作区产物**（`workspace_result_ref`/`workspace_id`/`manifest_id`），否则 `workspace_evidence_required` —— 没有工作区就没有证据，不接受（空 scope 的任务不受此门约束） |
 | task.review.request_changes | `/reviews/{id}:request-changes` | R / task.review | slot_id,result_digest,evidence_refs,reason | ReviewDecision+Task changes_requested |
 | task.self_accept | `/reviews/{id}:self-accept` | B / task.coordinate_self | result_digest,evidence_refs,reason | ReviewDecision；原owner、policy low-risk self |
 | task.cancel_request | `/tasks/{id}:request-cancel` | M / task.coordinate | reason | current Attempt claimed/running 时 cancel_requested；否则直接 cancelled，保留 submitted 结果 |

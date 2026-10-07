@@ -17,7 +17,7 @@
       "minLength": 1
     },
     "execution_scope": {
-      "description": "Required. Where this task may work. Two legal shapes: {\"roots\": [root_id, ...]} claims whole registered roots, and {\"resources\": [{kind:\"path\", root_id, segments, mode:\"read\"|\"consistent_read\"|\"exclusive_write\"} | {kind:\"named\", namespace, name}]} claims individual paths or names. The key must be present, and {} is allowed: {} means \"no explicit restriction\". A {} scope claims no path, so begin prepares no workspace and takes no reservation, and the task is reported as not needing a workspace; the workspace resolver's fallback would inherit every root already registered on this project, but no begin reaches that fallback without a path claim.",
+      "description": "Required. Where this task may work. Two legal shapes: {\"roots\": [root_id, ...]} claims whole registered roots, and {\"resources\": [{kind:\"path\", root_id, segments, mode:\"read\"|\"consistent_read\"|\"exclusive_write\"} | {kind:\"named\", namespace, name}]} claims individual paths or names. The key must be present, and {} is allowed -- but {} means THIS TASK CLAIMS NO PATH: it is treated as a task that does not change files, so begin prepares no workspace, takes no reservation and has no lease, and whatever files the worker edits are not recorded in the result. File tasks must name paths or roots; set requires_files when they do, so publishing without a scope is refused instead of silently producing a task nobody can do file work in.",
       "type": "object",
       "examples": [
         {
@@ -49,6 +49,10 @@
         },
         {}
       ]
+    },
+    "requires_files": {
+      "description": "Optional. true = this task is expected to change files: publishing it while execution_scope is empty is refused (file_task_requires_scope), instead of quietly handing workers a task with no workspace and no lease. Omit it (or set false) for a task that really does not touch files -- an empty scope then keeps its documented meaning, and create/publish answer with a `next` line saying so.",
+      "type": "boolean"
     },
     "required_contract_ids": {
       "type": "array",

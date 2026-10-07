@@ -226,12 +226,23 @@ class ProjectRegistry:
         if root_id not in project.roots:
             raise KeyError(root_id)
         absolute = _resolved(Path(path))
+        # 物理验证在**这一刻**发生，但**不拒绝**：路径不在（或该是目录却是文件）是有意义的状态
+        # —— 目录被移走、挂载没挂上，控制台要把"未绑定"显示出来（见 test_unbound_root_is_diagnostic_only）。
+        # 要守的是另一件事：**不许声称 bound**。"已绑定"必须可信，否则后面"根绑好了"这个前提是假的
+        # （2026-10-07 实测：给一个不存在的目录，状态照样是 bound，直到真要开工作区才炸）。
+        if str(project.roots[root_id].get("root_kind")) == "directory" and absolute.exists() \
+                and not absolute.is_dir():
+            status = "not_a_directory"
+        elif not absolute.exists():
+            status = "missing"
+        else:
+            status = "bound"
         self.local_bindings[root_id] = {
             "absolute_path": str(absolute),
             "physical_identity": physical_identity(absolute),
             "case_mode": "insensitive" if platform.system() == "Windows" else "sensitive",
             "link_policy": "resolve_and_recheck",
-            "status": "bound",
+            "status": status,
             "binding_revision": self.local_bindings.get(root_id, {}).get("binding_revision", 0) + 1,
         }
         self._save()

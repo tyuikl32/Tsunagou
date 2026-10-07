@@ -125,6 +125,42 @@ def test_issue_user_ticket_can_request_main_without_agent_id(tmp_path: Path) -> 
     assert authority.main_agent_id == receipt.agent_id
 
 
+def test_an_empty_execution_scope_says_what_it_means(tmp_path: Path) -> None:
+    """空 scope 不是"无限制"，是"这个任务不做文件改动"。
+
+    主 Agent 为此踩过坑（2026-10-07）：三个文件任务发成 `{}` → 不准备工作区、不占租约、
+    worker 改的文件也进不了结果。所以**建任务与发布任务时都要有一句机械提示**，而不是
+    等人去问"为什么我的 worker 什么都没改"。
+    """
+
+    app, authority = _app(tmp_path, control_token="ctl")
+    endpoint = _endpoint(app)
+    enrolled = endpoint(
+        "agent.enroll", _request(_enroll_payload()), Response(),
+        f"Bearer {authority.issue_ticket('install-a', 'conversation-a')}", None, None,
+    )["result"]
+    endpoint("authority.appoint", _request({"agent_id": enrolled["agent_id"]}), Response(), "Bearer ctl", None, None)
+    bearer = f"Bearer {enrolled['secret_token']}"
+
+    def call(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return endpoint(kind, _request(payload), Response(), bearer,
+                        enrolled["session_id"], enrolled["connection_epoch"])["result"]
+
+    empty = call("task.create", {"title": "t", "objective": "o", "execution_scope": {}})
+    assert "不认领任何路径" in (empty.get("next") or ""), "建空 scope 任务时要当场说清它的含义"
+
+    scoped = call("task.create", {
+        "title": "t2", "objective": "o",
+        "execution_scope": {"resources": [
+            {"kind": "path", "root_id": "r", "segments": ["a"], "mode": "exclusive_write"}]},
+    })
+    assert "next" not in scoped, "声明了范围就不该挂这句提示"
+
+    call("task.ready", {"task_id": empty["task_id"]})
+    published = call("task.publish", {"task_id": empty["task_id"]})
+    assert "不认领任何路径" in (published.get("next") or ""), "发布是最后一刻，更要提醒"
+
+
 def test_appoint_requires_ready_session(tmp_path: Path) -> None:
     app, authority = _app(tmp_path, control_token="ctl")
     endpoint = _endpoint(app)
