@@ -1,6 +1,7 @@
 /*
-Tsunagou 项目 前端 Web UI - CSS 文件 
-作者：苏秋1972（NO VibeCoding）
+Tsunagou 项目 前端 Web UI - 主干 CSS 文件 
+作者：陈林榕（Su1972）
+此文件为完全human coding，全程无AI介入（例外：改文案时AI可能动过少数::before的content属性的内容，大约几个字节）
 */
 
 /* 全局声明 */
@@ -90,11 +91,11 @@ body {
                 width: 180px;
                 /* pointer-events: none; */
                 flex-grow: 0;
-                transition:transform 0.15s;
+                transition: transform 0.15s;
             }
 
             >img:hover {
-                transform:translateX(10px);
+                transform: translateX(10px);
             }
 
             .sdBtn {
@@ -181,7 +182,7 @@ body {
         padding: 8px 10px;
         font-size: 14px;
         /* display:none; */
-        
+
         .inner {
             height: 30px;
             border-radius: 6px;
@@ -424,7 +425,7 @@ body {
                 right: -40px;
                 width: 30px;
                 height: 30px;
-                background-color:var(--col-4-5);
+                background-color: var(--col-4-5);
                 border-radius: 6px;
                 display: flex;
                 align-items: center;
@@ -442,12 +443,12 @@ body {
 
             .edit:hover {
                 background: var(--brand-col-2);
-                color:white;
+                color: white;
             }
 
             .edit:active {
                 background-color: var(--brand-col);
-                color:white;
+                color: white;
             }
         }
 
@@ -470,7 +471,7 @@ body {
             }
 
             .edit {
-                background-color:var(--brand-col);
+                background-color: var(--brand-col);
                 color: white;
             }
         }
@@ -559,7 +560,7 @@ body {
     .foldImg:active {
         background-color: var(--col-2);
     }
-    
+
     .foldBtn {
         width: 50px;
         height: 50px;
@@ -634,11 +635,6 @@ body {
             flex-wrap: nowrap;
             align-items: center;
             user-select: none;
-
-
-
-
-
 
             >img {
                 width: 56px;
@@ -760,7 +756,7 @@ body {
         align-items: center;
         background-color: var(--col-2);
         justify-content: space-between;
-        
+
 
         .left {
             color: var(--col-7-5);
@@ -796,25 +792,25 @@ body {
         }
 
         .right {
-            margin-right:10px;
+            margin-right: 10px;
         }
 
         .right::before {
             font-family: "Font Awesome 6 Free";
             font-weight: 900;
             content: "\f013";
-            color:var(--col-7);
-            padding:8px;
-            border-radius:6px;
-            transition:background-color 0.15s;
+            color: var(--col-7);
+            padding: 8px;
+            border-radius: 6px;
+            transition: background-color 0.15s;
         }
 
         .right:hover::before {
-            background-color:var(--col-4);
+            background-color: var(--col-4);
         }
 
         .right:active::before {
-            background-color:var(--col-3);
+            background-color: var(--col-3);
         }
     }
 
@@ -828,19 +824,6 @@ body {
         gap: 6px;
         user-select: none;
         padding-left: 16px;
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
 
         .tabS {
             padding: 10px 14px;
@@ -850,10 +833,11 @@ body {
             border-radius: 8px;
             border-bottom-left-radius: 0;
             border-bottom-right-radius: 0;
+
             i {
                 margin-right: 8px;
                 /* width:14px; */
-                text-align:center;
+                text-align: center;
             }
         }
 
@@ -908,9 +892,9 @@ body {
                     margin: 0;
 
                     i {
-                        margin-right:16px;
-                        width:30px;
-                        text-align:center;
+                        margin-right: 16px;
+                        width: 30px;
+                        text-align: center;
                     }
                 }
 
@@ -2588,72 +2572,46 @@ body {
         overflow: hidden;
 
         >.hero {
-            color: white;
+            /* color: white; */
             display: flex;
             padding: 10px 14px;
             background-color: var(--col-3);
             flex-direction: column;
             gap: 14px;
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-                
-                >.top {
-                    display:flex;
-                    align-items: center;
-                    gap: 10px;
-                    font-size: 23px;
-                    
-                    
-                    
-                    
-                    
-                    
-                    
-                    
-                    img {
-                        height: 26px;
-                    }
 
+
+            >.top {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-size: 23px;
+
+
+
+
+
+
+
+
+                img {
+                    height: 26px;
                 }
 
-                >.bottom {
-                    font-size: 14px;
+            }
+
+            >.bottom {
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                /* gap: 10px; */
+                justify-content: space-between;
+
+                >.item {
                     display: flex;
                     align-items: center;
-                    /* gap: 10px; */
-                    justify-content: space-between;
-                    >.item {
-                        display:flex;
-                        align-items: center;
-                        gap: 10px;
-                    }
+                    gap: 10px;
                 }
+            }
 
         }
 
@@ -2674,7 +2632,7 @@ body {
                 gap: 10px;
                 color: var(--col-6);
                 word-break: break-all;
-                
+
                 i {
                     font-size: 18px;
                 }
@@ -2684,6 +2642,10 @@ body {
         .title {
             color: var(--col-6);
             padding: 0 14px;
+        }
+
+        .textN {
+            padding:0 14px;
         }
 
         .textZ {
@@ -2705,6 +2667,7 @@ body {
             text-align: right;
             color: var(--col-6);
             font-size: 14px;
+            padding: 0 14px;
         }
 
         .tgBox {
@@ -2724,17 +2687,18 @@ body {
         }
 
         >.listfieldbox {
-            padding:0 14px;
+            padding: 0 14px;
         }
     }
 
     >.item:hover {
-        border:1px solid var(--brand-col);
+        border: 1px solid var(--brand-col);
     }
 
     >.itemMI {
         >.hero {
             background-color: var(--brand-col);
+            color: white;
         }
     }
 
@@ -2859,15 +2823,6 @@ body {
 .tagZOK {
     color: var(--col-8);
     /* background-color: var(--brand-col-0); */
-    1px:
-    solid;
-    solid;
-    soli;
-    sol;
-    so;
-    unset;
-    unset;
-    s;
     /* border: 1px solid var(--brand-col-0); */
 }
 
@@ -3002,9 +2957,9 @@ body {
         gap: 4px;
         flex-wrap: nowrap;
         border-bottom: 1px solid var(--col-4);
-        
-        
-        
+
+
+
 
         .tabItem {
             padding: 12px;
@@ -3150,7 +3105,7 @@ body {
     font-size: 14px;
     /* box-shadow: 0 0 2px 2px var(--col-1-5); */
     /* gap: 4px; */
-    
+
     >.title {
         padding: 6px 10px 6px 10px;
         color: var(--col-6);
@@ -3162,7 +3117,7 @@ body {
         padding: 6px 10px;
         color: var(--col-8);
         user-select: none;
-        transition: background-color 0.15s,color 0.15s;
+        transition: background-color 0.15s, color 0.15s;
         display: flex;
         align-items: center;
         gap: 10px;
@@ -3189,12 +3144,12 @@ body {
 
     >.item:hover {
         background-color: var(--brand-col);
-        color:white;
+        color: white;
     }
 
     >.item:active {
         background-color: var(--brand-col-0);
-        color:white;
+        color: white;
     }
 
 }
