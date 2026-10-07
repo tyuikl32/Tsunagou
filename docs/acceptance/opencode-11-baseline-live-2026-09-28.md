@@ -18,7 +18,7 @@
 | 1 | identity.session_isolation | supported | 两个会话产生不同 Agent（`5a80e67e…` vs `7d4b0386…`）、26 vs 15 能力集、独立 session 文件；worker 调 main-only 工具 `capability_denied`；同会话二次 attach 被 `conversation_already_attached` 拒绝；第三轮：同类 worker 互相 preflight 对方 attempt 均 `attempt_owner_required`，fork 会话不继承源身份（`not_enrolled`） |
 | 2 | identity.continuity_evidence | supported | resume/reconnect/compact 保持身份；compact 经真实 TUI `/compact` 实测（摘要消息 2026-09-28T13:04:49Z 落地，OpenCode 会话 id 与 Tsunagou agent/项目均不变）；新会话与 fork（`session:C`）产生新会话 id；`/clear` 经官方别名 `/new` 等价覆盖；另补充首调用身份硬校验 |
 | 3 | context.project_read | supported | 两会话读取同一 `project_id` 与各自身份；调用无投影注入面，绑定由服务端决定 |
-| 4 | command.typed_tools | supported | `tools/list` 53 个带 schema 的工具；调用者身份来自服务端凭据；main-only 操作对 worker `capability_denied` |
+| 4 | command.typed_tools | supported | `tools/list` 53 个带 schema 的工具（**2026-09-28 当时**；截至 2026-10-07 是 **50** 个，且按角色裁剪 —— main 50 / worker 28，见 `packages/bridge-server/src/server.ts` 的 `toolsForRole`）；调用者身份来自服务端凭据；main-only 操作对 worker `capability_denied` |
 | 5 | task.lifecycle | supported | create→ready→publish→claim→workspace.select/prepare→resource.intent/acquire→preflight→start→progress→block→resume→再 acquire→preflight→start→submit；旧 revision `task_revision_conflict` |
 | 6 | cognition.report | supported | worker/main 报告 + 分歧创建/解决；worker 越权 resolve 被拒 |
 | 7 | contract.participation | supported | 正确 digest `accepted`；stale digest `proposal_digest_mismatch`；槽位绑定错配 `participant_slot_denied` |

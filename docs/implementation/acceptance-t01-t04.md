@@ -8,7 +8,7 @@
 |---|---|---|
 | T01 工程骨架 | 已完成 | 锁文件、版本窗口、Python/TS骨架、架构检查和静态检查已通过 |
 | T02 宿主探针 | 已完成 | 四宿主均有探针与状态矩阵；首发门禁消费 Codex/OpenCode/DeepSeek Harness，ZCode evidence 保持 unknown 并后置 |
-| T03 机器协议 | 已完成 | 106 条命令策略、111 个 Schema、Python/TS 生成物和确定性摘要已通过 |
+| T03 机器协议 | 已完成 | 106 条命令策略、111 个 Schema（**这是 2026-09-19 当时的计数**；截至 2026-10-07 实测为 **105 条 / 121 个 schema**，以 `protocol/registry/commands.json` 为准）、Python/TS 生成物和确定性摘要已通过 |
 | T04 持久运行时 | 已完成（基础底座） | SQLite 事务、OS lock、WAL/FULL/FK、幂等、event/outbox、Job lease、重试/unknown、epoch fence 已通过单机验收；跨进程故障注入和迁移备份留给后续专项验收 |
 
 ## T01 完成证据

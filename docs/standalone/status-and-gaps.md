@@ -1,5 +1,15 @@
 # 2026-09-21 代码进度与八模块缺口
 
+> ⚠️ **这是一份 2026-09-21 的历史快照，不是当前状态。**
+> 文中的计数（107 个声明命令 / 装配 60 / 49 个工具 / 113 个 `protocol_data` 文件）是**那一天**的实测值，保留原样不改。
+> 截至 **2026-10-07** 的实测值是：声明 **105**、装配 **62**、bridge 工具 **50**、`protocol/schemas` **121**、`protocol_data` **142** 个文件、
+> pytest **1169** 条（其中 **20 条失败**）。本文仍作为"八模块各自还缺什么"的分析保留，但**别再引用它的数字**。
+>
+> ⚠️ **另有一处已知不成立**：本文第 3 节 02-agents 写"重启会释放旧 claim/Lease 并将未完成 Task 放回 `open`"。
+> 写这句话时它是**对的**，但 `a329cc2`（FX1~FX6，2026-09-29）把那段实现删掉了 —— 现在重启只撤销 `task_attempt` 授权，
+> 不释放资源、不 orphan Attempt、不把 Task 放回 `open`。`TaskService.orphan()` / `restore_open()` 仍在且单测通过，
+> 但**已无任何调用者**。详见该条旁边的更正标注。
+
 ## 1. 结论和检查口径
 
 当前系统能从源码或 wheel 启动本机 daemon，CLI 与 HTTP 访问同一 SQLite runtime；M1 十二条最小产品标准已通过，证据集中在 [M1 验收记录](m1-acceptance-2026-09-21.json)。原始完整设计仍有完整 resource/job runner、物化中断矩阵、八模块扩展查询和真实宿主接入等后续范围，不能把 M1 通过解读为完整设计全部完成。
@@ -57,7 +67,7 @@ Resource/Workspace/Artifact/Checkpoint/Lifecycle/Evaluation
 - 已修复：CLI 通过同一 daemon 签发票据，运行中的 daemon 可立即兑换；Authority、Grant、Message 与任务状态在同一 SQLite runtime 快照事务中恢复。
 - A2A 首版已补齐：daemon 现在提供 `/.well-known/agent-card.json`、`/api/v1/a2a` 和按收件 Agent 路由的 JSON-RPC endpoint；`message/send` 通过同一 dispatcher 写入持久消息，`tasks/get` 从内部任务查询映射状态，`tasks/cancel`、`tasks/fail`、`tasks/retry` 复用主 Agent/执行 Agent 的内部命令边界，重复 `messageId` 和 request ID 保持幂等。当前还接受 A2A 1.0 `configuration.taskPushNotificationConfig`，在 durable commit 后发 HTTP callback；回调凭据不落盘，失败保留 pull 路径。真实 build_application loopback audit 的 A2A 子集为 8/8 通过（`a2a_failed=0`，见 [A2A audit](a2a-audit-2026-09-22.json)）；A2A transition 的 principal/owner 负例由单元测试覆盖。阶段 A 已增加 managed Codex app-server 的协议 client 和可选 host-wake dispatcher，并取得当前版本的 initialize/thread/turn 探针和 disposable managed A2A context/inbox/presentation 证据；daemon restart、loopback taskPushNotificationConfig callback 和旧 epoch 拒绝也已真实验证（见 [managed app-server probe](../research/evidence/codex-app-server-managed-2026-09-23.json)）。总 audit 仍保留一个既有 `task_survives_restart` 失败，不能把总结果写成全绿。阶段 B 已交付显式 Desktop attach provider、Unix socket proxy、thread/read probe 和 CLI/HTTP 入口；官方公开 listener 已真实读取并恢复一个 Codex Desktop-originated thread，且 Tsunagou A2A 已产生 `thread_resumed`/`turn_started` 证据。运行中的 Windows Desktop stdio 进程仍没有自动可发现 endpoint；附着 thread 的终态受其 MCP/插件/审批环境影响，method catalogue 保持 unknown，delivery、push delivery、presentation、host wake 四种证据不能混淆。
 - 本轮协调切片已接入：项目通过 `project.configure` 显式启用 `auto_wake_multi_agent` 后，Main 可用 `coordination.plan` 原子创建分工、依赖、workspace/ResourceIntent 声明和 durable `WakeAttempt`；三个 ready worker 时计划覆盖率门禁要求三方分工。`coordination.wake.accepted` 只记录宿主接受回合，worker 首次 bridge 调用的 `worker.ready` 才解除 claim/acquire Lease 门禁。没有对应宿主证据时，建档或 inbox 入队不视为已唤醒。
-- M1 已通过：用户决定、项目完成、checkpoint、daemon 重启和 recovery 已通过同一公开入口烟测；重启后还逐一查询 tasks、attempts、results、jobs、agents、cognition/contracts、messages、workspaces、decisions 和脱敏 audit，记录见 [m1-public-smoke-2026-09-21.json](m1-public-smoke-2026-09-21.json)。重启会释放旧 claim/Lease 并将未完成 Task 放回 `open`，旧 Attempt 保留 orphaned 历史；双 bridge 断线故障注入和本机凭据失败路径保留为完整接入后续。
+- M1 已通过：用户决定、项目完成、checkpoint、daemon 重启和 recovery 已通过同一公开入口烟测；重启后还逐一查询 tasks、attempts、results、jobs、agents、cognition/contracts、messages、workspaces、decisions 和脱敏 audit，记录见 [m1-public-smoke-2026-09-21.json](m1-public-smoke-2026-09-21.json)。重启会释放旧 claim/Lease 并将未完成 Task 放回 `open`，旧 Attempt 保留 orphaned 历史 —— **⚠️ 更正（2026-10-07）：这句现在不成立了。** 当时（2026-09-21）的实现确实这样做，但 `a329cc2`（FX1~FX6，2026-09-29）删掉了 `invalidate_execution_state()` 里那段回收：现在重启只撤销 `task_attempt` 授权，**不释放资源、不 orphan Attempt、不把 Task 放回 `open`**；加上 FX-D01 取消了租约 TTL，中途掉线的 worker 留下的任务会一直停在 `running`，只能由主 Agent 显式 `task.recover`。`tests/unit/test_tasks.py::test_orphaned_execution_returns_task_to_public_queue` 仍然通过，是因为它直接调 `TaskService.orphan()` —— **单测绿、接线没了**；双 bridge 断线故障注入和本机凭据失败路径保留为完整接入后续。
 - 原设计余量：高级 handoff 收敛、复杂路由、多个宿主生命周期增强、推送/唤醒。
 - 依据：[authority.py](../../src/tsunagou/modules/authority.py)、[messaging.py](../../src/tsunagou/modules/messaging.py)、[bridge server](../../packages/bridge-server/src/server.ts)、[原设计](../implementation/modules/02-agents.md)。
 

@@ -12,7 +12,7 @@
 - 完整 Python 后端、HTTP API、CLI、共享 MCP 服务、持久化和四种桥接代码：Codex、OpenCode、ZCode、DeepSeek Harness。首发正式验收覆盖 Codex、OpenCode、DeepSeek Harness；ZCode 适配器保留但正式共同基线和发布验收延后。主动唤醒、工具门禁和进程托管依真实宿主能力增强。
 - 项目可包含多个文件夹、多个 Git 仓库。用户选定一个已存在的 Git 仓库作为协调仓库，`.tsunagou/` 是项目协调数据的中心位置。
 - 八大模块处理项目与权限、Agent 接入、任务、认知协商、资源、工作空间、持久化、观测与评估。
-- 后续 Web 工作台可接入同一公共 API；本次不开发 Web UI。
+- **本机 Web 控制台已交付**（`web/` + `src/tsunagou/console/`，2026-10-07 仍在迭代），它复用同一公共 API，只监听回环。
 - 用户可以直接告诉正在目标业务项目中工作的 Agent“在这个项目里从 GitHub 安装 Tsunagou”；安装 skill 会保存当前 Git 根，克隆独立源码 checkout，安装锁定的 Python/Node 依赖，构建 stdio bridge，并把该项目显式传给 installer。项目未初始化时 installer 自动执行一次 `project init`，随后执行 `project bootstrap`；不指定项目根时仍保持 source/skill-only 安装。
 - 项目 bootstrap 在项目内生成无秘密的 `AGENTS.md` 受管区块、项目 skill、Agent context 和来源 manifest；这些入口引用 Tsunagou checkout/规范，但不复制源码。`.tsunagou/local`、token、ticket、session 和 SQLite 仍是本机私有 runtime，daemon 启动和 Agent enrollment 仍由 onboarding 继续完成。
 

@@ -95,7 +95,7 @@ worker 的合法响应（seq 140/141，义务 `cc36f306…`）已独立读回 `s
 
 **继承历史纠正**：压缩发生在 fork 子会话，使用分叉会话本身不影响测试。独立逐事件比较发现，子日志 idx 1–748 与父日志对应事件完全相同，idx 749 为 `session/end-seed` 且 `inherited=true`。所谓压缩前 34 次读数，实际是继承历史里 34 条含 `agent_id` 的 `tool/result`，不能都称为子会话自己的项目身份读取。idx 742 时间为 2026-10-01 15:46:42.326（UTC+8），早于子会话创建的 18:07:35.917；子会话在 18:20:55.212 开始 compact，18:21:25.678 才产生 idx 771 的真实工具结果。两条记录的 Agent、Tsunagou session、epoch 数值确实相同，但来源不同，不能据此宣称子会话自身的实时前后身份对照已经完成。
 
-**为何仍接受 compact 子场景**：[适配器规范](../../.trellis/spec/adapters/index.md#pre-development-checklist)要求的是原生 `host_conversation_id` 的生命周期，[既有 Codex 验收](codex-final-two-live-2026-09-20.md#能力一identitycontinuityevidencesupported)也以宿主压缩与会话元数据接受 compact。本轮有完整成功事件及同一子会话 header，足以证明这一范围；不新增“压缩两侧都必须重新调用 Tsunagou”的共同门槛。子会话压缩后复用父身份是已 failed 的 R1，不能拿来证明隔离通过。
+**为何仍接受 compact 子场景**：[适配器规范](../../.trellis/spec/adapters/index.md#pre-development-checklist)要求的是原生 `host_conversation_id` 的生命周期，[既有 Codex 验收](codex-final-two-live-2026-09-20.md#能力一identitycontinuity_evidencesupported)也以宿主压缩与会话元数据接受 compact。本轮有完整成功事件及同一子会话 header，足以证明这一范围；不新增“压缩两侧都必须重新调用 Tsunagou”的共同门槛。子会话压缩后复用父身份是已 failed 的 R1，不能拿来证明隔离通过。
 
 **clear 判定**：当前证据只支持“本轮未找到可用入口”，不足以自动记为不适用或 supported。OpenCode 有官方 `/clear` 为 `/new` 别名的等价依据，DSH 尚无对应依据；共同文本仍列 clear，也未约定缺少操作可自动豁免。同时，既有 Codex 最终报告并未单列 clear，历史口径确实不完全一致，不能声称其他宿主都逐字测过。该差异需要明确统一，不由本轮静默改写标准，也不要求为测试新增 clear 命令。因此本轮只接受 compact 子场景，连续性整行仍 unknown。
 

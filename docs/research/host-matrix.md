@@ -1,12 +1,16 @@
 # 四宿主与 MCP 可行性矩阵
 
-最近核验：DeepSeek Harness 2026-10-01；Codex 2026-09-20；其他宿主 2026-09-19（Windows 11，Python 3.13.15，Node 24.20.0）。这是 T02/T23 的真实宿主诊断证据，不等同于四个正式适配器已交付。首发发布门禁只要求 Codex、OpenCode、DeepSeek Harness；ZCode 适配器和本矩阵记录保留，但正式基线与宿主演示后置。原始会话 ID、token、cookie、转录和本机私密路径不写入仓库；证据只保存脱敏 digest、状态和可复现原因。
+最近核验：**OpenCode 2026-10-02**（v2.0.21 注册路径与首次跨机器实测）；DeepSeek Harness 2026-10-01；Codex 2026-09-20；其他宿主 2026-09-19（Windows 11，Python 3.13.15，Node 24.20.0）。这是 T02/T23 的真实宿主诊断证据，不等同于四个正式适配器已交付。首发发布门禁只要求 Codex、OpenCode、DeepSeek Harness；ZCode 适配器和本矩阵记录保留，但正式基线与宿主演示后置。原始会话 ID、token、cookie、转录和本机私密路径不写入仓库；证据只保存脱敏 digest、状态和可复现原因。
+
+> ⚠️ **本矩阵的"结论"列与发布门禁不是同一份依据。** `tools/dev/release_check.py` 读 `docs/research/evidence/{host}-*.json` 里
+> **按文件名排序的最后一个**，而本表引用的是各宿主当时最完整的那一份。两者在 Codex 上结论相反（本表 11/11 supported，门禁报缺 8 项）——
+> 实测与原因见 [发布门禁](../implementation/release-gates.md)。**引用本表做"门禁是否通过"的判断会出错。**
 
 ## 环境与接入面
 
 | 宿主 | 本机状态 | 目标接入面 | 结论 |
 |---|---|---|---|
-| Codex CLI/App Server | codex 0.155.0-alpha.9.2 可执行 | app-server --stdio、thread lifecycle、MCP | 单宿主能力基线按组合证据口径 11/11 supported；严格的真实 bridge 在途断线场景仍未直接观察，见下文 |
+| Codex CLI/App Server | codex 0.155.0-alpha.9.2 可执行 | app-server --stdio、thread lifecycle、MCP | 单宿主能力基线按组合证据口径 11/11 supported（依据 `codex-2026-09-20-final-two-live.json`；**门禁消费的是另一份文件，故仍报 codex 缺 8 项**，见页首提示）；严格的真实 bridge 在途断线场景仍未直接观察，见下文 |
 | OpenCode | 本机 v2.0.21（npm 全局；早期探针用 `opencode-ai 1.18.31`） | headless server REST、Session、fork、MCP/OpenAPI，以及 `opencode mcp add`（项目级 MCP 配置） | 无模型 probe 只作历史部分证据；**2026-09-28 已在真实 v2.0.18 上完成 11 项共同基线**（见 [adapter-opencode](../implementation/adapter-opencode.md)）；2026-10-02 补测 v2.0.21 的注册路径（`add`/无 `remove`/需要 reload）；同日完成**首次跨机器实测**——远端 VM 上的 OpenCode Agent 成功登记进主机 daemon 且重启后身份不变，见[跨机器第 0 步实测](../acceptance/cross-machine-step0-2026-10-02.md) |
 | ZCode Agent | 未安装；公开 npm/GitHub 结果只有非官方客户端或社区桥接 | z.ai 原生 session/hook/MCP | unknown；没有可锁定的官方 CLI/API 版本，hook 资料要求变更后新会话，不能假设热生效 |
 | DeepSeek Harness | 桌面版 `@deepseek-ai/dsh-desktop-runtime 0.2.0-rc.2` | profile patch、stdio MCP、session controller | 尚未通过完整验收；身份隔离有反例，其余最新自报结果待独立复核 |

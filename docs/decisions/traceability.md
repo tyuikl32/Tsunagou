@@ -30,11 +30,11 @@
 | D185 唤醒听项目开关、醒不了就收尾、一次只走一条路 | codex-host-wake、messaging/host_delivery、hostwake | — |
 | D186 项目目标由对话产生、由用户确认，不由建项目时填 | runtime-walkthrough、cli-contract、command-catalog、runtime-prompts、projects/console 中间层、控制台主视图 | — |
 | D187 降级会话的重报由 bridge 在同一次工具调用里补 | a2a-boundary、bridge-server 凭据交接 | — |
-| D188 跨机器协作采用"主机 + 远端接入方"（形态 A） | 跨机器协作可行性（工作区根目录文档）；消息投递跨机器降级为拉取 | — |
+| D188 跨机器协作采用"主机 + 远端接入方"（形态 A） | 跨机器协作可行性（仓库外的工作区文档）；消息投递跨机器降级为拉取 | — |
 | D189 控制台只监听回环、默认端口固定为 2812 | cli-contract、web/method.md、console 配置与启动 | — |
-| D190 跨机器接入一律"主机发邀请"（A 流程），远端一条命令收下；邀请是机密；协调中心端口 2810 + 对外可达地址；远端自报机器名只作显示 | cli-http-manual、web/method.md、command-catalog、console 实现、Agent 接入 Skill、跨机器协作可行性（工作区根目录文档） | — |
-| D191 远端 Agent 不接要碰文件的任务（拒绝而非警告；`external` 不等于跨机器） | 跨机器协作可行性（工作区根目录文档）、Agent 接入 Skill、execution/workspace 判定与拒绝码词表 | — |
-| D192 远端干文件活走"外部准备 + 它自己报的副本"：报副本、选 external、位置对得上才放行；主机只记账不读，无基线、无清单，证据记自报 | 跨机器协作可行性（工作区根目录文档）、Agent 接入 Skill、cli-http-manual、web/method.md、execution/workspace 判定与词表 | — |
+| D190 跨机器接入一律"主机发邀请"（A 流程），远端一条命令收下；邀请是机密；协调中心端口 2810 + 对外可达地址；远端自报机器名只作显示 | cli-http-manual、web/method.md、command-catalog、console 实现、Agent 接入 Skill、跨机器协作可行性（仓库外的工作区文档） | — |
+| D191 远端 Agent 不接要碰文件的任务（拒绝而非警告；`external` 不等于跨机器） | 跨机器协作可行性（仓库外的工作区文档）、Agent 接入 Skill、execution/workspace 判定与拒绝码词表 | — |
+| D192 远端干文件活走"外部准备 + 它自己报的副本"：报副本、选 external、位置对得上才放行；主机只记账不读，无基线、无清单，证据记自报 | 跨机器协作可行性（仓库外的工作区文档）、Agent 接入 Skill、cli-http-manual、web/method.md、execution/workspace 判定与词表 | — |
 | D193 控制台自己留一份"上次看到的样子"（按项目分文件、有界、只顶"连不上"、必须带记录时刻、删项目一起删）；确认完工后页面上关掉接入 Agent / 立即存档 / 设为主 Agent（清理与重试类不关） | console.md、web/method.md、console/history 实现、cli-http-manual（删除项目那一段） | — |
 | D194 "宿主自己接入"与跨机器邀请那类申请的到达判定改用名单比对（机器级记录写下申请时的基线；身份归属沿用厂商/自报机器名规则；页面与控制台共用同一判据），Codex 仍走认领+回执；页面不再把 in_host 说成手工命令、恢复时不再写死 Codex | console.md、web/method.md、enrollment_store、console/enrollment | — |
 | D195 只有本机 Agent 能当主 Agent（入席自报机器名者为远端，拒绝码 `main_agent_must_be_local`，页面不画按钮）；项目永远有且只有一个主 Agent，因此不提供"撤销主 Agent"入口；`expected_authority_epoch` 运行时无人读取，页面不再带它、也不假装它是并发保护 | console.md、web/method.md、authority、handlers、glossary | Agent 换地位与删除方案（工作区根目录文档） |

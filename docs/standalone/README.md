@@ -2,6 +2,13 @@
 
 日期：2026-09-21。检查工作树：当前未提交改动。本文以真实命令、测试和临时项目结果为准；不把宿主能力检测、证据收集或研究实验作为本轮最小成品的前置条件。
 
+> ⚠️ **本文是 2026-09-21 的快照。** 里面的计数与"当前"字样指那一天；截至 2026-10-07，声明命令 **105**、装配 **62**、bridge 工具 **50**、
+> pytest **1169** 条（**20 条失败**）。下面的路径示例（`D:\Tsunagou`）是作者当时的源码位置，请换成你自己的克隆路径。
+>
+> ⚠️ **一处已知不成立**：本文第 3 节说"daemon 重启会把未完成 Task 放回 `open`、旧 Attempt 标 orphaned"。
+> 写时是对的，`a329cc2`（FX1~FX6，2026-09-29）删掉了那段回收实现 —— 现在重启只撤销 `task_attempt`（执行）授权，
+> 会话凭据与 `agent_base` 授权仍在，而未完成的任务**不会**被放回 `open`。详见 [status-and-gaps](status-and-gaps.md) 开头的横幅。
+
 **M1 的十二条最小产品验收标准已通过，成品可独立启动和运行；原始八模块的完整设计仍有后续范围。** 任务/认知/消息、shared 文件观察、review、真实 daemon 提交窗口、过期 Job lease 机械恢复、checkpoint 失败查询与 retry、用户确认和重启恢复均有入口证据。主动 Job runner、完整 lifecycle、worktree/external、真实宿主正式基线等列在后续 R1-R6 范围，不冒充 M1 已支持行为。逐条结果见 [M1 验收记录](m1-acceptance-2026-09-21.json)。
 
 ## 阅读与执行顺序
@@ -9,7 +16,7 @@
 1. [现状与八模块缺口](status-and-gaps.md)：已有代码能做什么、缺什么、与原设计的距离。
 2. [独立成品实施方案](implementation-plan.md)：交付范围、六个实施包、文件责任、事务、接口、错误和完成标准。
 3. [启动与调试执行单](debugging-runbook.md)：当前即可执行的审计和启动；修复后的操作流程与逐项调试办法。
-4. [本次真实 HTTP 审计结果](audit-2026-09-21.json)：当前 16/16 通过；它只覆盖已装配后端的回归，不代表 M1 全部完成。
+4. [本次真实 HTTP 审计结果](audit-2026-09-21.json)：**2026-09-21 当时** 16/16 通过（该 JSON 的 `handler_coverage` 是 `{registered:60, declared:107}` 的冻结值，现在是 62/105）；它只覆盖已装配后端的回归，不代表 M1 全部完成。
 5. [双 bridge MCP 协作烟测](bridge-two-session-smoke-2026-09-21.json)：两个独立认证 bridge 的首轮协作通过。
 6. [M1 公开入口烟测](m1-public-smoke-2026-09-21.json)：从空项目启动、用户确认、checkpoint 到 daemon 重启恢复通过。
 7. [独立安装包烟测](package-smoke-2026-09-21.json)：Python wheel 与 Node bridge 在源码树外安装启动通过。
@@ -25,7 +32,7 @@
 审计可重复执行：
 
 ```powershell
-Set-Location D:\Tsunagou
+Set-Location '<Tsunagou 源码目录>'      # 换成你自己的克隆位置
 .\.venv\Scripts\python.exe tools/dev/audit_standalone.py
 ```
 

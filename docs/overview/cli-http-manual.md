@@ -62,7 +62,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev/package_smoke.ps1
 
 ## 3. 创建协调项目并启动 daemon
 
-使用安装器返回的 tsunagou launcher，从选定业务 Git 仓库或子目录调用。以下示例假设源码安装在 D:\Tsunagou、业务仓库在 D:\Work\TsunagouControl；Agent 为实际操作填写真实路径。
+使用安装器返回的 tsunagou launcher，从选定业务 Git 仓库或子目录调用。以下示例里的 `D:\Tsunagou`（源码安装位置）与 `D:\Work\TsunagouControl`（业务仓库）**都是作者机器上的路径，请整段换成你自己的** —— 本手册全篇出现的绝对路径都按这个约定理解，不要照抄。
 
 ```powershell
 Set-Location 'D:\Work\TsunagouControl'
