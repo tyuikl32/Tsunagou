@@ -28,6 +28,17 @@ function readWeb(relative: string): string {
   return readFileSync(fileURLToPath(new URL(relative, WEB_ROOT)), "utf8");
 }
 
+/** 与页面同一条规则的本地时间写法（`formatTime`：本年不写年份、带秒）。
+ *  测试里自己算一遍，断言就与运行环境的时区无关 —— 写死 "10月5日18:20" 只在 +08:00 下成立，
+ *  而这正是 2026-10-07 那个"差 8 小时"的 bug 想要守住的地方：后端给的是 UTC。*/
+function localStamp(iso: string): string {
+  const at = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const head = at.getFullYear() === new Date().getFullYear() ? "" : `${at.getFullYear()}年`;
+  return `${head}${at.getMonth() + 1}月${at.getDate()}日`
+    + `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
+
 type ConsoleApi = {
   ready: boolean;
   dispatch: (type: string, payload?: unknown) => { ok: boolean; error?: string };
@@ -92,7 +103,7 @@ describe("控制台页面（web/）结构冒烟", () => {
       name: "main",
       status: "working",
       statusText: "进行中",
-      time: "服务运行中",
+      time: "2026-10-06 12:00",
     });
     const result = api.dispatch("project.list", [card("p-1"), card("p-2"), card("p-3")]);
     expect(result.ok).toBe(true);
@@ -204,6 +215,152 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(page.getElementById("renamePmt")!.style.display).not.toBe("none");
     expect((page.getElementById("renamePmtInput") as HTMLInputElement).value)
       .toBe("Tsunagou 跨机器测试");
+  });
+
+  /* 2026-10-07 用户实测：协作已经停了（`web stop` / `daemon stop`），右上角标题那块仍然写
+     「进行中」—— 因为那个徽标只看 `lifecycle`，而"服务还在不在"是另一件事。控制台其实早就
+     把这件事说出来了：daemon 不在了、这一屏是从记录里兜的时候，载荷里带 `history`
+     （一个出口一个记录时刻，见 console/app.py 的视图出口），而 `recordStamp()` 读的就是它。*/
+  it("协作已经停了：标题徽标写「已停止」，不再是「进行中」", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: {
+        refresh: (keys?: string[]) => Promise<unknown>;
+        state: { set: (path: string, value: unknown) => void };
+      };
+    };
+    const overview = (extra: Record<string, unknown>) => ({
+      project_id: "p-1", view: "overview", missing: {},
+      sources: {
+        overview: {
+          project_id: "p-1", name: "示例协作", objective: "已确认的目标",
+          lifecycle: "active", policy_revision: 1, roots: [], repositories: [],
+        },
+        agents: { items: [] }, tasks: { items: [] },
+        cognition: { reports: [] }, checkpoints: { items: [] }, decisions: { items: [] },
+      },
+      ...extra,
+    });
+    let body: Record<string, unknown> = overview({});
+    /* 完工的协作 + 服务已退出（有记录）：左栏卡片这时写「已完成・服务已退出（完工后自动关闭）」，
+       标题也要照同一口径。 */
+    const completedWithRecord = {
+      project_id: "p-1", view: "overview", missing: {},
+      sources: {
+        overview: {
+          project_id: "p-1", name: "示例协作", objective: "已确认的目标",
+          lifecycle: "completed", policy_revision: 2, roots: [], repositories: [],
+        },
+        agents: { items: [] }, tasks: { items: [] },
+        cognition: { reports: [] }, checkpoints: { items: [] }, decisions: { items: [] },
+      },
+      history: { overview: "2026-10-07T04:10:00+08:00" },
+    };
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const payload = path.indexOf("/console/views/overview") >= 0 ? body : {};
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve(payload),
+        text: () => Promise.resolve(JSON.stringify(payload)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+
+    const badge = () => page.querySelector(".secProjPanel .navArea .left .status")!;
+    await win.Tsunagou.refresh(["project"]);
+    // 服务在：照旧写「进行中」（lifecycle 是 active）—— 这条是回归，别把正常态改坏。
+    expect(badge().textContent).toBe("进行中");
+
+    // daemon 不在了、这一屏是记录：徽标必须说"没在跑"（用词与左栏那张协作卡片一致）。
+    body = overview({ history: { overview: "2026-10-07T21:03:00+08:00" } });
+    await win.Tsunagou.refresh(["project"]);
+    expect(badge().textContent).toBe("未启动");
+
+    /* 连记录都没有（例如服务被清掉了）：视图整屏拒绝，这一条拉取会失败 —— 徽标也不能继续
+       写着「进行中」（那是"页面一边报错一边宣称在跑"）。 */
+    win.fetch = () => Promise.reject(new Error("smoke: daemon down"));
+    await win.Tsunagou.refresh(["project"]);
+    expect(badge().textContent).toBe("未启动");
+
+    /* 口径与左栏卡片对齐：**已完成 / 已归档优先**，服务不在不改变这个结论 —— 用户 2026-10-07
+       实测：完工的协作左栏写「已完成・服务已退出（完工后自动关闭）」，标题却写「未启动」。*/
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const payload = path.indexOf("/console/views/overview") >= 0 ? completedWithRecord : {};
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve(payload),
+        text: () => Promise.resolve(JSON.stringify(payload)),
+      });
+    };
+    await win.Tsunagou.refresh(["project"]);
+    expect(badge().textContent).toBe("已完成");
+  });
+
+  /* 2026-10-07：写任务范围要用 `root_id`，而页面上**无处可查** —— 概览只写"协作根 N 个"。
+     主 Agent 因此自己起了个名字（"workspace"）指向不存在的根。这里钉住：各根要**逐个列出**，
+     带 root_id；一个根都没有时也要看得见（那正是最该看见的状态）。*/
+  it("主视图基本信息逐个列出协作根与 root_id", async () => {
+    const win = dom.window as unknown as {
+      fetch: unknown;
+      Tsunagou: { refresh: (keys?: string[]) => Promise<unknown> };
+    };
+    const overview = (roots: unknown[]) => ({
+      project_id: "p-1", view: "overview", missing: {},
+      sources: {
+        overview: {
+          project_id: "p-1", name: "示例协作", objective: "已确认的目标",
+          lifecycle: "active", policy_revision: 1,
+          roots, repositories: [],
+        },
+        agents: { items: [] }, tasks: { items: [] },
+        cognition: { reports: [] }, checkpoints: { items: [] }, decisions: { items: [] },
+      },
+    });
+    let body: Record<string, unknown> = overview([
+      { root_id: "root-abc123", name: "workspace", root_kind: "directory" },
+    ]);
+    win.fetch = (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+      const payload = path.indexOf("/console/views/overview") >= 0 ? body : {};
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve(payload),
+        text: () => Promise.resolve(JSON.stringify(payload)),
+      });
+    };
+    win.Tsunagou.state.set("currentProjectId", "p-1");
+
+    const pane = () => page.querySelector("#pane-overview")!.textContent || "";
+    await win.Tsunagou.refresh(["project"]);
+    expect(pane()).toContain("root-abc123");
+    expect(pane()).toContain("workspace");
+
+    // 一个根都没有：留一行"0 个"，别把这一项整行藏掉。
+    body = overview([]);
+    await win.Tsunagou.refresh(["project"]);
+    expect(pane()).toContain("协作根");
+    expect(pane()).toContain("0 个");
+  });
+
+  /* 拒绝里带 `detail.hint` 时，提示要连"怎么办"一起说出来 —— 只回一个代号，人就得去翻源码。
+     2026-10-07 实测：控制台只显示「（代号 git_not_available）」，而中间层早就把
+     "把 git 放进控制台进程的 PATH（例如先 . E:\AKW\tools\env.ps1）再重试" 放在 detail.hint 里了。*/
+  it("拒绝带 detail.hint 时，提示里要出现「怎么办」", async () => {
+    const win = dom.window as unknown as { fetch: unknown };
+    const body = {
+      detail: { code: "git_not_available", hint: "把 git 放进控制台进程的 PATH 再重试",
+                path: "E:/Tsunagou/示例" },
+    };
+    win.fetch = () => Promise.resolve({
+      ok: false, status: 503,
+      json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)),
+    });
+
+    await expect(api.api.get("/whatever")).rejects.toThrow(/把 git 放进/);
+    // 代号仍然留着 —— 人要拿它跟账本、协议对上（与"短号"那套同一个道理）。
+    await expect(api.api.get("/whatever")).rejects.toThrow(/git_not_available/);
   });
 
   it("总路径的行仍然是 .taskFlow > .inner > .item（两级选择器点得开的前提）", () => {
@@ -565,6 +722,9 @@ describe("控制台页面（web/）结构冒烟", () => {
     const workerHero = heroOf(cards[1]!);
     expect(workerHero.top.textContent).toBe("a-2");
     expect(workerHero.top.querySelector("img")!.getAttribute("src")).toMatch(/logo-little-[ld]\.png/);
+    /* **只有主 Agent 那张卡染白**（它的底永远品牌蓝）。子 Agent 不写内联样式：底色随深色/浅色
+       主题走，浅底上把深色 logo 硬染成白色就看不见了（2026-10-07 用户规定，不改 CSS）。 */
+    expect(workerHero.top.querySelector("img")!.getAttribute("style")).toBeNull();
     expect(workerHero.slots.map(iconOfSlot)).toEqual([
       "fa-solid fa-code", "fa-solid fa-laptop", "fa-solid fa-check",
     ]);
@@ -801,7 +961,7 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(page.querySelector("#pane-acceptance")!.textContent).toContain("立即存档");
   });
 
-  it("daemon 停了但有记录：左栏卡片说得出上次记录到什么时候", async () => {
+  it("左栏卡片右下角是「数据更新时间」：中间层给的 updated_at", async () => {
     const win = dom.window as unknown as {
       fetch: unknown;
       Tsunagou: { refresh: (keys?: string[]) => Promise<unknown> };
@@ -810,6 +970,7 @@ describe("控制台页面（web/）结构冒烟", () => {
       items: [{
         project_id: "p-1", name: "已经收尾", lifecycle: "completed", available: true,
         main_agent_id: "a-1", daemon: { url: "http://127.0.0.1:1" },
+        updated_at: "2026-10-05T18:20:00+08:00",
         history: { captured_at: "2026-10-03T06:14:00.000Z", sources: 6 },
       }],
     };
@@ -820,15 +981,17 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["projects"]);
 
     const card = page.querySelector('.projItem[data-project-id="p-1"]')!;
-    // 端点文件还在、进程已经没了。这一份是**已完工**的协作：它的 daemon 是完工确认成功后
-    // 按设计退出的（自动关闭、把端口让出来），所以文案说"已退出"而不是"无响应"——
-    // 后者是故障的说法，把正常收尾说成故障会让人以为出了问题。并补上"上次记录"。
-    expect(card.textContent).toContain("服务已退出（完工后自动关闭）");
+    /* 用户 2026-10-07 定的口径：卡片那行显示**数据更新时间** —— 总路径（审计出口）里时间上最新
+       那一条的时刻，由中间层算好（`updated_at`）。服务在与不在不再写在这行：状态胶囊已经写着
+       「已完成 / 进行中 / 未启动」，写在这行就是把同一件事说三遍。 */
+    expect(card.textContent).toContain(localStamp("2026-10-05T18:20:00+08:00"));
+    expect(card.textContent).not.toContain(localStamp("2026-10-03T06:14:00.000Z"));
+    expect(card.textContent).not.toContain("服务已退出");
     expect(card.textContent).not.toContain("服务无响应");
-    expect(card.textContent).toContain("上次记录（记录到 2026-10-03 06:14）");
+    expect(card.textContent).not.toContain("上次记录");
   });
 
-  it("还没完工的协作、daemon 却没了：这才叫服务无响应", async () => {
+  it("中间层还没读到过总路径：退回记录时刻，也不写服务状态", async () => {
     const win = dom.window as unknown as {
       fetch: unknown;
       Tsunagou: { refresh: (keys?: string[]) => Promise<unknown> };
@@ -847,8 +1010,9 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["projects"]);
 
     const card = page.querySelector('.projItem[data-project-id="p-2"]')!;
-    // 没完工就没了 = 真的没响应，这一句必须留着，别被上一条改宽了。
-    expect(card.textContent).toContain("服务无响应");
+    // 没有 updated_at（这个协作的总路径还没被读到过）→ 退回记录时刻，仍然不写服务状态。
+    expect(card.textContent).toContain(localStamp("2026-10-03T06:14:00.000Z"));
+    expect(card.textContent).not.toContain("服务无响应");
     expect(card.textContent).not.toContain("服务已退出");
   });
 
@@ -859,7 +1023,7 @@ describe("控制台页面（web/）结构冒烟", () => {
     const pane = page.querySelector("#pane-acceptance")!;
     // 抬头是「上次记录」，正文写清记录到什么时候、以及 daemon 已经不在。
     expect(pane.textContent).toContain("上次记录");
-    expect(pane.textContent).toContain("记录到 2026-10-03 06:15");
+    expect(pane.textContent).toContain("记录到 " + localStamp("2026-10-03T06:15:00.000Z"));
     expect(pane.textContent).toContain("服务已经不在");
   });
 
@@ -2585,7 +2749,7 @@ describe("左栏两组各自独立（搜索 / 排序）", () => {
     expect(all("active")).toEqual(visible("active"));
     // 另一组没被这次改动碰到。
     expect(visible("done")).toEqual(["d-2", "d-1"]);
-    expect(storedSort()).toEqual({ active: { order: "old", by: "name" }, done: { order: "new", by: "viewed" } });
+    expect(storedSort()).toEqual({ active: { order: "old", by: "name" }, done: { order: "new", by: "updated" } });
   });
 
   it("排序按组独立：改一组不动另一组，对勾跟着打开菜单的那一组，并按组存进本地", async () => {
@@ -2595,10 +2759,10 @@ describe("左栏两组各自独立（搜索 / 排序）", () => {
     expect(activeBefore).toEqual(["a-3", "a-2", "a-1"]);
     expect(visible("done")).toEqual(["d-2", "d-1"]);
 
-    // 点【已完成】那组的齿轮：菜单画的是**这一组**的偏好（默认 按查看时间 / 新的在前）。
+    // 点【已完成】那组的齿轮：菜单画的是**这一组**的偏好（默认 按更新时间 / 新的在前）。
     click(titleBtn("done", "project-sort"));
     expect((railPage.querySelector("#sortMenu") as HTMLElement).style.display).toBe("flex");
-    expect(checked("data-sort-by", "viewed")).toBe(true);
+    expect(checked("data-sort-by", "updated")).toBe(true);
     expect(checked("data-sort-order", "new")).toBe(true);
 
     click(railPage.querySelector('#sortMenu .item[data-sort-by="created"]')!);
@@ -2610,7 +2774,7 @@ describe("左栏两组各自独立（搜索 / 排序）", () => {
 
     // 再点【进行中】那组的齿轮：同一个菜单，对勾立刻换回这一组的偏好。
     click(titleBtn("active", "project-sort"));
-    expect(checked("data-sort-by", "viewed")).toBe(true);
+    expect(checked("data-sort-by", "updated")).toBe(true);
     expect(checked("data-sort-order", "new")).toBe(true);
     click(railPage.querySelector('#sortMenu .item[data-sort-by="name"]')!);
     expect(visible("active")).not.toEqual(activeBefore);   // 这一组换了排法
@@ -3397,6 +3561,13 @@ describe("冲突 / 契约 / 审计：适配层只读出口真有的键", () => {
     expect(chipNames(fieldOf(card!, "未确认 Agent"))).toEqual(["海豚", "树懒"]);
     // 对象被当成字符串的痕迹不许出现（`[object Object]` 截 8 个字符就是 `[object `）。
     expect(card!.textContent).not.toContain("[object");
+    /* 未确认那一侧要写出**是哪个槽、归谁** —— 只画头像看不出"还差谁"。
+       2026-10-07 实测：主 Agent 想知道契约卡在谁身上，只能靠推理与追问（那次多花了 31 条消息的协商）。*/
+    expect(card!.textContent).toContain("还差哪个槽");
+    expect(card!.textContent).toContain("ui · 海豚");
+    expect(card!.textContent).toContain("review · 树懒");
+    // 已签的那个不该出现在"还差谁"里。
+    expect(card!.textContent).not.toContain("api · 熊猫");
   });
 
   it("审计页：只剩一栏所以没有子标签，标题是「租约审计」，点某一行开的是那一行的侧栏", async () => {

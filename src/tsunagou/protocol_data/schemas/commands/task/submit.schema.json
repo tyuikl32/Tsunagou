@@ -30,6 +30,7 @@
       }
     },
     "validation_metadata": {
+      "description": "Optional evidence records. Keep each one SHORT: only `command` and `exit_code` are required, and everything else (timestamps, tool, digests, evidence_level) is optional. Prefer pointing at where the evidence can be checked -- `evidence_refs` / `artifact_refs`, or a workspace result -- over inlining long command lines, logs or transcripts: the host parses this as JSON in one streamed response, and a long payload is what breaks it (2026-10-07: a submission with the full seven-field records killed the session with 'tool input is invalid JSON'). Main can attach the long evidence when it reviews the result.",
       "items": {
         "additionalProperties": false,
         "properties": {
@@ -81,13 +82,8 @@
           }
         },
         "required": [
-          "started_at",
-          "finished_at",
           "command",
-          "exit_code",
-          "tool",
-          "tool_version",
-          "workspace_digest"
+          "exit_code"
         ],
         "type": "object"
       },

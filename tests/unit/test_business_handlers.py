@@ -752,6 +752,31 @@ def test_context_project_read_includes_project_id(tmp_path: Path) -> None:
     assert any(item["task_id"] == task_id for item in snapshot["tasks"])
 
 
+def test_context_project_read_lists_the_other_members(tmp_path: Path) -> None:
+    # 2026-10-07 实测：一个项目里 4 个成员（1 主 3 子）全部 active、会话 ready，而主 Agent 的
+    # 快照里一个子 Agent 都没有。它能知道项目里还有别人，只因为其中一个 Worker 自己发了条消息；
+    # 另外两个从没发过消息，它就永远不知道 —— 可 coordination.plan 恰恰要求它先填
+    # assigned_worker_id。名单必须出现在它每一轮都会读的那个地方。
+    _, authority, _, _, _, endpoint = _harness(tmp_path)
+    quiet = _enroll_ready(authority, installation="install-quiet", conversation="conversation-quiet")
+    main = _enroll_ready(authority, installation="install-main", conversation="conversation-main")
+    authority.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+
+    snapshot = _call(endpoint, "context.project_read", {}, main)
+    members = {item["agent_id"]: item for item in snapshot["members"]}
+    assert set(members) == {main.agent_id, quiet.agent_id}
+    assert members[main.agent_id]["role"] == "main"
+    assert members[quiet.agent_id]["role"] == "worker"
+    assert members[quiet.agent_id]["status"] == "active"
+    assert members[quiet.agent_id]["session_status"] == "ready"
+    # 不把心跳那一层的 "online" 偷过来：这里只报 Authority 自己的机械事实。
+    assert "online" not in members[quiet.agent_id]
+
+    # Worker 自己读时也看得到别人：它要点对点找队友时，message.send 要 recipient_agent_id。
+    worker_view = _call(endpoint, "context.project_read", {}, quiet)
+    assert {item["agent_id"] for item in worker_view["members"]} == {main.agent_id, quiet.agent_id}
+
+
 def test_reconnect_rejects_stale_connection_epoch(tmp_path: Path) -> None:
     _, authority, _, _, _, endpoint = _harness(tmp_path)
     receipt = _enroll_ready(authority, installation="install-a", conversation="conversation-a")

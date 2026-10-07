@@ -414,7 +414,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 **读取类**（2026-09-28 接线后的真实表；说明见 §10）
 | 键 | 路径 | 作用域 | 期望返回 |
 |---|---|---|---|
-| `projects` | `/projects?agents=1` | 全局 | `{items:[{project_id,name,objective,lifecycle,policy_revision,path,daemon,main_agent_id,agents,agents_fetched_at,history}]}`（中间层提供；daemon 没有这个路由。`agents=1` 才去问名单，见 §7） |
+| `projects` | `/projects?agents=1` | 全局 | `{items:[{project_id,name,objective,lifecycle,policy_revision,path,daemon,main_agent_id,agents,agents_fetched_at,history,updated_at}]}`（中间层提供；daemon 没有这个路由。`agents=1` 才去问名单，见 §7。**名单问不到时（daemon 停了）用记录里那一份补上**，`agents_fetched_at` 也跟着写成记录时刻 —— 完工的服务是按设计退出的，而"谁负责这个协作"在它退出以后仍然成立；活的答案永远优先。**字段名照 daemon 出口写**：名单行在记录的 `items` 里（`{main_agent_id, items:[…]}`），不是 `agents`。**`updated_at` = 该协作总路径（审计出口）里时间上最新那一条的时刻** —— 由 `audit_updated_at` 从控制台记录的页面直连出口（`relay:/api/v1/projects/<id>/history`）里取：那一页按 `event_seq` 升序、每读到一次就整份覆盖，所以取其中最大的 `occurred_at`；若这一页恰好含 watermark 那一条（`event_seq == as_of_event_seq`）就优先用它，免得"分页没走到底"时把中间某一条当成最新。读不到记录给 `null`，页面自己退回记录时刻） |
 | `agentsWindow` | `/console/agents` | 全局 | `{items:[{agent_id,role,status,project_id,project_name,task}],unreadable:[project_id],fetched_at}`（**跨项目汇总**：一行 = 一个 (项目, Agent)；中间层提供，见 §7） |
 | `settings` | `/console/profile` | 全局 | `{version,nickname,theme,agents:{<agent_id>:{nickname,vendor}}}`（中间层的用户档案） |
 | `glossary` | `/console/glossary` | 全局 | `{version, domains:{<域>:{<token>:中文}}}`（后端参数值的中文对照表，中间层维护，见 §7.3） |
@@ -493,7 +493,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > Agent 的厂商来自用户档案（`GET /console/profile` 的 `agents[<agent_id>].vendor`），
 > 由中间层在读名单时从 bridge 目录与 onboarding 目录里补写；档案没到之前渲染出来的就是小标。
 
-| `render.navbar(project)` | 项目页顶部导航条（名称 + 状态胶囊）。输出标记与原 index.html 的静态写法**完全一致**，只是改成由数据驱动；**由 `render.overview` 顺带调用**，所以 `project.current` / `refresh` 会一并更新它 |
+| `render.navbar(project)` | 项目页顶部导航条（名称 + 状态胶囊）。输出标记与原 index.html 的静态写法**完全一致**，只是改成由数据驱动；**由 `render.overview` 顺带调用**，所以 `project.current` / `refresh` 会一并更新它。**状态胶囊与左栏协作卡片同一个口径**：`已完成 / 已归档` 优先（完工的服务是按设计退出的，写成"未启动"会让人以为出故障），只有 `active` 的协作才看服务在不在 —— 载荷带 `history`（这一屏是从记录里兜的，见 `console/app.py` 的视图出口）时写「未启动」，整屏拉不到时由 `refresh` 的失败分支调 `markNavbarNotStarted()` 也写「未启动」（名字沿用页面上已有的）。2026-10-07 用户实测两处：协作停了还写「进行中」；改完后完工的协作又被写成了「未启动」 |
 
 ### 左栏协作卡片 `render.list`
 ```
@@ -508,6 +508,19 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 > **判据与状态文字是同一个**：`lifecycle` 是 `completed` 或 `archived` 就算完成
 > （`archived` 的项目状态文字是"已归档"）。控制台没有归档入口，所以"确认完工但没归档"
 > 的项目也必须离开上面那一组，否则会永远混在"进行中"的协作里。
+>
+> `time` 是卡片右下角那行小字：**数据更新时间** —— 中间层给的 `updated_at`（= 总路径里时间上
+> 最新那一条的时刻，见上面 `projects` 路由那一行），显示**走 `formatTime`**（本地时区、本年不写
+> 年份、带秒 → `10月5日18:27:29`，与总路径那行同一个格式）。它和排序「按更新时间」读**同一个值**，
+> 所以卡片上写着几点、排序就按几点。服务在与不在**不写在这行**：状态胶囊已经写着「已完成 /
+> 进行中 / 未启动」，写在这行就是把同一件事说三遍（2026-10-07 用户定稿；此前那套"服务已退出
+> （完工后自动关闭）· 上次记录（记录到 …）"，以及"服务无响应"一并删掉）。中间层还没读到过总路径
+> （`updated_at` 为 null）时退回记录时刻，两者都没有就空着 —— 不假装。
+>
+> **别再切片 ISO 串**：后端给的时刻多是 **UTC**（`…Z`），`replace('T',' ').slice(0,16)` 会把 UTC
+> 的钟点当成本地时间显示 —— 2026-10-07 实测同一条记录卡片写 `10:27`、总路径写 `18:27`，差 8 小时。
+> `recordText` / `recordDetail` 那两处"记录到 …"是同一个 bug，一并改走 `formatTime`；测试里断言
+> 时间要用自己算的本地写法（见 `behavior.smoke.test.ts` 的 `localStamp`），别写死某个时区的字面值。
 >
 > **选中态一列最多一张**（`projItemSelected` → CSS 把 `.title` 涂成品牌蓝）：由 `render.list`
 > **整列一次算清**，优先"当前项目"（`state.currentProjectId`），没有再看第一条自称 `selected` 的
@@ -1613,7 +1626,7 @@ daemon 一个查询出口只回答一类东西，而一屏往往要好几类。�
 | 降级会话的另外两条路 | `session.reprobe`（原地重出证据）与 `session.end`（自行退场）**只在 registry 里声明、`handlers.py` 没装配**；现在能走的仍只有"带报告重连"（`session.reconnect` + `probe_payload`）与"拿新票重接"（`session.rebind`）。另外降级**不动正在跑的活**（只撤已有 grant），在跑的 Attempt 只由租约到期那条独立机制回收 |
 | 一键演示 / 冒烟 | `uv run python tools/dev/console_smoke.py --reset`（建沙箱项目 + 起 daemon + 起控制台 + 逐个接口与视图源断言） |
 | Agent 卡片的「说明」 | **2026-10-06 再改**：不再写后端代号（搬到 Agent 详情窗口），这一行只剩**已退役**那句提醒；未退役的 Agent 干脆不画它 —— 空标题底下什么都没有，比不写更糟。2026-09-30 那次改的是内容（以前写「厂商：xxx」，改成写后端代号）—— 厂商交给胶囊上的 logo 说（§7「Chat agent 图标」那条也是这个口径）。胶囊本身写**昵称**；昵称还没起时退回代号，免得是一个没字的胶囊 |
-| Agent 卡片（2026-10-06 重新设计） | 顶部一块品牌色 `.hero`：`.top` 是厂商 logo + 名字；`.bottom` 三格 ——**角色**（主 Agent `fa-font-awesome`、子 Agent `fa-code`）、**本机还是网络**（本机写「本地」+ `fa-laptop`；网络接入写「网络在线 / 网络离线」+ `fa-circle-nodes`，判据仍然只走 `agentNetworkOf`，不另立一份）、**可用性**（可用 `fa-check`、不可用 `fa-minus`）。logo **内联染白**（`filter:brightness(0) invert(1)`）：那一块底色永远是品牌蓝，深色 logo 在上面看不见 —— 与 `chipHtml` 处理主 Agent 胶囊同一个写法。原来那三块（身份胶囊 / 「当前状态」 / `header` 里的网络徽标）都收进 hero，卡面上不再各占一行；动作仍由 `agents[].actions[]` 驱动 |
+| Agent 卡片（2026-10-06 重新设计） | 顶部一块品牌色 `.hero`：`.top` 是厂商 logo + 名字；`.bottom` 三格 ——**角色**（主 Agent `fa-font-awesome`、子 Agent `fa-code`）、**本机还是网络**（本机写「本地」+ `fa-laptop`；网络接入写「网络在线 / 网络离线」+ `fa-circle-nodes`，判据仍然只走 `agentNetworkOf`，不另立一份）、**可用性**（可用 `fa-check`、不可用 `fa-minus`）。logo **只有主 Agent 那张卡内联染白**（`filter:brightness(0) invert(1)`，与 `chipHtml` 处理主 Agent 胶囊同一个写法）：它的底永远是品牌蓝；**其他卡片不写内联样式**，随深色/浅色主题走 —— 2026-10-07 用户规定（那天的浅色主题下，子 Agent 的白 logo 在浅底上几乎看不见）。原来那三块（身份胶囊 / 「当前状态」 / `header` 里的网络徽标）都收进 hero，卡面上不再各占一行；动作仍由 `agents[].actions[]` 驱动 |
 | Agent 图标 | **2026-09-30 修**：厂商未知时不再冒充 DeepSeek，改摆 Tsunagou 自己的小标（`TSUNAGOU_CARD_ICON`）。三处保证档案里有厂商：①中间层到达登记时**即使没有昵称也记下厂商**（`console/enrollment.py`）；②前端接入成功那一刻再写一次（`rememberAgentProfile`，人没等就关掉遮罩也能盖上）；③**中间层读名单时按桥文件回填**（见下一行）|
 | CLI 接入漏下的厂商 | **2026-09-30 补**：`agent connect` 自己写 `.tsunagou/bridges/<adapter>-<profile>/` 下的文件，**从不碰用户档案**，所以那样进来的 Agent 没有厂商。档案里缺厂商时，中间层在**读名单那一步**从本机已有的桥文件里把厂商认回来：`connection.json`（`agent connect` 写的，直接给出 `agent_id`）优先；只有 `host-identity.json` 时，用它的 `conversation_id` 算 `canonical_digest({"conversation_id": …})`，与 daemon 已公开的 `conversation_digest` 对齐。**只补缺失的厂商、只认文件不猜**：人设过的值不动，认不出来就保持保底（Tsunagou 小标）；昵称**不落档** —— 没昵称就显示后端代号 |
 | Agent 昵称与厂商 | **2026-09-30 定**：界面接入必须两者齐备 —— 向导第 2 步的名称、`#addSubAgent` 的名称+厂商、详情窗口的「确定」都拒绝空昵称（`saveAgentInfo` 里那句 `昵称不能为空`）。CLI 接入不走这些表单，它漏下的厂商由中间层的桥文件回填补上，**不需要任何人手工登记** |

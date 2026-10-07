@@ -13,6 +13,7 @@
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit",
     "build": "node scripts/copy-protocol.mjs && tsc -p tsconfig.json",
+    "test:tools": "pnpm run build && node --test scripts/test-tool-surface.mjs",
     "test:reminders": "pnpm run build && node --test scripts/test-reminders.mjs",
     "test:credentials": "pnpm run build && node --test scripts/test-credential-handoff.mjs scripts/test-console-arrival.mjs && node scripts/smoke-late-ticket.mjs && node scripts/smoke-late-ticket.mjs --implicit-session",
     "start": "node dist/server.js"

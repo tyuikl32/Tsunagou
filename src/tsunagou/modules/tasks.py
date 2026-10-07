@@ -38,6 +38,9 @@ class Task:
     revision: int = 1
     scope_revision: int = 1
     execution_scope: dict[str, Any] = field(default_factory=dict)
+    #: 主 Agent 声明"这活要改文件"（可选字段，默认 false 保持既有语义：空 scope = 不做文件改动）。
+    #: 为 true 时空 scope 会被拒绝 —— 见 handlers 的 file_task_requires_scope。
+    requires_files: bool = False
     required_contract_ids: tuple[str, ...] = ()
     # "什么算合格"。2026-10-05 那轮最贵的返工就是工单上没有这一栏：管理员端交来错误业务域与
     # mock 实现，只有在集成之后才被人发现。它跟着任务走，Worker 在自己的上下文里就能读到。
@@ -131,6 +134,7 @@ class TaskService:
     def create_task(
         self, title: str, objective: str, *, parent_task_id: str | None = None,
         blocks: set[str] | None = None, execution_scope: dict[str, Any] | None = None,
+        requires_files: bool = False,
         required_contract_ids: tuple[str, ...] = (), acceptance: str = "", cross_module: bool = False,
     ) -> Task:
         with self._lock:
@@ -139,6 +143,7 @@ class TaskService:
             task = Task(
                 new_id(), title, objective, parent_task_id=parent_task_id,
                 blocks=set(blocks or ()), execution_scope=dict(execution_scope or {}),
+                requires_files=bool(requires_files),
                 required_contract_ids=required_contract_ids, acceptance=acceptance, cross_module=cross_module,
             )
             self.tasks[task.task_id] = task
@@ -426,6 +431,27 @@ class TaskService:
             task.revision += 1
             return result
 
+    #: 结果里能证明"工作区里到底发生了什么"的字段（由执行路径写进 payload，见
+    #: application/workflows/execution_commands.py 的记录结果那一段）。
+    WORKSPACE_EVIDENCE_FIELDS = ("workspace_result_ref", "workspace_id", "manifest_id")
+
+    def _require_workspace_evidence(self, task: Task, result: TaskResult) -> None:
+        """接受一个**声明了改动范围**的任务前，结果里必须真有工作区产物。
+
+        用户 2026-10-07 定的口径：没有租约/工作区，就不承认 agent 的改动。能机械判定的那一半，
+        正是"任务声明了范围、结果里却没有任何工作区产物"—— 没有东西能证明改了什么、基于哪个基线，
+        所以不能接受。**空 scope 的任务不在本门范围内**：它按"不做文件改动"处理（既有口径），
+        系统无从知道它本该改文件；那由发布时的提醒去管（见 handlers.EMPTY_SCOPE_NEXT）。
+        """
+
+        if not task.execution_scope:
+            return
+        payload = result.payload if isinstance(result.payload, dict) else {}
+        for name in self.WORKSPACE_EVIDENCE_FIELDS:
+            if str(payload.get(name) or "").strip():
+                return
+        raise TaskStateError("workspace_evidence_required")
+
     def review(
         self, task_id: str, reviewer_agent_id: str, result_id: str, *, decision: str,
         round_no: int = 1, reason: str | None = None,
@@ -439,6 +465,9 @@ class TaskService:
                 raise TaskStateError("result_task_mismatch")
             if task.status != "submitted":
                 raise TaskStateError("task_not_submitted")
+            if decision == "accepted":
+                # 先查证据，再记 review：被拒的接受不该留下一个 round。
+                self._require_workspace_evidence(task, result)
             key = (result_id, round_no)
             if key in self.reviews:
                 raise TaskStateError("review_round_exists")

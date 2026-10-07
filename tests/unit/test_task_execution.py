@@ -3,7 +3,7 @@ import pytest
 from tsunagou.application.workflows.task_execution import TaskExecutionWorkflow
 from tsunagou.modules.cognition import CognitionService
 from tsunagou.modules.tasks import TaskService, TaskStateError
-from tsunagou.shared_kernel.errors import RevisionConflict
+from tsunagou.shared_kernel.errors import CommandRefused, RevisionConflict
 
 
 def fixture():
@@ -34,7 +34,9 @@ def test_only_required_accepted_contracts_and_real_task_dependencies_gate_begin(
     tasks, cognition, workflow, task = fixture()
     proposal = cognition.propose_contract({}, [{"slot": "owner", "agent_id": "worker", "required": True}])
     task.required_contract_ids = (proposal.proposal_id,)
-    with pytest.raises(TaskStateError, match="required_contract_not_accepted"):
+    # 契约门现在的拒绝是 CommandRefused（带 proposal_id / status / next 的 detail），
+    # 代码串仍带 <id> 后缀 —— 见 tests/unit/test_required_contract_refusal.py。
+    with pytest.raises(CommandRefused, match="required_contract_not_accepted"):
         workflow.begin_attempt(task.task_id, "worker", task.revision)
     cognition.accept_contract(proposal.proposal_id, participant_slot="owner", proposal_digest=proposal.digest, actor_id="worker")
     dependency = tasks.create_task("upstream", "dependency")

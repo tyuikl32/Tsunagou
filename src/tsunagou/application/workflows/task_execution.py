@@ -6,7 +6,59 @@ from typing import Any
 
 from tsunagou.modules.cognition import CognitionService
 from tsunagou.modules.tasks import Attempt, Task, TaskResult, TaskService, TaskStateError
-from tsunagou.shared_kernel.errors import RevisionConflict
+from tsunagou.shared_kernel.errors import CommandRefused, RevisionConflict
+
+
+def contract_refusal_detail(proposal_id: str, status: str | None) -> dict[str, Any]:
+    """领活被契约门拒绝时要说清的三件事：是哪个契约、现在什么状态、下一步谁去做什么。
+
+    ``status`` 传 ``None`` 表示**这个契约在本项目里根本不存在** —— 与"存在但还没被接受"是两回事
+    （两种错、两种修法）。2026-10-07 实测：只回一个契约 id 时，撞墙的 agent 只能升级去问 main，
+    那一轮三条任务因此多出 31 条消息 / 17 次领取 / 11 次回复的协商成本。
+    """
+
+    if status is None:
+        return {
+            "proposal_id": proposal_id,
+            "status": "missing",
+            "next": (
+                f"任务要求的契约 {proposal_id} 在本项目里不存在：请 main 核对 required_contract_ids，"
+                "改用一个已经存在的契约；发布任务前先把契约结清。"
+            ),
+        }
+    return {
+        "proposal_id": proposal_id,
+        "status": status,
+        "next": (
+            f"契约 {proposal_id} 现在是 {status}，还不能领活：等它的参与者接受各自槽位"
+            "（或由 main 用 contract.accept_proxy 代接受），变成 accepted 后再 task.begin；"
+            "去 contract 出口看还差哪个槽、归谁。"
+        ),
+    }
+
+
+def self_referential_contract_note(
+    contract_id: str, participants: Any, worker_id: str, title: str,
+) -> str | None:
+    """任务要求的契约里有一个槽位归**这个任务的执行者**自己 —— 自指形状。
+
+    它领活时会等契约变成 accepted，而契约要等它自己先接受那个槽位。**不是错误**（main 可以用
+    ``contract.accept_proxy`` 代接受 ✓），但要在**下达计划那一刻**就说出来，而不是等它撞墙升级：
+    2026-10-07 实测那次没人说，这一步变成 31 条消息 / 17 次领取的协商。
+    """
+
+    for participant in participants or ():
+        if isinstance(participant, dict):
+            agent_id, slot = participant.get("agent_id"), participant.get("slot")
+        else:
+            agent_id, slot = getattr(participant, "agent_id", None), getattr(participant, "slot", None)
+        if str(agent_id or "") == str(worker_id or ""):
+            return (
+                f"任务「{title}」要求的契约 {contract_id} 有一个槽位归它自己（{slot}）：它领活时会等这个"
+                f"契约变成 accepted，所以先让它（{worker_id}）接受 {slot} 槽位，或在它卡住时由你用 "
+                "contract.accept_proxy 代接受。"
+            )
+    return None
 
 
 class TaskExecutionWorkflow:
@@ -37,7 +89,11 @@ class TaskExecutionWorkflow:
         for proposal_id in task.required_contract_ids:
             proposal = self.cognition.proposals.get(proposal_id)
             if proposal is None or proposal.status != "accepted":
-                raise TaskStateError("required_contract_not_accepted:" + proposal_id)
+                # 指名（哪个契约、什么状态、下一步）—— 代码保留 <id> 后缀，既有匹配照旧。
+                raise CommandRefused(
+                    "required_contract_not_accepted:" + proposal_id,
+                    contract_refusal_detail(proposal_id, getattr(proposal, "status", None)),
+                )
         return task
 
     def begin_attempt(self, task_id: str, agent_id: str, expected_revision: int) -> Attempt:

@@ -2591,7 +2591,19 @@
                     if (isPlainObject(payload)) {
                         message = payload.message || payload.msg || payload.error || '';
                         if (!message && isPlainObject(payload.detail)) {
-                            message = payload.detail.code || payload.detail.message || '';
+                            /* 代号照旧留着（人要拿它跟账本、协议对上），但**别把"怎么办"丢掉**：
+                               中间层常把 `hint` / `next` / `note` / `path` 一起放在 detail 里
+                               （例如 git_not_available 的 detail.hint 写着"把 git 放进控制台进程的
+                               PATH…再重试"）。只显示一个代号，人就只能去翻源码 —— 2026-10-07 实测。*/
+                            const detail = payload.detail;
+                            const parts = [detail.code || detail.message || ''];
+                            ['hint', 'next', 'note'].forEach(function (key) {
+                                const text = toText(detail[key]);
+                                if (text && parts.indexOf(text) < 0) parts.push(text);
+                            });
+                            const at = toText(detail.path);
+                            if (at) parts.push(at);
+                            message = parts.filter(Boolean).join('：');
                         }
                         if (!message && typeof payload.detail === 'string') message = payload.detail;
                     } else if (typeof payload === 'string') {
@@ -3222,13 +3234,12 @@
        两组各存各的一份（`{active: {order, by}, done: {order, by}}`）：点某一组的齿轮只改
        那一组的顺序，另一组一个都不动。老版本存的是一份扁平的 {order, by}，读到它要能迁移
        （见下面 projSort 初始化里的 legacy）。
-       三种排序方式里：**名称**是后端给的事实；**查看时间**是"我上次打开它是几点"——
-       这是本机记录（后端没有这个概念），没打开过的退回卡片上那个"上次记录"时刻；
-       **创建时间**后端目前也没有给这个字段，同样先用记录时刻顶上：等中间层在列表行里
-       补一个创建时间，把 projStamp 里那一行换掉即可（不用动别处）。 */
+       三种排序方式里：**名称**是后端给的事实；**更新时间**是"这个协作的总路径里最新一条发生在
+       几点"—— 由中间层算好放在列表行的 `updated_at` 里（见 console/app.py 的 audit_updated_at），
+       没读到过总路径时退回卡片上那个"上次记录"时刻；**创建时间**后端目前也没有给这个字段，
+       同样先用记录时刻顶上：等中间层在列表行里补一个创建时间，把 projStamp 里那一行换掉即可。 */
     const PROJ_SORT_KEY = 'tsunagou.console.projSort';
-    const PROJ_VIEWED_KEY = 'tsunagou.console.projViewedAt';
-    const PROJ_SORT_DEFAULT = { order: 'new', by: 'viewed' };
+    const PROJ_SORT_DEFAULT = { order: 'new', by: 'updated' };
     /* 左栏的两个分组。组的身份认 data-proj-group 这个属性（两组的标题、搜索条、
        以及每张卡片都带它），不认节点位置 —— 两组的那几个节点长得一模一样，
        按"第几个"去找，结构一挪就认错组。*/
@@ -3250,7 +3261,7 @@
         const stored = isPlainObject(raw) ? raw : {};
         return {
             order: stored.order === 'old' ? 'old' : (stored.order === 'new' ? 'new' : PROJ_SORT_DEFAULT.order),
-            by: ['viewed', 'created', 'name'].indexOf(stored.by) >= 0 ? stored.by : PROJ_SORT_DEFAULT.by
+            by: ['updated', 'created', 'name'].indexOf(stored.by) >= 0 ? stored.by : PROJ_SORT_DEFAULT.by
         };
     }
 
@@ -3264,7 +3275,6 @@
             done: normalizeProjSort(isPlainObject(stored.done) ? stored.done : legacy)
         };
     })();
-    let projViewedAt = readStoredJson(PROJ_VIEWED_KEY, {});
 
     function saveProjSort() {
         try { window.localStorage.setItem(PROJ_SORT_KEY, JSON.stringify(projSort)); } catch (error) { /* 存不下就只在这次会话里生效 */ }
@@ -3278,14 +3288,6 @@
         return PROJ_GROUPS.indexOf(group) >= 0 ? group : '';
     }
 
-    /* 打开一个协作时记一笔：排序用的"查看时间"就是这么来的（只在本机、只在这台浏览器）。*/
-    function rememberProjViewed(projectId) {
-        const id = toText(projectId);
-        if (!id) return;
-        projViewedAt[id] = Date.now();
-        try { window.localStorage.setItem(PROJ_VIEWED_KEY, JSON.stringify(projViewedAt)); } catch (error) { /* 同上 */ }
-    }
-
     function stampOf(text) {
         const ms = Date.parse(toText(text));
         return Number.isFinite(ms) ? ms : 0;
@@ -3294,15 +3296,14 @@
     /* 时间戳按**这一组自己**的"按什么排"来取（pref 就是那一组的那份偏好）。*/
     function projStamp(row, pref) {
         const data = row || {};
-        const id = toText(data.project_id) || toText(data.id);
         /* 按创建时间：用后端给的 created_at（协作索引里"第一次登记"的时刻）。
-           后端没给就退回记录时刻 —— 那时它和"按查看时间"的回退值同源，两种排序结果一样。*/
+           后端没给就退回记录时刻 —— 那时它和"按更新时间"的回退值同源，两种排序结果一样。*/
         if ((pref || PROJ_SORT_DEFAULT).by === 'created') {
             return stampOf(data.created_at) || stampOf((data.history || {}).captured_at);
         }
-        const local = Number(projViewedAt[id]);
-        if (Number.isFinite(local) && local > 0) return local;
-        return stampOf((data.history || {}).captured_at);
+        /* 按更新时间：中间层算好的"总路径里最新一条"（`updated_at`）。它没读到过总路径就退回
+           记录时刻 —— 卡片那行小字用的是同一个值，所以卡片上写着几点，排序就按几点。*/
+        return stampOf(data.updated_at) || stampOf((data.history || {}).captured_at);
     }
 
     /* 一组内部排序：只拿**这一组**的偏好来比，另一组排成什么样与它无关
@@ -3615,6 +3616,16 @@
         return target;
     }
 
+    /* 协作那一屏拉不到、又没有记录可兜（daemon 未启动）：标题那块如实写「未启动」。
+       名字沿用页面上已有的 —— 后端没答，就别把名字也一起清掉。*/
+    function markNavbarNotStarted() {
+        const box = qs('.secProjPanel .navArea .left');
+        if (!box) return null;
+        const name = qs('p', box);
+        render.navbar({ name: name ? name.textContent : '', statusText: '未启动', statusClass: '' });
+        return box;
+    }
+
     /* 缩放时把标题渐隐重算一遍；开着的选择菜单顺手收起 —— 它是 fixed 定位，位置只在
        打开时算过一次并在下一帧补一次，窗口一缩放就停在旧坐标（缩小后可能跑到视口外）。*/
     window.addEventListener('resize', function () { syncTitleMask(); closeSelections(); });
@@ -3800,8 +3811,9 @@
          · 本机还是网络：网络接入写「网络在线 / 网络离线」+ `fa-circle-nodes`，
            本机接入写「本地」+ `fa-laptop`（判据仍走 agentNetworkOf，不在这里另立一份）；
          · 可用性：可用 `fa-check`，不可用 `fa-minus`（会话降级时 statusOk 就是 false）。
-       logo 一律**染白**（内联 filter，与 chipHtml 处理主 Agent 胶囊同一个写法）：这一块底色
-       永远是品牌蓝，深色 logo 在上面几乎看不见 —— 这里锁死白色，不跟随主题。*/
+       logo 染白**只对主 Agent 那张卡**（内联 filter，与 chipHtml 处理主 Agent 胶囊同一个写法）：它那一块底色
+       永远是品牌蓝，深色 logo 在上面几乎看不见 —— 那里锁死白色、不随主题；**其他卡片的底随深色/浅色主题走**，浅底上把深色 logo
+        硬染成白色就看不见了（2026-10-07 用户规定，不动 CSS）。*/
     function agentHeroHtml(agent) {
         const info = agentNetworkOf(agent);
         const slot = function (icon, text) {
@@ -3811,7 +3823,8 @@
             ? { icon: 'fa-circle-nodes', text: info.online ? '网络在线' : '网络离线' }
             : { icon: 'fa-laptop', text: '本地' };
         return '<div class="hero">' +
-            '<div class="top"><img src="' + esc(iconOf(agent)) + '" style="filter:brightness(0) invert(1);">'
+            '<div class="top"><img src="' + esc(iconOf(agent)) + '"'
+                + (agent.isMain ? ' style="filter:brightness(0) invert(1);"' : '') + '>'
                 + esc(agent.name) + '</div>' +
             '<div class="bottom">' +
                 slot(agent.isMain ? 'fa-font-awesome' : 'fa-code', agent.role) +
@@ -4039,6 +4052,8 @@
                         titleHtml('影响范围'), textZHtml(contract.scope),
                         titleHtml('已确认 Agent'), listFieldHtml(contract.confirmed, 'itemS'),
                         titleHtml('未确认 Agent'), listFieldHtml(contract.unconfirmed, 'itemS'),
+                        contract.pending
+                            ? titleHtml('还差哪个槽') + textNHtml(contract.pending) : '',
                         optionHtml([{ text: '查看详情', kind: 'active', action: contract.action || 'contract.detail' }])
                     ]
                 };
@@ -5102,7 +5117,8 @@
             { title: '影响范围', text: data.scope },
             { title: '契约内容', text: data.text },
             { title: '已确认 Agent', html: listFieldHtml(data.confirmed, 'itemS') },
-            { title: '未确认 Agent', html: listFieldHtml(data.unconfirmed, 'itemS') }
+            { title: '未确认 Agent', html: listFieldHtml(data.unconfirmed, 'itemS') },
+            ...(data.pending ? [{ title: '还差哪个槽', text: data.pending }] : [])
         ];
         return render.aside('conflict', 1, parts, { title: '详细信息' });
     };
@@ -6344,7 +6360,6 @@
                这里直接让路，不然会先把协作打开、再弹出菜单。*/
             if (closest(event.target, '.edit')) return;
             const id = selectProjectCard(card);
-            rememberProjViewed(id);
             app.openProject(id);
         });
         /* 卡片右上角那一块（.edit，CSS 里 hover 才露出来；样式已改成"修改"的笔）。
@@ -7919,9 +7934,10 @@
     function recordText(stamp) {
         const at = toText(stamp);
         if (!at) return '';
-        /* 后端的时刻是带时区的 ISO 串；人读的是"几点"，所以取时分那一段。*/
-        const part = at.replace('T', ' ').slice(0, 16);
-        return '上次记录（记录到 ' + part + '）';
+        /* 走 formatTime：后端的时刻是**带时区的 ISO 串**（多数是 UTC 的 `…Z`），直接切片会把
+           UTC 的钟点当成本地时间显示 —— 2026-10-07 实测差 8 小时（卡片写 10:27，总路径写
+           18:27，同一条记录）。*/
+        return '上次记录（记录到 ' + formatTime(at) + '）';
     }
 
     function recordNote(raw) {
@@ -7934,7 +7950,7 @@
     function recordDetail(raw) {
         const stamp = recordStamp(raw);
         if (!stamp) return '';
-        return '记录到 ' + toText(stamp).replace('T', ' ').slice(0, 16)
+        return '记录到 ' + formatTime(toText(stamp))
             + '：服务已经不在，下面是它还在时最近一次看到的内容。';
     }
 
@@ -8044,21 +8060,23 @@
                 const others = toArray(p.agents).filter(function (agent) {
                     return toText(agent.status) === 'active' && toText(agent.agent_id) !== mainAgentId;
                 });
+                /* 卡片右下角那行小字：**数据更新时间** —— 总路径（审计出口）里时间上最新那一条的
+                   时刻，由中间层算好（`updated_at`，见 console/app.py 的 audit_updated_at）。
+                   用户 2026-10-07 定的口径：卡片显示的时间与排序「按更新时间」读**同一个值**。
+                   中间层还没读到过这个协作的总路径时退回记录时刻 —— 那也是一个"见过它的时刻"，
+                   比编一个"现在"强；两者都没有就空着（不假装）。*/
+                const updatedAt = toText(p.updated_at)
+                    || toText(isPlainObject(p.history) ? p.history.captured_at : '');
                 return {
                     id: p.project_id,
                     name: p.available === false ? (toText(p.name) + '（目录已不在）') : p.name,
                     status: done ? 'finished' : (running ? 'working' : 'preparing'),
                     statusText: done ? (p.lifecycle === 'archived' ? '已归档' : '已完成')
                         : (running ? '进行中' : '未启动'),
-                    /* 卡片右下角那行小字：daemon 起没起。daemon 不在了但有记录时，补一句
-                       "上次记录"—— 这样人知道点进去还能看到东西，也知道那是旧的那一份。
-                       已完工的协作要单独说一句：它的 daemon 是**按设计退出**的（完工确认成功后
-                       自己关掉、把端口让出来），跟"服务没响应"混为一谈会让人以为出了故障。*/
-                    time: (running ? '服务运行中'
-                        : done ? '服务已退出（完工后自动关闭）'
-                        : (daemon ? '服务无响应' : '服务未启动'))
-                        + (!running && isPlainObject(p.history) && toText(p.history.captured_at)
-                            ? ' · ' + recordText(p.history.captured_at) : ''),
+                    /* 那行小字 = 数据更新时间（见上面 updatedAt：卡片与「按更新时间」同一个值）。
+                       显示走 formatTime（**本地时区**、本年不写年份）—— 与总路径那行同一个格式，
+                       绝不切片 ISO 串：后端给的多是 UTC 的 `…Z`，切片会差一个时区。*/
+                    time: formatTime(updatedAt),
                     /* 上面那行要"协作是否已完工"和"有没有记录"都判得了，两份原值都留着。*/
                     lifecycle: toText(p.lifecycle),
                     history: isPlainObject(p.history) ? p.history : null,
@@ -8222,6 +8240,8 @@
         project: function (raw) {
             const sources = viewSources(raw);
             const missing = viewMissing(raw);
+            /* 这一屏是不是"从记录里兜的"：是就意味着服务已经不在（见 recordStamp 的注释）。*/
+            const stopped = Boolean(recordStamp(raw));
             const header = isPlainObject(sources.overview) ? sources.overview : {};
             const agents = sourceItems(sources, 'agents');
             const tasks = sourceItems(sources, 'tasks');
@@ -8259,14 +8279,36 @@
                 /* 策略版本的原值（基本信息的「策略版本」是它的显示写法 r7）。
                    确认协作完成要拿它与后端做 CAS，所以得留着数字。*/
                 policyRevision: header.policy_revision,
+                /* 徽标说的是"服务现在还在不在跑"，但**完工/归档优先** —— 与左栏那张协作卡片
+                   同一个口径（`done ? (已归档/已完成) : (running ? '进行中' : '未启动')`，
+                   见 projects 适配器）：完工的服务是**按设计退出**的，写成"未启动"会让人以为
+                   出了故障。只有"本该在跑"的协作才受服务状态影响。
+                   服务在不在，看这一屏是不是从记录里兜的（控制台在载荷里带 `history`，
+                   见 console/app.py 的视图出口）；连记录都没有的场合视图会整屏拒绝，
+                   那条路见 refresh 的失败分支 markNavbarNotStarted()。*/
                 statusText: header.lifecycle === 'completed' ? '已完成'
-                    : (header.lifecycle === 'archived' ? '已归档' : '进行中'),
-                statusClass: header.lifecycle === 'active' ? 'status-doing' : '',
+                    : (header.lifecycle === 'archived' ? '已归档'
+                        : (stopped ? '未启动' : '进行中')),
+                statusClass: !stopped && header.lifecycle === 'active' ? 'status-doing' : '',
                 basics: [
                     { label: '协作编号', value: header.project_id },
                     { label: '生命周期', value: glossText('lifecycle', header.lifecycle) },
                     { label: '策略版本', value: toText(header.policy_revision) ? ('r' + header.policy_revision) : '' },
-                    { label: '协作根', value: toArray(header.roots).length + ' 个' },
+                    /* 协作根**逐个列出来**（带 root_id）：只写"N 个"看不出是哪个根 —— 2026-10-07
+                       主 Agent 写任务范围时需要一个 root_id，页面上却无处可查，只好自己起个名字
+                       （"workspace"）指向不存在的根。一个根都没有时也留一行"0 个"：那正是最该
+                       看见的状态。*/
+                    ...(toArray(header.roots).length
+                        ? toArray(header.roots).map(function (root) {
+                            const id = toText(root && root.root_id);
+                            const name = toText(root && root.name);
+                            const kind = toText(root && (root.root_kind || root.kind));
+                            return {
+                                label: '协作根',
+                                value: (name || '（未命名）') + '（' + id + '）' + (kind ? ' · ' + kind : ''),
+                            };
+                        })
+                        : [{ label: '协作根', value: '0 个' }]),
                     { label: '仓库', value: toArray(header.repositories).length + ' 个' },
                     { label: '主 Agent', value: main ? agentDisplayName(main) : '未指定', active: !!main }
                 ],
@@ -8639,6 +8681,13 @@
                         unconfirmed: participants.filter(function (item) {
                             return !acceptedSlots[item.slot];
                         }).map(function (item) { return item.chip; }),
+                        /* "还差谁"要说清**是哪个槽、归谁** —— 只画头像看不出卡在谁身上
+                           （2026-10-07 实测：主 Agent 只能靠推理与追问，那次多花了 31 条消息的协商）。*/
+                        pending: participants.filter(function (item) {
+                            return !acceptedSlots[item.slot];
+                        }).map(function (item) {
+                            return toText(item.slot) + ' · ' + toText(item.chip && item.chip.name);
+                        }).join('、'),
                         action: 'contract.detail:' + toText(contract.proposal_id)
                     };
                 })
@@ -8873,6 +8922,9 @@
         return Promise.all(tasks).then(function (results) {
             const failed = results.filter(function (item) { return !item.ok; });
             if (failed.length) {
+                /* 协作那一屏整屏拉不到（daemon 未启动、也没有记录）：标题那块不能继续写着
+                   「进行中」—— 那就是"页面一边报错一边宣称在跑"。 */
+                if (failed.some(function (item) { return item.key === 'project'; })) markNavbarNotStarted();
                 notify.error('有 ' + failed.length + ' 项数据拉取失败：' + failed.map(function (item) { return item.key; }).join('、'));
             }
             return { results: results, failed: failed.length, skipped: skipped };

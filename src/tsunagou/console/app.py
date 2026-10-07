@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
@@ -66,6 +67,42 @@ ExitSource = str | GlobalExit
 # daemon's own exit names; the console gathers and never interprets, because the
 # translating from a domain answer to a screen happens in the page (see
 # BACKEND_SHAPE in web/assets/js/behavior.js).
+def audit_updated_at(store: HistoryStore, project_id: str) -> str | None:
+    """总路径里**时间上最新那一条**的时刻 —— 卡片上的「数据更新时间」。
+
+    用户 2026-10-07 定的口径。数据来自控制台记录的那个出口（页面直连审计，键由 ``_relay_source``
+    拼成）：它的 ``items`` 按 ``event_seq`` 升序，控制台每读到一次就整份覆盖，所以取其中最大的
+    ``occurred_at``。若这一页里恰好有 watermark 那一条（``event_seq == as_of_event_seq``），它才是
+    真正的最新一条 —— 优先用它，免得"分页没走到底"时把中间某一条当成最新。读不到记录就回
+    ``None``：调用方不假装知道。"""
+
+    kept = store.payload(project_id, "relay:/api/v1/projects/" + project_id + "/history")
+    if kept is None or not isinstance(kept[0], dict):
+        return None
+    payload = kept[0]
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return None
+    watermark = payload.get("as_of_event_seq")
+    newest: tuple[datetime, str] | None = None
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        at = item.get("occurred_at") or item.get("recorded_at")
+        if not isinstance(at, str) or not at:
+            continue
+        if watermark is not None and item.get("event_seq") == watermark:
+            return at
+        try:
+            moment = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        # 比的是**解析后**的时刻：occurred_at 可能混着 `Z` 与 `+08:00`，按字符串比会排错。
+        if newest is None or moment > newest[0]:
+            newest = (moment, at)
+    return newest[1] if newest is not None else None
+
+
 CONSOLE_VIEWS: dict[str, dict[str, ExitSource]] = {
     "overview": {
         "overview": "/overview", "tasks": "/tasks", "agents": "/agents",
@@ -383,7 +420,22 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
             # 会被"看了一次列表"本身刷新成现在 —— 那它就再也说不出"最后活着是什么时候"。
             if isinstance(entry.daemon, dict) and entry.daemon.get("running"):
                 history.record(entry.project_id, "console.project", row, captured_at=format_timestamp(now_ms()))
+            # 名单问不到（daemon 停了、或从来没人问过）时，用**记录**里那一次的回答：完工的服务是
+            # **按设计**退出的，而"谁负责这个协作"在它退出以后仍然成立 —— 用户 2026-10-07 实测：
+            # 完工的协作卡片写着"上次记录"，却一个 Agent 图标都没有。活的答案永远优先，这一份只在
+            # 没有活答案时补上；卡片本来就带着"上次记录（记录到 …）"，所以读起来是记录、不是现在。
+            if not row.get("main_agent_id") and not row.get("agents"):
+                kept = history.payload(entry.project_id, "agents")
+                if kept is not None and isinstance(kept[0], dict):
+                    row["main_agent_id"] = kept[0].get("main_agent_id") or None
+                    # daemon 的 /agents 出口把名单行放在 `items` 里（见 console/agents.py 的解析），
+                    # 不是 `agents` —— 字段名照出口写，别自己另起一个。
+                    row["agents"] = kept[0].get("items")
+                    row["agents_fetched_at"] = kept[1] or None
             row["history"] = history.summary(entry.project_id)
+            # 「数据更新时间」= 总路径里时间上最新那一条（见 audit_updated_at）；卡片那行小字与
+            # 默认排序「按更新时间」读的是同一个值。读不到记录就空着，页面自己退回记录时刻。
+            row["updated_at"] = audit_updated_at(history, entry.project_id)
             row["created_at"] = str((indexed.get(str(entry.project_id)) or {}).get("created_at") or "")
             items.append(row)
         return {
