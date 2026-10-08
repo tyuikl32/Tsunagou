@@ -3364,6 +3364,34 @@ describe("回归：本轮修掉的若干条（失焦提交 / 原型链 / 机器�
     expect(shown[1]).toBe("对齐接口");
   });
 
+  it("BUG-27：卡片里的动作按钮不再顺手打开详情窗口（一次点击只出一个窗口）", async () => {
+    /* 2026-10-08 用户报的：在 Agent 卡片里点「退役」或「设为主 Agent」，屏幕上叠出两个窗口 ——
+       按钮带 data-tg-action，走统一动作通道开自己的确认框；而卡片那个"点本体开详情"的处理器
+       没有拦动作按钮，于是同一次点击**又**把详情窗口打开了。
+       这里只钉"护栏"这一件事：按钮属性形状（真实渲染出的 `data-tg-action="agent.remove:<id>"`）
+       由既有那条"动作按用户给的顺序：修改、退役"用例负责，所以这里手工摆一个同形状的按钮。*/
+    await loadFix();
+    fixApi.state.set("currentProjectId", "p-1");
+    fixApi.dispatch("agent.list", [agentOf({ id: "a-8" })]);
+    fixApi.dispatch("agent.window", [{
+      id: "p-1/a-8", agent_id: "a-8", project: "示例", task: "对齐接口",
+    }]);
+
+    const card = fixPage.querySelector("#pane-agents .boxerbox > .item[data-agent-id=\"a-8\"]")!;
+    card.querySelector(".option")!.innerHTML =
+      '<div class="buttonbox2" data-tg-action="agent.remove:a-8">退役</div>';
+    const retire = card.querySelector('[data-tg-action^="agent.remove:"]') as HTMLElement;
+
+    retire.dispatchEvent(new fixDom.window.MouseEvent("click", { bubbles: true }));
+    /* 动作通道会去开确认框（真确认框在 jsdom 里就留在页面上等点击），但**详情窗口不能被顺手打开**。*/
+    const info = fixPage.getElementById("mgrAgentInfo")!;
+    expect(info.style.display).not.toBe("flex");
+
+    /* 卡片本体照旧点得开 —— 护栏不能把 BUG-4 修好的行为一起拦掉。*/
+    card.dispatchEvent(new fixDom.window.MouseEvent("click", { bubbles: true }));
+    expect(info.style.display).toBe("flex");
+  });
+
   it("BUG-9：poll_ms 是 null 或空串时不要当成 0（0 = 关掉自动重拉）", async () => {
     /* null / '' / false 经 Number() 都是 0，而 0 是"不自动重拉"的合法值 ——
        于是"没写这个字段"被静默当成"明确要求不轮询"。*/

@@ -6438,8 +6438,12 @@
                 if (openSelectionId) closeSelections();
             }, true);
             /* 点 Agent 卡片本体 → 打开详情窗口（D196 说退役席位只剩「查看」，那就得真能看）。
-               Agent 管理页的卡片与左栏协作卡片是两套，这里只认前者；卡片里的按钮不拦。*/
+               Agent 管理页的卡片与左栏协作卡片是两套，这里只认前者。**卡片里的动作按钮不归这里管**：
+               它们带 data-tg-action，走统一动作通道（退役 / 设为主 Agent 会开自己的确认框）——
+               2026-10-08 用户报的"点退役出现两个弹窗"就是这里没拦：一次点击既执行了动作、又顺手把详情窗口
+               也打开了，屏幕上叠出两个窗口。退役席位没有按钮，卡片本体照旧点得开。*/
             document.addEventListener('click', function (event) {
+                if (closest(event.target, '[data-tg-action]')) return;
                 const card = closest(event.target, '#pane-agents .item[data-agent-id]');
                 if (!card) return;
                 app.openAgentInfo(card.getAttribute('data-agent-id'));
