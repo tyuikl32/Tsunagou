@@ -3704,11 +3704,12 @@
             '<div class="bgTxt">' + esc(data.name) + '</div>' +
             '<p class="textArea">' + esc(data.description) + '</p>' +
             pendingSection +
-            section('基本信息', '<div class="dataArea">' + keyValueTableHtml(basics) + '</div>') +
-            section('协作进度', '<div class="dataArea"><div class="statbox">' +
-                '<div class="left"><p class="title">总进度</p>' + esc(progress.total) + '</div>' +
+            section('协作进度', '<div class="statArea">' +
+                '<div class="left"><div class="inner"><p class="title">总进度</p>' +
+                '<p class="numb">' + esc(progress.total) + '</p></div></div>' +
                 '<div class="right"><p class="title">计划进度</p><div class="inner">' + plan + '</div></div>' +
-                '</div></div>') +
+                '</div>') +
+            section('基本信息', '<div class="dataArea">' + keyValueTableHtml(basics) + '</div>') +
             section('协作统计信息', '<div class="dataArea">' + keyValueTableHtml(data.stats) + '</div>') +
             section('协作数据存储', '<div class="dataArea">' + keyValueTableHtml(data.storage) + '</div>');
         fill(byId('pane-overview'), html);
@@ -6816,6 +6817,95 @@
         ['timeline', 'timeline.list']
     ];
 
+    /* ---- 审计出口的"翻到尾巴" ------------------------------------------------
+       见 待改 16（2026-10-08 实测）：审计出口按 `event_seq` **升序**给一页，并带一个
+       `next_cursor`（内容只是 `after:<最后一行的序号>` 的封装），`?cursor=…` 就是下一段。
+       默认 `limit=50` 只够装下项目开头那一屏 —— 131 条事件的项目里，完工提案(#120)与
+       完工确认(#128)都落在第 118 条之后，于是"已确认完工"的协作在时间线上一片安静。
+       接口自己早就说了"还有更多"（同一份返回里就带 `next_cursor` 与
+       `as_of_event_seq`），是页面把它当成完整时间线读了。
+
+       这里只给**时间线**这一路翻页，理由有两条：
+         · 时间线要的是"从头到尾的先后顺序"（下面的 `timeline` 形状函数按阶段分代、
+           原样从上排到下），只有它有"必须看到最新几条"的需求；
+         · 中间层给别的屏都是聚合视图，它们各自的口径不该被这里改掉。
+
+       翻法：一直跟着 `next_cursor` 走，把各页的 items **按升序接起来**，只留最后
+       `AUDIT_TAIL_ITEMS` 条 —— 不是只留最后一页。用户要的是"最新活动在首屏"，而
+       最后一页可能只有一两条（131 条 / 每页 50 → 第 3 页就 31 条），只留它会把
+       前面刚刚发生过的动作一起丢掉。留 200 条既盖得住"最近做了什么"，也仍然是有界的。
+
+       出口上限 200 已用满，所以正常项目一次请求就到底；`next_cursor` 为空或首页就含
+       watermark 那一条（`event_seq == as_of_event_seq`，接口自报的"这一页直到第几条"）
+       时一次都不多问。走不完（事件多到 10 页还没到底）就停下，并在载荷上挂一句
+       `history_truncated`，让"这里不是尾巴"是接口说出来的、而不是界面装不知道。*/
+    const AUDIT_PAGE_LIMIT = 200;   /* 出口的 limit 上限（api/app.py: ge=1, le=200）*/
+    const AUDIT_TAIL_ITEMS = 200;   /* 时间线最多留的最近条目 */
+    const AUDIT_MAX_PAGES = 10;     /* 病态数据（游标成环）也不许把页面拖在这里 */
+
+    function numberOrNull(value) {
+        return (typeof value === 'number' && isFinite(value)) ? value : null;
+    }
+
+    /* 一页里有没有 watermark 那一条 —— 有它就是尾巴。序号是数字（daemon 的
+       `event_seq`），拿字符串比会在 3 与 "3" 之间得出假的"没到底"。*/
+    function auditTailReached(items, watermark) {
+        if (watermark === null || watermark === undefined) return false;
+        return toArray(items).some(function (item) {
+            return isPlainObject(item) && item.event_seq === watermark;
+        });
+    }
+
+    /* 翻页本身：一路 `?cursor=…` 走到尾巴（或撞上上面那三道闸），把走过的条目按升序攒起来。
+       回 `{items, page}`：`page` 是最后拿到的那一份（载荷形状就是出口原样那一份）。*/
+    function readAuditTail(pathKey) {
+        const collected = [];
+        const asked = [];          /* 走过的 cursor：同一个游标不再问第二遍（成环就停） */
+        let page = {};
+
+        /* 一次一段地接着问：`round` 是页数（含第一页），到 AUDIT_MAX_PAGES 就停。
+           每一页都拿**同一个** cursor（出口自己封装了"从哪条之后开始"），页面不解释它。*/
+        function step(cursor, round) {
+            const query = { limit: AUDIT_PAGE_LIMIT };
+            if (cursor) query.cursor = cursor;
+            /* silent：同一次刷新里别的一路失败会汇总报一次，这里再报一遍只会刷屏 */
+            return api.get(pathKey, query, { silent: true }).then(function (raw) {
+                page = isPlainObject(raw) ? raw : {};
+                const items = Array.isArray(page.items) ? page.items : [];
+                for (let i = 0; i < items.length; i++) collected.push(items[i]);
+                /* ① 这一页里有 watermark 那一条 = 已经到尾巴，不必再问 */
+                if (auditTailReached(items, numberOrNull(page.as_of_event_seq))) return;
+                const next = toText(page.next_cursor);
+                /* ② 没有下一段了 ③ 游标认得出来是死循环 ④ 页数到顶（只有 ④ 会让这一次
+                   没走到尾巴，由 `history_truncated` 说出来）。*/
+                if (!next || next.length > 2048 || asked.indexOf(next) >= 0) return;
+                if (round + 1 >= AUDIT_MAX_PAGES) return;
+                asked.push(next);
+                return step(next, round + 1);
+            });
+        }
+
+        return step(null, 0).then(function () { return { items: collected, page: page }; });
+    }
+
+    /* 时间线要的那一份：`readAuditTail` 走完，最后那 AUDIT_TAIL_ITEMS 条原样进去。
+       载荷形状与一页审计**完全一致**（`items` 升序 + `as_of_event_seq` / `snapshot_event_seq`
+       / `next_cursor` 全留着），所以 §7 的 `timeline` 形状函数不用改一行。
+       `history_truncated` 只在"没走到尾巴"时为真：那是给人和测试看的一句实话，
+       §7 不认它（多余字段到渲染器之前就被形状函数丢掉了）。*/
+    function readTimelineTail(pathKey) {
+        return readAuditTail(pathKey).then(function (walk) {
+            const page = walk.page;
+            const cut = walk.items.length > AUDIT_TAIL_ITEMS
+                ? walk.items.slice(walk.items.length - AUDIT_TAIL_ITEMS) : walk.items;
+            return Object.assign({}, page, {
+                items: cut,
+                history_truncated: cut.length > 0
+                    && !auditTailReached(cut, numberOrNull(page.as_of_event_seq))
+            });
+        });
+    }
+
     /* ========================================================================
      * 后端形状 → 界面形状
      * ------------------------------------------------------------------------
@@ -8910,7 +9000,12 @@
             if (!toText(pathTemplate(pair[0]))) { skipped.push(pair[0]); return false; }
             return !wanted || wanted.indexOf(pair[0]) >= 0 || wanted.indexOf(pair[1]) >= 0;
         }).map(function (pair) {
-            return api.get(pair[0], null, { silent: true }).then(function (raw) {
+            /* 时间线这一路要的是**尾巴**：审计出口默认只给第一页（见 readTimelineTail
+               上面那段），所以它走自己的取法 —— 其余各键照旧一次一个出口。*/
+            const request = (pair[0] === 'timeline')
+                ? readTimelineTail(pair[0])
+                : api.get(pair[0], null, { silent: true });
+            return request.then(function (raw) {
                 /* 后端形状 → 界面形状，只在这里转换 */
                 const result = Tsunagou.dispatch(pair[1], adaptBackend(pair[0], raw));
                 return { key: pair[0], ok: result.ok };

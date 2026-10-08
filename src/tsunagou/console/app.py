@@ -9,6 +9,7 @@ daemon cannot know (which projects exist, what the person calls their agents).
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,6 +64,30 @@ class GlobalExit:
 
 ExitSource = str | GlobalExit
 
+
+_HISTORY_TAIL = re.compile(r"^/api/v1/projects/[^/]+/history$")
+
+
+def _with_completeness(path: str, answered: Any) -> Any:
+    """Mark a relayed timeline read as "this is the whole story" or not.
+
+    待改 16：审计出口按 ``event_seq`` 升序一页一页给，页面为时间线翻到尾巴（见
+    ``web/assets/js/behavior.js`` 的 ``readTimelineTail``）。中间层不替它翻页 —— 它只把
+    "这一份是不是尾巴"这句话记进记录里，好让项目卡片的「数据更新时间」在只有旧记录时
+    也说得准（见 ``audit_updated_at``）。
+
+    ``next_cursor`` 缺席 = 出口自己说的"没有下一段了"；有它就只是**一页**，不是时间线。
+    字段名 ``complete`` 与历史存储的其余字段一样是载荷上的普通键（``HistoryStore`` 原样
+    存 dict），换个出口、换个项目都不会互相串。
+    """
+
+    if not _HISTORY_TAIL.match(str(path).split("?", 1)[0]):
+        return answered
+    if not isinstance(answered, dict) or "items" not in answered:
+        return answered
+    return {**answered, "complete": not answered.get("next_cursor")}
+
+
 # A screen that needs several exits reads them in one call. Source names are the
 # daemon's own exit names; the console gathers and never interprets, because the
 # translating from a domain answer to a screen happens in the page (see
@@ -74,12 +99,25 @@ def audit_updated_at(store: HistoryStore, project_id: str) -> str | None:
     拼成）：它的 ``items`` 按 ``event_seq`` 升序，控制台每读到一次就整份覆盖，所以取其中最大的
     ``occurred_at``。若这一页里恰好有 watermark 那一条（``event_seq == as_of_event_seq``），它才是
     真正的最新一条 —— 优先用它，免得"分页没走到底"时把中间某一条当成最新。读不到记录就回
-    ``None``：调用方不假装知道。"""
+    ``None``：调用方不假装知道。
+
+    **只认走到了尾巴的那一份记录**（待改 16，2026-10-08）：这个口径的全部依据是"记录里的
+    ``items`` 是时间线的尾部"。旧版本只留了第一页（``next_cursor`` 还挂着），于是卡片把
+    17:17:21 那条中间事件写成了"最新"，而库里真正的最新是 17:19:05 的完工确认 —— 数据层
+    替页面撒了一次谎。现在记进去的是页面翻页后的那一份，并且由 ``_with_completeness`` 把
+    "这是尾巴"写在载荷的 ``complete`` 上。
+
+    旧记录里没有 ``complete`` 这个键，而"这一页带 ``next_cursor``"本身就说明它不是尾巴：
+    两条判据任意一条不满足就当作**没读到** —— 返回 ``None``，卡片退回"上次记录"的时刻
+    （那句话是真的），而不是把一个中段时刻端出来当最新。宁可不说话，也不说错的。
+    """
 
     kept = store.payload(project_id, "relay:/api/v1/projects/" + project_id + "/history")
     if kept is None or not isinstance(kept[0], dict):
         return None
     payload = kept[0]
+    if payload.get("complete") is not True:
+        return None
     items = payload.get("items")
     if not isinstance(items, list):
         return None
@@ -336,10 +374,13 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
             if reading and 200 <= forwarded.status < 300:
                 # 读得通就记一份（这个出口下次 daemon 不在了也能看）。
                 try:
-                    history.record(entry.project_id, _relay_source(path), json.loads(forwarded.body or b"null"),
-                                   captured_at=format_timestamp(now_ms()))
+                    answered = json.loads(forwarded.body or b"null")
                 except json.JSONDecodeError:
-                    pass
+                    answered = None
+                if answered is not None:
+                    kept = _with_completeness(path, answered)
+                    history.record(entry.project_id, _relay_source(path), kept,
+                                   captured_at=format_timestamp(now_ms()))
             # daemon 自己给的回答（包括 4xx 的拒绝）一律原样送回去：那是**现在**的答案，
             # 不该被一份旧记录顶掉 —— 藏着活的拒绝比留空更坏。
             return Response(

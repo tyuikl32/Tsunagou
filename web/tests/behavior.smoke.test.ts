@@ -482,6 +482,197 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(rowText(3)).toContain("用户决定");
   });
 
+  /* 总路径（时间线）只读第一页 —— 待改 16，2026-10-08 用户实测。
+     ----------------------------------------------------------------------------
+     实机项目 `4816f3fa…`（131 条事件，已确认完工）：审计出口默认给 `limit=50` 的**升序**
+     第一页（最后一条是 `event_seq 118 task.submit`），同时带着 `next_cursor`（`after:118`）
+     与 `as_of_event_seq=126`。页面的时间线把它当成了完整时间线，于是 `#120 完工提案` 与
+     `#128 完工确认` 永远不出现 —— 卡片写着"已完成"，时间线上一片安静。修复的判据是：
+     **跟 `next_cursor` 翻到尾巴，把最后那一段交给时间线**（形状与一页审计完全相同，所以
+     §7 的 `timeline` 形状函数一行都不用改）。这四条用例把"翻页 / 不翻 / 收尾页 / 不乱翻"
+     四件事各自钉住。*/
+  describe("待改 16：时间线要跟 next_cursor 翻到尾巴", () => {
+    type TailApi = {
+      refresh: (keys?: string[]) => Promise<unknown>;
+      state: { set: (path: string, value: unknown) => void };
+      ui: { tabs: { project: (slug: string) => unknown } };
+    };
+
+    let tailDom: JSDOM;
+    let tailPage: Document;
+    let tailApi: TailApi;
+
+    /* 每次加载页面自己记请求（"问了几次、带没带 cursor"是这一条的判据本体）。*/
+    const asked: string[] = [];
+
+    function item(seq: number, at: string, action: string) {
+      return {
+        event_id: `e-${seq}`, event_seq: seq, action: action, actor_ref: "runtime",
+        subject_ref: "", occurred_at: at,
+      };
+    }
+
+    /* 一页审计的形状（审计出口 `AuditPageModel`）。`next` 为空 = 出口说这是最后一段。*/
+    function auditPage(items: unknown[], { watermark = 0, next = null as string | null } = {}) {
+      return { project_id: "p-1", items: items, next_cursor: next,
+               as_of_event_seq: watermark, snapshot_event_seq: watermark, projection_version: "v1" };
+    }
+
+    async function loadTail(
+      history: (url: URL) => unknown,
+      options: { currentProject?: boolean } = {},
+    ) {
+      tailDom = new JSDOM(readWeb("index.html"), {
+        url: "http://127.0.0.1:55862/?poll_ms=0",
+        runScripts: "outside-only",
+        pretendToBeVisual: true,
+      });
+      const win = tailDom.window as unknown as Window & typeof globalThis;
+      asked.length = 0;
+      (win as unknown as { fetch: unknown }).fetch = (url: unknown) => {
+        /* 地址可能是绝对的（真中间层），也可能是相对的（仓库里这份 console.config.js 的
+           baseUrl 就是 `/api/v1`）；fetch 拿到的还可能是个 Request。三种都读成同一个地址。*/
+        const text = typeof url === "string"
+          ? url
+          : String((url as { url?: string })?.url ?? url);
+        asked.push(text);
+        /* 一次加载就是一条时间线：默认这份 fetch 只服务 `/history`（其余出口回一份空的，
+           免得别的键报错刷提示）。要换回答就传进来。*/
+        const reply = text.indexOf("/history") >= 0
+          ? history(new URL(text, "http://127.0.0.1:55862/")) : {};
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve(reply),
+          text: () => Promise.resolve(JSON.stringify(reply)),
+        });
+      };
+      win.eval(readWeb("console.config.js"));
+      win.eval(readWeb("assets/js/behavior.js"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      tailPage = win.document;
+      tailApi = (win as unknown as { Tsunagou: TailApi }).Tsunagou;
+      if (options.currentProject !== false) {
+        tailApi.state.set("currentProjectId", "p-1");
+        /* 词表里那两条命令名（完工提案 / 完工确认）—— 页面只查表，不自己攒中文。*/
+        tailApi.dispatch("glossary.data", {
+          version: 1,
+          domains: { command_kind: {
+            "project.completion.propose.main": "完工提案",
+            "project.completion.confirm": "完工确认",
+          } },
+        });
+        /* 时间线在第 2 个标签页里：翻到它，断言的就是用户真看得见的那一屏。*/
+        tailApi.ui.tabs.project("path");
+      }
+      return tailApi;
+    }
+
+    const historyCalls = () => asked.filter((url) => url.indexOf("/history") >= 0);
+    const queryOf = (url: string): URLSearchParams =>
+      new URL(url, "http://127.0.0.1:55862/").searchParams;
+    const calls = (): Element[] =>
+      [...tailPage.querySelectorAll("#pane-path .taskFlow > .inner > .item")];
+
+    afterEach(() => {
+      tailDom?.window.close();
+    });
+
+    it("响应带 next_cursor 就跟一段：请求带上 cursor=<那一个值>", async () => {
+      const api = await loadTail((url) =>
+        (url.searchParams.get("cursor") === "after:2"
+          ? auditPage([item(3, "2026-10-08T09:00:03.000Z", "task.submit")], { watermark: 3 })
+          : auditPage([item(1, "2026-10-08T09:00:01.000Z", "task.begin"),
+                       item(2, "2026-10-08T09:00:02.000Z", "task.submit")],
+                      { watermark: 3, next: "after:2" })));
+
+      await api.refresh(["timeline"]);
+
+      const sent = historyCalls();
+      expect(sent).toHaveLength(2);
+      /* 第一页按出口上限取（api/app.py: limit 是 1..200）：正常项目一次就到底。*/
+      expect(queryOf(sent[0]!).get("limit")).toBe("200");
+      expect(queryOf(sent[0]!).get("cursor")).toBeNull();
+      /* 第二页跟着出口给的游标问（游标是不透明的，页面只搬运）。*/
+      expect(queryOf(sent[1]!).get("cursor")).toBe("after:2");
+      expect(queryOf(sent[1]!).get("limit")).toBe("200");
+      /* 形状没被改坏：清单里既有第一页的旧动作、也有尾巴上的新动作。*/
+      expect(calls().map((row) => row.getAttribute("data-row-id")))
+        .toEqual(["e-1", "e-2", "e-3"]);
+      expect(calls()[2]!.textContent).toContain("task.submit");
+    });
+
+    it("时间线拿到的是尾巴那一段：新动作在屏上，旧动作也在（不是只剩最后一页）", async () => {
+      /* 131 条事件、每页 50 的真实形状（判据来自实机项目 `4816f3fa…`）：
+         第 1、2 页是满的、带游标，第 3 页是尾巴（31 条，无游标）且含 watermark。*/
+      const ev = (seq: number) => item(
+        seq, `2026-10-08T09:${String(Math.floor(seq / 60)).padStart(2, "0")}:` +
+             `${String(seq % 60).padStart(2, "0")}.000Z`,
+        seq === 120 ? "project.completion.propose.main"
+          : (seq === 128 ? "project.completion.confirm" : "task.submit"));
+      const first = Array.from({ length: 50 }, (_, i) => ev(i + 1));
+      const second = Array.from({ length: 50 }, (_, i) => ev(i + 51));
+      const third = Array.from({ length: 31 }, (_, i) => ev(i + 101));
+      expect(third[third.length - 1]!.event_seq).toBe(131);
+
+      const api = await loadTail((url) => {
+        const cursor = url.searchParams.get("cursor");
+        if (cursor === "after:100") return auditPage(third, { watermark: 131 });
+        if (cursor === "after:50") return auditPage(second, { watermark: 131, next: "after:100" });
+        return auditPage(first, { watermark: 131, next: "after:50" });
+      });
+
+      await api.refresh(["timeline"]);
+
+      expect(historyCalls()).toHaveLength(3);
+      const at = (id: string) => calls()
+        .filter((row) => row.getAttribute("data-row-id") === id)
+        .map((row) => row.textContent ?? "").join("");
+      // 最新那两条必须在屏上 —— 这正是用户报的那件事（卡片写"已完成"，时间线里没有）。
+      expect(at("e-128")).toContain("完工确认");
+      expect(at("e-120")).toContain("完工提案");
+      /* 而且是**接着排**的：131 条一条不少、先后的次序还在（时间线要的就是从头到尾）。
+         只留最后一页的话这里会从 e-101 开始、只剩 31 行。*/
+      const ids = calls().map((row) => row.getAttribute("data-row-id"));
+      expect(ids).toHaveLength(131);
+      expect(ids).toEqual(Array.from({ length: 131 }, (_, i) => `e-${i + 1}`));
+    });
+
+    it("没有 next_cursor，或首页就含 watermark 那一条：一次都不多问", async () => {
+      /* ① 出口说没有下一段（正常项目一次到底）。*/
+      const one = await loadTail(() => auditPage(
+        [item(1, "2026-10-08T09:00:01.000Z", "task.begin")], { watermark: 1 }));
+      await one.refresh(["timeline"]);
+      expect(historyCalls()).toHaveLength(1);
+
+      /* ② 首页里就有 watermark（`event_seq == as_of_event_seq`）= 出口自报"已经到了这一天
+         为止的最后一条"，即便还挂着游标也不再往下问。*/
+      const two = await loadTail(() => auditPage(
+        [item(1, "2026-10-08T09:00:01.000Z", "task.begin"),
+         item(2, "2026-10-08T09:00:02.000Z", "task.submit")],
+        { watermark: 2, next: "after:2" }));
+      await two.refresh(["timeline"]);
+      expect(historyCalls()).toHaveLength(1);
+
+      /* ③ 游标成环（病态数据）：认得出来、在原地停住，不打转。*/
+      const loop = await loadTail(() => auditPage(
+        [item(1, "2026-10-08T09:00:01.000Z", "task.begin")], { watermark: 99, next: "after:1" }));
+      await loop.refresh(["timeline"]);
+      expect(historyCalls()).toHaveLength(2);
+    });
+
+    it("载荷形状与一页审计一样（as_of_event_seq 等留着）—— §7 的形状函数不用改", async () => {
+      const api = await loadTail(() => auditPage(
+        [item(1, "2026-10-08T09:00:01.000Z", "operation.created")], { watermark: 1 }));
+      await api.refresh(["timeline"]);
+      /* 真把形状走通了：这一行就是 §7 `timeline` 形状函数按阶段分代出来的（没崩、也没空）。*/
+      const groups = (tailDom.window as unknown as {
+        Tsunagou: { state: { get: (path: string, fallback?: unknown) => unknown } };
+      }).Tsunagou.state.get("timeline") as { era: string; items: unknown[] }[];
+      expect(groups.length).toBeGreaterThan(0);
+      expect(calls()).toHaveLength(1);
+    });
+  });
+
   /* 「冲突与协商 → Agent 间协商」那张表的收发两侧，以前是把 id 直接截 8 个字符，
      于是 `user_control` 在页面上写成 user_con。现在与总路径共用同一套"这是谁"：
      名单里的 Agent 用昵称，用户/后台这类主体走中间层词表。*/

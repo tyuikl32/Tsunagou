@@ -282,7 +282,7 @@ Tsunagou.onReady(() => { /* 现在可以随便调 Tsunagou.* 了 */ });
 
 > 空判断是**每个容器各自做**的：一个页面可以好几个小标题各自空着、各自提示。
 > 两处例外：主视图整体没数据时只给一个（否则五个小节会各占 240px）；
-> "项目进度"那栏不放（`.statbox .inner` 有 `max-height:100px`，装不下 240px 的占位块）。
+> "项目进度"那栏不放（`.statArea .right .inner` 有 `max-height:140px`，装不下 240px 的占位块）。
 > `render.agents` 的空状态会和末尾那个大加号并存（没 Agent 时还能直接点加号建一个）。
 
 ### 4.3 侧栏默认隐藏，点内容才出现
@@ -414,7 +414,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 **读取类**（2026-09-28 接线后的真实表；说明见 §10）
 | 键 | 路径 | 作用域 | 期望返回 |
 |---|---|---|---|
-| `projects` | `/projects?agents=1` | 全局 | `{items:[{project_id,name,objective,lifecycle,policy_revision,path,daemon,main_agent_id,agents,agents_fetched_at,history,updated_at}]}`（中间层提供；daemon 没有这个路由。`agents=1` 才去问名单，见 §7。**名单问不到时（daemon 停了）用记录里那一份补上**，`agents_fetched_at` 也跟着写成记录时刻 —— 完工的服务是按设计退出的，而"谁负责这个协作"在它退出以后仍然成立；活的答案永远优先。**字段名照 daemon 出口写**：名单行在记录的 `items` 里（`{main_agent_id, items:[…]}`），不是 `agents`。**`updated_at` = 该协作总路径（审计出口）里时间上最新那一条的时刻** —— 由 `audit_updated_at` 从控制台记录的页面直连出口（`relay:/api/v1/projects/<id>/history`）里取：那一页按 `event_seq` 升序、每读到一次就整份覆盖，所以取其中最大的 `occurred_at`；若这一页恰好含 watermark 那一条（`event_seq == as_of_event_seq`）就优先用它，免得"分页没走到底"时把中间某一条当成最新。读不到记录给 `null`，页面自己退回记录时刻） |
+| `projects` | `/projects?agents=1` | 全局 | `{items:[{project_id,name,objective,lifecycle,policy_revision,path,daemon,main_agent_id,agents,agents_fetched_at,history,updated_at}]}`（中间层提供；daemon 没有这个路由。`agents=1` 才去问名单，见 §7。**名单问不到时（daemon 停了）用记录里那一份补上**，`agents_fetched_at` 也跟着写成记录时刻 —— 完工的服务是按设计退出的，而"谁负责这个协作"在它退出以后仍然成立；活的答案永远优先。**字段名照 daemon 出口写**：名单行在记录的 `items` 里（`{main_agent_id, items:[…]}`），不是 `agents`。**`updated_at` = 该协作总路径（审计出口）里时间上最新那一条的时刻** —— 由 `audit_updated_at` 从控制台记录的页面直连出口（`relay:/api/v1/projects/<id>/history`）里取：那一份是页面**翻到尾巴**之后的样子（`items` 按 `event_seq` 升序，控制台每读到一次就整份覆盖），所以取其中最大的 `occurred_at`；若里面含 watermark 那一条（`event_seq == as_of_event_seq`）就优先用它。中间层在记录时给这一份打个 `complete`（`next_cursor` 还在就只是**一页**）—— **不是尾巴的记录一律回 `null`**（待改 16：旧记录只留了第一页，回一个中段时刻就是替页面撒谎），页面自己退回记录时刻。读不到记录也给 `null`） |
 | `agentsWindow` | `/console/agents` | 全局 | `{items:[{agent_id,role,status,project_id,project_name,task}],unreadable:[project_id],fetched_at}`（**跨项目汇总**：一行 = 一个 (项目, Agent)；中间层提供，见 §7） |
 | `settings` | `/console/profile` | 全局 | `{version,nickname,theme,agents:{<agent_id>:{nickname,vendor}}}`（中间层的用户档案） |
 | `glossary` | `/console/glossary` | 全局 | `{version, domains:{<域>:{<token>:中文}}}`（后端参数值的中文对照表，中间层维护，见 §7.3） |
@@ -428,7 +428,7 @@ Tsunagou.dispatch('ui.tab', 'tasks');        // 也支持 (type, payload) 简写
 | `acceptance` | `/console/views/acceptance?project_id={project}` | 当前项目 | `sources:{overview,decisions,tasks,results,reviews,agents}` → `{proposal, taskResults}`（段 2 的验收结论来自 `reviews`） |
 | `checkpoints` | `/projects/{project}/checkpoints` | 当前项目 | `{items,current,...}` → `{latest,history}`（卡片：摘要+时间+取档原因+校验态） |
 | `checkpointFailures` | `/projects/{project}/checkpoint-failures` | 当前项目 | `{project_id,items:[{operation_id,status,error_code,requested_by,reason,created_at,updated_at,revision,attempt_count,max_attempts}]}` → 「存档失败」那一段（**记账**，不是存档点） |
-| `timeline` | `/projects/{project}/history` | 当前项目 | 审计分页 `{items:[...]}`（`event_seq` **升序**，`action` 是去掉 `command.` 前缀的 command kind）→ 按**阶段**分代的 `[{era,items}]`，见 §7 |
+| `timeline` | `/projects/{project}/history` | 当前项目 | 审计分页 `{items:[...]}`（`event_seq` **升序**，`action` 是去掉 `command.` 前缀的 command kind）→ 按**阶段**分代的 `[{era,items}]`，见 §7。**页面自己翻到尾巴**（待改 16，2026-10-08）：出口默认只给第一页（`limit=50`）却同时带着 `next_cursor`，于是 `#120 完工提案` / `#128 完工确认` 这类最新事件在时间线上永远看不见。现在这一路先按出口上限 `?limit=200` 取第一页，再跟 `next_cursor` 一段段取（`?cursor=…&limit=200`），把各页按升序接起来、只留最后 200 条交给形状函数（只留最后一页会丢掉刚刚发生过的动作）。`next_cursor` 为空、或首页里就有 `event_seq == as_of_event_seq` 那一条（出口自报的 watermark）时立刻停；最多 10 页，没走到尾巴时载荷上带 `history_truncated`。载荷形状与一页审计**完全一致**，所以 §7 的形状函数不用改 |
 
 **写入类**（全部走 `POST /commands/{command_kind}`，只有 `settingSave` / `projectCreate` 由中间层掌管）
 | 键 | 命令 / 路径 | 请求体（payload） |

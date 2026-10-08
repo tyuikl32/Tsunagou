@@ -47,6 +47,9 @@ class _StubDaemon:
         self.requests: list[_Received] = []
         #: When set, every answer uses this status ("it was fine a minute ago, now it refuses").
         self.refuse_with: int | None = None
+        #: 按路径后缀换一份回答（键是出口名，如 ``"/history"``）。不给就走下面那条默认的
+        #: ``{"items": []}`` —— 大部分用例只关心"中间层把答案搬运得对不对"，不关心内容。
+        self.answers: dict[str, Any] = {}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -99,13 +102,21 @@ class _StubDaemon:
         elif path.endswith("/health"):
             status, payload = 200, {"status": "ok"}
         else:
-            status, payload = 200, {"items": []}
+            status, payload = 200, self._answer_for(path)
         blob = json.dumps(payload).encode("utf-8")
         handler.send_response(status)
         handler.send_header("Content-Type", "application/json")
         handler.send_header("Content-Length", str(len(blob)))
         handler.end_headers()
         handler.wfile.write(blob)
+
+    def _answer_for(self, path: str) -> Any:
+        """这份出口该给什么：``answers`` 里登记过就给那一份，否则给一个空的列表页。"""
+
+        for suffix, payload in self.answers.items():
+            if path.endswith(suffix):
+                return payload
+        return {"items": []}
 
 
 @pytest.fixture
@@ -495,12 +506,62 @@ def test_a_stopped_project_still_says_who_worked_here(tmp_path: Path, stub: _Stu
         "补上的是记录，就得说是记录到什么时候"
 
 
+def test_a_relayed_history_page_is_recorded_and_marks_whether_it_is_the_tail(
+    tmp_path: Path, stub: _StubDaemon,
+) -> None:
+    """控制台记下的那一份审计页面，要自己说清"这是不是尾巴"。
+
+    待改 16（2026-10-08 实测）：审计出口按 `event_seq` 升序一页一页给，页面为时间线翻到
+    尾巴（web/assets/js/behavior.js 的 `readTimelineTail`）。**中间层不替它翻页** —— 它只把
+    "这一份是不是尾巴"记进记录里（`complete`），好让项目卡片的「数据更新时间」在只剩记录时
+    也说得准：`next_cursor` 还在就只是**一页**，不是时间线。字段由 `_with_completeness`
+    写，位置在载荷上（`HistoryStore` 原样存 dict）。"""
+
+    from tsunagou.console.history import HistoryStore
+
+    _, project_id = _project(tmp_path, stub)
+    config = _config(tmp_path)
+    app = create_console_app(config)
+    relay = _endpoint(app, "/api/v1/projects/{project_id}/{rest:path}")
+    store = HistoryStore.beside_index(config.index_path)
+    source = f"relay:/api/v1/projects/{project_id}/history"
+
+    page = {"items": [{"event_seq": 1, "occurred_at": "2026-10-03T06:14:00+08:00"}],
+            "as_of_event_seq": 9, "snapshot_event_seq": 9, "next_cursor": "after:1"}
+    stub.answers["/history"] = page
+    answered = asyncio.run(relay(project_id, "history", _request("GET", query="limit=200")))
+    assert answered.status_code == 200
+
+    kept, _ = store.payload(project_id, source)
+    assert kept["complete"] is False, "带着 next_cursor 的只是一页，不是整条时间线"
+    assert kept["next_cursor"] == "after:1"
+    # 中间层只做标记：出口给的字段一个不改、一个不丢（页面照旧按同一形状读）。
+    assert {key: kept[key] for key in page} == page
+
+    # 走到尾巴的那一份（出口不再给 next_cursor）记成 complete。
+    stub.answers["/history"] = {"items": [{"event_seq": 9, "occurred_at": "2026-10-03T21:05:00+08:00"}],
+                                "as_of_event_seq": 9, "snapshot_event_seq": 9, "next_cursor": None}
+    asyncio.run(relay(project_id, "history", _request("GET", query="cursor=after%3A1&limit=200")))
+    again, _ = store.payload(project_id, source)
+    assert again["complete"] is True, "出口说没有下一段了，这一份就是尾巴"
+
+    # 一路走通：daemon 的回答 → 记录 → 卡片上的「数据更新时间」。尾巴那一条是 21:05。
+    listing = _endpoint(app, "/api/v1/projects")
+    row = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert row["updated_at"] == "2026-10-03T21:05:00+08:00"
+
+
 def test_the_project_list_reports_the_newest_timeline_entry(tmp_path: Path, stub: _StubDaemon) -> None:
     """卡片上的「数据更新时间」= 总路径（审计出口）里**时间上最新那一条**的时刻。
 
     用户 2026-10-07 定的口径。判据用控制台记录的那个页面直连出口（`relay:…/history`）：
     它的 `items` 按 `event_seq` 升序，控制台每次读到就整份覆盖，所以取其中最大的
     `occurred_at`；万一这一页里就有 watermark 那一条，优先用它。
+
+    待改 16（2026-10-08）：只有**走到了尾巴**的那一份记录（`complete` 为真，见
+    `_with_completeness`）才配回答这个问题。旧记录是第一页（`next_cursor` 还挂着）时，
+    它的话全是"到第 118 条为止的最新"，端出来就是替页面撒谎 —— 那样一律回 `None`，
+    卡片退回"上次记录"的时刻。
     """
 
     from tsunagou.console.history import HistoryStore
@@ -514,7 +575,7 @@ def test_the_project_list_reports_the_newest_timeline_entry(tmp_path: Path, stub
 
     store.record(
         project_id, source,
-        {"as_of_event_seq": 3, "items": [
+        {"complete": True, "as_of_event_seq": 3, "next_cursor": None, "items": [
             {"event_seq": 1, "occurred_at": "2026-10-03T06:14:00+08:00"},
             {"event_seq": 2, "occurred_at": "2026-10-03T09:30:00+08:00"},
             {"event_seq": 3, "occurred_at": "2026-10-03T21:05:00+08:00"},
@@ -524,18 +585,49 @@ def test_the_project_list_reports_the_newest_timeline_entry(tmp_path: Path, stub
     row = [item for item in listing()["items"] if item["project_id"] == project_id][0]
     assert row["updated_at"] == "2026-10-03T21:05:00+08:00", "总路径里最新那一条的时刻"
 
-    # 分页没走到底（watermark 那一条不在这一页）：退回"这一页里最新的那一条"，
-    # 不编一个 tip 的时刻 —— 宁可少说，不假装。
+    # 尾巴上那一页可能不是满的：watermark 那一条就在里面，认它（别拿"这一页最大的"顶）。
     store.record(
         project_id, source,
-        {"as_of_event_seq": 99, "items": [
+        {"complete": True, "as_of_event_seq": 99, "next_cursor": None, "items": [
+            {"event_seq": 91, "occurred_at": "2026-10-03T09:30:00+08:00"},
+            {"event_seq": 99, "occurred_at": "2026-10-03T21:05:00+08:00"},
+        ]},
+        captured_at="2026-10-04T00:00:00+08:00",
+    )
+    tail = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert tail["updated_at"] == "2026-10-03T21:05:00+08:00"
+
+    # 旧记录（待改 16 之前留下的一页，或者说读它的那个页面还没翻页）：**不许**回答。
+    # 没修之前这里会回 "2026-10-03T09:30:00+08:00"（这一页里最新的那一条）—— 而那一刻
+    # 只是"这一页的末尾"，真最新在 next_cursor 之后（实测：17:17:21 被当成了最新，
+    # 真最新是 17:19:05 的完工确认）。现在回 None，卡片退回记录时刻，那句话是真的。
+    store.record(
+        project_id, source,
+        {"as_of_event_seq": 99, "next_cursor": "after:2", "items": [
             {"event_seq": 1, "occurred_at": "2026-10-03T06:14:00+08:00"},
             {"event_seq": 2, "occurred_at": "2026-10-03T09:30:00+08:00"},
         ]},
         captured_at="2026-10-04T00:00:00+08:00",
     )
-    again = [item for item in listing()["items"] if item["project_id"] == project_id][0]
-    assert again["updated_at"] == "2026-10-03T09:30:00+08:00"
+    stale = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert stale["updated_at"] is None, "分页没走到底的那一份不许当成最新"
+
+    # `complete` 明写成假的（页面记下过"这不是尾巴"）：同样不回答。
+    store.record(
+        project_id, source,
+        {"complete": False, "as_of_event_seq": 3, "next_cursor": None, "items": [
+            {"event_seq": 3, "occurred_at": "2026-10-03T21:05:00+08:00"},
+        ]},
+        captured_at="2026-10-04T00:00:00+08:00",
+    )
+    marked = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert marked["updated_at"] is None
+
+    # 走到尾巴但一条可读时间都没有：不编 —— 页面用它自己的兜底（记录时刻）。
+    store.record(project_id, source, {"complete": True, "items": [], "as_of_event_seq": 0, "next_cursor": None},
+                 captured_at="2026-10-04T00:00:00+08:00")
+    blank = [item for item in listing()["items"] if item["project_id"] == project_id][0]
+    assert blank["updated_at"] is None
 
     # 连记录都没有：不编 —— 页面用它自己的兜底（记录时刻）。
     store.forget(project_id)
