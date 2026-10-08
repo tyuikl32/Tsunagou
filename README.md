@@ -18,9 +18,9 @@ After installation, continue with [Agent 快速接入](docs/overview/agent-quick
 
 Tsunagou 是面向本机多个 Coding Agent 的协作后端。它让 Agent 共享任务事实、公开理解与假设、发现分歧、协商契约，并在暂停、断线和换人之后继续工作。
 
-**当前状态（2026-10-05）：独立安装的协作后端已跑通真实跨机器协作，仍在按实测结果逐项修。**
+**当前状态（2026-10-07）：独立安装的协作后端已跑通真实跨机器协作，仍在按实测结果逐项修。**
 
-测试现状：Python 全量以实测为准（`pytest tests --collect-only -q`，最近一次全量 1141 条（unit 953、protocol 58、architecture 8、integration 122））；`tests/unit` 在 PATH 里有 git 的环境下全绿 —— 那批工作区用例会 `git init`，PATH 里没有 git 时会整体失败，不是产品缺陷。页面端 **126** 条（`pnpm test`，`web/tests/behavior.smoke.test.ts`）。
+测试现状：Python 全量 **1169** 条（`pytest tests --collect-only -q`：unit 976、protocol 60、architecture 8、integration 125）。**截至 2026-10-07，全量有 20 条失败**，且与上一批提交前逐条相同、不是新引入：19 条是同一个 `unknown_root_id:coordination` —— `f39e95f` 给 `task.create` 加了"范围里的 root 必须已登记"的校验后，集成夹具再没被更新过（它们把根的**名字**当成了 `root_id`），其后 11 个提交一直红着；另 1 条是已知的 Windows 作业对象用例 `test_daemon_parent_job_exit`。**这 19 条覆盖的正是"冲突在合并前被发现"那条链路**（`test_conflicts_exit`、`test_execution_begin`、`test_remote_worker_scope`、`test_m1_runtime_flow`），所以那条链路目前没有绿灯的端到端证据。`tests/unit` 在 PATH 里有 git 的环境下全绿 —— 那批工作区用例会 `git init`，PATH 里没有 git 时会整体失败，不是产品缺陷。页面端 `pnpm test` **134** 条（7 个文件），其中 `web/tests/behavior.smoke.test.ts` 100 条。
 
 实测进展：主机 + 一台 Windows VM 上完成过一次真实闭环（远端入席 → 派活 → 交付 → 验收通过）。那一次两个任务都声明了**空范围**，所以租约/工作区/冲突这套机制**没有被触发** —— 这是下一步要专门验的事。本轮修复以[实测修复方案](docs/implementation/live-test-repair-plan.md)为准：FX1/FX2/FX7 已完成，FX3–FX6 进行中；实测暴露的新问题按证据逐个修，记录见 git 历史与 `web/method.md`。
 

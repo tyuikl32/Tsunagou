@@ -4,6 +4,26 @@
 
 **2026-09-28 修复入口：**[实测修复方案](implementation/live-test-repair-plan.md)、[FX1–FX7 任务索引](implementation/live-test-repair-tasks.json)。用户已授权实施，进度和未通过验收见任务索引；四项 FX 决定明确资源占用、破坏兼容升级、原 Desktop 唤醒和本机接口边界。先读此方案，避免沿历史 M1/PT 说明重复建任务。
 
+## 阅读约定（2026-10-07 补）
+
+本目录里有两类文档，**对"过时"的处理方式不同**，引用前请先分清：
+
+| 类别 | 有哪些 | 规则 |
+|---|---|---|
+| **历史快照** | `docs/acceptance/*.md`（带日期的验收记录）、`docs/history/`（原始记录）、`**/evidence/`（证据） | 里面的**绝对路径、计数、版本号都是当天的**，不随后续改动更新。这不是"过时"，它们本来就是记录 —— **不要改，也不要拿它的数字当现状**（`docs/history/2026-09-18-source/` 按项目约定明文禁止修改） |
+| **规范性文档** | `docs/implementation/`、`docs/overview/`、`docs/decisions/`、`docs/standalone/`、根 `README.md`、`USER_MANUAL.md`、`AGENTS.md` | **应当反映当前状态**；发现与代码不符就该改 |
+
+**当前实测值（2026-10-07，改文档时拿这一行核对）**：声明命令 **105** ／ 装配 handler **62** ／ bridge 工具 **50**（main 50、worker 28）
+／ `protocol/schemas` **121** ／ `protocol_data` **142** 个文件 ／ pytest **1169** 条（其中 **20 条失败**）／ vitest **134** 条（7 个文件）。
+命令数以 `protocol/registry/commands.json` 为准；数字变了请同时改这一行。
+
+两个已知的文档工具边界：`tools/docs/validate_docs.py` 只判**文件是否存在**，**不校验 `#锚点`**（已发现 1 处死锚点，见 `docs/acceptance/deepseek-harness-11-baseline-2026-10-01.md`）；
+它的扫描范围也不含 `.agents/`、`packages/`、`web/`、`USER_MANUAL.md`。
+
+> ⚠️ **一处尚未修的代码退化**：`a329cc2`（FX1~FX6，2026-09-29）删掉了 daemon 重启时的任务回收
+> （释放资源／orphan Attempt／把未完成 Task 放回 `open`），而文档仍按"会回收"写。详见 [status-and-gaps 顶部横幅](standalone/status-and-gaps.md)。
+> **这是代码要修，不是文档要改。**
+
 ## 分类
 
 | 目录 | 读者与用途 | 是否直接约束新实现 |
