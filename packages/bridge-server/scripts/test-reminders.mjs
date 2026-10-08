@@ -10,7 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { writePrivateJson } from "../dist/private-file.js";
 
-import { WAKE_REMINDER as wake, WAKE_INSTRUCTIONS } from "../dist/reminders.js";
+import { OPERATING_MANUAL_HINT as manual, WAKE_REMINDER as wake, WAKE_INSTRUCTIONS } from "../dist/reminders.js";
 
 const completion = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
 const workingRoot = (root) => `你在这台机器上的工作目录是：${root}。只在这个目录里改动；任务声明了范围时，以那个范围为准。`;
@@ -98,18 +98,20 @@ for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessio
     const f = await fixture(t, metaKey);
     assert.ok(f.client.getInstructions().includes(WAKE_INSTRUCTIONS));
     assert.ok(!f.client.getInstructions().includes(wake));
+    // 每个模型调用都要付这段 instructions：手册只加一句，指路而已。
+    assert.ok(f.client.getInstructions().includes("docs/overview/agent-operating-manual.md"));
     assert.ok(wake.includes("Codex → Codex 只走现有 Tsunagou Codex 通道"));
     assert.ok(wake.includes("不要求用户手动唤醒"));
 
     check(await f.call("task.review.accept"), f.result, [completion]);
     assert.equal(existsSync(join(f.root, "agent-a-receipt.json")), false);
     const working = workingRoot(f.root);
-    check(await f.call("context.project_read"), f.context("agent-a"), [working, wake, completion]);
+    check(await f.call("context.project_read"), f.context("agent-a"), [working, manual, wake, completion]);
     check(await f.call("context.project_read"), f.context("agent-a"), [completion]);
     const reminders = join(f.root, "daemon", "reminders");
     for (const file of readdirSync(reminders)) writePrivateJson(join(reminders, file), {guide_version:"old-version"});
-    check(await f.call("context.project_read"), f.context("agent-a"), [working, wake, completion]);
-    check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), [working, wake]);
+    check(await f.call("context.project_read"), f.context("agent-a"), [working, manual, wake, completion]);
+    check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), [working, manual, wake]);
     await f.restart();
     check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), []);
     check(await f.call("context.project_read"), f.context("agent-a"), [completion]);

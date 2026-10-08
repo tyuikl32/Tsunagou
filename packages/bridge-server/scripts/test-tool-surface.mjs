@@ -115,6 +115,36 @@ test("coordination__plan 的描述说清它才是唤醒与替代的那条路", a
   assert.match(described, /supersedes_task_id/, "替代已发布的任务要走这里的 supersedes_task_id");
 });
 
+// 2026-10-08 实测：`coordination.plan` 的行内字段被 schema **漏声明**（items 里只声明了
+// acceptance），主 Agent 因此断言"schema 参数和 handler 要的不一致"，转头去读源码、甚至打算
+// 绕开桥直接打 HTTP。行内四个必填字段必须写在描述里，且要说清 task_objective 不是 objective。
+test("coordination__plan 的描述列出每一行的必填字段与一次做了什么", async (t) => {
+  const tools = await listTools(t, "main");
+  const described = String(tools.find((tool) => tool.name === "coordination__plan")?.description ?? "");
+  for (const field of ["assigned_worker_id", "title", "task_objective", "acceptance"]) {
+    assert.ok(described.includes(field), `行内必填字段 ${field} 必须写进描述`);
+  }
+  assert.match(described, /not objective/, "要说清 task_objective 不是顶层那个 objective");
+  assert.match(described, /create -> ready -> publish/, "要说清一行走完 create→ready→publish→指派→消息");
+  assert.match(described, /SILENT/, "要对比 task__publish 的静默语义，否则 publish 会被当成派活");
+});
+
+// 2026-10-08 实测：`expected_physical_identity` 在文档里查不到，主 Agent 只好去读 handlers 源码
+// 才明白它是个 inode 串、而且"不传就不校验"。字段级事实要写在描述里，连同"怎么取到它"。
+test("root__register / root__bind 的描述说清 expected_physical_identity 与 repository_id", async (t) => {
+  const tools = await listTools(t, "main");
+  const register = String(tools.find((tool) => tool.name === "root__register")?.description ?? "");
+  const bind = String(tools.find((tool) => tool.name === "root__bind")?.description ?? "");
+  assert.match(bind, /expected_physical_identity/, "要把这个字段名写出来");
+  assert.match(bind, /inode:/, "要说清它长什么样（物理身份串，不是路径）");
+  assert.match(bind, /NOT the path/, "要说清它不是路径、也不是自己能算的哈希");
+  assert.match(bind, /physical_identity/, "要说清从返回值里取它");
+  assert.match(bind, /physical_identity_conflict/, "要说清不符时被拒的码");
+  assert.match(bind, /bindings\.json/, "要明说别去私有状态文件里找它");
+  assert.match(register, /IGNORES repository_id/, "要说清 handler 根本不读 repository_id");
+  assert.match(register, /repository__register/, "要说清仓库要靠 repository.register 单独登记");
+});
+
 // 2026-10-08 实测：`contract.propose` 的 contract_id 被 schema 接受、被域静默丢掉，
 // 于是 main 按自己起的标签引用契约，task.begin 被拒 4 次。描述必须说清它就是提案 id、要回引返回值。
 test("contract__propose 的描述直说 contract_id 就是提案 id", async (t) => {

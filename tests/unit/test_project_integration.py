@@ -41,6 +41,14 @@ def test_bootstrap_materializes_non_secret_project_entries(tmp_path: Path) -> No
     context = (root / ".tsunagou/agent-context.md").read_text(encoding="utf-8")
     assert f"{source / 'docs'}/overview/agent-wake-guide.md" in context
     assert (source / "docs/overview/agent-wake-guide.md").is_file()
+    # The on-demand operating manual is the first 接入入口: the field-level facts it holds
+    # are what an Agent would otherwise reopen Tsunagou's own src/ to find.
+    manual = f"{source / 'docs'}/overview/agent-operating-manual.md"
+    assert manual in context
+    assert (source / "docs/overview/agent-operating-manual.md").is_file()
+    assert context.index(manual) < context.index("安装/恢复向导") < context.index(
+        f"{source / 'docs'}/overview/agent-wake-guide.md"
+    )
     assert manifest["updated_at"].endswith("Z")
     config = tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
     assert config["mcp_servers"]["tsunagou"]["env"].keys() == {"TSUNAGOU_ROUTING_DIR"}
@@ -86,9 +94,15 @@ def test_bootstrap_reminder_matches_bridge_and_refreshes_without_main_instructio
         "其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。"
     )
     bridge_rules = Path(__file__).resolve().parents[2] / "packages/bridge-server/src/reminders.ts"
-    assert wake in bridge_rules.read_text(encoding="utf-8")
+    bridge_text = bridge_rules.read_text(encoding="utf-8")
+    assert wake in bridge_text
     context = context_path.read_text(encoding="utf-8")
     assert wake in context
+    # The per-session first-read hint points at the same manual, and it is the bridge's
+    # own constant, so an added reminder cannot silently diverge from this file.
+    assert "OPERATING_MANUAL_HINT" in bridge_text
+    assert "docs/overview/agent-operating-manual.md" in bridge_text
+    assert "docs/overview/agent-operating-manual.md" in context
     assert "project__completion_propose" not in context
     # A previously generated context is replaced through the existing refresh path.
     context_path.write_text(context.replace(wake, "旧版上下文"), encoding="utf-8")

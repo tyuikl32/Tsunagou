@@ -158,6 +158,9 @@ def _render_context(project_id: str, source: dict[str, Any], source_root: Path |
 
 ## 接入入口
 
+- **按需操作手册（先读这一条）**：`{local_docs}/overview/agent-operating-manual.md`。
+  工具必填字段与取值来源、常见拒绝码与下一步、以及"不要绕开桥"的边界都在里面 ——
+  这些事实**不必**再去读 Tsunagou 的 `src/`，也不要到宿主安装目录里找。
 - 安装/恢复向导：`tsunagou-agent-onboarding` skill。
 - 当前项目轻量入口：`.agents/skills/tsunagou-project/SKILL.md`。
 - 规范源码（本机可用时）：`{local_docs}/overview/agent-quick-start.md`、`{local_docs}/overview/subagent-guide.md`。
