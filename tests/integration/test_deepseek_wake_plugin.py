@@ -16,10 +16,13 @@ from tsunagou.platform.deepseek_wake import (
     bind_deepseek_wake,
     deepseek_wake_runtime_path,
     ensure_deepseek_wake_configuration,
+    set_deepseek_wake_mode,
 )
 
 
-def test_managed_plugin_and_python_client_original_session_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("wake_mode", ["queue", "steer"])
+def test_managed_plugin_and_python_client_original_session_contract(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wake_mode: str) -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node is required for the shipped plugin integration")
@@ -27,6 +30,7 @@ def test_managed_plugin_and_python_client_original_session_contract(tmp_path: Pa
     private_home = tmp_path / "私有 home"
     monkeypatch.setattr(Path, "home", lambda: private_home)
     managed = ensure_deepseek_wake_configuration()
+    set_deepseek_wake_mode(wake_mode)
     project, agent, session, message = "project", "worker", "original-session", "message"
     bind_deepseek_wake(project, agent, session)
     captured = tmp_path / "captured.json"
@@ -97,7 +101,7 @@ process.stdin.once("data", () => {
         ).encode()).hexdigest()
         assert submission["inspected"] == [session, session]
         assert submission["request"] == {
-            "requestId": expected_id, "sessionId": session, "mode": "queue",
+            "requestId": expected_id, "sessionId": session, "mode": wake_mode,
             "content": [{"type": "text", "text": (
                 "请读取你自己的 Tsunagou 项目上下文和收件箱，核对当前身份与指定项目，"
                 "按已有授权处理指定消息关联的待办，并通过 Tsunagou 回复结果。"

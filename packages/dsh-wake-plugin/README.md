@@ -4,7 +4,8 @@ A DeepSeek Harness Desktop host plugin that wakes an **existing** session so it
 reads its own Tsunagou context and inbox.
 
 A local caller posts a small identity tuple; the plugin submits one fixed read
-reminder into that session through `sessionController.prompt({ mode: 'queue' })`.
+reminder into that session through `sessionController.prompt({ mode })`, where
+the mode is the managed configuration's `wake_mode` (`queue` by default).
 No window is opened, no focus or clipboard is touched, and no keystroke is sent.
 
 ---
@@ -172,16 +173,31 @@ session, and it returns no chat content and no session listing.
 
 ## Behaviour by session state
 
-| Target | What `mode: 'queue'` does |
-|---|---|
-| Loaded and idle | Opens a new turn immediately. |
-| Loaded and running | Queues for the next turn boundary; the current turn is not interrupted. |
-| Persisted, not loaded | The host resumes the session from durable storage, then admits the reminder. |
-| Does not exist | Refused with `session_not_found`. No session is created or forked. |
+| Target | What `mode: 'queue'` does | What `mode: 'steer'` does |
+|---|---|---|
+| Loaded and idle | Opens a new turn immediately. | Wakes the session too: a wake sent while idle opens its turn boundary. |
+| Loaded and running | Queues for the next turn boundary. | Is read at the current turn's **next step boundary**, and keeps that turn open instead of letting it end. |
+| Persisted, not loaded | The host resumes the session from durable storage, then admits the reminder. | Same resume path, then the same step-boundary admission. |
+| Does not exist | Refused with `session_not_found`. No session is created or forked. | Same. |
 
-`queue` is the only mode this plugin submits. It never uses `steer`, never
-falls back to `followup`, and has no scheduler, retry driver or durable queue of
-its own.
+**`steer` does not interrupt anything.** The host has no step-only abort
+(`dsh-agent/README.md`: "there is no step-only abort that keeps the turn
+running"), so a tool call already in flight keeps running and nothing is
+cancelled: `steer` only decides *where* the reminder is read. The host's own
+client labels the gesture "steer" and says it interrupts the turn; the loop does
+not do that, so do not expect `steer` to stop work in progress.
+
+Neither mode has a scheduler, retry driver or durable queue of this plugin's
+own, and the plugin never falls back from one mode to the other: what the
+configuration says is what it submits.
+
+**`steer` is verified live (2026-10-08, Desktop 0.2.0-rc.2).** A real wake with
+`wake_mode: "steer"` landed in a **running** session: the host spliced the
+reminder into that session *inside the current turn* (`agent/inbox/spliced`,
+then the `user/message` on the next step boundary), the turn continued through
+further steps, and **no new `turn/start` occurred** — it did not wait for the
+turn to end, which is what `queue` would have done. Steering an **idle** session,
+and cold restore, are still unobserved.
 
 ### What resume preserves
 
@@ -210,7 +226,9 @@ requestId = "tsunagou-wake-v1:" + sha256(JSON.stringify([project_id, agent_id, s
 ```
 
 Same tuple → same id → same body, so a retry reuses the host's de-duplication.
-The id is never time-stamped and never randomised.
+The id is never time-stamped and never randomised. **The prompt mode is not part
+of the tuple or the body**, so switching `wake_mode` cannot make an already
+admitted message look like a new one.
 
 **The host compares request ids only.** For an id it has already queued or
 logged it returns `accepted: true` and ignores the new content — so reusing one
@@ -311,19 +329,32 @@ about the real host. The external 2026-10-05 delivery report proves a background
   writing it durably, a retry may or may not be de-duplicated. The host's own
   log is the authority; this plugin makes no stronger promise.
 - **`queueable` cannot detect subagent ownership** (see the status table).
+- **`steer` does not abort anything.** There is no step-only abort in the host,
+  so a tool call in flight keeps running and the reminder is read on the
+  following step. Only the host's own cancel gesture stops work.
+- **`steer` is verified only for a running session.** A live run (2026-10-08)
+  showed the reminder landing inside the current turn, with no new turn start.
+  Steering an **idle** session, and cold (unloaded) restore, are unobserved.
 - **One key, all bindings.** Every configured binding shares the single bearer
   key; there is no per-binding key.
+- **One mode, all bindings.** `wake_mode` is per machine, not per project or per
+  message: switching it changes how every Desktop wake call is delivered.
 - **Loopback only.** No cross-machine support by design.
 
 ## Tsunagou managed initialization
 
 The generated profile row contains only `config.managedFile`, an absolute path
 in a user-private directory prepared by Tsunagou. It takes precedence over
-legacy static configuration. The JSON is `{format_version:1,key,bindings}`;
-bindings are exact project/Agent/session triples and may initially be empty.
-Tsunagou adds bindings only after authenticated original-session enrollment.
-Each request reads one current snapshot; malformed or missing files fail closed.
-No request can add bindings, provide a path, or choose reminder content.
+legacy static configuration. The JSON is
+`{format_version:1, key, bindings, wake_mode?}`; bindings are exact
+project/Agent/session triples and may initially be empty, and `wake_mode` is
+`"queue"` (the default, and what an older file without the field means) or
+`"steer"`. Tsunagou adds bindings only after authenticated original-session
+enrollment.
+Each request reads one current snapshot; malformed or missing files fail closed,
+and a `wake_mode` the host cannot be asked for fails the request rather than
+silently falling back to a default. No request can add bindings, provide a path,
+choose reminder content — **or choose the mode**.
 
 The plugin publishes sibling `runtime.json` from the actual bound loopback
 server address. It contains format_version=1, contract_version=1,

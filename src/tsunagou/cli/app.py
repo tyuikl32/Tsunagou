@@ -1490,8 +1490,16 @@ if typer is not None:
         adapter: str = typer.Option(..., "--adapter"),
         role: str = typer.Option("worker", "--role"),
         profile: str = typer.Option("desktop", "--profile"),
+        wake_mode: str = typer.Option("", "--wake-mode"),
     ) -> None:
-        """Privately observe the current host; return one fully filled user command."""
+        """Privately observe the current host; return one fully filled user command.
+
+        `--wake-mode` (Desktop only) chooses how the wake plugin delivers its
+        reminder: `queue` (the default) or `steer`. `steer` is read at the
+        running turn's next step boundary and does not abort the step in flight;
+        it is not live-verified yet. Omitting the flag leaves the current
+        setting alone.
+        """
         from tsunagou.application.onboarding import powershell_quote, prepare_codex_request
         from tsunagou.hostwake.port import HostWakeError
 
@@ -1512,11 +1520,22 @@ if typer is not None:
             if adapter == "deepseek":
                 if profile != "desktop":
                     raise RuntimeError("deepseek_prepare_requires_desktop_profile")
+                if wake_mode:
+                    from tsunagou.platform.deepseek_wake import set_deepseek_wake_mode
+
+                    try:
+                        set_deepseek_wake_mode(wake_mode)
+                    except ValueError:
+                        raise RuntimeError("deepseek_wake_mode_invalid") from None
                 result = _prepare_deepseek_desktop()
-                print(json.dumps({"status": "prepared", "adapter": adapter, "profile": profile,
-                                  "host_registration": "configured", "host_ready": False, "creates_agent": False,
-                                  "files": [str(path) for path in result.files],
-                                  "next": "call_tsunagou_connect_in_original_conversation"}, ensure_ascii=False))
+                payload = {"status": "prepared", "adapter": adapter, "profile": profile,
+                           "host_registration": "configured", "host_ready": False, "creates_agent": False,
+                           "files": [str(path) for path in result.files],
+                           "next": "call_tsunagou_connect_in_original_conversation"}
+                if wake_mode:
+                    # Already validated by set_deepseek_wake_mode above.
+                    payload["wake_mode"] = wake_mode
+                print(json.dumps(payload, ensure_ascii=False))
                 return
             runtime = _runtime_context()
             path = prepare_codex_request(runtime)

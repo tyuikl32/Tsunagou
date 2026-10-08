@@ -364,7 +364,7 @@ test("identifiers must be bounded printable strings", async () => {
  * wake endpoint
  * ------------------------------------------------------------------ */
 
-test("wake submits exactly one queued prompt and reports acceptance only", async () => {
+test("wake submits exactly one prompt and reports acceptance only", async () => {
   const { deps, calls } = host();
   const r = res();
   await createWakeHandler(deps)(req({ body: wakeBody }), r);
@@ -372,7 +372,8 @@ test("wake submits exactly one queued prompt and reports acceptance only", async
   assert.deepEqual(r.json, { ok: true, accepted: true, request_id: requestIdFor(wakeBody) });
   assert.equal(calls.prompt.length, 1);
   const [{ request, signal }] = calls.prompt;
-  assert.equal(request.mode, "queue", "queue is the only mode this plugin may use");
+  assert.equal(request.mode, internals.DEFAULT_WAKE_MODE,
+    "a profile without a managed file keeps the default queue mode");
   assert.equal(request.sessionId, BINDING.session_id);
   assert.equal(request.requestId, requestIdFor(wakeBody));
   assert.deepEqual(request.content, [{ type: "text", text: reminderText(wakeBody) }]);
@@ -549,8 +550,9 @@ function managedFixture(t) {
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const file = join(directory, 'managed.json');
   const key = 'a'.repeat(48);
-  const write = (bindings = [BINDING], secret = key) => writeFileSync(file,
-    JSON.stringify({ format_version: 1, key: secret, bindings }));
+  const write = (bindings = [BINDING], secret = key, mode) => writeFileSync(file,
+    JSON.stringify({ format_version: 1, key: secret, bindings,
+      ...(mode === undefined ? {} : { wake_mode: mode }) }));
   write();
   return { file, directory, key, write };
 }
@@ -590,6 +592,56 @@ test('invalid managed data cannot fall back to legacy credentials/bindings', asy
   assert.equal(calls.resolve, 0);
   assert.equal(calls.prompt.length, 0);
   assert.throws(() => readConfig({ managedFile: 'relative.json', bindings: [BINDING] }), /absolute/);
+});
+
+test('the managed wake_mode selects the prompt mode and rotates per request', async (t) => {
+  const f = managedFixture(t);
+  const { deps, calls } = host();
+  deps.managedFile = f.file;
+  const call = async () => {
+    const r = res();
+    await createWakeHandler(deps)(req({ body: wakeBody, token: f.key }), r);
+    return r;
+  };
+
+  // Absent field: this plugin's original behaviour.
+  assert.equal((await call()).state.status, 202);
+  assert.equal(calls.prompt.at(-1).request.mode, internals.DEFAULT_WAKE_MODE);
+
+  f.write([BINDING], f.key, 'steer');
+  assert.equal((await call()).state.status, 202);
+  assert.equal(calls.prompt.at(-1).request.mode, 'steer', 'the operator switch reaches the host prompt');
+
+  // Neither the request id nor the body may depend on the mode: the host
+  // de-duplicates by request id, so switching modes must not look like a new
+  // message, and a retry across a switch must still collapse.
+  assert.equal(calls.prompt.at(-1).request.requestId, requestIdFor(wakeBody));
+  assert.deepEqual(calls.prompt.at(-1).request.content, [{ type: 'text', text: reminderText(wakeBody) }]);
+
+  f.write([BINDING], f.key, 'queue');
+  assert.equal((await call()).state.status, 202);
+  assert.equal(calls.prompt.at(-1).request.mode, 'queue');
+  assert.equal(calls.resolve, 0, 'the credential service is never consulted in managed mode');
+});
+
+test('a wake_mode the host cannot accept is refused instead of submitted', async (t) => {
+  const f = managedFixture(t);
+  const { deps, calls } = host();
+  deps.managedFile = f.file;
+  for (const mode of ['abort', 'queue2', '', null, 7]) {
+    f.write([BINDING], f.key, mode);
+    const r = res();
+    await createWakeHandler(deps)(req({ body: wakeBody, token: f.key }), r);
+    assert.equal(r.state.status, 500, JSON.stringify(mode));
+    assert.equal(r.state.body.includes(f.key), false);
+  }
+  assert.equal(calls.prompt.length, 0, 'an unusable configuration submits nothing');
+
+  // With a usable mode the status route answers as before: it never submits.
+  f.write([BINDING], f.key, 'steer');
+  const status = res();
+  await createStatusHandler(deps)(req({ body, token: f.key }), status);
+  assert.equal(status.state.status, 200);
 });
 
 test('managed activation publishes actual bound port and disposal preserves newer owner', async (t) => {

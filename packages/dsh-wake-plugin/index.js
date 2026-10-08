@@ -9,8 +9,10 @@
  *   POST /tsunagou/wake/status  existence, load state, busy state
  *   POST /tsunagou/wake         admit the fixed read reminder
  *
- * The only write is `sessionController.prompt({ mode: 'queue' })`, so the host
- * owns resume, queueing and de-duplication. This plugin deliberately adds no
+ * The only write is one `sessionController.prompt({ mode })`, where the mode is
+ * the managed configuration's `wake_mode`: `queue` by default, or `steer` to be
+ * admitted at the running turn's next step boundary instead of the next turn.
+ * The host owns resume, queueing and de-duplication. This plugin adds no
  * second de-duplication store, no scheduler, no retry driver, no arbitrary
  * message forwarding and no UI automation.
  *
@@ -44,6 +46,22 @@ const MAX_BODY_BYTES = 8 * 1024;
 const MAX_ID_CHARS = 200;
 /** submit timeout: an unknown outcome, never reported as success. */
 const DEFAULT_SUBMIT_TIMEOUT_MS = 30_000;
+
+/**
+ * Prompt modes the host session controller accepts from this plugin.
+ *
+ * `queue` appends after the current turn. `steer` is admitted at the current
+ * turn's next step boundary and keeps that turn open rather than ending it;
+ * the host has no step-only abort, so `steer` cancels nothing in flight
+ * (`dsh-agent/README.md`: "there is no step-only abort that keeps the turn
+ * running", and `steer()` submits next-step input and wakes it).
+ *
+ * The mode is managed configuration, never a caller field: choosing it is an
+ * operator decision, and the host's own UI likewise requires an explicit
+ * gesture for it (busy sessions default to queue).
+ */
+const WAKE_MODES = Object.freeze(["queue", "steer"]);
+const DEFAULT_WAKE_MODE = "queue";
 
 /**
  * Test seam. Only the submit timeout is overridable, so the unknown-outcome
@@ -82,7 +100,8 @@ const REMINDER =
 
 const REQUEST_ID_PREFIX = "tsunagou-wake-v1:";
 
-/** Fields each endpoint accepts. No endpoint accepts content, mode or commands. */
+/** Fields each endpoint accepts. No endpoint accepts content, mode or commands:
+ * the prompt mode is managed configuration, not caller input. */
 const STATUS_FIELDS = Object.freeze(["project_id", "agent_id", "session_id"]);
 const WAKE_FIELDS = Object.freeze(["project_id", "agent_id", "session_id", "message_id"]);
 
@@ -229,8 +248,12 @@ function readManaged(path) {
     || value.key.length < 32 || !Array.isArray(value.bindings)) {
     throw new Error("invalid managed configuration");
   }
+  // Optional so an existing installation keeps working unchanged: an absent
+  // field means queue, which is what this plugin submitted before it existed.
+  const wakeMode = value.wake_mode === undefined ? DEFAULT_WAKE_MODE : value.wake_mode;
+  if (!WAKE_MODES.includes(wakeMode)) throw new Error("invalid managed configuration");
   const bindings = value.bindings.length === 0 ? [] : readConfig({ bindings: value.bindings }).bindings;
-  return { key: value.key, bindings };
+  return { key: value.key, bindings, wakeMode };
 }
 
 function publishRuntime(ctx, managedFile) {
@@ -369,7 +392,7 @@ function readJsonBody(req) {
  * @param res - node response.
  * @param fields - accepted body fields.
  * @param ids - required identifier fields.
- * @returns the verified identifiers, or null once a response was sent.
+ * @returns the verified identifiers plus the configured prompt mode, or null once a response was sent.
  */
 async function admit(deps, req, res, fields, ids) {
   if (!isLoopback(req.socket?.remoteAddress)) {
@@ -389,6 +412,9 @@ async function admit(deps, req, res, fields, ids) {
   const token = bearerOf(req.headers.authorization);
   let expected;
   let bindings;
+  // Configuration, never a caller field. A profile without `managedFile` keeps
+  // this plugin's original queue behaviour.
+  let wakeMode = DEFAULT_WAKE_MODE;
   try {
     // Resolved per request so a rotated secret reaches the next call without a
     // restart, and so nothing is cached in this plugin.
@@ -396,6 +422,7 @@ async function admit(deps, req, res, fields, ids) {
       const snapshot = readManaged(deps.managedFile);
       expected = snapshot.key;
       bindings = snapshot.bindings;
+      wakeMode = snapshot.wakeMode;
     } else {
       const resolved = await deps.credentials.resolve(deps.keyEnv);
       expected = resolved?.value;
@@ -430,7 +457,10 @@ async function admit(deps, req, res, fields, ids) {
     sendError(res, 403, E.not_bound, "target is not in the configured bindings");
     return null;
   }
-  return projected.ids;
+  // `wake_mode` rides along with the verified identifiers. It is deliberately
+  // not part of the request id or the body: `requestIdFor` and `reminderText`
+  // take explicit fields, so changing the mode cannot alter de-duplication.
+  return { ...projected.ids, wake_mode: wakeMode };
 }
 
 /**
@@ -494,10 +524,12 @@ export function createStatusHandler(deps) {
         exists: observed.exists,
         loaded: observed.loaded,
         state,
-        // `queue` accepts a new turn whether the session is loaded and idle, or
-        // loaded and running, or persisted-but-unloaded (the host resumes it).
-        // The one case this cannot see is subagent ownership, which only the
-        // wake call can report; see README "Status fields".
+        // Both modes can be submitted whenever the session exists: `queue`
+        // accepts a new turn whether the session is loaded and idle, loaded and
+        // running, or persisted-but-unloaded (the host resumes it), and `steer`
+        // is admitted at the running turn's next step boundary. The one case
+        // this cannot see is subagent ownership, which only the wake call can
+        // report; see README "Status fields".
         queueable: observed.exists,
       });
     } catch {
@@ -563,7 +595,7 @@ export function createWakeHandler(deps) {
         {
           requestId,
           sessionId: ids.session_id,
-          mode: "queue",
+          mode: ids.wake_mode,
           content: [{ type: "text", text: reminderText(ids) }],
         },
         controller.signal,
@@ -603,4 +635,6 @@ export const internals = Object.freeze({
   MAX_BODY_BYTES,
   MAX_ID_CHARS,
   DEFAULT_SUBMIT_TIMEOUT_MS,
+  WAKE_MODES,
+  DEFAULT_WAKE_MODE,
 });
