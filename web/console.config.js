@@ -18,5 +18,8 @@
 
 window.TSUNAGOU_CONSOLE_CONFIG = {
     baseUrl: '/api/v1',
+    /* 调界面期间先关掉自动重拉（0 = 不重拉）。要恢复成平时的每 5 秒一次，把这里改回 5000。
+       注意：走 `tsunagou web start` 托管时中间层会用自己那份配置替换本文件，
+       那种情况下请在地址栏加 ?poll_ms=0。*/
     poll_ms: 5000
 };
