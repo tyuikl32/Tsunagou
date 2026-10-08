@@ -666,13 +666,13 @@
                     <div class="dspText2">邀请十分钟内有效，过期后需要重新生成。</div>
                     <!--仅 OpenCode：它的会话名由主机起，那条聊天必须用这个名字开会话，
                         否则身份对不上（第一次调用只会得到 not_enrolled）。
-                        放在"有效期"之后，是因为 askForInvite 按索引取 .dspText2。-->
-                    <div id="netInviteSession" style="display: none;">
-                        <div class="title2">开会话用的名字（仅 OpenCode）</div>
-                        <div class="textbox2"><input class="inner" readonly id="netInviteSessionId" /></div>
-                        <div class="textbox2"><input class="inner" readonly id="netInviteSessionCmd" /></div>
-                        <div class="dspText2">让他在那台机器的项目目录里用它开会话：名字要与上面完全一致（主机已经替他起好），然后照「怎么用」那一段导入。</div>
-                    </div>
+                        这几件是 .uiBlock 的**直接子节点**、类与上下兄弟一样 —— 包一层 div
+                        会让 .uiBlock > .title2 / > .dspText2 这两条规则落空（样式就变了）；
+                        放在"有效期"之后，是因为 askForInvite 按索引取 .dspText2。
+                        显示/隐藏由 askForInvite 逐件切换（下面那三个 id）。-->
+                    <div class="title2" id="netInviteSessionTitle" style="display: none;">开会话用的命令（仅 OpenCode）</div>
+                    <div class="textbox2" id="netInviteSessionCmdBox" style="display: none;"><input class="inner" readonly id="netInviteSessionCmd" /></div>
+                    <div class="dspText2" id="netInviteSessionNote" style="display: none;">让他在那台机器的项目目录里运行这条命令开会话：会话名是主机替他起好的（就在命令里），然后照「怎么用」那一段导入。</div>
                 </div>
             </div>
             <div class="options">

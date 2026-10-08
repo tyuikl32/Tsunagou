@@ -2190,15 +2190,41 @@ describe("控制台接入等待与取消", () => {
   });
 
   /* 昵称与会话 id 是两件事（2026-10-05）：昵称给人看（可以中文），会话 id 给宿主看 ——
-     OpenCode 会把它放进 HTTP 头，所以主机随机生成纯 ASCII 的一个，并在邀请窗口里告诉人
-     用哪个名字开会话。不显示或显示错，那条聊天就会起个别的会话，第一次调用只会得到
-     not_enrolled。Codex / 深寻自己报号，不显示这一块。*/
-  it("邀请窗口对 OpenCode 给出开会话用的名字，昵称与会话 id 分开", async () => {
+     OpenCode 会把它放进 HTTP 头，所以主机随机生成纯 ASCII 的一个，并在邀请窗口里把
+     **开会话用的那条命令**给人看。不显示或显示错，那条聊天就会起个别的会话，第一次调用
+     只会得到 not_enrolled。Codex / 深寻自己报号，不显示这一块。
+
+     这一块（标题 + 命令框 + 一句说明）**不许再包一层 div**：包了它就不是 .uiBlock 的
+     直接子节点，`.uiBlock > .title2` / `.uiBlock > .dspText2` 两条子选择器落空，样式
+     就与上下兄弟不一样 —— 所以这里既断言显隐，也断言"直接子节点 + 类与兄弟逐字相同"。
+     会话名那一格（id=netInviteSessionId）已删：名字就在命令里，只留命令。*/
+  it("邀请窗口对 OpenCode 给出开会话用的命令，昵称与会话 id 分开", async () => {
     enrollmentApi.state.set("hosts", [
       { adapter: "opencode", label: "OpenCode", mode: "console" },
     ]);
-    const block = () => enrollmentPage.querySelector<HTMLElement>("#netInviteSession");
-    expect(block()!.style.display).toBe("none");
+    const part = (id: string) => enrollmentPage.querySelector<HTMLElement>("#" + id);
+    const hidden = (id: string) => part(id)!.style.display === "none";
+    const siblingClass = (selector: string) =>
+      enrollmentPage.querySelector<HTMLElement>("#netInvite .uiBlock " + selector)!.className;
+
+    /* 结构：包裹层没了；三件都是同一个 .uiBlock 的直接子节点，类与上下兄弟完全一样 */
+    expect(enrollmentPage.querySelector("#netInviteSession")).toBeNull();
+    expect(part("netInviteSessionTitle")!.parentElement)
+      .toBe(enrollmentPage.querySelector("#netInvite .uiBlock"));
+    expect(part("netInviteSessionCmdBox")!.parentElement)
+      .toBe(enrollmentPage.querySelector("#netInvite .uiBlock"));
+    expect(part("netInviteSessionNote")!.parentElement)
+      .toBe(enrollmentPage.querySelector("#netInvite .uiBlock"));
+    expect(part("netInviteSessionTitle")!.className).toBe(siblingClass(".title2"));
+    expect(part("netInviteSessionCmdBox")!.className).toBe(siblingClass(".textbox2"));
+    expect(part("netInviteSessionNote")!.className).toBe(siblingClass(".dspText2"));
+    /* 上面那一格（只有会话名）已经删掉：这一块只剩一个输入框 */
+    expect(enrollmentPage.querySelector("#netInviteSessionId")).toBeNull();
+    expect(enrollmentPage.querySelectorAll("#netInvite .uiBlock .textbox2 input")).toHaveLength(2);
+    /* 没发邀请前不显示 */
+    expect(hidden("netInviteSessionTitle")).toBe(true);
+    expect(hidden("netInviteSessionCmdBox")).toBe(true);
+    expect(hidden("netInviteSessionNote")).toBe(true);
 
     prepareBody = {
       status: "invited", invite: "tsunagou-invite-v1:CCCC", enrollment_id: "e-oc",
@@ -2215,17 +2241,49 @@ describe("控制台接入等待与取消", () => {
     /* 中文昵称照旧带过去 —— 它是给人看的，不是会话 id */
     expect(prepared[0]!.body).toMatchObject({ nickname: "熊猫", vendor: "opencode", place: "network" });
     expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
-    expect(block()!.style.display).toBe("");
-    expect(enrollmentPage.querySelector<HTMLInputElement>("#netInviteSessionId")!.value).toBe("ses_ab12cd34");
+    expect(hidden("netInviteSessionTitle")).toBe(false);
+    expect(hidden("netInviteSessionCmdBox")).toBe(false);
+    expect(hidden("netInviteSessionNote")).toBe(false);
     expect(enrollmentPage.querySelector<HTMLInputElement>("#netInviteSessionCmd")!.value)
       .toBe("opencode --session ses_ab12cd34");
+    /* askForInvite 是按位置取的：第一个 .textbox2 input 必须仍是邀请内容，
+       第二行 .dspText2 必须仍是有效期 —— 多出来的这一块不许顶掉它们。*/
+    const boxes = enrollmentPage.querySelectorAll<HTMLInputElement>("#netInvite .uiBlock .textbox2 input");
+    expect(boxes[0]!.value).toBe("tsunagou-invite-v1:CCCC");
+    const notes = enrollmentPage.querySelectorAll<HTMLElement>("#netInvite .uiBlock .dspText2");
+    expect(notes).toHaveLength(3);
+    expect(notes[1]!.textContent).toContain("一次性");
 
     enrollmentApi.app.cancelNetworkInvite();
     await vi.advanceTimersByTimeAsync(0);
     await done;
   });
 
-  it("别的宿主不显示「开会话用的名字」那一块（它们自己报号）", async () => {
+  it("别的宿主不显示「开会话用的命令」那一块，上一张邀请留下的命令也清掉", async () => {
+    const cmd = () => enrollmentPage.querySelector<HTMLInputElement>("#netInviteSessionCmd")!;
+    const shown = (id: string) =>
+      enrollmentPage.querySelector<HTMLElement>("#" + id)!.style.display !== "none";
+
+    /* 先发一张 OpenCode 的邀请：那一块是显示出来的，命令框里是那条命令 */
+    enrollmentApi.state.set("hosts", [
+      { adapter: "opencode", label: "OpenCode", mode: "console" },
+    ]);
+    prepareBody = {
+      status: "invited", invite: "tsunagou-invite-v1:EEEE", enrollment_id: "e-oc-stale",
+      expires_in_seconds: 600, expires_at: new Date(Date.now() + 600000).toISOString(),
+      url: "http://10.0.0.5:2810", conversation_id: "ses_stale01",
+    };
+    let done = enrollmentApi.actions.addSubAgent({
+      name: "熊猫", vendor: "OpenCode", place: "network", number: "",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(shown("netInviteSessionCmdBox")).toBe(true);
+    expect(cmd().value).toBe("opencode --session ses_stale01");
+    enrollmentApi.app.cancelNetworkInvite();
+    await vi.advanceTimersByTimeAsync(0);
+    await done;
+
+    /* 再换 Codex（它自己报号）：那一块收起来，且不许留着上一张邀请的命令 */
     enrollmentApi.state.set("hosts", [
       { adapter: "codex", label: "Codex", mode: "console" },
     ]);
@@ -2234,12 +2292,18 @@ describe("控制台接入等待与取消", () => {
       expires_in_seconds: 600, expires_at: new Date(Date.now() + 600000).toISOString(),
       url: "http://10.0.0.5:2810", conversation_id: "thread-abc",
     };
-    const done = enrollmentApi.actions.addSubAgent({
+    done = enrollmentApi.actions.addSubAgent({
       name: "小三", vendor: "Codex", place: "network", number: "thread-abc",
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(enrollmentApi.ui.window.isOpen("netInvite")).toBe(true);
-    expect(enrollmentPage.querySelector<HTMLElement>("#netInviteSession")!.style.display).toBe("none");
+    expect(shown("netInviteSessionTitle")).toBe(false);
+    expect(shown("netInviteSessionCmdBox")).toBe(false);
+    expect(shown("netInviteSessionNote")).toBe(false);
+    expect(cmd().value).toBe("");
+    /* 有效期那一行仍是第二行 .dspText2（askForInvite 按位置取，多一块也不许顶掉它）*/
+    const notes = enrollmentPage.querySelectorAll<HTMLElement>("#netInvite .uiBlock .dspText2");
+    expect(notes[1]!.textContent).toContain("一次性");
 
     enrollmentApi.app.cancelNetworkInvite();
     await vi.advanceTimersByTimeAsync(0);

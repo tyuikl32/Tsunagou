@@ -7568,21 +7568,20 @@
         }
         /* 仅 OpenCode：它的会话名由主机起（随机 ASCII），那条聊天必须用这个名字开会话 ——
            否则身份对不上，第一次调用只会得到 not_enrolled。Codex 与深寻自己报号，不显示这一块。
+           这一块没有外层包裹：标题、命令框、那句说明都是 .uiBlock 的**直接子节点**，用的类与
+           上下兄弟一样 —— 包一层 div 会让 `.uiBlock > .title2 / > .dspText2` 这两条子选择器
+           落空（样式就跟着变），所以显示/隐藏逐件做，不靠一个包裹节点。
            显示清成空串交回 CSS，隐藏写 none（与页面别处同一套）。*/
-        const sessionBlock = byId('netInviteSession');
-        if (sessionBlock) {
-            const sessionId = toText(prepared.conversation_id);
-            const isOpencode = toText((host || {}).adapter).toLowerCase() === 'opencode';
-            if (isOpencode && sessionId) {
-                const idBox = byId('netInviteSessionId');
-                const cmdBox = byId('netInviteSessionCmd');
-                if (idBox) idBox.value = sessionId;
-                if (cmdBox) cmdBox.value = 'opencode --session ' + sessionId;
-                sessionBlock.style.display = '';
-            } else {
-                sessionBlock.style.display = 'none';
-            }
-        }
+        const sessionId = toText(prepared.conversation_id);
+        const isOpencode = toText((host || {}).adapter).toLowerCase() === 'opencode';
+        const showSession = isOpencode && sessionId !== '';
+        const cmdBox = byId('netInviteSessionCmd');
+        if (cmdBox) cmdBox.value = showSession ? 'opencode --session ' + sessionId : '';
+        /* 那一块就是这三件（id 写在 index.html 上）：标题、命令框、说明 */
+        ['netInviteSessionTitle', 'netInviteSessionCmdBox', 'netInviteSessionNote'].forEach(function (id) {
+            const part = byId(id);
+            if (part) part.style.display = showSession ? '' : 'none';
+        });
         return new Promise(function (resolve) {
             networkInvite = {
                 resolve: resolve, enrollment_id: toText(prepared.enrollment_id),
