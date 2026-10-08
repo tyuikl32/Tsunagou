@@ -101,7 +101,7 @@ tsunagou agent list --json
 
 主 Agent 读取上下文、收件箱和未决事项，报告自己的项目/角色/身份，再处理已获授权的普通工作请求：检查已有任务，发布所需任务或明确回复无需新任务；读到请求不能止步于转述。
 
-1. main 创建目标、scope、依赖及必要契约；文件任务选择工作区策略，再 ready/publish。coordination__plan 可一次创建定向分工和通知，不要求凑足固定 Worker 数量。
+1. main 创建目标、scope、依赖及必要契约；文件任务选择工作区策略，再 ready/publish。**publish 是静默的**：它只把任务变成可领取，不发消息也不唤醒任何人 —— 要有人开工，用 coordination__plan（默认给每个 assignment 发一条 task.assigned，会唤醒指名的 worker）或另行 message__send；要替换一条已发布的任务，在同一行的 `supersedes_task_id` 里指出旧任务（一步），不要先取消再新建。coordination__plan 可一次创建定向分工和通知，不要求凑足固定 Worker 数量。契约的 `contract_id` 就是它的 id（省略则由系统发 UUID），任务的 `required_contract_ids` 只能填这个值，不能填自己起的标签。
 2. Worker 读取分派、任务与当前 revision，调用 task__begin。成功后获得 running Attempt、scope，以及必要工作区/资源占用。无需 worker.ready 或资源续租。
 3. Worker 在范围内工作；有实际分歧时用认知/契约工具协调。等待上游决定时 task__block 并结束本轮，无关工作可继续。
 4. task__submit 自动采集结果、释放占用、撤执行权并通知 main；main 审查并控制 Git 整合。

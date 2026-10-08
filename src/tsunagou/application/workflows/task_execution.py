@@ -9,16 +9,21 @@ from tsunagou.modules.tasks import Attempt, Task, TaskResult, TaskService, TaskS
 from tsunagou.shared_kernel.errors import CommandRefused, RevisionConflict
 
 
-def contract_refusal_detail(proposal_id: str, status: str | None) -> dict[str, Any]:
+def contract_refusal_detail(
+    proposal_id: str, status: str | None, existing_ids: Any = None,
+) -> dict[str, Any]:
     """领活被契约门拒绝时要说清的三件事：是哪个契约、现在什么状态、下一步谁去做什么。
 
     ``status`` 传 ``None`` 表示**这个契约在本项目里根本不存在** —— 与"存在但还没被接受"是两回事
     （两种错、两种修法）。2026-10-07 实测：只回一个契约 id 时，撞墙的 agent 只能升级去问 main，
     那一轮三条任务因此多出 31 条消息 / 17 次领取 / 11 次回复的协商成本。
+
+    ``existing_ids`` 是**本项目现有的契约 id**（调用方 ``validate_begin`` 手上就有）。传了它，
+    拒绝里就多一份能直接照抄的清单；不传（既有的直接调用）时连键都不加，返回形状不变。
     """
 
     if status is None:
-        return {
+        detail: dict[str, Any] = {
             "proposal_id": proposal_id,
             "status": "missing",
             "next": (
@@ -26,6 +31,17 @@ def contract_refusal_detail(proposal_id: str, status: str | None) -> dict[str, A
                 "改用一个已经存在的契约；发布任务前先把契约结清。"
             ),
         }
+        # 2026-10-08 实测：main 填的是一个**自己起的标签**（``library-api-v1``），库里根本没有这个名字。
+        # 上一版只说"请核对" —— 核对什么？调用方手上没有任何清单可比，只能再绕一轮去问人。
+        # 所以把**本项目现有的契约 id 原地列出来**：能直接改用其中一个，就不必再问。
+        if existing_ids is not None:
+            known = sorted({str(item) for item in existing_ids if str(item)})
+            detail["existing_contract_ids"] = known
+            detail["next"] += (
+                "本项目现有的契约 id：" + ("、".join(known) if known else "（一个都没有）")
+                + "；contract.propose 返回值里的 proposal_id / contract_id 就是要引用的那个。"
+            )
+        return detail
     return {
         "proposal_id": proposal_id,
         "status": status,
@@ -92,7 +108,17 @@ class TaskExecutionWorkflow:
                 # 指名（哪个契约、什么状态、下一步）—— 代码保留 <id> 后缀，既有匹配照旧。
                 raise CommandRefused(
                     "required_contract_not_accepted:" + proposal_id,
-                    contract_refusal_detail(proposal_id, getattr(proposal, "status", None)),
+                    {
+                        # 被拒的是**哪一个任务**要写在拒绝里：命令自己的事务回滚了，这条
+                        # ``command.task.begin.denied`` 审计行是唯一留下的痕迹；没有 task_id
+                        # 时没人能把"同一个任务反复被拒"认出来（2026-10-08 实测的 4 次拒绝就
+                        # 是这样散在事件流里的）。详情同时进 HTTP 409 的 detail，调用方也看得到。
+                        "task_id": task.task_id,
+                        **contract_refusal_detail(
+                            proposal_id, getattr(proposal, "status", None),
+                            self.cognition.proposals.keys(),
+                        ),
+                    },
                 )
         return task
 

@@ -153,7 +153,11 @@ def test_a_report_keeps_the_contract_version_it_was_written_under(tmp_path: Path
 
     def propose(payload: dict[str, Any], supersedes_id: str = "") -> dict[str, Any]:
         return _call(endpoint, "contract.propose", {
-            "contract_id": "api", "contract_kind": "interface", "payload": payload,
+            # ``contract_id`` 现在是真的提案 id（见 test_contract_id_*）。替代提案不能再叫同一个
+            # 名字：被替代的那一份还在库里，重名会被 `contract_id_taken` 拒绝 —— 这正是要的
+            # （改名或省略，让 supersedes 链说明承继关系）。
+            **({"contract_id": "api"} if not supersedes_id else {}),
+            "contract_kind": "interface", "payload": payload,
             "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
             "participants_optional": [], "subject_ref": task_id, "input_refs": [],
             "supersedes_id": supersedes_id,
@@ -283,7 +287,8 @@ def test_begin_refuses_a_contract_that_is_not_settled(tmp_path: Path) -> None:
 
     def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
         return _call(endpoint, "contract.propose", {
-            "contract_id": "api", "contract_kind": "interface",
+            **({"contract_id": "api"} if not supersedes_id else {}),
+            "contract_kind": "interface",
             "payload": {"task_id": task_id, "label": label},
             "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
             "participants_optional": [], "subject_ref": task_id, "input_refs": [],
@@ -349,7 +354,8 @@ def test_the_boundaries_refuse_a_contract_version_that_is_not_in_force(tmp_path:
 
     def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
         return _call(endpoint, "contract.propose", {
-            "contract_id": "api", "contract_kind": "interface",
+            **({"contract_id": "api"} if not supersedes_id else {}),
+            "contract_kind": "interface",
             "payload": {"task_id": task_id, "label": label},
             "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
             "participants_optional": [], "subject_ref": task_id, "input_refs": [],
@@ -416,12 +422,17 @@ def test_a_revision_inherits_the_participants_it_does_not_restate(tmp_path: Path
         "participants_optional": [], "subject_ref": task_id, "input_refs": [],
         "supersedes_id": "",
     }, agent)
+    assert first["contract_id"] == first["proposal_id"] == "api", "调用方给的 id 就是提案 id"
     revision = _call(endpoint, "contract.propose", {
-        "contract_id": "api", "contract_kind": "interface",
+        # 替代提案不重名：被替代的那一份还在库里（`contract_id_taken` 会拒绝重名），
+        # 版本关系由 supersedes 链说明，不靠共用 id。
+        "contract_kind": "interface",
         "payload": {"task_id": task_id, "label": "v2"},
         "participants_required": [], "participants_optional": [],
         "subject_ref": task_id, "input_refs": [], "supersedes_id": first["proposal_id"],
     }, agent)
+    assert revision["proposal_id"] != first["proposal_id"]
+    assert revision["supersedes_id"] == first["proposal_id"]
 
     inherited = cognition.proposals[revision["proposal_id"]]
     assert inherited.participants == cognition.proposals[first["proposal_id"]].participants
@@ -469,7 +480,8 @@ def test_submit_refuses_while_a_revision_is_under_discussion(tmp_path: Path) -> 
 
     def propose(label: str, supersedes_id: str = "") -> dict[str, Any]:
         return _call(endpoint, "contract.propose", {
-            "contract_id": "api", "contract_kind": "interface",
+            **({"contract_id": "api"} if not supersedes_id else {}),
+            "contract_kind": "interface",
             "payload": {"task_id": task_id, "label": label},
             "participants_required": [{"slot": "self", "agent_id": agent.agent_id}],
             "participants_optional": [], "subject_ref": task_id, "input_refs": [],

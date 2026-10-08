@@ -228,6 +228,14 @@ main 收到普通 worker 请求后主动检查现有任务并发布或明确回�
 
 主 Agent 的宿主可以是 Full Access，但调度中心仍以 Agent 身份、任务 owner、scope、资源占用、revision 和 command principal 做机械检查。不能由系统可靠拦截的直接文件写入会在下一次 baseline/result 检查中作为观察事实交给主 Agent，系统不会自动回滚，也不会凭文件变化猜测是谁写的。
 
+### 5.1 契约名、发布与派活的如实语义（2026-10-08）
+
+三个动作的语义在本手册里以前没有写全，实测因此付过代价，这里补齐：
+
+- **`contract.propose` 的 `contract_id` 是契约 id，不是别名。** 调用方给了它，校验通过（非空、无控制字符、≤128 字符）且未被占用时，**它就是这个提案的 `proposal_id`**；已被占用报 `contract_id_taken`，省略则由系统发 UUID。返回值同时回显 `proposal_id` 与 `contract_id`（同一个值）。任务的 `required_contract_ids` 只能填这个值：`task.begin` 是按 id 在契约库里查的，填一个自己起的标签（例如 `library-api-v1`）永远查不到，会被 `required_contract_not_accepted:<填的值>` 拒绝。拒绝的详情里带 `task_id` 和 `existing_contract_ids`（本项目现有契约 id 清单），照着改即可，不必再问人。
+- **`task.publish` 不通知任何人。** 它只把任务变成可领取：不发消息、不唤醒宿主。要有人真的开工，用 `coordination.plan`（默认给每个 assignment 发一条 `task.assigned`，会唤醒指名的 worker），或另行 `message.send`。要替换一条已经发布的任务，在 `coordination.plan` 的新行上给 `supersedes_task_id`（一步：新任务建好发布，旧任务记下 `superseded_by` 并退出领取队列）；**不要**先 `task.cancel_request` 再新建。
+- **被拒的命令不会改变任何状态，但会被记下来。** 每次结构化拒绝都在 `command.<kind>.denied` 事件里留一行（命令自己的事务已回滚，这行是独立补记的），带 `code`、`task_id`（可归因时）、`proposal_id`/`status` 等。主 Agent 的 `context.project_read` 会回一份按任务聚合的 `coordination.denied`（`task_id`、`code`、`count`、`last_at`，上限 10 行）并在有任务被拒 ≥2 次时给一句 `next`；这份清单只给 main，worker 看不到，也不改变 worker 自己的读取（读的是一次定长查询，≤58 行事件）。
+
 ## 6. 用户决定、项目完成和 checkpoint
 
 ### 6.1 解决用户决定

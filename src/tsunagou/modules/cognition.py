@@ -40,6 +40,31 @@ def _normalised_literal(value: Any) -> Any:
     return ("other", repr(value))
 
 
+#: A caller-supplied contract id is bounded the way the project bounds every other
+#: caller-supplied identifier (``api/a2a.py`` refuses message/recipient ids over 128).
+CONTRACT_ID_MAX = 128
+
+
+def _checked_contract_id(value: object) -> str:
+    """Validate a caller-supplied ``contract_id`` and return it verbatim.
+
+    An identifier is echoed back by the caller later (``required_contract_ids``,
+    ``contract.accept``), so what is stored must be exactly what was sent: this
+    validates and returns, it never rewrites. Control characters are refused rather
+    than stripped — a rewritten identifier is a wrong identifier.
+    """
+
+    if not isinstance(value, str):
+        raise ValueError("contract_id_required")
+    if any(character < " " or character == "\x7f" for character in value):
+        raise ValueError("invalid_contract_id")
+    if not value.strip() or value != value.strip():
+        raise ValueError("invalid_contract_id")
+    if len(value) > CONTRACT_ID_MAX:
+        raise ValueError("contract_id_too_long")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Claim:
     subject_key: str
@@ -300,7 +325,18 @@ class CognitionService:
     def propose_contract(
         self, payload: dict[str, Any], participants: list[dict[str, Any]],
         *, proposed_by: str | None = None, supersedes_id: str | None = None,
+        contract_id: str | None = None,
     ) -> ContractProposal:
+        # 调用方可以给这份提案起 id（``contract.propose`` 的 ``contract_id``）。没有它，
+        # 任务只能引用系统发的 UUID，而调用方自己起的标签在库里**没有任何位置** ——
+        # 2026-10-08 实测：main 把标签 ``library-api-v1`` 填进三个任务的
+        # ``required_contract_ids``，系统按 id 查不到，`task.begin` 被拒 4 次、3 个任务取消重做。
+        # 给了就**当场校验、当场查重**：重名宁可拒绝，也不能悄悄换一个 id 让调用方继续引用错的那个。
+        proposal_id = new_id()
+        if contract_id is not None:
+            proposal_id = _checked_contract_id(contract_id)
+            if proposal_id in self.proposals:
+                raise ValueError("contract_id_taken")
         if not participants:
             raise ValueError("contract_requires_participant")
         if supersedes_id is not None:
@@ -339,7 +375,7 @@ class CognitionService:
         frozen_participants = tuple(copy.deepcopy(participants))
         digest = canonical_digest({"payload": frozen_payload, "participants": frozen_participants})
         proposal = ContractProposal(
-            new_id(), frozen_payload, frozen_participants, required, digest,
+            proposal_id, frozen_payload, frozen_participants, required, digest,
             proposed_by=proposed_by, supersedes_id=supersedes_id,
         )
         self.proposals[proposal.proposal_id] = proposal

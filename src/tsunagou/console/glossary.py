@@ -229,6 +229,14 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "project_not_found": "找不到项目",
         "session_not_rebindable": "会话不可重接",
         "task_not_claimable": "任务不可认领",
+        # 契约门（2026-10-08 实测里最贵的那条）：任务要求的契约 id 查不到或还没被接受。
+        "required_contract_not_accepted": "契约没结清",
+        # 调用方给契约起的 id（`contract.propose` 的 contract_id）当场不合格或重名。
+        "contract_id_required": "契约号非文字",
+        "invalid_contract_id": "契约号不合法",
+        "contract_id_too_long": "契约号太长",
+        "contract_id_taken": "契约号被占用",
+        "contract_id_taken_by_superseded_contract": "契约号重名",
         # 跨机器：远端干文件活的两道门（D191 拒绝 → D192 在"报了副本 + 外部准备 + 位置对得上"时放行）
         "remote_worker_needs_a_code_copy": "远端没报副本",
         "remote_worker_requires_external_workspace": "远端外部准备",

@@ -94,3 +94,34 @@ test("task__create 的描述直说空 scope 的含义", async (t) => {
   assert.match(described, /CLAIMS NO PATH/, "要说清空 scope = 不认领任何路径");
   assert.match(described, /not recorded in the result/, "要说清改动不进结果");
 });
+
+// 2026-10-08 实测：main 发布三个任务后就等着，没人动；它以为 publish 等于"派活了"。
+// 工具面必须直说发布是静默的，并指出"要有人开工"走哪条路（coordination.plan 默认发 task.assigned）。
+test("task__publish 的描述直说发布不通知任何人", async (t) => {
+  const tools = await listTools(t, "main");
+  const described = String(tools.find((tool) => tool.name === "task__publish")?.description ?? "");
+  assert.match(described, /SILENT/, "要说清 publish 是静默的");
+  assert.match(described, /nobody is notified/, "要明说不会通知任何人");
+  assert.match(described, /coordination__plan/, "要指出唤醒指名 worker 的那条路");
+  assert.match(described, /task\.assigned/, "要说清 plan 默认发的是 task.assigned");
+  assert.match(described, /supersedes_task_id/, "替代已发布任务要走 plan 的 supersedes_task_id，而不是先取消");
+});
+
+test("coordination__plan 的描述说清它才是唤醒与替代的那条路", async (t) => {
+  const tools = await listTools(t, "main");
+  const described = String(tools.find((tool) => tool.name === "coordination__plan")?.description ?? "");
+  assert.match(described, /WAKES/, "要说清 plan 会唤醒指名的 worker");
+  assert.match(described, /task\.assigned/, "要说清默认发的消息种类");
+  assert.match(described, /supersedes_task_id/, "替代已发布的任务要走这里的 supersedes_task_id");
+});
+
+// 2026-10-08 实测：`contract.propose` 的 contract_id 被 schema 接受、被域静默丢掉，
+// 于是 main 按自己起的标签引用契约，task.begin 被拒 4 次。描述必须说清它就是提案 id、要回引返回值。
+test("contract__propose 的描述直说 contract_id 就是提案 id", async (t) => {
+  const tools = await listTools(t, "main");
+  const described = String(tools.find((tool) => tool.name === "contract__propose")?.description ?? "");
+  assert.match(described, /proposal_id/, "要说清 contract_id 会成为 proposal_id");
+  assert.match(described, /required_contract_ids/, "要说清任务引用的是这个值");
+  assert.match(described, /mints a UUID/, "要说清省略时系统发 UUID");
+  assert.match(described, /never a label of your own/, "别让自己的标签再混进来");
+});

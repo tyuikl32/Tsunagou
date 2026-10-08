@@ -443,11 +443,12 @@ def test_superseding_a_task_links_the_replacement(runtime):
         {"title": "old", "task_objective": "do it", "assigned_worker_id": worker["agent_id"],
          "acceptance": "旧任务：文件存在"},
     ]}, main)["assignments"][0]
-    second = call("coordination.plan", {"objective": "second try", "assignments": [
+    second_plan = call("coordination.plan", {"objective": "second try", "assignments": [
         {"title": "new", "task_objective": "do it properly", "assigned_worker_id": worker["agent_id"],
          "acceptance": "新任务：npm test 全绿",
          "supersedes_task_id": first["task_id"]},
-    ]}, main)["assignments"][0]
+    ]}, main)
+    second = second_plan["assignments"][0]
 
     state = app.state.state_runtime
     old = state.tasks.tasks[first["task_id"]]
@@ -456,6 +457,11 @@ def test_superseding_a_task_links_the_replacement(runtime):
     assert state.tasks.tasks[second["task_id"]].superseded_by == "", "新任务自己不是被替代者"
     # 控制台的任务出口就是读 describe_task，所以这一条同时证明页面能看到承接关系
     assert state.tasks.describe_task(first["task_id"])["superseded_by"] == second["task_id"]
+    # 调用方也要**在返回里**看到承接关系：不然它只能靠自己回忆"我替代了哪一条"
+    # （2026-10-05 那次因此重复建了三批任务）。行的字段和计划级的 next 都要说到。
+    assert second["superseded_task_id"] == first["task_id"]
+    assert first["superseded_task_id"] is None
+    assert first["task_id"] in second_plan["next"] and "替代" in second_plan["next"]
 
 def test_context_read_can_be_asked_whether_anything_changed(runtime):
     """主 Agent 每轮都要读一遍上下文，而多数轮次其实没有任何新情况。
@@ -483,6 +489,65 @@ def test_context_read_can_be_asked_whether_anything_changed(runtime):
     changed = call("context.project_read", {"since_revision": token}, main)
     assert changed["revision"] != token
     assert "tasks" in changed and "unchanged" not in changed
+
+def test_publishing_says_it_notifies_nobody_and_keeps_the_scope_hint(runtime):
+    """发布是**静默**的（2026-10-08 实测："已发布但没人开工"）。
+
+    调用方以为 publish 等于派活；提示必须说清"要有人开工得靠 coordination.plan 或 message.send"。
+    同时范围那条提示不能被顶掉 —— 两句话讲的是两件事。
+    """
+
+    app, call, main, worker = runtime
+    silent = published(call, main)
+    assert "不会通知任何人" in silent["next"]
+    assert "coordination.plan" in silent["next"] and "task.assigned" in silent["next"]
+    assert "message.send" in silent["next"]
+
+    # 范围那条提示不能被顶掉：两句话讲的是两件事，合成一句话时都要在。（这里不建文件任务：
+    # 那些用例要一个已登记的 `coordination` 根，属于既有夹具环境，与这句话无关。）
+    created = call("task.create", {"title": "scope", "objective": "no paths", "execution_scope": {}}, main)
+    scope_hint = created["next"]
+    assert "不认领任何路径" in scope_hint
+    call("task.ready", {"task_id": created["task_id"]}, main)
+    combined = call("task.publish", {"task_id": created["task_id"]}, main)
+    assert "不认领任何路径" in combined["next"], "范围提示必须留着"
+    assert "不会通知任何人" in combined["next"], "发布提示也要在"
+
+
+def test_a_refused_begin_names_the_task_and_main_can_see_it_keeps_failing(runtime):
+    """被拒的命令不会改变状态，但必须**可归因**：事件里带 task_id，main 每回合看得见。
+
+    2026-10-08 实测：4 次 ``command.task.begin.denied`` 里没有 task_id，也没有任何出口汇报
+    "同一条任务被拒了四次" —— 于是它一直重试，最后只能整批取消重做。
+    """
+
+    app, call, main, worker = runtime
+    task = published(call, main, required_contract_ids=["library-api-v1"])
+    before = events(app)
+    for _ in range(2):
+        with pytest.raises(HTTPException) as refused:
+            begin(call, task, worker)
+    assert refused.value.detail["code"] == "required_contract_not_accepted:library-api-v1"
+
+    recorded = [event for event in events(app) if event not in before]
+    assert [event["event_type"] for event in recorded] == ["command.task.begin.denied"] * 2
+    for event in recorded:
+        payload = json.loads(event["payload_json"])
+        assert payload["task_id"] == task["task_id"], "拒绝要归到具体的任务上"
+        assert payload["command_kind"] == "task.begin"
+        assert payload["code"] == "required_contract_not_accepted:library-api-v1"
+
+    main_view = call("context.project_read", {}, main)
+    (row,) = main_view["coordination"]["denied"]
+    assert row["task_id"] == task["task_id"]
+    assert row["count"] == 2 and "required_contract_not_accepted:library-api-v1" == row["code"]
+    assert row["last_at"]
+    assert task["task_id"] in main_view["next"], "反复被拒要给一句提示"
+
+    worker_view = call("context.project_read", {}, worker)
+    assert "denied" not in worker_view["coordination"], "别人的卡点不该出现在 worker 的上下文里"
+    assert "next" not in worker_view
+
 
 def test_declaring_a_cross_module_boundary_requires_a_contract(runtime):
     """声明了"跨模块交界"，就必须同时给出契约（用户 2026-10-06 的决定）。

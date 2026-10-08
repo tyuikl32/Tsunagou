@@ -26,7 +26,7 @@ from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.application.workspace_evidence import WorkspaceEvidence
 from tsunagou.modules.artifacts import ArtifactService
 from tsunagou.modules.authority import Agent, AuthorityService
-from tsunagou.modules.cognition import Claim, CognitionService
+from tsunagou.modules.cognition import Claim, CognitionService, _checked_contract_id
 from tsunagou.modules.coordination import CoordinationService
 from tsunagou.modules.messaging import WAKE_WORTHY_KINDS, Message, MessageStore
 from tsunagou.modules.projects import ProjectRegistry, physical_identity
@@ -126,6 +126,54 @@ def _admission_report(baseline: Any) -> dict[str, Any]:
 
     report = baseline if isinstance(baseline, dict) else {}
     return {"missing_admission": sorted(missing_admission_capabilities(report))}
+
+
+#: 主 Agent 的上下文里最多回看多少条拒绝信封（读 54 条只是为了排序稳定，行数上限见下）。
+#: ``context.project_read`` 每回合都被调用，所以这里的读法是**一次定长查询**，不扫描、不聚合历史。
+DENIAL_EVENT_WINDOW = 54
+#: 聚合后的行数上限。超过这个数的都被丢掉：这份清单是"我该看哪一条"，不是台账。
+DENIAL_ROW_LIMIT = 10
+#: 同一个任务被拒到这个次数才给一句提示（1 次是正常的拒绝）。
+DENIAL_REPEAT_THRESHOLD = 2
+
+
+def _denial_ledger(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
+    """把最近的 ``command.*.denied`` 事件按任务聚成"谁老是被拒"。
+
+    拒绝是**能被归因的**才叫拒绝：``api/app.py`` 把每次结构化拒绝写成一条
+    ``command.<kind>.denied`` 事件（命令自己的事务已回滚，所以这条是独立事务补记的）。以前这些
+    事件里没有 ``task_id``（见 ``workflows/task_execution.py`` 现在补上的那一格），于是"同一条任务
+    被拒了四次"散在事件流里，谁也没看见 —— 2026-10-08 实测里那 3 条任务就是这样反复取消重建的。
+
+    只认**带任务引用**的事件：没有任务可归因的拒绝（例如 ``root_binding_required``）不属于这份清单。
+    返回 ``(rows, hint)``；``hint`` 只在有任务被拒到阈值以上时才给，且只说机械事实。
+    """
+
+    per_task: dict[str, dict[str, Any]] = {}
+    for event in events[-DENIAL_EVENT_WINDOW:]:
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        task_id = str(payload.get("task_id") or "").strip()
+        if not task_id:
+            continue
+        when = event.get("occurred_at") or event.get("recorded_at") or 0
+        row = per_task.setdefault(task_id, {"task_id": task_id})
+        # 最后一次出现的那个 code 是这条任务**现在**卡在哪；次数说明它不是偶发。
+        row["code"] = str(payload.get("code") or event.get("reason_code") or "")
+        row["count"] = int(row.get("count", 0)) + 1
+        row["last_at"] = max(int(row.get("last_at", 0)), int(when or 0))
+    rows = sorted(per_task.values(), key=lambda item: int(item.get("last_at", 0)), reverse=True)
+    rows = rows[:DENIAL_ROW_LIMIT]
+    repeated = [row for row in rows if int(row.get("count", 0)) >= DENIAL_REPEAT_THRESHOLD]
+    if not repeated:
+        return rows, None
+    worst = repeated[0]
+    return rows, (
+        f"有 {len(repeated)} 条任务被反复拒绝（最多的是 {worst['task_id']}，{worst['count']} 次，"
+        f"最后一次 code={worst['code']}）：拒绝不会改变任何状态，照现在这样重试只会再被拒一次 —— "
+        "按 code 去修（契约先结清 / 依赖先完成 / 范围先定），再 task.begin。"
+    )
 
 
 def _required_contracts(payload: dict[str, Any]) -> tuple[str, ...]:
@@ -252,6 +300,24 @@ def build_handlers(
             agent_id=agent_id, session_id=session_id, grant_id=grant.grant_id,
             capability=capability, task_id=task_id, attempt_id=attempt_id,
         )
+
+    def _recent_task_denials() -> list[dict[str, Any]]:
+        """读最近一批 ``*.denied`` 事件（一次定长查询），失败就当"没有"。
+
+        事件库不在（只挂了部分处理器的宿主）或是读失败时，上下文照常返回 —— 这条清单是**帮助**，
+        不是不变量；让它把每回合都要成功的读取搞成 5xx，代价比没有它还大。
+        ``list_events`` 是升序；多读几条再取尾部，拿到的是**最新**的那些。
+        """
+
+        if database is None:
+            return []
+        try:
+            events = database.list_events(
+                limit=DENIAL_EVENT_WINDOW + 4, event_type_like="%.denied",
+            )
+        except Exception:
+            return []
+        return events[-DENIAL_EVENT_WINDOW:]
 
     def enroll(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         installation_id = payload.get("installation_id")
@@ -587,9 +653,18 @@ def build_handlers(
             raise ValueError("file_task_requires_scope")
         task = tasks.publish(task_id)
         hint = _scope_next(task.execution_scope)
+        # 发布**不通知任何人**：它只把任务放进领取队列。2026-10-08 实测里"已发布但没人开工"
+        # 就是这么发生的 —— 调用方以为 publish 等于"派活了"。这句话以前一个字都没有，而
+        # ``coordination.plan`` 的返回里有（它默认给每个 assignment 发 task.assigned）。
+        # 两条提示都要留着：范围那条说的是**这个任务本身**能不能做，不能因为说了通知就丢掉。
+        notices = (
+            "发布只把任务放进领取队列，**不会通知任何人**（不唤醒、不发消息）："
+            "要有人领，用 coordination.plan（默认给每个 assignment 发一条 task.assigned，会唤醒指名的 worker），"
+            "或另行 message.send。"
+        )
         return {
             "task_id": task_id, "status": task.status, "revision": task.revision,
-            **({"next": hint} if hint else {}),
+            "next": f"{hint} {notices}" if hint else notices,
         }
 
     def task_update_plan(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -1114,6 +1189,12 @@ def build_handlers(
         revised = payload.get("supersedes_id") or None
         if revised is not None and not isinstance(revised, str):
             raise ValueError("invalid_supersedes_id")
+        # ``contract_id`` 是**调用方给这份提案起的 id**，不是又一个标签：它进库当
+        # ``proposal_id``，任务就能用它填 ``required_contract_ids``（2026-10-08 的返工就是
+        # 调用方按标签引用、系统按 UUID 查）。空串与省略同义，仍由系统发 UUID。
+        contract_id = payload.get("contract_id") or None
+        if contract_id is not None and not isinstance(contract_id, str):
+            raise ValueError("invalid_contract_id")
         required = payload.get("participants_required")
         optional = payload.get("participants_optional", [])
         if not isinstance(required, list) or not isinstance(optional, list):
@@ -1139,12 +1220,28 @@ def build_handlers(
             old = cognition.proposals[_required_str(payload, "supersedes_id")]
             if old.proposed_by != context["principal_id"]:
                 raise PermissionError("proposal_owner_required")
+            if contract_id is not None:
+                # 格式/长度与域层同一个校验器；这里先过一道，只为让"替代"这条分支也能给出
+                # 下面那句更准的拒绝（`supersede_contract` 自己不给新提案起调用方的 id）。
+                checked_contract_id = _checked_contract_id(contract_id)
+                if checked_contract_id == old.proposal_id:
+                    # 用**被替代者**的 id 命名替代者：两份提案都会留在库里、还互相引用，
+                    # 任务该引用哪一个谁也说不清。拒绝，并指出正确做法（替代提案不必自己命名，
+                    # 承继关系由 supersedes 链说明）。
+                    raise ValueError("contract_id_taken_by_superseded_contract")
+                if checked_contract_id in cognition.proposals:
+                    raise ValueError("contract_id_taken")
             proposal = cognition.supersede_contract(old.proposal_id, body, participants)
         else:
-            proposal = cognition.propose_contract(body, participants, proposed_by=context["principal_id"])
+            proposal = cognition.propose_contract(
+                body, participants, proposed_by=context["principal_id"], contract_id=contract_id,
+            )
         _announce_contract_proposal(proposal, context)
         return {
-            "proposal_id": proposal.proposal_id, "digest": proposal.digest,
+            # ``contract_id`` 与 ``proposal_id`` 是同一个值：调用方要引用哪一个都用它，
+            # 不必再从返回里猜（这正是 2026-10-08 那次"标签在库里查不到"的反面）。
+            "proposal_id": proposal.proposal_id, "contract_id": proposal.proposal_id,
+            "digest": proposal.digest,
             "status": proposal.status, "supersedes_id": proposal.supersedes_id,
         }
 
@@ -1287,6 +1384,7 @@ def build_handlers(
             raise ValueError("auto_wake_boolean_required")
         specs = []
         contract_notes: list[str] = []
+        supersede_notes: list[str] = []
         for row in normalized:
             contracts = _required_contracts(row)
             cross_module = bool(row.get("cross_module"))
@@ -1323,12 +1421,20 @@ def build_handlers(
             if row.get("supersedes_task_id"):
                 # "换成新任务"是一步：替代者先建好并发布，再让旧任务记下承接关系、退出领取队列。
                 # 2026-10-05 是先取消再新建（两步），旧任务因此在看板上永远算"没做完"。
-                tasks.supersede(_required_str(row, "supersedes_task_id"),
+                superseded_id = _required_str(row, "supersedes_task_id")
+                tasks.supersede(superseded_id,
                                 superseded_by_task_id=task.task_id,
                                 reason=f"被 {task.task_id} 替代")
+                # 承接关系要**出现在返回里**：旧任务换了名字（取消+重建），调用方得知道
+                # "哪一条被这条替代了"，否则它只能靠自己回忆（2026-10-05 那次就是这么重复建的）。
+                supersede_notes.append(
+                    f"任务「{row.get('title') or ''}」({task.task_id}) 已替代 {superseded_id}："
+                    f"后者退出领取队列、记下 superseded_by={task.task_id}，不再需要取消。"
+                )
             specs.append({**row, "task_id": task.task_id})
         plan = coordination.create_plan(main_agent_id=context["principal_id"], objective=_required_str(payload, "objective"),
                                         assignments=specs, auto_wake=auto_wake)
+        row_by_task = {spec["task_id"]: spec for spec in specs}
         result = []
         for assignment_id in plan.assignment_ids:
             item = coordination.assignments[assignment_id]
@@ -1341,10 +1447,12 @@ def build_handlers(
             result.append({"assignment_id": item.assignment_id, "task_id": item.task_id,
                            "assigned_worker_id": item.assigned_worker_id, "status": tasks.tasks[item.task_id].status,
                            "message_id": item.message_id, "acceptance": tasks.tasks[item.task_id].acceptance,
-                           "cross_module": tasks.tasks[item.task_id].cross_module})
+                           "cross_module": tasks.tasks[item.task_id].cross_module,
+                           "superseded_task_id": row_by_task.get(item.task_id, {}).get("supersedes_task_id")})
+        notes = [*contract_notes, *supersede_notes]
         return {"plan_id": plan.plan_id, "objective": plan.objective, "assignments": result,
                 "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}, plan.plan_id),
-                **({"next": "；".join(contract_notes)} if contract_notes else {})}
+                **({"next": "；".join(notes)} if notes else {})}
 
 
     def coordination_takeover(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -1498,11 +1606,20 @@ def build_handlers(
                 for participant in proposal.participants
             )
         ]
+        # 谁老是被拒 —— **只给 main**。worker 看到的是自己的拒绝（调用当场就返回给它了），
+        # "哪条任务反复卡住"是调度信息，归协调者；而且这份清单要进 revision 摘要，给 worker
+        # 只会让它的快照跟着别人的拒绝变来变去。代价：主 Agent 每回合多一次定长查询（≤58 行）。
+        denial_ledger: list[dict[str, Any]] = []
+        denial_next: str | None = None
+        if agent_id == authority.main_agent_id:
+            denial_ledger, denial_next = _denial_ledger(_recent_task_denials())
         snapshot: dict[str, Any] = {
             **({"project_id": project_id} if project_id else {}),
             "agent_id": agent_id,
             "role": agent.role if agent is not None else "worker",
             "main_agent_id": authority.main_agent_id,
+            # 每回合都要看一眼的那句"下一步"（只给 main；worker 不该看到别人的卡点）。
+            **({"next": denial_next} if denial_next else {}),
             "members": members,
             "session": {"session_id": context["session_id"],
                         "connection_epoch": authority.sessions[context["session_id"]].connection_epoch,
@@ -1543,6 +1660,8 @@ def build_handlers(
                     project_registry is not None and project_registry.project is not None
                     and project_registry.project.automatic_wake_enabled
                 ),
+                # 只给 main：最近被拒的命令，按任务聚合。见 ``_denial_ledger``。
+                **({"denied": denial_ledger} if denial_ledger else {}),
             },
         }
         # 快照自带一个 token：主 Agent 每轮都要读一遍上下文，而多数轮次其实没有任何新情况

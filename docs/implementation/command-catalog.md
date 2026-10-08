@@ -77,7 +77,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | task.create.user | `/control/tasks` | U / — | 同task.create | Task；不自动任命自己owner |
 | task.update_plan | `/tasks/{id}:update-plan` | M / task.coordinate | title?,objective?,acceptance?,required_contract_ids?,reason? | Task；仅无执行的可编辑态 |
 | task.ready | `/tasks/{id}:ready` | M / task.publish | reason? | Task ready；完整结构检查 |
-| task.publish | `/tasks/{id}:publish` | M / task.publish | reason? | Task open；ready或changes_requested关闭旧Attempt后；范围为空时结果里带一句 `next`（与 task.create 同一句） |
+| task.publish | `/tasks/{id}:publish` | M / task.publish | reason? | Task open；ready或changes_requested关闭旧Attempt后；**发布不通知任何人**（不发消息、不唤醒宿主），结果里的 `next` 会说明这点，并指向 `coordination.plan`（默认发 `task.assigned` 唤醒指名 worker）或 `message.send`；范围为空时同一句 `next` 里还带 task.create 那句范围提示（两句合并，都不丢） |
 | task.edge.add | `/task-edges` | M / task.coordinate | source_task_id,target_task_id,kind,expected_revisions | TaskEdge；blocks无环 |
 | task.edge.remove | `/task-edges/{id}:remove` | M / task.coordinate | reason,expected_revisions | EdgeRemoved；留事件 |
 | task.begin | `/tasks/{id}:begin` | B / task.claim | expected_task_revision | 一次取得 owner、基线、资源占用和执行授权；同 owner running 可恢复；失败不保留半套准备 |
@@ -114,7 +114,7 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | discrepancy_id,status:clarifying\|negotiating,reason?,evidence_refs? | Discrepancy；participant |
 | discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | discrepancy_id,kind:consensus\|dismissal\|override,reason?,evidence_refs?,accepted_by?,input_digest? | Resolution；override不冒充共识 |
 | discrepancy.request_arbitration | `/discrepancies/{id}:request-arbitration` | U / — | discrepancy_id,note? | 用户请求主 Agent 裁决；只投一条"需行动"的协作消息，裁决权限仍属主 Agent |
-| contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,subject_ref?,contract_kind?,payload,participants_required,participants_optional?,input_refs?,supersedes_id? | 两组元素为 {slot,agent_id}；required 至少一项、slot 全局唯一、Agent 属于本项目；替代只允许原提议者 |
+| contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,subject_ref?,contract_kind?,payload,participants_required,participants_optional?,input_refs?,supersedes_id? | 两组元素为 {slot,agent_id}；required 至少一项、slot 全局唯一、Agent 属于本项目；替代只允许原提议者。`contract_id` 是调用方给这份提案起的 id：合法（非空、无控制字符、≤128）且未被占用时**就是** `proposal_id`（重复报 `contract_id_taken`），省略则系统发 UUID；返回值回显 `proposal_id`/`contract_id`，任务用这个值填 `required_contract_ids` |
 | contract.accept | `/contract-proposals/{id}:accept` | B / contract.accept | participant_slot,proposal_digest,evidence_refs? | self slot；仅 proposed；status 表示本 slot 接受，proposal_status 表示整个契约 |
 | contract.accept_proxy | `/contract-proposals/{id}:accept-proxy` | M / contract.accept_proxy | participant_slot_id,proposal_digest,proxy_policy_ref?,reason?,evidence_refs? | 仅 proposed；返回 proposal_status、real_actor_id 与 represented_participant（实际 Agent ID） |
 | contract.reject | `/contract-proposals/{id}:reject` | B / contract.accept | proposal_digest,reason,evidence_refs | Proposal rejected；participant |
