@@ -48,7 +48,7 @@ export const OPERATING_MANUAL_HINT = `字段、拒绝码与边界（含 expected
 export const OPERATING_MANUAL_LINE = `Per-command required fields (including where expected_physical_identity comes from), refusal codes and why the bridge must not be bypassed: ${operatingManualPath()}.`;
 /** 每会话首次读取那条通道的入口句：instructions 里只留最短指路，其余内容都在这里交付。 */
 export const FIRST_READ_GUIDANCE = "开工前先调一次 context__project_read，并在每个自然停顿（做完一小步、跑完一次构建或测试）后重读：本机工作目录与唤醒指引都由它交付；写文件、派活、契约与验收的规矩也在同一处。";
-export const WAKE_REMINDER = "main 和 worker 均可在已有权限内唤醒协作者。先用 coordination__peer_hosts 核实并记住宿主、版本和机器，不凭模型品牌猜测。Codex → Codex 只走现有 Tsunagou Codex 通道（默认开启，尊重明确关闭）；其他宿主先查 coordination__wake_status {message_id}，按返回入口操作。DSH Desktop 初始化接入后由插件后台排队，无需打开窗口或粘贴发送。当前工具不支持不等于宿主不能唤醒；独立宿主操作须核实原会话、授权及同一消息无在途或结果未知的执行，不绕过认证。入队不等于已处理；失败核对宿主与错误，勿循环重试，不要求用户手动唤醒。操作指南：docs/overview/agent-wake-guide.md（本机安装源码优先）；https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md。";
+export const WAKE_REMINDER = "main 和 worker 均可在已有权限内唤醒协作者。先用 coordination__peer_hosts 核实并记住宿主、版本和机器，不凭模型品牌猜测。Codex → Codex 只走现有 Tsunagou Codex 通道（默认开启，尊重明确关闭）；其他宿主先查 coordination__wake_status {message_id}，按返回入口操作：返回值里的 delivery 说明这个宿主**什么时候**能把消息送进去（step=下一个步骤边界、turn_boundary=下一回合、idle_only=只在空闲、none=没有唤醒路径、unknown=读不到证据），声明与实际不一致时带 degraded，不静默降级。DSH Desktop 既有插件后台排队、也有 daemon 自动投递（绑定未核实时报 host_binding_not_found：那表示这条自动通道不可用，不等于 DSH 不能唤醒）。跨机器（远端）没有唤醒路径：消息留在本机收件箱，等对方自己来取，不要重试唤醒或换入口绕过。当前工具不支持不等于宿主不能唤醒；独立宿主操作须核实原会话、授权及同一消息无在途或结果未知的执行，不绕过认证。入队不等于已处理；失败核对宿主与错误，勿循环重试，不要求用户手动唤醒。操作指南：docs/overview/agent-wake-guide.md（本机安装源码优先）；https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md。";
 export const COMPLETION_REMINDER = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
 
 /** 告诉这个会话：它在**这台机器**上的工作目录是哪里。
@@ -131,6 +131,24 @@ function compactHint(status: Row, kind: string): string {
   if (target.host === "deepseek" && ["deepseek_wake_setup_required", "deepseek_wake_binding_required",
     "deepseek_wake_plugin_not_running", "deepseek_wake_runtime_invalid", "deepseek_wake_unauthorized"].includes(text(status.error_code))) {
     next += "检查 DSH Desktop 初始化及原会话接入是否完成、插件是否已加载；配置与宿主启动是前置条件，不需要手动打开对话唤醒。见 docs/overview/agent-wake-guide.md。";
+  }
+  // 投递时机是宿主的能力，不是调用方的选择：das 返回里的 `delivery` 说清"声明了什么、这次实际
+  // 用了什么"，降级时带 degraded（2026-10-10 待改 15）。远端没有本地路由和入向通道，所以那条路
+  // 的正确答案是"等它自己来取"——不是重试唤醒，也不是换入口绕过（待改 13）。
+  const delivery = row(row(status.delivery));
+  if (Object.keys(delivery).length) {
+    const used = text(delivery.used) || "unknown";
+    const declared = text(delivery.declared) || "unknown";
+    next += `投递时机：实际=${used}，宿主声明=${declared}（none=没有唤醒路径，unknown=读不到证据）。`
+      + (delivery.degraded === true
+        ? `已降级（原为 ${text(delivery.degraded_from) || "unknown"}）：${text(delivery.reason)}；`
+        : "")
+      + "两者都不能被读成「已经叫醒」。";
+  }
+  if (text(status.error_code) === "cross_machine_unsupported") {
+    next = "跨机器不支持主动唤醒：对方在另一台机器上，本机既没有可核实的本地宿主路由，也没有入向通道。"
+      + "消息留在本机收件箱里，需要对方自己来取（coordination__wake_status 只能报告这个事实）—— "
+      + "提示它自己来读，不要重试唤醒，也不要换别的入口绕过。";
   }
   const diagnostic = (value: unknown): string => {
     const info = row(value);

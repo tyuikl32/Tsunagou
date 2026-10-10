@@ -19,7 +19,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -231,9 +231,21 @@ const ERROR_GUIDANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   capability_denied: ["your role lacks this capability: hand it to the main agent or the user"],
   principal_kind_denied: ["this command belongs to another principal kind: check who is meant to call it"],
+  // The completion gate answers with these two. Both are facts the record can prove, and
+  // both name the reference that would have worked -- a refusal that only says "no" sends
+  // the caller back to the source to find out why (待改 17).
+  project_objective_not_confirmed: [
+    "the project goal is not confirmed, so there is nothing to complete against: agree the goal with the user, propose it with user_decision.propose (kind=project.objective), let the user confirm it, then propose completion naming that same reference",
+  ],
+  project_objective_ref_mismatch: [
+    "this completion names a goal the user never confirmed: pass the confirmed goal's own reference (context__project_read reports it as stable.goal.objective_ref), or agree a new goal first",
+  ],
   idempotency_conflict: ["the same command_id was reused with different arguments: use a new command_id"],
   unknown_payload_field: ["the request carries a field the command does not accept: re-send per the tool schema"],
-  unknown_tool: ["no such tool: list the tools once and use a name from that list"],
+  unknown_tool: [
+    "no such tool in the bridge's catalogue: this refusal came from the *bridge* in JSON form, so the tool face was reachable and the name really is not one of ours — list the tools once and use a name from that list",
+    "if instead the host answered `Error: unknown tool \"…\"` in plain text, that message never reached the bridge: it means the host's own tool catalogue was not ready (a session that started before this bridge connected, a bridge restart, or a profile the provider is not installed into). Read it as \"try again\", not as \"you misspelled it\": the same call usually succeeds seconds later. For a write you may need to retry, pass your own command_id so the daemon can recognise the second attempt as the same command",
+  ],
   handler_not_registered: ["declared but not implemented on this daemon: do not retry, report it"],
   project_lock_unavailable: ["another process holds the project lock: retry after a short wait"],
   contract_revision_conflict: [
@@ -304,6 +316,47 @@ function hash(value: string): string {
 function env(name: string, fallback = ""): string {
   const value = process.env[name];
   return value !== undefined && value !== "" ? value : fallback;
+}
+
+/**
+ * A timeline that decides *whose* fault a missing tool was.
+ *
+ * The host emits ``Error: unknown tool "<name>"`` itself: that call never reaches this
+ * process, so the bridge can neither see it nor answer it. What the bridge can do is leave
+ * a record of whether it was alive and answering ``tools/list`` at the time — from inside a
+ * session a bridge restart and a host-side catalogue refresh look identical, and the model
+ * is left to read "the tool face blinked" as "I misspelled the tool" (measured 2026-10-10
+ * 15:49:20 on the 1010 project: one two-row ``coordination__plan`` came back as
+ * ``unknown tool`` and the same call succeeded eight seconds later).
+ *
+ * Lines are appended, one JSON object per event, and the file is emptied when it grows past
+ * ``LIFECYCLE_KEEP_BYTES``. Several bridges share the path on purpose: ``pid`` and ``role``
+ * are in every line, so a gap and a restart are both visible. Nothing secret is written —
+ * a pid, a role, a tool count and a timestamp (the host identity and every credential stay
+ * in the private files under this directory).
+ */
+const LIFECYCLE_KEEP_BYTES = 256 * 1024;
+
+export function lifecycleJournalPath(): string {
+  const cfg = config();
+  // Project-local and already private: ``.tsunagou/local/`` is gitignored by the project
+  // template, and the shared-host case still gets one journal per project. Only a bridge
+  // with no project at all falls back to the per-user state directory.
+  return join(cfg.daemonStateDir || cfg.stateDir || ".", "bridge-lifecycle.ndjson");
+}
+
+function recordLifecycle(event: string, detail: Record<string, unknown> = {}): void {
+  try {
+    const line = JSON.stringify({
+      at: new Date().toISOString(), pid: process.pid, role: CALLER_ROLE || "unknown", event, ...detail,
+    }) + "\n";
+    const path = lifecycleJournalPath();
+    mkdirSync(dirname(path), { recursive: true });
+    if ((statSync(path, { throwIfNoEntry: false })?.size ?? 0) > LIFECYCLE_KEEP_BYTES) writeFileSync(path, "");
+    appendFileSync(path, line, "utf8");
+  } catch {
+    // Diagnostics must never turn a working tool call into a failure.
+  }
 }
 
 function config(): {
@@ -877,13 +930,21 @@ async function main(): Promise<void> {
         + OPERATING_MANUAL_LINE,
     },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: toolsForRole(TOOLS, CALLER_ROLE, MAIN_ONLY_COMMANDS)
-      .map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const tools = toolsForRole(TOOLS, CALLER_ROLE, MAIN_ONLY_COMMANDS)
+      .map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
+    // Answered list requests go in the journal: "the host asked and we answered N tools" is
+    // what tells a later reader that a missing tool was the host's catalogue, not this process.
+    recordLifecycle("tools_list", { count: tools.length });
+    return { tools };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     const tool = TOOLS.find((candidate) => candidate.name === request.params.name);
     if (tool === undefined) {
+      // The counterpart of the host's own `unknown tool`: this one is answered *by the
+      // bridge*, so a journal line here plus no line for the host's message is proof that
+      // the call arrived and the name was wrong.
+      recordLifecycle("unknown_tool", { name: String(request.params.name) });
       return { content: [{ type: "text" as const, text: JSON.stringify(buildToolError("unknown_tool")) }], isError: true };
     }
     try {
@@ -954,7 +1015,14 @@ async function main(): Promise<void> {
   // 心跳：每 30 秒替见过的会话说一句"我还在"（见 heartbeatOnce）。
   // unref 掉 —— 计时器不该把桥的退出拖住。
   setInterval(() => void heartbeatOnce(), HEARTBEAT_INTERVAL_MS).unref();
+  // The journal's first two lines bracket "this process was up and its tool list was
+  // complete": a host-side `unknown tool` inside that window was the host's catalogue,
+  // while a gap between `exit` and the next `start` says the bridge itself went away.
+  recordLifecycle("start", { tools: TOOLS.length, protocol: PROTOCOL_VERSION });
+  process.on("exit", () => recordLifecycle("exit"));
+  process.stdin.on("end", () => recordLifecycle("stdin_closed"));
   await server.connect(new StdioServerTransport());
+  recordLifecycle("connected", { tools: TOOLS.length });
   void restoreDesktopBindings();
   process.stderr.write("[tsunagou-bridge] ready; credentials are selected per request\n");
 }

@@ -9,7 +9,7 @@
 // 以及描述必须直说"空 scope = 不认领任何路径、不做文件改动"。
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, win32 } from "node:path";
 import test from "node:test";
@@ -71,6 +71,9 @@ async function listTools(t, role) {
     command: process.execPath,
     args: [fileURLToPath(new URL("../dist/server.js", import.meta.url))],
     env: { ...env, TSUNAGOU_ROUTING_DIR: routingDir, TSUNAGOU_HOST_META_KEY: metaKey,
+      // 与路由文件里的 daemon_state_dir 同一个位置：生命周期时间线写在那儿（待改 24）。
+      // 不指的话它会落到用户主目录的 ~/.tsunagou —— 测试不该往那里写。
+      TSUNAGOU_DAEMON_STATE_DIR: join(root, "daemon"),
       TSUNAGOU_TICKET_FILE: ticketFile },
     stderr: "pipe",
   });
@@ -81,7 +84,7 @@ async function listTools(t, role) {
     rmSync(root, { recursive: true, force: true });
   });
   const { tools } = await client.listTools();
-  return { tools, instructions: client.getInstructions() };
+  return { tools, instructions: client.getInstructions(), root, client };
 }
 
 test("主 Agent 的工具面里有 root.register / root.bind / repository.register", async (t) => {
@@ -186,4 +189,46 @@ test("instructions 里的操作手册指路是绝对路径，且文件真的在"
   // 派活规矩，它们每会话只需要听一次，已经搬去首次读取。这里钉一个上限，防止再长回来。
   assert.ok(instructions.length <= 420,
     `instructions 每次都付费，必须保持精简（当前 ${instructions.length} 字符，上限 420）`);
+});
+
+// 2026-10-10 实测（待改 24）：一次两行的 `coordination__plan` 被回成
+// `Error: unknown tool "coordination__plan"`，8 秒后同样的调用成功 —— 调用方只能把它读成
+// "我把工具名拼错了"。那句话是**宿主**发的（那次调用根本没到桥），桥能做的只有留下
+// "我当时在不在、工具面全不全"的时间线，好让事后分得清"桥重启了"与"宿主目录没刷新"。
+test("桥留下生命周期时间线，写在项目私有目录里", async (t) => {
+  const { tools, root } = await listTools(t, "main");
+  const journal = join(root, "daemon", "bridge-lifecycle.ndjson");
+  assert.ok(existsSync(journal), `生命周期时间线要写在项目私有目录里：${journal}`);
+  const lines = readFileSync(journal, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const events = lines.map((line) => line.event);
+  assert.ok(events.includes("start"), "启动要记一条");
+  assert.ok(events.includes("connected"), "接上 stdio 要记一条");
+  const listed = lines.filter((line) => line.event === "tools_list").at(-1);
+  assert.ok(listed, "每次回答 tools/list 都要记一条（数量是判据）");
+  assert.equal(listed.count, tools.length, "记的数量必须就是当时答出去的数量");
+  assert.ok(lines.every((line) => typeof line.at === "string" && Number.isInteger(line.pid)),
+    "每条都要有时间与 pid：没有这两样就对不上会话里的时刻");
+});
+
+// 与上一条配对的另一半：桥**自己**答的 `unknown_tool` 是 JSON、说明工具面当时是通的 ——
+// 与宿主那句纯文本的意思正好相反，必须一眼分得开，并给出写命令重试时的安全做法。
+test("桥自己的 unknown_tool 说清它是桥答的，并留下同名事件", async (t) => {
+  const { root, client } = await listTools(t, "main");
+  const answered = await client.callTool({ name: "coordination__plan_not_a_tool", arguments: {} });
+  assert.equal(answered.isError, true);
+  const body = JSON.parse(String(answered.content?.[0]?.text));
+  assert.equal(body.error, "unknown_tool");
+  assert.equal(body.code, "unknown_tool");
+  assert.match(String(body.next_steps?.[0]), /in the bridge's catalogue/,
+    "要说清这条是桥答的，所以工具面是通的");
+  assert.match(String(body.next_steps?.[1]), /Error: unknown tool/,
+    "要指出宿主那句纯文本长什么样，以及它其实意思是“重试”，不是“拼错了”");
+  assert.match(String(body.next_steps?.[1]), /command_id/,
+    "要给出写命令重试时的安全做法（自带 command_id，由 daemon 去重）");
+
+  const journal = join(root, "daemon", "bridge-lifecycle.ndjson");
+  const lines = readFileSync(journal, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const refused = lines.filter((line) => line.event === "unknown_tool");
+  assert.equal(refused.length, 1, "桥答的每一次 unknown_tool 都要留痕，且只留一次");
+  assert.equal(refused[0].name, "coordination__plan_not_a_tool");
 });

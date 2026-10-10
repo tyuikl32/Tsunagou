@@ -388,11 +388,35 @@ DSH 上的唤醒**永远由某个 Agent 显式调用**才会发生（`coordinati
 
 ### 6.2 唤醒的投递时机是宿主的属性，不是你的选择
 
-`coordination__wake_status` 的返回里现在会说明这个宿主**什么时候能把消息送进去**：
-`turn_boundary`（排到下一回合边界）、`step`（插进当前回合的下一个步边界 —— DSH 的 `steer`，
-**不打断**在飞的工具调用）、`idle_only`（只在会话空闲时送）、`none`（根本没有唤醒路径，
-例如任意远端）。请求的时机与**实际用的**时机都会回报；做不到时会明确说降级，
-**不会静默当成做到了**。
+`coordination__wake_status` 与 `coordination__wake` 的返回都带 `delivery`：`requested`（今天恒为
+`null` —— 命令只收 `message_id`）、`declared`（宿主声明的能力）、`used`（**这次实际用的**时机）、
+`source`（这个说法从哪来）。取值只有五个：
+
+| 取值 | 含义 |
+|---|---|
+| `step` | 在当前回合的**下一个步骤边界**读取；回合继续，在飞的步骤不被取消（DSH 插件 `wake_mode=steer`） |
+| `turn_boundary` | 在下一个回合边界读取（DSH `queue`、OpenCode `delivery='queue'`） |
+| `idle_only` | 只在会话空闲时投递；忙时什么都不发（Codex Desktop 原会话，已实现的行为） |
+| `none` | 这个宿主**没有唤醒路径**：消息留在收件箱，等对方自己来取（Claude Code、ZCode、任意远端） |
+| `unknown` | 读不到任何能说明时机的证据。这是**诚实的答案**，不是失败 |
+
+请求的时机无法兑现、或实际投递比声明更晚时，返回里一定有 `degraded: true` + `degraded_from` +
+`reason` —— **绝不静默降级**。`none` / `unknown` 都不允许被读成"已经叫醒"。
+
+**跨机器的拒绝理由是写实的**：`cross_machine_unsupported` = 它在另一台机器上，本机没有可核实的本地
+宿主路由、也没有入向通道 ⇒ **消息留在本机收件箱里，需要对方自己来取**；提示它自己来读，不要重试唤醒、
+也不要换别的入口绕过。`host_identity_unverified` 只用于"本机接入、但路由核实不了"。自报机器名**不给**
+本地访问权；已核实的本地路由优先于机器名。
+
+**DSH Desktop 现在也有自动唤醒通道**（2026-10-10）：daemon 会在**本机已核实**的绑定上直接投递提醒，
+不必人工点。没有绑定、或绑定未核实，仍只会得到 `host_binding_not_found` —— 那表示"**这条自动通道**
+不可用"，不等于"DSH 不能唤醒"。失败不改插件配置，只把该绑定标成 `degraded`，一次核实过的成功唤醒会
+把它恢复。
+
+**各宿主的能力（2026-10-10 逐宿主只读核实）**：Codex → Codex 有自动通道、时机 `unknown`（仓库内没有
+忙时观测）；Codex Desktop 原会话有自动通道、时机 `idle_only`；DSH Desktop 有自动通道、时机 = 插件的
+`wake_mode`（`queue → turn_boundary`、`steer → step`）；OpenCode 无自动通道、脚本固定 `turn_boundary`；
+Claude Code / ZCode / 任意远端 `none`。
 
 ---
 
