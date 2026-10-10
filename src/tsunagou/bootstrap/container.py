@@ -197,6 +197,9 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         project_root=project_root, artifact_root=str(state_path.parent / "artifacts") if state_path else None,
         project_registry=project_registry,
         artifacts=artifacts, preparers=preparers, wake_assistance=assistance,
+        # context.project_read 的"能力索引"按注册表过滤：worker 不该被列出它会拒绝的工具。
+        # 授权事实源仍然是 daemon 与桥，这里只是别在快照里多写一份会漂移的清单。
+        command_registry=dispatcher.registry,
     ).items():
         dispatcher.register(command_kind, handler)
     for command_kind, prepare in preparers.items():

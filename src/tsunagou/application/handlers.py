@@ -176,6 +176,160 @@ def _denial_ledger(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
     )
 
 
+#: How many rows a ``context.project_read`` block at most carries. These blocks answer
+#: "what are the ids", not "show me the project": the read runs every turn, so every row
+#: has to earn its place (the denial ledger learned this the same way).
+CONTEXT_BLOCK_LIMIT = 16
+#: Free text (a contract's ``subject_ref``, the agreed objective) is trimmed like the rest
+#: of the snapshot's labels: ids and names, not documents.
+CONTEXT_LABEL_LIMIT = 128
+CONTEXT_OBJECTIVE_LIMIT = 512
+
+#: Which tool serves which part of the work, in the order a session meets them.
+#:
+#: This is what a fresh session used to learn by reading ``tools/list`` (or the bridge
+#: source) before it could make its first call — the capability index states the shape of
+#: the surface in one place. Values are **command kinds**, exactly as the protocol registry
+#: spells them; ``_tool_name`` turns each into the MCP tool name, so there is no second,
+#: hand-maintained tool-naming table to drift.
+#:
+#: Names here are not authority: the bridge hides main-only tools from a worker's tool list
+#: and the daemon refuses them per principal. When ``command_registry`` is available the
+#: index is filtered by the *current* role so it lists what this session can actually call.
+CAPABILITY_INDEX: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("reads", "read identity, members, tasks, contracts, revisions", ("context.project_read",)),
+    ("tasks", "create, ready, publish, edit, dependencies, review",
+     ("task.create", "task.ready", "task.publish", "task.update_plan",
+      "task.edge.add", "task.edge.remove", "task.cancel_request", "task.cancel_ack",
+      "task.review.accept", "task.review.request_changes", "task.self_accept")),
+    ("plan and assignments", "the default path that publishes and wakes a named worker",
+     ("coordination.plan",)),
+    ("execute", "claim an attempt, report, suspend, deliver, fail, request scope",
+     ("task.begin", "task.progress", "task.block", "task.submit", "task.fail",
+      "task.scope.request")),
+    ("contracts", "agree an interface before declaring a dependency on it",
+     ("contract.propose", "contract.accept", "contract.accept_proxy", "contract.reject",
+      "contract.withdraw")),
+    ("scope and resources", "register a root, bind it here, register its repository, decide scope",
+     ("root.register", "root.bind", "repository.register", "task.scope.resolve")),
+    ("workspaces", "pick the driver a file task runs under, then integrate a result",
+     ("workspace.select", "workspace.integrate")),
+    ("messages and wake", "read, reply, fulfil an obligation, ask whether the host woke up",
+     ("inbox.claim", "inbox.fetch", "inbox.presented", "inbox.ack", "message.send",
+      "message.respond", "coordination.peer_hosts", "coordination.wake_status",
+      "coordination.wake_candidates", "coordination.wake")),
+    ("cognition", "report claims, open and settle a disagreement",
+     ("cognition.report", "discrepancy.create", "discrepancy.advance", "discrepancy.resolve")),
+    ("takeover and recovery", "take an assignment over, recover an orphaned attempt",
+     ("coordination.takeover", "task.recover")),
+    ("completion and user decisions", "ask the user; only the user answers or confirms",
+     ("user_decision.propose", "project.completion.propose.main")),
+)
+
+
+def _tool_name(command_kind: str) -> str:
+    """The MCP tool name for a command kind.
+
+    Two spellings exist and both are real: ``task.create`` → ``task__create`` is mechanical,
+    while the bridge's flat tool list names the edge, review, scope, cancel and completion
+    commands its own way (``TOOL_NAME_OVERRIDES``). ``None`` means "no tool yet": the read
+    itself is the only way to confirm a goal, and that is the intended asymmetry, not a gap.
+    """
+
+    override = TOOL_NAME_OVERRIDES.get(command_kind)
+    if override is not None:
+        return override
+    if command_kind == "project.completion.confirm":
+        return ""
+    return command_kind.replace(".", "__")
+
+
+#: The MCP tool name for the few command kinds a mechanical ``.`` → ``__`` transform gets
+#: wrong, because the bridge spells the tail of those names its own way
+#: (``packages/bridge-server/src/server.ts``: ``task.edge.add`` → ``task__edge_add``,
+#: ``project.completion.propose.main`` → ``project__completion_propose``). Everything else
+#: derives. ``test_the_capability_index_names_tools_the_way_the_bridge_does`` reads the
+#: bridge's own tool list and fails if this ever drifts.
+TOOL_NAME_OVERRIDES: dict[str, str] = {
+    "task.edge.add": "task__edge_add",
+    "task.edge.remove": "task__edge_remove",
+    "task.cancel_request": "task__cancel_request",
+    "task.cancel_ack": "task__cancel_ack",
+    "task.self_accept": "task__self_accept",
+    "task.review.accept": "task__review_accept",
+    "task.review.request_changes": "task__review_request_changes",
+    "task.scope.request": "task__scope_request",
+    "task.scope.resolve": "task__scope_resolve",
+    "project.completion.propose.main": "project__completion_propose",
+    # The bridge exposes user_decision.propose under a shorter tool name; the completion
+    # confirmation is the user's and has no agent-facing tool at all.
+    "user_decision.propose": "decision__propose",
+}
+
+#: The principal kinds an agent session authenticates as. Anything else in the registry
+#: (``U`` user control, ``D`` diagnostics, ``T`` enrollment, ``H`` handoff, ``X``/``R``
+#: attempt- and review-scoped grants) is not a tool this read is about.
+AGENT_PRINCIPAL_KINDS = frozenset({"M", "B"})
+
+
+def _bounded_row(value: Any, limit: int = CONTEXT_LABEL_LIMIT) -> str:
+    """One label's worth of a value: printable, single-line, trimmed.
+
+    Reuses the same discipline as the enrollment self-report: a row that a caller can
+    print is a row that cannot smuggle a newline or a wall of text into a snapshot that
+    every turn carries.
+    """
+
+    if not isinstance(value, str):
+        return ""
+    text = "".join(ch for ch in value if ch.isprintable() and ch not in "\r\n\t").strip()
+    return text[:limit]
+
+
+def _contract_subject_ref(proposal: Any) -> str:
+    """A contract's human-facing name, read the way the daemon reads it.
+
+    ``subject_ref`` never reaches ``ContractProposal``: ``contract.propose`` folds it into
+    the payload body (see ``handlers.py``'s ``contract_propose``), so the body is where the
+    name is. Describes the contract; never participates in looking one up — that is the
+    ``proposal_id``'s job.
+    """
+
+    body = getattr(proposal, "payload", None)
+    if isinstance(body, dict):
+        return _bounded_row(body.get("subject_ref") or body.get("task_id"))
+    return ""
+
+
+def _capability_index_lines(
+    *, role: str, command_registry: dict[str, dict[str, Any]] | None,
+) -> list[str]:
+    """The tool surface as a small table: area | tools | what it is for.
+
+    Filtered to the commands this role can actually call **when the registry is known**:
+    a worker is not told about tools the bridge hides from it and the daemon would refuse
+    (``principal: "M"``). Without a registry the table stays complete — the bridge and the
+    daemon are still the ones that decide, so an over-complete list is honest, never an
+    authorization.
+    """
+
+    allowed = {"M", "B"} if role == "main" else {"B"}
+    lines = ["area | tools | what it is for"]
+    for area, purpose, kinds in CAPABILITY_INDEX:
+        visible: list[str] = []
+        for kind in kinds:
+            if command_registry is not None:
+                policy = command_registry.get(kind)
+                if not isinstance(policy, dict) or str(policy.get("principal")) not in allowed:
+                    continue
+            name = _tool_name(kind)
+            if name and name not in visible:
+                visible.append(name)
+        if visible:
+            lines.append(f"{area} | {', '.join(visible)} | {purpose}")
+    return lines
+
+
 def _required_contracts(payload: dict[str, Any]) -> tuple[str, ...]:
     values = payload.get("required_contract_ids", [])
     if (not isinstance(values, list) or any(not isinstance(item, str) or not item.strip() for item in values)
@@ -268,7 +422,13 @@ def build_handlers(
     artifacts: ArtifactService | None = None,
     preparers: dict[str, Handler] | None = None,
     wake_assistance: Any | None = None,
+    command_registry: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Handler]:
+    """``command_registry`` is the protocol registry's ``commands`` mapping (command kind →
+    policy), passed in for one purpose: ``context.project_read`` lists the tools the current
+    role can actually call. It is optional so a host that wires handlers by hand still works
+    — the read's other blocks never depend on it.
+    """
     tasks = tasks if tasks is not None else TaskService()
     cognition = cognition if cognition is not None else CognitionService()
     messages = messages if messages is not None else MessageStore()
@@ -1542,6 +1702,139 @@ def build_handlers(
         members = [_member_view(agent)
                    for agent in sorted(authority.agents.values(), key=lambda item: item.agent_id)]
 
+        # ---- 稳定块：把"平台本来就能说出的值"直接说出来，别让主 Agent 去猜 ------------------
+        #
+        # 2026-10-08 实测：主 Agent 在第一次 ``coordination.plan`` 之前花了 3.3 / 3.8 分钟，其中
+        # 大半是在**猜平台自己知道的值** —— 它 ``root.bind`` 失败后去读 ``modules/projects.py``
+        # 与 ``handlers.py``，才弄明白 ``expected_physical_identity`` 该填什么；它去读
+        # ``coordination.plan`` 的 schema，才知道行里真正必填的是哪几个字段；契约 id 的形状则是
+        # 被拒一次才知道的。这些事实一次读取就能说清，而这一次读取它每轮本来就在做。
+        #
+        # 这些值**进 revision 摘要**（放进 snapshot 再算 digest），所以带 ``since_revision`` 的
+        # 差量读在没有变化时只回一句 ``unchanged``，不会每轮重发；反过来，快照一变（新任务、
+        # 新契约、新成员）整份快照连同这个块一起重发，不会出现"变了却不给"的情况。
+        #
+        # 边界不变：**没有绝对路径、没有 token、没有凭据**。``physical_identity`` 是不透明串
+        # （``inode:<dev>:<ino>``），它**不是路径**；路径不存在时它形如
+        # ``unresolved:<os>:<normcase 后的绝对路径>``，那是 ``modules/projects.py`` 定的形状，
+        # 也正是 ``root.bind`` 的 ``expected_physical_identity`` 要原样回填的值 —— 这里照抄，
+        # 不改写（改了它就再也对不上了）。行的 ``absolute_path`` 一个都不进快照。
+        root_rows: list[dict[str, Any]] = []
+        repository_rows: list[dict[str, Any]] = []
+        if project_registry is not None and project_registry.project is not None:
+            for root_id, descriptor in sorted(
+                project_registry.project.roots.items(),
+                key=lambda item: (str(item[1].get("name") or ""), item[0]),
+            ):
+                binding = dict(project_registry.local_bindings.get(root_id) or {})
+                root_rows.append({
+                    "root_id": root_id,
+                    "name": _bounded_row(descriptor.get("name")),
+                    "kind": _bounded_row(descriptor.get("root_kind") or "directory"),
+                    # 没绑过 = 没有绑定行；这时 status 的真空值是 unbound（``diagnose`` 用同一个词）。
+                    "status": _bounded_row(binding.get("status") or "unbound"),
+                    "physical_identity": binding.get("physical_identity"),
+                })
+            repository_rows = [
+                {
+                    "repository_id": repository_id,
+                    "name": _bounded_row(descriptor.get("name")),
+                    "root_id": _bounded_row(descriptor.get("root_id")),
+                }
+                for repository_id, descriptor in sorted(
+                    project_registry.project.repositories.items(), key=lambda item: item[0]
+                )
+            ]
+        # 只有**已接受**的契约才列在这里，因为 ``required_contract_ids`` 只能填这种 id：
+        # 这就是"别靠被拒一次去猜 id 形状"的那一条。被替代/被驳回的不列（``contracts.tasks``
+        # 仍然按任务逐条给出完整状态链）。顺序按 proposal_id，稳定。
+        accepted_contracts = [
+            {
+                "proposal_id": proposal.proposal_id,
+                "subject_ref": _contract_subject_ref(proposal),
+                "status": proposal.status,
+            }
+            for proposal in sorted(cognition.proposals.values(), key=lambda item: item.proposal_id)
+            if proposal.status == "accepted"
+        ][:CONTEXT_BLOCK_LIMIT]
+        # 目标确认没有：项目记录里那句 ``objective`` 在用户确认前只是**占位**（``PENDING_OBJECTIVE``），
+        # 确认走一条 ``kind=project.objective`` 的普通用户决定。这里把状态说出来，省得主 Agent 既
+        # 把占位句当目标、又以为"没有目标"（两种都会让它做错下一步）。文字本身也带上：它是用户
+        # 自己给的目标，不是秘密；截到 CONTEXT_OBJECTIVE_LIMIT。
+        goal_decision: Any | None = None
+        if lifecycle is not None:
+            resolved_goals = [
+                item for item in sorted(lifecycle.decisions.values(), key=lambda row: row.decision_id)
+                if item.kind == "project.objective" and item.status == "resolved"
+            ]
+            pending_goals = [
+                item for item in sorted(lifecycle.decisions.values(), key=lambda row: row.decision_id)
+                if item.kind == "project.objective" and item.status == "pending"
+            ]
+            goal_decision = resolved_goals[-1] if resolved_goals else (pending_goals[0] if pending_goals else None)
+        if goal_decision is not None and goal_decision.status == "resolved":
+            goal_row: dict[str, Any] = {
+                "objective_ref": _bounded_row(goal_decision.subject_ref),
+                "decision_id": goal_decision.decision_id,
+                "status": "resolved",
+                "confirmed": True,
+                "objective": _bounded_row(goal_decision.summary, CONTEXT_OBJECTIVE_LIMIT),
+            }
+        elif goal_decision is not None:
+            goal_row = {
+                "objective_ref": _bounded_row(goal_decision.subject_ref),
+                "decision_id": goal_decision.decision_id,
+                "status": "pending",
+                "confirmed": False,
+                # 占位句不是目标：不把它当成"项目目标"复述。它是不是占位由 ``PENDING_OBJECTIVE``
+                # 这一个事实决定（``modules/projects.py``）。见下方 ASCII 那条注释。
+                "note": (
+                    "the project goal is not confirmed yet: a project.objective decision is still "
+                    "pending, and the project record's objective is only a placeholder until the "
+                    "user answers"
+                ),
+            }
+        else:
+            goal_row = {
+                "objective_ref": None,
+                "decision_id": None,
+                "status": "unset",
+                "confirmed": False,
+                "note": "no kind=project.objective user decision yet; agree the goal with the user, then user_decision.propose",
+            }
+        stable: dict[str, Any] = {
+            # 已登记的根：要建文件任务就得先用这里的 root_id；要重绑/确认同一块盘就用同一行的
+            # physical_identity 回填 root.bind 的 expected_physical_identity。
+            "roots": {"items": root_rows[:CONTEXT_BLOCK_LIMIT], "total": len(root_rows)},
+            # 仓库：为空就说明 ``repository.register`` 还没做过（worktree 策略要用它）。
+            #
+            # 这些 ``next``/``note`` 刻意写成 ASCII：快照会原样穿过桥的 stdout，而那条通道在
+            # GBK 控制台上解码非 ASCII 会直接炸掉调用方 —— 2026-10-08 给这里加了一行中文提示后，
+            # ``test_remote_machine_end_to_end`` 就再也读不到桥的输出（``json.loads(None)``，
+            # 真正的原因是 reader 线程 ``UnicodeDecodeError: 'gbk' codec``）。``task.create``
+            # 的空 scope 提示早就是英文，理由一样。中文只在 ``src`` 的注释与 docstring 里。
+            "repositories": {
+                "exists": bool(repository_rows),
+                "items": repository_rows[:CONTEXT_BLOCK_LIMIT],
+                "total": len(repository_rows),
+                "next": None if repository_rows else (
+                    "no repository registered yet; the worktree workspace driver needs "
+                    "repository.register first"
+                ),
+            },
+            # 已接受的契约：``required_contract_ids`` 就填这里的 proposal_id。
+            "contracts": {
+                "accepted": accepted_contracts,
+                "total": len(accepted_contracts),
+                "next": None if accepted_contracts else (
+                    "no accepted contract yet; contract.propose and let every required slot accept "
+                    "it before declaring a dependency"
+                ),
+            },
+            # 项目目标确认状态。confirmed=false 时别把占位句当目标复述。
+            "goal": goal_row,
+        }
+
         def _attempt_view(task_id: str) -> dict[str, Any] | None:
             task = tasks.tasks.get(task_id)
             attempt = tasks.attempts.get(task.current_attempt_id or "") if task is not None else None
@@ -1621,6 +1914,9 @@ def build_handlers(
             # 每回合都要看一眼的那句"下一步"（只给 main；worker 不该看到别人的卡点）。
             **({"next": denial_next} if denial_next else {}),
             "members": members,
+            # 平台本来就知道的值（根与 physical_identity、已接受的契约、仓库、目标确认）。
+            # 放在**进 revision 的稳定区**：没有变化时差量读不会重发它。
+            "stable": stable,
             "session": {"session_id": context["session_id"],
                         "connection_epoch": authority.sessions[context["session_id"]].connection_epoch,
                         "status": authority.sessions[context["session_id"]].status},
@@ -1671,6 +1967,15 @@ def build_handlers(
         revision = canonical_digest(snapshot)
         if payload.get("since_revision") == revision:
             return {"revision": revision, "unchanged": True}
+        # 能力索引**只在第一次读时给**：它是这一整个面的形状（一块静态的表），一次就够，
+        # 放进每轮的快照只是重复收费。它不进 revision 摘要 —— 摘要说的是项目状态，而这个
+        # 索引在任何状态下都一样；第一次读（不带 since_revision）一定会拿到它。
+        if payload.get("since_revision") is None:
+            return {**snapshot, "revision": revision,
+                    "capability_index": _capability_index_lines(
+                        role="main" if agent_id == authority.main_agent_id else "worker",
+                        command_registry=command_registry,
+                    )}
         return {**snapshot, "revision": revision}
 
     return {

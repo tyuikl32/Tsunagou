@@ -48,12 +48,32 @@
 
 ---
 
+### 1.1 第一次读就把这些拿到手（`context__project_read`）
+
+**一次读取答完"开工前要知道的事"** —— 不必去读本项目的源码，也不必先被拒一次才知道该填什么：
+
+| 你要的值 | 在哪读 | 说明 |
+|---|---|---|
+| 已登记根 + **物理身份** | `stable.roots.items[]` 的 `root_id` / `name` / `kind` / `status` / **`physical_identity`** | 它就是 `root.bind` 的 `expected_physical_identity` 要填的那个不透明串（`inode:<dev>:<ino>`）。路径**不存在**的根给 `unresolved:<os>:<normcase 绝对路径>` —— 那个形态**按设计含路径**，因为它是必须原样回填的值；`roots` 行里本身没有 `absolute_path` 字段 |
+| 要不要 `repository.register` | `stable.repositories.exists` 与 `items[].repository_id` | `exists: false` 就是"还没登记仓库"，不用去试 |
+| 能填进 `required_contract_ids` 的 id | `stable.contracts.accepted[].proposal_id` | **只列已接受的**（门只看 accepted 的契约）。照这里填，就不会再吃一次 `required_contract_not_accepted` |
+| 目标确认了吗 | `stable.goal`：`status`（`unset` / `pending` / `resolved`）、`confirmed`、`objective_ref`、`objective` | `confirmed: false` 时不给 `objective` —— **占位句不是目标，别复述它** |
+| 这个角色能用哪些工具 | 首次读另给 **`capability_index`**（区域 ／ 工具名 ／ 这个区域是干什么的；按角色过滤，worker 看不到 main 专属工具） | 这就是本手册 §1 那张表的**机器可读版**；只在首次读给一次 |
+
+**差分语义**：`stable` 参与 revision 摘要 ⇒ 带 `since_revision` 且内容没变时只回 `{revision, unchanged}`（两个块都不重发），有变化则整份重发；`capability_index` **只在第一次读**（不带 `since_revision` 的那次）给。
+两个块都**不含 token、也不含根的绝对路径**（除了上面那个 `unresolved:` 形态）。
+
 ## 2. 必填字段与取值来源
 
 约定：**工具面** = 模型在 `tools/list` 上看到的手写 schema；**handler** = daemon 里真正读的字段。
 两者不一致处逐条标注。凡是"值必须从别处取来"的字段，都在"取值来源"里写清怎么取。
 
 ### 2.1 `root__register` / `root__bind` / `repository__register`
+
+> `expected_physical_identity` 的**正规来源**（三者同值，任取其一）：`root.register` 或 `root.bind` 返回值里的 `physical_identity`、
+> 或**第一次 `context__project_read`** 的 `stable.roots.items[].physical_identity`（见 §1.1）。
+> **不要**去读 `.tsunagou/local/bindings.json`（那是本机私有数据，项目规则明令不许给 Agent），
+> 也**不必**为了这个值去读 Tsunagou 源码 —— 它的形态由实现决定，手册这里说的就是实现。
 
 `root__register`（main 专属）
 
@@ -156,6 +176,11 @@
 
 要让 coordinator 静默建任务（不唤醒任何人），传 `auto_wake: false`；要替换已发布的任务，就在**新行**上给 `supersedes_task_id`，不要先 `task.cancel_request` 再新建（两步会让旧任务在看板上永远算"没做完"）。
 
+**顺序：先把计划发出去，再写脚手架。** 2026-10-08 实测里 main 先花约 **40 秒**写 `package.json` / `tsconfig` / `SPEC` 才 `coordination.plan`，而那几个 worker 这段时间**只能空等**（计划没下达，它们没有任务可领）。计划一经下达（`auto_wake` 默认会给每行发 `task.assigned` 并唤醒宿主），worker 就能开工；main 的脚手架完全可以**与 worker 并行**做，或者索性写成一条任务交给 worker。
+**唯一不能为省时间而砍掉的**：每一行自己必须带齐 `execution_scope`（碰文件时）与需要时的 `required_contract_ids` —— 否则 worker 领了活也在 `task.begin` 上开不了工，"先发计划"反而变成"先制造一次拒绝"。
+
+**要确认某个 `agent_id` 有效，读 `members`，不要拿提案去试。** `contract.propose` 会**真的**建一份提案（别人可能按 digest 接受，或者你得撤回它），所以用它"探一下 slot 解析"是**有副作用的探测** —— 实测里那一次就留下一条 `contract.propose` + 一条 `contract.withdraw`。要看本项目有哪些 Agent、谁是 main，读 `context__project_read` 的 `members`（宿主层面的事实用 `coordination__peer_hosts`）。真填错了也不贵：`coordination.plan` 会当场用 `worker_not_member` 拒（行里的 `assigned_worker_id` 必须是本项目 **active** 成员且不能是 main 自己），比一次提案便宜得多。
+
 ### 2.4 `workspace__select`（main 专属）
 
 什么时候**必须**有它：任务**碰文件**（`execution_scope` 里有 `kind="path"` 的资源，或 `{"roots":[...]}` 这种整体形态）时，`task.begin` 会在 `prepare_begin` 里要求存在一条该任务的策略决定 —— 没有，或决定的 `scope_revision` 与任务当前不符，报 `main_workspace_selection_required`。
@@ -186,6 +211,7 @@
 
 | 事实 | 说明 |
 |---|---|
+| 要填的 id 从哪来 | **第一次 `context__project_read`** 的 `stable.contracts.accepted[].proposal_id`（见 §1.1）；或 `contract.propose` 返回值里的 `proposal_id` / `contract_id`（同一个值） |
 | `contract_id` 就是 id | 调用方给的 `contract_id`（非空、无控制字符、≤128 字符）在未被占用时**成为该提案的 `proposal_id`**；已被占用报 `contract_id_taken`。省略则由系统发 UUID。返回值同时回显 `proposal_id` 与 `contract_id` —— **同一个值**，回引它 |
 | `required_contract_ids` 填的是**这个 id** | `task.begin` 按 id 在契约库里查。填一个自己起的语义标签（例如 `library-api-v1`）永远查不到，会得到 `required_contract_not_accepted:<你填的值>`，详情里带 `task_id`、`status: "missing"` 和 `existing_contract_ids`（本项目现有契约 id 清单）—— 照着改用其中一个即可 |
 | 语义名只是 `subject_ref` | 契约提案上的 `subject_ref` / `contract_kind` / `input_refs` 都是**描述性**的，不参与查找 |
@@ -195,6 +221,7 @@
 | 自指形状会当场说出来 | 任务要求的契约里有一个槽位归**这个任务的执行者**自己时，`coordination.plan` 的 `next` 会点出来（否则它领活时等契约 accepted，而契约等它接受），main 可以用 `contract.accept_proxy` 代接受 |
 | `cross_module` 没有契约 = 拒绝 | 行里声明 `cross_module: true` 却没有 `required_contract_ids` → `cross_module_contract_required`。理由：最贵的语义冲突（读者端调 `/requests`，后端只服务 `/api/applications`）**不重叠任何文件**，只靠文件重叠强制契约拦不住 |
 | `contract__accept` 必填 | `proposal_id`、`participant_slot`、`proposal_digest`。`proposal_digest` 必须是**你读到的那一版的 digest** —— 只接受 digest 不回引是不行的；`contract.reject` 同理（`proposal_id`、`proposal_digest`、`reason`） |
+| 想确认某个 `agent_id` 有效：**看 `members`，不要用提案探测** | 提案是有副作用的对象（见 §2.3 末段）：别人可能按 digest 接受它，或者你得撤回。填错的代价本来很小 —— `coordination.plan` 会当场用 `worker_not_member` 拒 |
 
 ### 2.6 任务执行面：`task__begin` / `submit` / `block` / `progress` / `fail` / `recover` / `scope_request`
 
@@ -297,5 +324,8 @@
 | 文档全局约定与规范优先级 | [文档导航与规范优先级](../README.md) |
 
 **本手册自己在哪里**：`docs/overview/agent-operating-manual.md`。
-MCP 工具的 `instructions` 与每会话首次提醒都指向**这个相对路径**（相对 Tsunagou checkout），所以不必再猜、也不必去宿主安装目录里翻。
+MCP 工具的 `instructions` 与每会话首次提醒给的都是**绝对路径** —— 由桥从自己的安装位置解析
+（`packages/bridge-server/src/reminders.ts` 的 `operatingManualPath()`；远端 Worker 解析各自那份副本），
+所以不必再猜、也不必去宿主的安装目录里翻。`instructions` 本身很短（只留"手册在哪、它回答什么"），
+"在哪读上下文""唤醒指引"这类**每会话听一次就够**的内容都在**每会话首次读取**那条通道里交付。
 本机 checkout 位置见 `.tsunagou/agent-context.md` 的「项目标识」一节（`本机 source path 仅为诊断提示`）。

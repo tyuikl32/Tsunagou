@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -574,3 +575,235 @@ def test_declaring_a_cross_module_boundary_requires_a_contract(runtime):
     described = app.state.state_runtime.tasks.describe_task(row["task_id"])
     assert described["cross_module"] is True
     assert described["required_contract_ids"] == ["contract-1"]
+
+
+def _strings(value):
+    """Every string inside a snapshot value, however deeply nested."""
+
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [item for child in value.values() for item in _strings(child)]
+    if isinstance(value, (list, tuple)):
+        return [item for child in value for item in _strings(child)]
+    return []
+
+
+def _bridge_tools() -> dict[str, str]:
+    """``tool_name → command_kind`` as the bridge itself declares them.
+
+    The read (backend) and the visible tool list (bridge) are two languages for one surface;
+    a capability index that names a tool the bridge does not expose sends a session looking
+    for something that does not exist. Read the bridge's own array — never a copy of it.
+    """
+
+    source = (
+        Path(__file__).parents[2] / "packages" / "bridge-server" / "src" / "server.ts"
+    ).read_text(encoding="utf-8")
+    return {
+        match.group("name"): match.group("kind")
+        for match in re.finditer(
+            r'name:\s*"(?P<name>[A-Za-z0-9_]+)"\s*,\s*command_kind:\s*"(?P<kind>[A-Za-z0-9_.]+)"',
+            source,
+        )
+    }
+
+
+def test_the_capability_index_names_tools_the_way_the_bridge_does(runtime):
+    """索引里的工具名必须是桥真正暴露的那些名字（``task__edge_add`` 这类拼法漂移过一次）。
+
+    ``task.edge.add`` 机械替换会得到 ``task__edge__add``，而桥的工具叫 ``task__edge_add``；
+    ``project.completion.propose.main`` 同理。索引是"这个面长什么样"的唯一一处说明，名字错了
+    比没有更糟 —— 所以这里拿桥自己的工具表逐条核对，另加一条"每个名字都是真的工具"。
+    """
+
+    _app, call, main, _worker = runtime
+    bridge = _bridge_tools()
+    assert bridge, "桥的工具表读不到：这条核对就失去意义了，必须失败"
+    assert bridge["task__edge_add"] == "task.edge.add"
+
+    lines = call("context.project_read", {}, main)["capability_index"]
+    assert "\n".join(lines).isascii(), "索引要能安全穿过桥的 stdout"
+    listed: list[str] = []
+    for line in lines[1:]:
+        area, tools, _purpose = line.split(" | ")
+        assert area and _purpose
+        listed.extend(part.strip() for part in tools.split(","))
+    assert listed, "索引不能是空表"
+
+    invented = sorted({name for name in listed if name not in bridge})
+    assert not invented, f"索引里写了桥不存在的工具：{invented}"
+    assert "task__edge_add" in listed and "task__create" in listed
+    assert "project__completion_propose" in listed
+    assert "project__completion__propose__main" not in listed
+    assert "project__completion_confirm" not in listed, "用户确认没有 Agent 侧工具，不在这里假称有"
+    assert "decision__propose" in listed, "user_decision.propose 在桥上的名字是 decision__propose"
+
+
+def test_the_read_states_roots_identities_and_accepted_contracts_instead_of_making_main_guess(runtime):
+    """主 Agent 不该为了这些值去读源码或先被拒一次。
+
+    2026-10-08 两次实测：第一次 ``coordination.plan`` 之前花了 3.3 / 3.8 分钟，其中大半是猜平台
+    自己知道的值 —— ``root.bind`` 失败后去读 ``modules/projects.py`` 才弄明白
+    ``expected_physical_identity`` 该填什么，去读 ``coordination.plan`` 的 schema 才知道行里必填
+    哪几个字段，契约 id 的形状则是被拒一次才知道。这些事实一次读取就能说清。
+    """
+
+    app, call, main, worker = runtime
+    fixture = app.state.state_runtime.project_registry.repository
+
+    # 一个已登记的根：``stable.roots`` 要给出 root_id 与那个不透明的 physical_identity。
+    registered = call("root.register", {
+        "name": "workspace", "kind": "directory", "required": False,
+        "binding_request": {"absolute_path": str(fixture)},
+    }, main)
+    assert registered["status"] == "bound"
+    repository = call("repository.register", {
+        "name": "backend", "root_id": registered["root_id"], "required": False,
+    }, main)
+
+    # 一条**已接受**的契约：``required_contract_ids`` 只能填这种 id。
+    task = call("task.create", {"title": "api", "objective": "settle the interface",
+                               "execution_scope": {}}, main)
+    proposal = call("contract.propose", {
+        "contract_id": "api-surface", "contract_kind": "interface",
+        "payload": {"task_id": task["task_id"], "subject_ref": "后端接口 v1"},
+        "participants_required": [{"slot": "self", "agent_id": main["agent_id"]}],
+        "participants_optional": [], "subject_ref": "后端接口 v1", "input_refs": [], "supersedes_id": "",
+    }, main)
+    call("contract.accept", {
+        "proposal_id": proposal["proposal_id"], "participant_slot": "self",
+        "proposal_digest": proposal["digest"], "evidence_refs": [],
+    }, main)
+
+    view = call("context.project_read", {}, main)
+    stable = view["stable"]
+
+    (root_row,) = stable["roots"]["items"]
+    assert root_row["root_id"] == registered["root_id"]
+    assert root_row["name"] == "workspace" and root_row["kind"] == "directory"
+    assert root_row["status"] == "bound"
+    assert root_row["physical_identity"] == registered["physical_identity"], "要能原样回填 expected_physical_identity"
+    assert str(root_row["physical_identity"]).startswith("inode:"), root_row["physical_identity"]
+    assert stable["roots"]["total"] == 1
+
+    (repository_row,) = stable["repositories"]["items"]
+    assert repository_row["repository_id"] == repository["repository_id"]
+    assert repository_row["name"] == "backend" and repository_row["root_id"] == registered["root_id"]
+    assert stable["repositories"]["exists"] is True and stable["repositories"]["total"] == 1
+    assert stable["repositories"]["next"] is None, "已经有仓库了就别再劝它 register"
+
+    (contract_row,) = stable["contracts"]["accepted"]
+    assert contract_row["proposal_id"] == "api-surface" == proposal["proposal_id"]
+    assert contract_row["status"] == "accepted"
+    assert contract_row["subject_ref"] == "后端接口 v1", "契约的语义名要读得到（它在 payload 里）"
+
+    # 边界：没有绝对路径、没有 token。身份是不透明串，路径不是身份 —— 所以这里按**值**核，
+    # 不是按字段名核。
+    strings = _strings(view)
+    assert "secret_token" not in strings
+    assert str(fixture) not in strings, "本机绝对路径一个都不进快照"
+    assert not [item for item in strings if item.startswith(("E:\\", "C:\\", "/"))]
+
+    # 快照会原样穿过桥的 stdout，而那条通道在 GBK 控制台上解码非 ASCII 会炸掉调用方 ——
+    # 实测：这一块里放过一行中文提示之后，``test_remote_machine_end_to_end`` 的桥就再也读不到
+    # 输出（表面报 ``json.loads(None)``，真因是 reader 线程 ``UnicodeDecodeError: 'gbk' codec``）。
+    # 表头、状态、提示一律 ASCII；文本是调用方给的（``subject_ref``、根名、用户确认的目标），
+    # 不在此列。
+    machine_text = {
+        key: value for key, value in stable.items() if key != "goal"
+    } | {"goal": {key: value for key, value in stable["goal"].items()
+                  if key not in {"objective", "objective_ref", "note"}}}
+    machine_text = json.loads(json.dumps(machine_text, ensure_ascii=False))
+    for row in machine_text["roots"]["items"]:
+        row.pop("name", None)
+    for row in machine_text["contracts"]["accepted"]:
+        row.pop("subject_ref", None)
+    assert json.dumps(machine_text, ensure_ascii=False).isascii(), f"机器面的文本必须是 ASCII：{machine_text}"
+
+    # worker 读同一份快照：这些事实它也拿得到（它要按 root_id 填 scope），
+    # 但 main 专属的东西不长出来。
+    worker_view = call("context.project_read", {}, worker)
+    assert worker_view["stable"]["roots"]["items"][0]["root_id"] == registered["root_id"]
+    assert worker_view["stable"]["contracts"]["accepted"][0]["proposal_id"] == "api-surface"
+    assert "denied" not in worker_view["coordination"]
+    assert "next" not in worker_view
+
+
+def test_the_read_states_whether_the_goal_is_confirmed(runtime):
+    """目标是不是"已确认"要**说出来**，不能靠主 Agent 从占位句里猜。
+
+    占位句（``PENDING_OBJECTIVE``）不是目标；确认走一条 ``kind=project.objective`` 的普通用户
+    决定。两种状态都给一句 ``note`` + 机械的 ``confirmed``，免得它把占位句当目标复述，或者以为
+    "项目没有目标"。
+    """
+
+    app, call, main, worker = runtime
+    unset = call("context.project_read", {}, main)["stable"]["goal"]
+    assert unset["confirmed"] is False and unset["objective_ref"] is None
+    assert unset["status"] == "unset" and unset["note"]
+    # 同一份快照里最长的那段提示（还没确认目标）也必须是 ASCII：见物理身份那条用例里的说明。
+    assert unset["note"].isascii()
+
+    asked = "让两个 Agent 对齐接口并交付可运行实现"
+    proposed = call("user_decision.propose", {
+        "kind": "project.objective", "proposal_ref": "project/objective/v1",
+        "choices": ["确认", "要改"], "summary": asked,
+    }, main)
+    pending = call("context.project_read", {}, main)["stable"]["goal"]
+    assert pending["confirmed"] is False and pending["status"] == "pending"
+    assert pending["decision_id"] == proposed["decision_id"]
+    assert pending["objective_ref"] == "project/objective/v1"
+
+    call("user_decision.resolve", {
+        "decision_id": proposed["decision_id"], "choice": "确认",
+        "expected_revisions": {"decision": proposed["revision"]},
+        "proposal_digest": proposed["proposal_digest"], "reason": "用户确认目标",
+    }, token="control")
+
+    confirmed = call("context.project_read", {}, main)["stable"]["goal"]
+    assert confirmed["confirmed"] is True and confirmed["status"] == "resolved"
+    assert confirmed["objective_ref"] == "project/objective/v1"
+    assert confirmed["objective"] == asked
+    # 目标确认是一条用户决定 —— worker 也看得到"目标定了"（对齐目标不是秘密），
+    # 但确认这件事只有用户能做（那条命令不在 worker 的工具面里）。
+    assert call("context.project_read", {}, worker)["stable"]["goal"]["confirmed"] is True
+
+
+def test_the_stable_block_is_part_of_the_revision_so_a_differential_read_is_cheap(runtime):
+    """稳定块进 revision 摘要：没有变化时差量读只回一句 ``unchanged``。
+
+    这份快照每轮都被读一次，所以"平台本来就知道的值"不能每轮重发。放进摘要（``stable`` 在
+    ``snapshot`` 里，摘要算的是整份快照）就等于：没变化 = 不重发；真有变化 = 整份重发，
+    不会出现"变了却不给"。这条同时证明后面那半句。
+    """
+
+    app, call, main, worker = runtime
+    first = call("context.project_read", {}, main)
+    token = first["revision"]
+    stable_before = first["stable"]
+    assert stable_before["roots"]["total"] == 0 and stable_before["repositories"]["exists"] is False
+
+    # 没有变化：只回结论，稳定块与能力索引都不重发。
+    unchanged = call("context.project_read", {"since_revision": token}, main)
+    assert unchanged["unchanged"] is True and unchanged["revision"] == token
+    assert "stable" not in unchanged and "capability_index" not in unchanged
+
+    # 有一条新任务进了领取队列：整份快照（含稳定块）重发 —— 不会因为"它在稳定区"就被吞掉。
+    task = published(call, main)
+    changed = call("context.project_read", {"since_revision": token}, main)
+    assert changed["revision"] != token and "unchanged" not in changed
+    assert changed["stable"] == stable_before, "发布一条任务不改变稳定块里的任何事实"
+    assert any(row["task_id"] == task["task_id"] for row in changed["open_tasks"])
+    # 索引只在第一次读给；这一次是差量读，所以不给。
+    assert "capability_index" not in changed
+
+    # 稳定块里的东西**真的会**改动摘要：登记一个根之后，之前那个 token 就过期了。
+    call("root.register", {
+        "name": "workspace", "kind": "directory", "required": False,
+        "binding_request": {"absolute_path": str(app.state.state_runtime.project_registry.repository)},
+    }, main)
+    refreshed = call("context.project_read", {"since_revision": changed["revision"]}, main)
+    assert refreshed["revision"] != changed["revision"] and "unchanged" not in refreshed
+    assert refreshed["stable"]["roots"]["total"] == 1
+

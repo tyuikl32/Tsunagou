@@ -95,9 +95,15 @@ def test_bootstrap_reminder_matches_bridge_and_refreshes_without_main_instructio
     )
     bridge_rules = Path(__file__).resolve().parents[2] / "packages/bridge-server/src/reminders.ts"
     bridge_text = bridge_rules.read_text(encoding="utf-8")
-    assert wake in bridge_text
     context = context_path.read_text(encoding="utf-8")
     assert wake in context
+    # 2026-10-08：这条短句**不再由桥的 `instructions` 携带** —— 那次瘦身把唤醒与入口句挪进"每会话首次读取"，
+    # 桥里那条长文本叫 `WAKE_REMINDER`。所以这里不再逐字比对两个文件：那等于钉一个**已经不上路**的字符串。
+    # 现在钉的是两件仍然成立、且各自都值得防回归的事：
+    #   ① 项目上下文（本文件生成）里带着这条唤醒短句；
+    #   ② 桥**确实**在每会话首次读取那条通道里投递唤醒指引（否则会话只看得到手册指路，看不到唤醒规矩）。
+    assert "WAKE_REMINDER" in bridge_text
+    assert 'content.push({ type: "text", text: WAKE_REMINDER })' in bridge_text
     # The per-session first-read hint points at the same manual, and it is the bridge's
     # own constant, so an added reminder cannot silently diverge from this file.
     assert "OPERATING_MANUAL_HINT" in bridge_text

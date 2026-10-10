@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
 
@@ -7,10 +9,45 @@ import { withPrivateFileLock } from "./private-file-lock.js";
 // 版本号一改，**已经见过旧提示**的会话会在下一次 context.project_read 时重新收到一遍
 // （reminderContent 按 guide_version 去重，见文件末尾）。所以新增一条首次提示必须同时抬版本，
 // 否则装了新桥的老会话永远看不到它。
-export const GUIDE_VERSION = "wake-v8-agent-operating-manual-2026-10-08";
+export const GUIDE_VERSION = "wake-v10-first-read-slim-instructions-2026-10-08";
+/** 手册相对 checkout 根的位置；找不到文件时发出的就是这条相对路径。 */
+export const OPERATING_MANUAL_RELATIVE_PATH = "docs/overview/agent-operating-manual.md";
+
+/** 这台机器上手册的**绝对**路径，解析自桥自己所在的位置（下面两条提示都用它）。
+ *
+ * 为什么必须绝对：手册住在**源码 checkout 里**，而指路是相对路径时，"去读手册"就等于
+ * "先找到 checkout" —— 2026-10-08 实测里会话正是为了 `expected_physical_identity` 的来源
+ * 去翻源码的，那趟寻找就是我们要消掉的东西。桥知道自己在哪（`dist/` 的上一级、上上级…），
+ * 所以这件事只有它能答；远端 Worker 的副本位置不同，各自解析各自的那份。
+ *
+ * 与 server.ts 的 `commandSchema` 同一套办法：**从模块自身位置往上探**，不写死盘符。
+ * 找不到就返回相对路径 —— 没带文档的桥只是退化成今天的样子，而不是编一个不存在的路径。*/
+export function operatingManualPath(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  // dist/reminders.js 与 dist/server.js 同目录；src 下与 server.ts 同目录，src→dist 不改变深度。
+  for (const root of [join(here, "..", "..", ".."), join(here, "..", "..")]) {
+    const path = join(root, OPERATING_MANUAL_RELATIVE_PATH);
+    if (existsSync(path)) return path;
+  }
+  return OPERATING_MANUAL_RELATIVE_PATH;
+}
+
 /** 按需手册的位置。字段与拒绝码、边界都在里面，**不必去读 Tsunagou 源码**。 */
-export const OPERATING_MANUAL_HINT = "字段、拒绝码与边界（不要为查这些去读 Tsunagou 源码、也不要绕开桥）：docs/overview/agent-operating-manual.md。";
-export const WAKE_INSTRUCTIONS = "使用 coordination__peer_hosts 核对真实宿主；Codex 双方沿用原生通道，DSH Desktop 初始化接入后通过插件后台唤醒，无需窗口操作；其他宿主按消息查询 coordination__wake_status。操作见 docs/overview/agent-wake-guide.md。";
+export const OPERATING_MANUAL_HINT = `字段、拒绝码与边界（含 expected_physical_identity 这类必填值从哪来；不要为查这些去读 Tsunagou 源码、也不要绕开桥）：${operatingManualPath()}。`;
+
+/** MCP `instructions` 里那一句：它**每次模型调用**都要付一遍，所以只留"手册在哪、它回答什么"。
+ *
+ * 为什么只留这一句：2026-10-08 的实测里，每次调用都在付的那段文本有 840 字符（约 210 token），
+ * 其中唤醒通道、"在哪读上下文""主 Agent 怎么派活"这些**每会话只需要听一次**的内容都挤在这里。
+ * 它们已经各有更合适的落点 —— 唤醒指引进每会话首次读取（`WAKE_REMINDER`），入口句进
+ * `FIRST_READ_GUIDANCE` —— 而这里留下的手册指路是唯一"看不到就会做错事"的那条：字段、拒绝码与
+ * 边界都在手册里，会话看到它就不必（也不该）去读 Tsunagou 源码、或绕开桥手搓 HTTP。
+ *
+ * 绝对路径由桥从自己的安装位置解析（见 operatingManualPath）：相对路径等于让会话先去找 checkout，
+ * 那正是 2026-10-08 白跑的那几趟。文档不在时退回相对路径，句子仍然成立。*/
+export const OPERATING_MANUAL_LINE = `Per-command required fields (including where expected_physical_identity comes from), refusal codes and why the bridge must not be bypassed: ${operatingManualPath()}.`;
+/** 每会话首次读取那条通道的入口句：instructions 里只留最短指路，其余内容都在这里交付。 */
+export const FIRST_READ_GUIDANCE = "开工前先调一次 context__project_read，并在每个自然停顿（做完一小步、跑完一次构建或测试）后重读：本机工作目录与唤醒指引都由它交付；写文件、派活、契约与验收的规矩也在同一处。";
 export const WAKE_REMINDER = "main 和 worker 均可在已有权限内唤醒协作者。先用 coordination__peer_hosts 核实并记住宿主、版本和机器，不凭模型品牌猜测。Codex → Codex 只走现有 Tsunagou Codex 通道（默认开启，尊重明确关闭）；其他宿主先查 coordination__wake_status {message_id}，按返回入口操作。DSH Desktop 初始化接入后由插件后台排队，无需打开窗口或粘贴发送。当前工具不支持不等于宿主不能唤醒；独立宿主操作须核实原会话、授权及同一消息无在途或结果未知的执行，不绕过认证。入队不等于已处理；失败核对宿主与错误，勿循环重试，不要求用户手动唤醒。操作指南：docs/overview/agent-wake-guide.md（本机安装源码优先）；https://github.com/tyuikl32/Tsunagou/blob/HEAD/docs/overview/agent-wake-guide.md。";
 export const COMPLETION_REMINDER = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
 
@@ -123,9 +160,10 @@ export async function reminderContent(
       if (kind === "context.project_read" && saved.guide_version !== GUIDE_VERSION) {
         const working = workingRootGuidance(projectRoot);
         if (working) content.push({ type: "text", text: working });
-        // 手册那条**排在唤醒指引之前**：字段与拒绝码是接下来每一轮都要用的，
-        // 唤醒只在真的需要唤醒时才相关。
+        // 顺序有意如此：工作目录与手册（字段、拒绝码）是接下来每一轮都要用的，
+        // 入口句说明"该读上下文"，唤醒指引只在真的需要唤醒时才相关。
         content.push({ type: "text", text: OPERATING_MANUAL_HINT });
+        content.push({ type: "text", text: FIRST_READ_GUIDANCE });
         content.push({ type: "text", text: WAKE_REMINDER });
         saved.guide_version = GUIDE_VERSION;
         changed = true;

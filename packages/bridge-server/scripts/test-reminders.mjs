@@ -3,18 +3,32 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, win32 } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { writePrivateJson } from "../dist/private-file.js";
 
-import { OPERATING_MANUAL_HINT as manual, WAKE_REMINDER as wake, WAKE_INSTRUCTIONS } from "../dist/reminders.js";
+import { FIRST_READ_GUIDANCE as firstRead, OPERATING_MANUAL_HINT as manual, WAKE_REMINDER as wake } from "../dist/reminders.js";
 
 const completion = "如果所有工作已经完成，且合并与验收已通过，请记得调用 `project__completion_propose` 发起任务完成提案，不要仅在聊天中宣布完成。已有待确认的提案时不要重复提交，最终完工由用户确认。";
 const workingRoot = (root) => `你在这台机器上的工作目录是：${root}。只在这个目录里改动；任务声明了范围时，以那个范围为准。`;
 const hash = (value) => createHash("sha256").update(value).digest("hex");
+
+// 这个 checkout 里手册就该在：脚本自己也在 packages/bridge-server/ 下，往上三级是 checkout 根。
+// 脚本与 dist 同深，所以这里算出来的位置和桥解析出来的必须是同一个文件。
+const checkoutManual = fileURLToPath(new URL("../../../docs/overview/agent-operating-manual.md", import.meta.url));
+// 提示句尾就是手册路径：`……：<path>。`
+const manualPath = manual.slice(manual.lastIndexOf("：") + 1).replace(/。$/, "");
+
+/** 路径必须**指向 checkout 里的那个文件**，而不是一句 docs/... 的相对指路 ——
+ * 正因为它是相对路径，2026-10-08 的会话才不得不先去找 checkout。*/
+function assertNamesCheckoutManual(path, label) {
+  assert.ok(isAbsolute(path) || win32.isAbsolute(path), `${label} 必须是绝对路径：${path}`);
+  assert.equal(path, checkoutManual, `${label} 应当指向本 checkout 的手册`);
+  assert.ok(existsSync(path), `${label} 指向的文件必须真的在磁盘上：${path}`);
+}
 
 async function fixture(t, metaKey, role = "") {
   const root = mkdtempSync(join(tmpdir(), "tsunagou-reminders-"));
@@ -84,7 +98,7 @@ async function fixture(t, metaKey, role = "") {
     assert.ok(tools.some((tool) => tool.name === name), name);
     return client.callTool({ name, arguments: args, _meta: { [metaKey]: agent } });
   };
-  return { root, calls, state, result, context, client, call, restart };
+  return { root, calls, state, result, context, client, call, restart, instructions: client.getInstructions() };
 }
 
 function check(output, result, hints) {
@@ -96,22 +110,44 @@ function check(output, result, hints) {
 for (const metaKey of ["threadId", "ai.opencode/sessionID", "tsunagou.hostSessionId"]) {
   test(`${metaKey}: persistent first guide, quiet calls, scoped hints and original JSON`, async (t) => {
     const f = await fixture(t, metaKey);
-    assert.ok(f.client.getInstructions().includes(WAKE_INSTRUCTIONS));
-    assert.ok(!f.client.getInstructions().includes(wake));
-    // 每个模型调用都要付这段 instructions：手册只加一句，指路而已。
-    assert.ok(f.client.getInstructions().includes("docs/overview/agent-operating-manual.md"));
+    // instructions 是**每次模型调用**都要付的一段文本（见方案第 5 项）：只留手册指路这一句，
+    // 唤醒通道那句已经搬进每会话首次读取 —— 这里钉住"搬走了"，防止它再悄悄长回来。
+    assert.ok(!f.instructions.includes(wake), "唤醒指引不该留在每次都付费的 instructions 里");
+    assert.ok(!f.instructions.includes("coordination__peer_hosts"),
+      "instructions 只剩手册那句：工具名与做法都属于每会话一次的内容");
+    assert.ok(!f.instructions.includes(firstRead), "入口句走首次读取通道，不在 instructions 里");
+    assert.ok(f.instructions.length <= 420,
+      `instructions 应当保持精简（当前 ${f.instructions.length} 字符，上限 420）`);
+    // 每个模型调用都要付这段 instructions：手册只加一句，指路而已 —— 但指的必须是绝对路径。
+    assert.ok(f.instructions.includes(manualPath),
+      "instructions 里那句手册指路要指向和每会话首次提示同一个文件");
+    assert.ok(f.instructions.includes("expected_physical_identity"),
+      "要说清手册里有这类必填值的来源");
+    // 首次提示里的路径：`…：<path>。` —— 取出来必须是绝对的、且就是本 checkout 的那个文件。
+    assertNamesCheckoutManual(manualPath, "首次提示里的手册路径");
     assert.ok(wake.includes("Codex → Codex 只走现有 Tsunagou Codex 通道"));
     assert.ok(wake.includes("不要求用户手动唤醒"));
 
     check(await f.call("task.review.accept"), f.result, [completion]);
     assert.equal(existsSync(join(f.root, "agent-a-receipt.json")), false);
     const working = workingRoot(f.root);
-    check(await f.call("context.project_read"), f.context("agent-a"), [working, manual, wake, completion]);
+    // 首次提示（会话真正读到的那条）必须自带绝对位置，并说清手册里有必填值来源与拒绝码：
+    // 只看到这条的会话，就没有理由再去翻源码。
+    const guide = await f.call("context.project_read");
+    check(guide, f.context("agent-a"), [working, manual, firstRead, wake, completion]);
+    // content[2] 是手册那条（[0] 是本次调用的结果，[1] 是工作目录 —— 它也带一个"："）。
+    const hint = guide.content[2].text;
+    assert.equal(hint, manual, `首次提示里手册那条必须就是桥导出的那条：${JSON.stringify(guide.content)}`);
+    assertNamesCheckoutManual(hint.slice(hint.lastIndexOf("：") + 1).replace(/。$/, ""), "首次提示里的手册路径");
+    assert.ok(hint.includes("expected_physical_identity"), "首次提示要说清手册里有这类必填值的来源");
+    assert.ok(hint.includes("拒绝码"), "首次提示要说清拒绝码也在手册里");
+    // 每次都付费的 instructions 里只剩指路，那份长指引必须真的落到首次读取这条一次性的通道上。
+    assert.equal(guide.content[3].text, firstRead, "首次读取要交付入口句（那次之后不再重复）");
     check(await f.call("context.project_read"), f.context("agent-a"), [completion]);
     const reminders = join(f.root, "daemon", "reminders");
     for (const file of readdirSync(reminders)) writePrivateJson(join(reminders, file), {guide_version:"old-version"});
-    check(await f.call("context.project_read"), f.context("agent-a"), [working, manual, wake, completion]);
-    check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), [working, manual, wake]);
+    check(await f.call("context.project_read"), f.context("agent-a"), [working, manual, firstRead, wake, completion]);
+    check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), [working, manual, firstRead, wake]);
     await f.restart();
     check(await f.call("context.project_read", "agent-b"), f.context("agent-b"), []);
     check(await f.call("context.project_read"), f.context("agent-a"), [completion]);

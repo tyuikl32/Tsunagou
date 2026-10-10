@@ -21,6 +21,20 @@ from tsunagou.shared_kernel.baseline import ADMISSION_CAPABILITIES
 ROOT = Path(__file__).parents[2]
 
 
+#: Enough of the protocol registry's ``commands`` mapping to exercise the capability index's
+#: role filter: one main-only tool, one that any agent session may call, and one the index
+#: does not mention at all (a user command) — which must therefore not appear in it either.
+FAKE_COMMAND_REGISTRY: dict[str, dict[str, Any]] = {
+    "coordination.plan": {"principal": "M"},
+    "task.create": {"principal": "M"},
+    "task.submit": {"principal": "B"},
+    "contract.propose": {"principal": "B"},
+    "message.send": {"principal": "B"},
+    "context.project_read": {"principal": "B"},
+    "agent.ticket.create.user": {"principal": "U"},
+}
+
+
 def _admission_baseline() -> dict[str, Any]:
     return {"baseline": {
         name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]}
@@ -36,6 +50,7 @@ def _harness(
     tmp_path: Path,
     *,
     project_id: str | None = None,
+    command_registry: dict[str, Any] | None = None,
 ) -> tuple[Any, AuthorityService, TaskService, CognitionService, MessageStore, Any]:
     dispatcher = CommandDispatcher(ROOT / "protocol" / "registry" / "commands.json")
     authority = AuthorityService(tmp_path / "identity.json")
@@ -45,7 +60,7 @@ def _harness(
     preparers = {}
     for kind, handler in build_handlers(
         authority=authority, tasks=tasks, cognition=cognition, messages=messages,
-        project_id=project_id, preparers=preparers,
+        project_id=project_id, preparers=preparers, command_registry=command_registry,
     ).items():
         dispatcher.register(kind, handler)
     for kind, prepare in preparers.items():
@@ -853,3 +868,61 @@ def test_message_send_says_whether_it_wakes_the_recipient(tmp_path):
                      "response_contract": {"required": True}})
     assert "不会唤醒对方" in required["next"]
     assert "wake_candidates" in required["next"], "带 required 的只是候选，要显式 wake"
+
+
+def test_the_first_read_states_the_tool_surface_and_the_differential_does_not_repeat_it(tmp_path: Path) -> None:
+    """能力索引是一次读就学会整个面，且**只在第一次读**给。
+
+    这一条直接对着实测的耗时：主 Agent 在第一次 ``coordination.plan`` 之前会去读工具 schema
+    （``coordination.plan`` 行里真正必填哪几个字段），甚至去翻源码。面的形状在这里一次说清，
+    以后每轮的差量读不再重发这一块静态文本。
+    """
+
+    _, authority, _, _, _, endpoint = _harness(tmp_path, command_registry=FAKE_COMMAND_REGISTRY)
+    agent = _enroll_ready(authority, installation="install-a", conversation="conversation-a")
+    authority.appoint_main(actor_kind="user_control", agent_id=agent.agent_id)
+
+    first = _call(endpoint, "context.project_read", {}, agent)
+    index = first["capability_index"]
+    assert index[0] == "area | tools | what it is for"
+    assert any("coordination__plan" in line for line in index), "派活的路径要在索引里"
+    assert any("task__create" in line for line in index)
+    assert any("contract__propose" in line for line in index)
+
+    token = first["revision"]
+    again = _call(endpoint, "context.project_read", {"since_revision": token}, agent)
+    assert again["unchanged"] is True and again["revision"] == token
+    assert "capability_index" not in again, "没有新情况时不该重发这一块静态文本"
+    assert "stable" not in again
+
+
+def test_a_worker_is_not_told_about_tools_the_bridge_hides_from_it(tmp_path: Path) -> None:
+    """索引按**当前角色**过滤，不是把 main 的清单抄给 worker。
+
+    桥不把 ``principal=M`` 的工具展示给 worker，daemon 也会拒绝它；快照里再列一遍
+    "你能调 coordination.plan" 就是错的。反过来，缺了注册表时保留完整表（桥与 daemon
+    仍然是判定者），所以这个过滤**只减不增**。
+    """
+
+    registry = FAKE_COMMAND_REGISTRY
+    _, authority, _, _, _, endpoint = _harness(tmp_path, command_registry=registry)
+    main = _enroll_ready(authority, installation="install-main", conversation="conversation-main")
+    authority.appoint_main(actor_kind="user_control", agent_id=main.agent_id)
+    worker = _enroll_ready(authority, installation="install-worker", conversation="conversation-worker")
+
+    main_index = "\n".join(_call(endpoint, "context.project_read", {}, main)["capability_index"])
+    worker_index = "\n".join(_call(endpoint, "context.project_read", {}, worker)["capability_index"])
+
+    assert "coordination__plan" in main_index and "task__create" in main_index
+    assert "coordination__plan" not in worker_index, "只给 main 的工具不该出现在 worker 的索引里"
+    assert "task__create" not in worker_index
+    # worker 自己的面要在（否则过滤成了"什么都没有"）。
+    assert "task__submit" in worker_index and "message__send" in worker_index
+    assert "context__project_read" in worker_index
+
+    # 不给注册表时不静默丢东西：完整表是诚实的（判定在桥与 daemon 那一侧）。
+    _, authority2, _, _, _, endpoint2 = _harness(tmp_path / "no-registry")
+    alone = _enroll_ready(authority2, installation="install-alone", conversation="conversation-alone")
+    unfiltered = "\n".join(_call(endpoint2, "context.project_read", {}, alone)["capability_index"])
+    assert "coordination__plan" in unfiltered
+

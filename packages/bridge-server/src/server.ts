@@ -26,7 +26,8 @@ import { fileURLToPath } from "node:url";
 import { CredentialHandoff, loadSession, type PersistedSession, type SessionCredential, type TicketFile } from "./credential-handoff.js";
 import { readPrivateJson, writePrivateJson } from "./private-file.js";
 import { withPrivateFileLock } from "./private-file-lock.js";
-import { needsCompletionContext, needsWakeContext, reminderContent, reminderMessageIds, WAKE_INSTRUCTIONS } from "./reminders.js";
+import { needsCompletionContext, needsWakeContext, reminderContent, reminderMessageIds,
+  OPERATING_MANUAL_LINE } from "./reminders.js";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -863,13 +864,17 @@ async function main(): Promise<void> {
     { name: "tsunagou", version: "0.1.0" },
     {
       capabilities: { tools: {} },
-      instructions: "Read context__project_read and inbox on each coordination turn, and again at every natural break "
-        + "- after finishing a sub-step, a build or a test run. "
-        + "Use task__begin before work, task__submit for delivery, task__block before waiting. "
-        + "Main writes a file task's execution_scope before publishing it, and settles a contract first when two tasks would touch the same files. "
-        + "Main handles routine worker requests within existing authorization; only major decisions require the user. "
-        + "Per-command required fields, refusal codes and why the bridge must not be bypassed: docs/overview/agent-operating-manual.md. "
-        + WAKE_INSTRUCTIONS,
+      // 每次模型调用都要付的这段文本，只留"永远不该漏掉"的两件事：手册（字段、拒绝码、边界）
+      // 在哪，以及上下文读取这条入口。其余（唤醒通道、主 Agent 怎么派活、在哪读上下文的具体做法）
+      // 都搬到**每会话首次读取**那条通道 —— 见 reminders.ts 的 FIRST_READ_GUIDANCE / WAKE_REMINDER。
+      // 2026-10-08 实测：旧文本 840 字符（约 210 token）里的绝大部分属于"一次就够"的内容，
+      // 却按每次调用付费（唤醒指引一度还在这里，且与本机工具链事实无关）。
+      instructions: "Read context__project_read first and at every natural break (after a sub-step, a build or a test "
+        + "run): that is where this session's working root and the wake guidance arrive. "
+        // 手册的位置由桥从自己的安装位置解析出**绝对**路径（见 reminders.ts 的 operatingManualPath）：
+        // 相对路径等于让会话先去找 checkout —— 那正是 2026-10-08 实测里白跑的那几趟。文档不在时
+        // 这一段退回相对路径，句子仍然成立。
+        + OPERATING_MANUAL_LINE,
     },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
