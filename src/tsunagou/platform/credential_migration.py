@@ -95,36 +95,66 @@ def _collect_secrets(value: Any, found: set[str]) -> None:
 
 
 def _inventory(conn: sqlite3.Connection) -> tuple[dict[str, int], set[str]]:
+    """Where legacy credentials actually live -- not every JSON column of every table.
+
+    This used to scan *every* ``*_json`` column of *every* table for keys named
+    ``password`` / ``token`` / ``secret`` / ``api_key`` / ... and fence daemon startup as
+    soon as it found one. That fences **domain data**: a project whose Agents are building
+    an application with a login screen writes seed accounts into a cognition proposal, and
+    the project then cannot start at all -- measured 2026-10-10 on the two ``大规模测试``
+    projects, where the fence tripped on
+    ``proposals.lib-data-v1.payload.seed.accounts[].password`` and the only remedy the tool
+    offered was the destructive migration (revoke every session, unassign main).
+
+    Credentials have always been written in known places, so this is an **allowlist**: the
+    credential commands' own rows (``_CREDENTIAL_COMMANDS``) and the ``authority`` module
+    state (sessions, tickets, grants, reconnect nonces). The legacy plaintext escrow is the
+    third, and the caller checks it. ``events`` / ``jobs`` / ``operations`` / ``resolutions``
+    and every other module are domain history, not credentials, and are no longer scanned.
+
+    Redaction is unaffected: it keys off the **strings discovered here**, not off field
+    names, so a credential that was quoted inside a domain payload is still scrubbed
+    wherever it appears (see ``_clean``).
+    """
+
     found: set[str] = set()
     counts: dict[str, int] = {}
-    for table in _tables(conn):
-        conn.row_factory = sqlite3.Row
-        for row in conn.execute(f"SELECT * FROM {_quote(table)}"):
-            row_secrets: set[str] = set()
-            corrupt_credential = False
-            for key in row.keys():
-                value = row[key]
-                if key.endswith("_json") and isinstance(value, str):
-                    try:
-                        _collect_secrets(json.loads(value), row_secrets)
-                    except ValueError:
-                        # A corrupt credential result cannot be replayed or
-                        # trusted safe. Migration replaces it with a receipt.
-                        if table == "commands" and row["command_kind"] in _CREDENTIAL_COMMANDS:
-                            corrupt_credential = True
-            if table == "commands" and row["command_kind"] in _CREDENTIAL_COMMANDS:
+    conn.row_factory = sqlite3.Row
+    for row in conn.execute("SELECT * FROM commands"):
+        if str(row["command_kind"]) not in _CREDENTIAL_COMMANDS:
+            continue
+        row_secrets: set[str] = set()
+        corrupt_credential = False
+        for key in row.keys():
+            value = row[key]
+            if key.endswith("_json") and isinstance(value, str):
                 try:
-                    if not isinstance(json.loads(row["result_json"]), dict):
-                        corrupt_credential = True
-                except (ValueError, TypeError):
+                    _collect_secrets(json.loads(value), row_secrets)
+                except ValueError:
+                    # A corrupt credential result cannot be replayed or trusted safe.
+                    # Migration replaces it with a receipt.
                     corrupt_credential = True
-            if table == "commands" and row["command_kind"] in {"agent.enroll", "session.rebind"}:
-                principal = str(row["principal_id"])
-                if not principal.startswith(("ticket/", "ticket:", "sha256:", "ticket_hash/", "ticket-sha256:")):
-                    row_secrets.add(principal)
-            if row_secrets or corrupt_credential:
-                counts[table] = counts.get(table, 0) + 1
-            found.update(row_secrets)
+        try:
+            if not isinstance(json.loads(row["result_json"]), dict):
+                corrupt_credential = True
+        except (ValueError, TypeError):
+            corrupt_credential = True
+        if str(row["command_kind"]) in {"agent.enroll", "session.rebind"}:
+            principal = str(row["principal_id"])
+            if not principal.startswith(("ticket/", "ticket:", "sha256:", "ticket_hash/", "ticket-sha256:")):
+                row_secrets.add(principal)
+        if row_secrets or corrupt_credential:
+            counts["commands"] = counts.get("commands", 0) + 1
+        found.update(row_secrets)
+    for row in conn.execute("SELECT payload_json FROM module_state WHERE module=?", ("authority",)):
+        row_secrets = set()
+        try:
+            _collect_secrets(json.loads(row["payload_json"]), row_secrets)
+        except ValueError:
+            continue
+        if row_secrets:
+            counts["module_state"] = counts.get("module_state", 0) + 1
+        found.update(row_secrets)
     return counts, found
 
 

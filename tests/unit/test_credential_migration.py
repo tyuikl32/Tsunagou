@@ -180,6 +180,60 @@ def test_migration_handles_corrupt_credential_result_without_guessing_fields(tmp
     assert value["delivery_status"] == "revoked"
 
 
+def test_domain_data_that_merely_names_a_password_is_not_a_credential(tmp_path: Path) -> None:
+    """业务数据里出现 ``password`` 字段不该把项目锁死在启动前（2026-10-10 实测）。
+
+    用户的两个 ``大规模测试`` 项目就是这么起不来的：Agent 在做带登录功能的系统，把种子账号
+    写进了认知提案（``proposals.lib-data-v1.payload.seed.accounts[].password``）。旧判据按
+    **字段名**扫全库，于是把业务内容当成"遗留凭据"，而它给出的唯一出路是那条撤销全部会话的
+    破坏性迁移。凭据只会出现在已知的地方，所以扫描是一份白名单。
+    """
+
+    state = tmp_path / ".tsunagou/local"
+    state.mkdir(parents=True)
+    db = ProjectDatabase(state / "state.sqlite3", project_id="p1")
+    with db.transaction("domain-seed") as uow:
+        uow.put_module_state("cognition", json.dumps({
+            "proposals": {"lib-data-v1": {"payload": {"seed": {"accounts": [
+                {"username": "reader", "password": "reader-pass-1234"},
+                {"username": "admin", "password": "admin-pass-5678"},
+            ]}}}},
+        }))
+        uow.append_event(lineage_id=db.lineage_id, event_type="cognition.proposed",
+                         aggregate_ref="project/p1", actor_ref="a1",
+                         payload={"note": "seed accounts", "admin_token": "demo-admin-token-1234"})
+        uow.conn.execute(
+            "INSERT INTO commands(project_id,principal_id,command_kind,command_id,input_hash,result_json,event_seq,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            ("p1", "a1", "task.create", "domain-id", "hash", json.dumps({"task_id": "t1",
+                                                                        "api_key": "demo-api-key-1234"}), None, 100),
+        )
+    assert_credential_migration_ready(state), "业务字段不该触发凭据迁移"
+
+    # 同一张库里真出现凭据行，仍然必须拦（防护面没有被放宽）。
+    with db.transaction("real-credential") as uow:
+        uow.conn.execute(
+            "INSERT INTO commands(project_id,principal_id,command_kind,command_id,input_hash,result_json,event_seq,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            ("p1", "a1", "agent.enroll", "real-id", "hash",
+             json.dumps({"secret_token": SECRET, "agent_id": "a1"}), None, 200),
+        )
+    with pytest.raises(RuntimeError, match="^credential_migration_required$"):
+        assert_credential_migration_ready(state)
+
+    # 凭据出现在 authority 模块（会话/票据/授权真正所在的地方）同样要拦。
+    state2 = tmp_path / "authority-case/.tsunagou/local"
+    state2.mkdir(parents=True)
+    db2 = ProjectDatabase(state2 / "state.sqlite3", project_id="p1")
+    with db2.transaction("authority-secret") as uow:
+        uow.put_module_state("authority", json.dumps({
+            "sessions": {"s1": {"active": True, "status": "ready", "secret_token": SECRET}},
+            "main_agent_id": "a1",
+        }))
+    with pytest.raises(RuntimeError, match="^credential_migration_required$"):
+        assert_credential_migration_ready(state2)
+
+
 def test_quarantine_report_survives_crash_after_unlink_before_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _, migration = _legacy(tmp_path)
     plan = migration.preview()
