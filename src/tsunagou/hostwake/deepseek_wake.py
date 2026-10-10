@@ -306,6 +306,37 @@ class DeepSeekWakeProvider:
         return {"provider": self.provider_name, "agent_id": binding.agent_id,
                 "status": item[0].status, "delivery_timing": declared, "timing_source": source}
 
+    def session_state(self, agent_id: str) -> str | None:
+        """What the host says this Agent's session is doing -- ``running`` / ``idle`` /
+        ``unloaded`` -- or ``None`` when it will not say.
+
+        The idle watchdog needs this to tell "this worker stopped in the middle of its
+        attempt" from "this worker is busy" (2026-10-10: an Agent finished part of its work,
+        wrote a summary, and its turn ended there -- a text-only reply *is* the end of a turn
+        in the host, so the session goes idle and nobody calls it again). Only the plugin can
+        answer, so a lane that cannot (Codex today) returns ``None`` and the caller falls back
+        to its own activity evidence. Never raises: a host that cannot be reached is "won't
+        say", not "is idle".
+        """
+
+        item = self.store.get(agent_id)
+        if item is None:
+            return None
+        session_id = str(item[1].get("session_id") or "").strip()
+        if not session_id:
+            return None
+        try:
+            from tsunagou.application.deepseek_wake_runner import run_deepseek_operation
+
+            result = dict(run_deepseek_operation(
+                "status", project_id=self.store.project_id, agent_id=agent_id,
+                conversation_id=session_id, message_id="idle-watchdog-session-state",
+            ))
+        except Exception:
+            return None
+        state = str(result.get("state") or "").strip()
+        return state or None
+
     def close(self, binding: HostBindingRef, reason: str) -> None:
         """Nothing to close: this provider holds no process, socket or thread."""
         del binding, reason

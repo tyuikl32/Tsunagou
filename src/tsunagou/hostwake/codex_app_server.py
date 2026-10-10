@@ -1264,6 +1264,27 @@ class HostWakeProviderRegistry:
                 return candidate
         return None
 
+    def session_state(self, agent_id: str) -> str | None:
+        """Ask whichever lane owns this Agent what its session is doing.
+
+        Host-neutral on purpose: a lane that cannot answer (Codex today) simply does not
+        implement ``session_state``, and the caller falls back to its own evidence rather
+        than being told a comfortable lie. See ``DeepSeekWakeProvider.session_state``.
+        """
+
+        item = self.store.get(agent_id)
+        if item is None:
+            return None
+        provider = self._provider(item[0])
+        probe = getattr(provider, "session_state", None)
+        if not callable(probe):
+            return None
+        try:
+            value = probe(agent_id)
+        except Exception:
+            return None
+        return str(value) if value else None
+
     def register_binding(self, *, provider: str = "managed_app_server", **kwargs: Any) -> HostBindingRef:
         if provider == "managed_app_server":
             return self.managed.register_binding(**kwargs)

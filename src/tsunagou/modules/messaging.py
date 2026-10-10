@@ -37,6 +37,10 @@ WAKE_WORTHY_KINDS = frozenset({
     # 这两条消息说的就是"有人卡住了"本身，所以它们在白名单里 —— 投递走既有的自动通道。
     "coordination.stalled",
     "coordination.waiting",
+    # 看门狗的第三条（2026-10-10 用户实测报告）：某个 Agent 的尝试**还没提交**，而它的回合
+    # 已经结束了（在 DSH 里"只输出一段总结"就等于回合结束）。这时它不会自己再动，只有把它
+    # 叫回来才有人发现"活干了一半"。与上面两条不同，收件人是那个 worker 自己。
+    "task.resume",
 })
 # Deliberately absent: plain ``message``/``notice`` peer traffic (nothing is blocked), and
 # ``user_decision.pending`` — its recipient is a running attempt by construction, so the

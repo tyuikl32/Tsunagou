@@ -310,14 +310,22 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
     watchdog_task: asyncio.Task[None] | None = None
     idle_watchdog: IdleWatchdog | None = None
     if database is not None and state_runtime is not None and project_registry is not None:
+        # 宿主对"某条会话现在在干什么"的说法（``running`` / ``idle`` / ``unloaded``）。
+        # 只有 DSH 插件能回答；别的宿主返回 None，看门狗就退回自己的活动证据（见
+        # ``application/idle_watchdog.py`` 的 resume 那一段）。没有唤醒通道时整个观察是空。
+        observe_session = getattr(hostwake_provider, "session_state", None)
         idle_watchdog = IdleWatchdog(
             reader=WatchdogFactsReader(
                 database=database, tasks=tasks, messages=messages, authority=authority,
                 lifecycle=lifecycle, liveness=session_liveness, project_registry=project_registry,
+                session_state=observe_session,
             ),
             database=database, messages=messages, authority=authority, lifecycle=lifecycle,
             state_runtime=state_runtime,
         )
+        # 与其它运行时对象一样暴露出来：测试要能证明"宿主观察真的接上了"，
+        # 运维也才有地方看这个判定器现在长什么样。
+        application.state.idle_watchdog = idle_watchdog
 
         @application.on_event("startup")
         async def start_idle_watchdog() -> None:

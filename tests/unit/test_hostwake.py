@@ -1088,6 +1088,12 @@ def test_the_shipped_container_wires_both_channels_into_one_dispatcher(
         assert [type(item).__name__ for item in registry.extra] == ["DeepSeekWakeProvider"]
         assert isinstance(registry.store, CombinedBindingStore)
         assert registry.store.get("nobody-at-all") is None
+        # 空闲看门狗要能问"这条会话现在在干什么"（2026-10-10：worker 输出总结后会话就空闲，
+        # 没有人再叫它）。这个问题只有宿主能答，所以接的是注册表那条 lane 路由；没有绑定的
+        # Agent 必须得到 None（"不说"），而不是被猜成 idle。
+        watchdog = app.state.idle_watchdog
+        assert watchdog.reader.session_state is not None, "宿主观察没接上看门狗"
+        assert watchdog.reader.session_state("nobody-at-all") is None
     finally:
         app.state.host_delivery.stop()
         app.state.project_database.release_process_lock()

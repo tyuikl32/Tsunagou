@@ -45,11 +45,13 @@ main 可以在可授权范围内留证接受风险、证明结果或授权新 Op
 
 DSH 上的唤醒永远由某个 Agent 显式调用（`coordination.wake`）才会发生，于是"没人动 ⇒ 没人叫"正好闭在最需要它的那一步。daemon 里因此有一个**空闲看门狗**（`application/idle_watchdog.py`，lifespan 上的周期任务）：它只做一件事 —— 在**确定没人能再动**的时候给 main 发一条自解释的消息。
 
-- **两个触发条件**：`deadlock`（活还在、没有在跑的 Attempt、没有可领的任务、没有已交付待验收的结果、没有待确认的完工提案、没有未决的用户决定，且连事件都安静了 `IDLE_SECONDS`）；`auto_continue`（main 有活 —— 待验收的结果或收件箱里的未读 —— 而其他人都停了）。消息种类分别是 `coordination.stalled` / `coordination.waiting`，都在 `WAKE_WORTHY_KINDS` 里，所以投递走既有的 `outbox(kind='host_wake')` 通道，不是新机制。
-- **硬约束**：只要还有**任何一个会话在活动**（判据是已认证会话调用 —— 桥每 30 秒一次便宜读取），就完全不叫。2026-10-10 实测里 main 的 51 分钟"静默"期间 worker 正以 48–154 次调用的强度干活，那时叫 main 是纯噪音。
-- **防循环**：冷却 `COOLDOWN_SECONDS`；同一判定叫够 `MAX_ATTEMPTS` 次还没人动就停手，并提一条 `coordination.stalled` 用户决定（控制台既有通道），交给用户。
-- **可审计**：每次判定落一条 `coordination.idle_watchdog` 事件，payload 里带当时**全部**判据值（在线会话数、在跑的尝试、可领任务、待验收、未决决定、安静秒数）——"当时为什么叫"事后可查。
-- **开关**：直接复用项目设置 `auto_wake_multi_agent`（默认 true）。不新增命令字段 ⇒ 协议与 `schema_bundle_digest` 不变。**范围**：只叫 main；空闲 worker 的唤醒仍靠派活与唤醒策略（后续）。
+- **三个触发条件**：`deadlock`（活还在、没有在跑的 Attempt、没有可领的任务、没有已交付待验收的结果、没有待确认的完工提案、没有未决的用户决定，且连事件都安静了 `IDLE_SECONDS`）；`auto_continue`（main 有活 —— 待验收的结果或收件箱里的未读 —— 而其他人都停了）；`resume`（2026-10-10 用户实测新增：**某个 Agent 有没提交、也没结束的 Attempt**，而它自己和整个项目都安静了 `RESUME_SECONDS`）。消息种类分别是 `coordination.stalled` / `coordination.waiting` / `task.resume`，都在 `WAKE_WORTHY_KINDS` 里，所以投递走既有的 `outbox(kind='host_wake')` 通道，不是新机制。前两条发给 main，`resume` 发给**那个 worker 自己**。
+- **`resume` 为什么需要**：在宿主里**只用文字回复就等于回合结束**（DSH 的会话状态词表 `running` / `idle` / `unloaded`），所以一个 Agent 输出一段总结之后就没人会再叫它 —— 2026-10-10 实测里它因此空闲了半天。daemon 看得出来"它还有没提交的尝试"，而且自动通道现在通了。
+- **`resume` 的护栏（防误叫）**：①项目也在安静（别人还在推进 ⇒ 它很可能在等那个人）；②没有未决的用户决定（球在用户手上谁都不催）；③**没有人在欠它答复**（它问出去的答复还挂着未结清义务 ⇒ 这种安静是故意的）；④宿主没把它标成 `running`（宿主不说就不因此排除）；⑤它自己安静了 `RESUME_SECONDS`。要等别人又不想被当成停在中途，协议里本来就有表达：`task.block` 结束这条尝试、或者回一条消息把球踢出去。另有 `stalled_waiters` 处理那个盲区：候选被③护住、而 `deadlock` 又因为还有在跑的尝试不成立时，把"有条答复一直没人给"交给 main。
+- **硬约束**：只要还有**任何一个会话在活动**（判据是已认证会话调用 —— 桥每 30 秒一次便宜读取），`deadlock` / `auto_continue` 就完全不叫。2026-10-10 实测里 main 的 51 分钟"静默"期间 worker 正以 48–154 次调用的强度干活，那时叫 main 是纯噪音。
+- **防循环**：冷却 `COOLDOWN_SECONDS`；同一判定叫够 `MAX_ATTEMPTS` 次还没人动就停手，并提一条 `coordination.stalled` 用户决定（控制台既有通道），交给用户。`resume` 是**逐条尝试**记的账（`resumed_at` / `resume_counts`），叫够 `RESUME_MAX_ATTEMPTS` 次就交给 main（催、换人、收回任务都是它权限内的事），不走用户面。
+- **可审计**：每次判定落一条 `coordination.idle_watchdog` 事件，payload 里带当时**全部**判据值（在线会话数、在跑的尝试、可领任务、待验收、未决决定、安静秒数、`owed_replies`、每条没提交尝试的安静秒数与宿主说法）——"当时为什么叫"事后可查。
+- **开关**：直接复用项目设置 `auto_wake_multi_agent`（默认 true）。不新增命令字段 ⇒ 协议与 `schema_bundle_digest` 不变。宿主说法来自 `HostWakeProviderRegistry.session_state`（只有 DSH 那条 lane 会回答；拿不到就是 `None`，判据退回"它自己安静了多久"）。
 
 ## checkpoint 回退与 replica 切换
 
