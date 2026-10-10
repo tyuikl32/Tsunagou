@@ -37,7 +37,6 @@ from tsunagou.hostwake import (
     WakeDispatcher,
 )
 from tsunagou.hostwake.deepseek_wake import (
-    CombinedBindingStore,
     DeepSeekWakeBindingStore,
     DeepSeekWakeProvider,
 )
@@ -185,9 +184,10 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
                 DesktopAttachProvider(binding_store),
                 extra=(DeepSeekWakeProvider(deepseek_bindings),),
             )
-            # One lookup, two stores: the dispatcher must see both the Codex and the DSH
-            # bindings, but it still dispatches through the registry above.
-            hostwake_provider.store = CombinedBindingStore(binding_store, deepseek_bindings)
+            # 注册表自己把每条 lane 的绑定存储合并给 dispatcher 那**唯一一次**查找
+            # （见 ``HostWakeProviderRegistry.__init__``）：这里不再手动赋值 —— 手动那一版
+            # 只要哪天加 lane 忘了赋值，那条通道就静默变回死通道（2026-10-10 真机复测里
+            # 就是这么拿到 host_binding_not_found 的）。
             wake_dispatcher = WakeDispatcher(
                 hostwake_provider,
                 attempts_path=state_path / "host-wake-attempts.json",

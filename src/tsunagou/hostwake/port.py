@@ -19,6 +19,57 @@ def utc_now() -> str:
     return str(format_timestamp(now_ms()))
 
 
+class CombinedBindingStore:
+    """Several binding stores behind the **one** lookup ``WakeDispatcher`` performs.
+
+    The dispatcher asks exactly one question -- "is there a usable binding for this
+    Agent?" -- through ``provider.store``. A host registry that routes to more than one
+    lane therefore has to answer that question for every lane, not just for the one that
+    happened to be passed first.
+
+    That is not a nicety: when the registry's ``store`` was a plain attribute holding only
+    the Codex store, a lane added afterwards was invisible to the dispatcher and every
+    delivery for it ended as ``host_binding_not_found`` -- the provider itself answered
+    ``ready`` for the same Agent. That is the dead-channel symptom 待改 12 removed, and it
+    reproduced live on 2026-10-10 while wiring DSH, so the merge lives here (host-neutral,
+    in the layer both the Codex registry and the DSH store already depend on) instead of
+    depending on a caller remembering to reassign an attribute.
+
+    Nothing is merged into the members' own files: each store keeps owning its bindings,
+    and a miss everywhere is still a miss (which is what keeps an unbound Agent
+    fail-closed).
+    """
+
+    def __init__(self, *stores: Any) -> None:
+        self.stores = stores
+
+    def get(self, agent_id: str) -> tuple[HostBindingRef, dict[str, Any]] | None:
+        for store in self.stores:
+            getter = getattr(store, "get", None)
+            item = getter(agent_id) if callable(getter) else None
+            if item is not None:
+                return item
+        return None
+
+    def list_refs(self) -> list[HostBindingRef]:
+        refs: list[HostBindingRef] = []
+        for store in self.stores:
+            lister = getattr(store, "list_refs", None)
+            if callable(lister):
+                refs.extend(lister())
+        return refs
+
+    def update_status(self, agent_id: str, status: str, *, reason: str | None = None) -> HostBindingRef:
+        for store in self.stores:
+            getter = getattr(store, "get", None)
+            if not callable(getter) or getter(agent_id) is None:
+                continue
+            updater = getattr(store, "update_status", None)
+            if callable(updater):
+                return updater(agent_id, status, reason=reason)
+        raise KeyError("host_binding_not_found")
+
+
 @dataclass(frozen=True, slots=True)
 class HostBindingRef:
     """A secret-free reference to a host binding.

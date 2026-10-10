@@ -35,6 +35,7 @@ from typing import Any
 
 from tsunagou.hostwake.port import (
     BindingStatus,
+    CombinedBindingStore,
     HostBindingRef,
     HostCapabilityReport,
     HostEvidence,
@@ -57,6 +58,16 @@ from tsunagou.shared_kernel.time import format_timestamp, now_ms
 # ``HostBindingRef.provider`` says when a wake will be delivered through the
 # installed DSH wake plugin.
 DEEPSEEK_WAKE_PROVIDER = "deepseek_wake"
+
+# ``CombinedBindingStore`` lives in ``hostwake.port`` (both this module and the Codex
+# registry need it, and neither should import the other). It is re-exported here because
+# this is where callers have been importing it from.
+__all__ = [
+    "DEEPSEEK_WAKE_PROVIDER",
+    "CombinedBindingStore",
+    "DeepSeekWakeBindingStore",
+    "DeepSeekWakeProvider",
+]
 
 
 def _object(path: Path) -> dict[str, Any]:
@@ -230,45 +241,6 @@ class DeepSeekWakeBindingStore:
         finally:
             if os.path.exists(temp_name):
                 os.unlink(temp_name)
-
-
-class CombinedBindingStore:
-    """Two binding stores behind the one lookup ``WakeDispatcher`` performs.
-
-    The dispatcher only asks "is there a usable binding for this Agent?", so a DSH
-    binding and a Codex binding must answer through the same object. Nothing is merged
-    into the other side's file: each member keeps owning its own bindings, and a miss
-    on both is still a miss (which is what keeps an unbound Agent failing closed).
-    """
-
-    def __init__(self, *stores: Any) -> None:
-        self.stores = stores
-
-    def get(self, agent_id: str) -> tuple[HostBindingRef, dict[str, Any]] | None:
-        for store in self.stores:
-            getter = getattr(store, "get", None)
-            item = getter(agent_id) if callable(getter) else None
-            if item is not None:
-                return item
-        return None
-
-    def list_refs(self) -> list[HostBindingRef]:
-        refs: list[HostBindingRef] = []
-        for store in self.stores:
-            lister = getattr(store, "list_refs", None)
-            if callable(lister):
-                refs.extend(lister())
-        return refs
-
-    def update_status(self, agent_id: str, status: str, *, reason: str | None = None) -> HostBindingRef:
-        for store in self.stores:
-            getter = getattr(store, "get", None)
-            if not callable(getter) or getter(agent_id) is None:
-                continue
-            updater = getattr(store, "update_status", None)
-            if callable(updater):
-                return updater(agent_id, status, reason=reason)
-        raise KeyError("host_binding_not_found")
 
 
 class DeepSeekWakeProvider:

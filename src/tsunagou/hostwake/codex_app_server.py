@@ -27,6 +27,7 @@ from typing import Any, cast
 from tsunagou.hostwake.binding import PrivateBindingStore
 from tsunagou.hostwake.codex_desktop import CodexDesktopProvider
 from tsunagou.hostwake.port import (
+    CombinedBindingStore,
     HostBindingRef,
     HostCapabilityReport,
     HostEvidence,
@@ -1243,6 +1244,19 @@ class HostWakeProviderRegistry:
             native = CodexDesktopProvider(self.store)
         self.native = native
         self.extra = tuple(extra)
+        # One lookup, every lane: ``WakeDispatcher`` asks ``provider.store`` whether this
+        # Agent has a usable binding, so a provider added to ``extra`` must be visible there
+        # *by construction*. When that was left to the caller, adding a lane without also
+        # reassigning ``registry.store`` left its bindings invisible and every delivery for
+        # that lane ended as ``host_binding_not_found`` -- while the provider itself answered
+        # ``ready`` for the same Agent. That is the dead-channel symptom 待改 12 removed and
+        # it reproduced live on 2026-10-10 while wiring DSH. ``native`` above deliberately
+        # keeps the Codex store alone.
+        extra_stores = [candidate for candidate in
+                        (getattr(provider, "store", None) for provider in self.extra)
+                        if candidate is not None]
+        if extra_stores:
+            self.store = CombinedBindingStore(self.store, *extra_stores)
 
     def _extra_provider(self, provider_name: str) -> HostWakePort | None:
         for candidate in self.extra:

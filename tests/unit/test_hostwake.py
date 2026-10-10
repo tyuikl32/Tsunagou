@@ -23,6 +23,7 @@ from tsunagou.hostwake import (
     CodexAppServerClient,
     CodexDesktopProvider,
     DesktopAttachProvider,
+    HostBindingRef,
     HostWakeError,
     HostWakeProviderRegistry,
     HostWakeRequest,
@@ -902,6 +903,51 @@ class _NoBindings:
     def get(self, agent_id: str) -> None:
         del agent_id
         return None
+
+
+class _OneBinding:
+    """A store that knows exactly one Agent -- enough to prove a lane is visible."""
+
+    def __init__(self, agent_id: str) -> None:
+        self.agent_id = agent_id
+
+    def get(self, agent_id: str) -> tuple[Any, dict[str, Any]] | None:
+        if agent_id != self.agent_id:
+            return None
+        return (HostBindingRef(
+            binding_id="binding-dsh", agent_id=agent_id, provider="deepseek_wake",
+            adapter_profile="deepseek", endpoint_kind="plugin",
+        ), {"wake_mode": "queue"})
+
+
+class _OneLaneProvider:
+    provider_name = "deepseek_wake"
+
+    def __init__(self, agent_id: str) -> None:
+        self.store = _OneBinding(agent_id)
+
+
+def test_a_lane_added_to_extra_is_visible_without_reassigning_the_store(tmp_path: Path) -> None:
+    """Adding a provider to ``extra`` has to be enough on its own.
+
+    Live re-test, 2026-10-10: the DSH binding verified ``ready`` through its own store while
+    the dispatcher -- reading ``registry.store``, which then held only the Codex store --
+    answered ``host_binding_not_found`` for that same Agent. That is the dead-channel
+    symptom 待改 12 removed, and it returns the moment a lane is added and the attribute is
+    not reassigned by hand. So the registry merges the lanes itself, and this pins it.
+    """
+
+    codex_store = PrivateBindingStore(tmp_path / "host-bindings.json")
+    registry = HostWakeProviderRegistry(
+        ManagedCodexProvider(codex_store), DesktopAttachProvider(codex_store),
+        extra=(_OneLaneProvider("agent-dsh"),),
+    )
+    # 没有任何人重新赋值 registry.store：这一行就是那条规则。
+    found = registry.store.get("agent-dsh")
+    assert found is not None and found[0].provider == "deepseek_wake"
+    assert registry.store.get("agent-nobody") is None
+    # Codex 那两条 lane 照旧：extra 只是并列，不是替换。
+    assert [type(item).__name__ for item in registry.extra] == ["_OneLaneProvider"]
 
 
 def test_a_degraded_dsh_binding_is_remembered_and_can_recover(
