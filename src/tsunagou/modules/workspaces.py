@@ -73,6 +73,44 @@ def _path_in_scope(path: str, paths: tuple[str, ...] | None) -> bool:
                for allowed in paths)
 
 
+def _scope_violations(changed_paths: list[str] | tuple[str, ...], scope_paths: tuple[str, ...] | None) -> list[str]:
+    """改动里落在**声明范围之外**的那些文件。
+
+    ``_path_in_scope`` 一直在，只是**没有任何一处拿它判过结果**：2026-10-10 实测里一位 worker 改了
+    范围外的 ``e2e/global-setup.ts``，main 只能靠 ``git status`` 自己发现。范围与改动都是提交时手上
+    就有的数据，所以这里把它算出来，让"越界"从"事后考古"变成"结果自带的一条事实"。
+    """
+
+    if scope_paths is None:
+        return []
+    return sorted(str(path) for path in changed_paths if not _path_in_scope(str(path), scope_paths))
+
+
+#: 依赖环境里"能被哈希、改了就说明环境被动过"的文件。2026-10-10 实测：一位 worker 改了
+#: ``node_modules`` 才让官方验收命令变绿，而没有任何机制告诉调用方"依赖被改过"，于是 main 把
+#: 一个错误结论发给了另一个 worker、后来不得不公开更正。这里只哈希**清单类**文件（便宜、稳定），
+#: 不遍历整棵树 —— 包管理器自己的已安装清单已经足以回答"装的和锁文件说的是一回事吗"。
+_ENVIRONMENT_FILES = (
+    "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock",
+    "node_modules/.package-lock.json", "node_modules/.modules.yaml", "node_modules/.yarn-state.yml",
+    "requirements.txt", "poetry.lock", "uv.lock", "Pipfile.lock", "Cargo.lock", "go.sum",
+)
+
+
+def _environment_fingerprint(repository: Path) -> dict[str, Any]:
+    """环境指纹：清单类文件的摘要 + 一个合成 digest（结果里带上它，才谈得上"环境被动过"）。"""
+
+    files: dict[str, str] = {}
+    for name in _ENVIRONMENT_FILES:
+        path = repository / name
+        try:
+            if path.is_file() and not path.is_symlink():
+                files[name] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            continue
+    return {"files": files, "digest": canonical_digest(files)}
+
+
 def _safe_status_path(path: str) -> str | None:
     try:
         return _normalise_relative_path(path)
@@ -326,6 +364,15 @@ class ResultManifest:
     patch_artifact_domain: str | None = None
     patch_artifact_owner: str | None = None
     root_observations: tuple[dict[str, Any], ...] = ()
+    #: 声明范围之外的改动（``_scope_violations``）。空 = 全部落在范围内；``scope_paths`` 为
+    #: ``None``（主 Agent 选的是整个根）时它必然为空 —— 那时没有"越界"这个概念。
+    scope_violations: tuple[str, ...] = ()
+    #: 依赖环境指纹（``_environment_fingerprint``）：清单类文件的摘要。它让"环境被动过"这件事
+    #: 从"没人知道"变成结果里的一等事实（2026-10-10：worker 改了 node_modules，main 因此误判）。
+    environment_digest: str | None = None
+    #: 提交时环境就不干净（有未跟踪文件、基线冲突，或指纹与基线不同）。
+    environment_dirty: bool = False
+    environment_files: tuple[tuple[str, str], ...] = ()
 
 
 class GitReadOnlyPort:
@@ -498,6 +545,19 @@ class WorkspaceService:
             return (_safe_status_path(path) is not None and _path_in_scope(path, normalised_scope)
                     and not (excluded_path is not None and _path_in_scope(path, (excluded_path,))))
 
+        def outside_scope(path: str) -> bool:
+            """安全、但落在声明范围之外的路径。
+
+            与 ``admitted`` 的差别只有一条：范围。2026-10-10 实测：一位 worker 改了声明之外的
+            ``e2e/global-setup.ts``，而"改动清单"是按范围过滤出来的 ⇒ 越界写入**根本进不了**清单，
+            main 只能靠 ``git status`` 自己发现。状态本来就取回来了（下面同一条 ``git status``），
+            所以这里只是把被范围过滤掉的那些**记下来**，不当成改动、也不参与摘要。
+            """
+
+            return (_safe_status_path(path) is not None
+                    and not _path_in_scope(path, normalised_scope)
+                    and not (excluded_path is not None and _path_in_scope(path, (excluded_path,))))
+
         def git_text(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
             return subprocess.run(
                 ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "--literal-pathspecs", *args],
@@ -523,6 +583,7 @@ class WorkspaceService:
                 status_records = [(state, path[len(prefix) + 1:]) for state, path in status_records
                                   if path.startswith(prefix + "/")]
             admitted_records = [(state, path) for state, path in status_records if admitted(path)]
+            outside_scope_paths = sorted({path for _state, path in status_records if outside_scope(path)})
             staged = git_text(["ls-files", "--stage", "-z", "--", "."])
             for record in staged.stdout.split("\0"):
                 if not record:
@@ -537,6 +598,7 @@ class WorkspaceService:
             branch = git_text(["branch", "--show-current"], check=False).stdout.strip() or None
         else:
             observed_paths = set()
+            outside_scope_paths = []
             for directory, directories, files in os.walk(repository, followlinks=False):
                 directory_path = Path(directory)
                 for name in list(directories):
@@ -637,6 +699,11 @@ class WorkspaceService:
             "scope_digest": calculated_scope_digest,
             "content_entries": content_entries,
             "index_entries": index_entries,
+            "environment": _environment_fingerprint(repository),
+            # 越界写入不是"改动"，但必须看得见：被范围过滤掉的安全路径就是它们。
+            "scope_violations": (sorted(set(outside_scope_paths)
+                                       | set(_scope_violations(changed_paths, normalised_scope)))
+                                if git_repository else []),
         }
         if include_patch:
             observation["patch_bytes"] = patch
@@ -682,6 +749,8 @@ class WorkspaceService:
         validation_metadata: list[dict[str, Any]] | None = None,
         observed_validation_metadata: list[dict[str, Any]] | None = None,
         root_observations: list[dict[str, Any]] | None = None,
+        scope_violations: list[str] | None = None,
+        environment: dict[str, Any] | None = None,
     ) -> ResultManifest:
         workspace = self.workspaces[workspace_id]
         baseline = self.baselines.get(workspace.baseline_manifest_id or "")
@@ -710,6 +779,18 @@ class WorkspaceService:
             observed_validation_metadata, allow_stronger=True,
         )
         all_validation = safe_validation + safe_observed_validation
+        # 越界：**任务声明**的执行范围之外的改动。工作区自己的 scope 上面已经硬拒了
+        # （``workspace_scope_denied``），但那是 main 选工作区时给的范围；任务声明（
+        # ``execution_scope``）是另一份数据，此前从来没有人拿它判过结果 —— 2026-10-10 实测里
+        # 一位 worker 改了 ``e2e/global-setup.ts``，main 只能靠 ``git status`` 自己发现。
+        safe_violations = tuple(sorted(str(path) for path in (scope_violations or ())))
+        environment_digest = None
+        environment_files: tuple[tuple[str, str], ...] = ()
+        if isinstance(environment, dict):
+            environment_digest = environment.get("digest")
+            files = environment.get("files")
+            if isinstance(files, dict):
+                environment_files = tuple(sorted((str(key), str(value)) for key, value in files.items()))
         body = {
             "workspace_id": workspace_id, "attempt_id": attempt_id, "baseline_digest": baseline_digest,
             "commit_refs": commit_refs, "patch_artifact_ref": patch_artifact_ref,
@@ -723,6 +804,8 @@ class WorkspaceService:
             "patch_artifact_domain": f"workspace/{workspace_id}" if patch_artifact_ref else None,
             "patch_artifact_owner": submitted_by if patch_artifact_ref else None,
             "root_observations": root_observations or [],
+            "scope_violations": list(safe_violations),
+            "environment_digest": environment_digest,
         }
         result = ResultManifest(
             new_id(), workspace_id, attempt_id, baseline_digest, tuple(commit_refs), patch_artifact_ref,
@@ -732,6 +815,9 @@ class WorkspaceService:
             f"workspace/{workspace_id}" if patch_artifact_ref else None,
             submitted_by if patch_artifact_ref else None,
             tuple(root_observations or ()),
+            safe_violations, environment_digest,
+            bool(normalised_untracked) or baseline_conflict or bool(safe_violations),
+            environment_files,
         )
         self.results[result.manifest_id] = result
         workspace.result_manifest_id = result.manifest_id

@@ -69,5 +69,15 @@ class ResourceConflict(TsunagouError, ValueError):
         self.detail = detail
 
 
+class PermissionRefused(CommandRefused):
+    """A permission refusal the refused caller can act on.
+
+    Same answer as ``PermissionError`` (403) but structured, so the Agent that was turned away
+    learns what it *does* hold and which call would work, instead of only the word
+    ``capability_denied``. 2026-10-10 实测：一个 worker 撞了 ``capability_denied``，明细只聚合
+    给 main，它自己既不知道缺哪一项授权，也看不到自己有哪些能力，于是只能反复试同一个调用。
+    """
+
+
 class LockUnavailable(TsunagouError):
     code = "project_lock_unavailable"

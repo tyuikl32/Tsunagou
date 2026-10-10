@@ -693,6 +693,17 @@ class ServiceStateRuntime:
             revision_before=primary.get("revision_before"), revision_after=primary.get("revision_after"),
             evidence_refs=tuple(dict.fromkeys(refs)),
         )
+        # 发送方**显式要求唤醒**的消息（``message.send {wake: true}``）：种类不在白名单里，但
+        # 意图和看门狗那两条一样明确。排程只能在这里做 —— outbox 行要挂刚才那条事件的
+        # ``event_seq``，而 handler 执行时事件还没落库（2026-10-10：在 handler 里直接排会被拒
+        # ``append_event_required_before_outbox``）。
+        for message_id in getattr(uow, "explicit_wakes", ()):
+            explicit = self.messages.messages.get(str(message_id))
+            if explicit is not None:
+                uow.stage_outbox(kind="host_wake", target_ref="message/" + str(message_id), payload={
+                    "message_id": str(message_id),
+                    "recipient_agent_id": explicit.recipient_agent_id,
+                })
         for change in changes:
             uow.conn.execute(
                 "UPDATE entity_audit_metadata SET last_event_seq=? WHERE project_id=? AND lineage_id=? AND subject_ref=?",

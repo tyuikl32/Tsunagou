@@ -213,12 +213,18 @@ class MessageStore:
             self._save()
             return message
 
-    def fetch(self, recipient_agent_id: str, *, limit: int = 50, now: float | None = None) -> list[Message]:
+    def fetch(self, recipient_agent_id: str, *, limit: int = 50, now: float | None = None,
+              unread: bool = False) -> list[Message]:
         if limit <= 0 or limit > 200:
             raise ValueError("invalid_batch_limit")
         now = _now() if now is None else now
         with self._lock:
             candidates = self._waiting_deliveries(recipient_agent_id, now)
+            if unread:
+                # "只看未读"：已经**展示过**的就不再吐回来。2026-10-10 实测：一个 Agent 反复看到
+                # 同一批已经处理过的消息（它的租约会过期、于是又变回可领），最后一次性补 ACK 七条，
+                # 其中一条还失败 —— 读过的就该能过滤掉，而不是靠人记自己处理过哪些。
+                candidates = [item for item in candidates if item.presented_at is None]
             selected = candidates[:limit]
             for delivery in selected:
                 delivery.status = "leased"
@@ -256,6 +262,10 @@ class MessageStore:
     def ack(self, recipient_agent_id: str, message_id: str) -> None:
         with self._lock:
             delivery = self._delivery_for(recipient_agent_id, message_id)
+            if delivery.status == "acked":
+                # 幂等：重复 ACK 是"我刚才也确认过"，不是错误。2026-10-10 实测里补 ACK 时有一条
+                # 被拒，调用方只好先重新 claim 再试一次 —— 确认这件事不该需要重新取一遍。
+                return
             delivery.status = "acked"
             delivery.acked_at = _now()
             delivery.lease_until = None
@@ -347,9 +357,17 @@ class MessageStore:
             return messages[index + 1 :]
 
     def _delivery_for(self, recipient_agent_id: str, message_id: str) -> Delivery:
+        """Which delivery this caller may act on — judged by the **message**, not the copy.
+
+        收件人按消息判断。投递行只是这条消息的状态副本，两份不一致时以消息为准：2026-10-10
+        实测里有一条属于调用方自己的消息 ACK 失败、报 ``inbox_access_denied``，还得先重新
+        claim 一次（那一份副本带着旧的 agent_id）。消息才是"这条是谁的"的权威，所以这条放宽
+        不会把消息交给别人 —— 别人的消息仍然拒绝。
+        """
+
         message = self.messages.get(message_id)
         delivery = self.deliveries.get(message_id)
-        if message is None or delivery is None or delivery.recipient_agent_id != recipient_agent_id:
+        if message is None or delivery is None or message.recipient_agent_id != recipient_agent_id:
             raise PermissionError("inbox_access_denied")
         return delivery
 

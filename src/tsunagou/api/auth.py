@@ -9,6 +9,25 @@ from typing import Any
 from tsunagou.api.liveness import SessionLiveness
 from tsunagou.interfaces.runtime import PrincipalContext
 from tsunagou.modules.authority import AuthorityService
+from tsunagou.shared_kernel.errors import PermissionRefused
+
+
+def _capability_detail(
+    authority: AuthorityService, agent_id: str, session_id: str | None,
+    capability: str, next_step: str,
+) -> dict[str, Any]:
+    """What a refused caller actually holds, so it can stop retrying the same call.
+
+    2026-10-10 实测：一个 worker 撞了 ``capability_denied``，明细只聚合给 main —— 它自己既不知道
+    缺哪一项授权、也看不到手上有哪些，只能反复试。"把事实给被拒的人"比"只给监督者"便宜得多。
+    """
+
+    held = sorted({
+        str(grant.kind) for grant in authority.grants.values()
+        if grant.principal_id == agent_id and grant.status == "active"
+        and (grant.session_id in {None, session_id})
+    })
+    return {"capability": capability, "held": held, "next": next_step}
 
 
 class LocalCommandAuthenticator:
@@ -83,7 +102,11 @@ class LocalCommandAuthenticator:
                 and grant.session_id == session_id and grant.status == "active"
                 for grant in self.authority.grants.values()
             ):
-                raise PermissionError("capability_denied")
+                raise PermissionRefused("capability_denied", _capability_detail(
+                    self.authority, session.agent_id, session_id, "task.execute",
+                    "执行类调用要有 task_attempt 授权：先 task.begin 开一条尝试；"
+                    "尝试被收回/中断时让 main 用 task.recover 或重新指派，别重复试同一个调用。",
+                ))
             return PrincipalContext("X", session.agent_id, session_id, connection_epoch)
         if principal_kind == "D":
             # Bootstrap authenticated session: the device/daemon proves it still
@@ -115,11 +138,19 @@ class LocalCommandAuthenticator:
                 and grant.session_id in {None, session_id} and grant.status == "active"
                 for grant in self.authority.grants.values()
             ):
-                raise PermissionError("capability_denied")
+                raise PermissionRefused("capability_denied", _capability_detail(
+                    self.authority, session.agent_id, session_id, "task.review",
+                    "验收要有 task_review 授权：等 main 把那份结果交给你验收（它交活时会一并发放），"
+                    "或者让 main 重新指派；没有它就不要重试验收调用。",
+                ))
             return PrincipalContext("R", session.agent_id, session_id, connection_epoch)
         grant_kind = "agent_base" if principal_kind == "B" else "main_authority"
         if principal_kind == "M" and self.authority.main_agent_id != session.agent_id:
-            raise PermissionError("capability_denied")
+            raise PermissionRefused("capability_denied", _capability_detail(
+                self.authority, session.agent_id, session_id, "main_authority",
+                "你不是本项目当前的 main（main 的任命由用户决定）：用 context__project_read 确认 "
+                "main_agent_id，让 main 去做，或者请用户重新任命。",
+            ))
         if not any(
             grant.kind == grant_kind and grant.principal_id == session.agent_id
             and grant.status == "active"
@@ -127,7 +158,10 @@ class LocalCommandAuthenticator:
             and (principal_kind == "B" or grant.authority_epoch == self.authority.authority_epoch)
             for grant in self.authority.grants.values()
         ):
-            raise PermissionError("capability_denied")
+            raise PermissionRefused("capability_denied", _capability_detail(
+                self.authority, session.agent_id, session_id, grant_kind,
+                "这条调用需要 " + grant_kind + " 授权：让 main（或用户）重新发放，别重复试同一个调用。",
+            ))
         return PrincipalContext(principal_kind, session.agent_id, session_id, connection_epoch)
 
     def authenticate_reconnect_replay(

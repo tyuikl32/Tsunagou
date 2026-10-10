@@ -64,6 +64,10 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "task.begin": frozenset({"task_id", "expected_task_revision", "expected_revisions"}),
     "task.ready": frozenset({"task_id", "reason"}),
     "task.publish": frozenset({"task_id", "reason"}),
+    # 两条读命令（2026-10-10）：单条任务的现状，和一次交付的可重放证据。此前没有单任务读取
+    # （只能全量 context.project_read），而通知里只带三个 id，验收方只能自己写探针重建证据。
+    "task.get": frozenset({"task_id"}),
+    "task.result.get": frozenset({"task_id", "result_id"}),
     "task.update_plan": frozenset({"task_id", "title", "objective", "acceptance", "required_contract_ids", "reason"}),
     "task.edge.add": frozenset({"source_task_id", "target_task_id", "kind", "expected_revisions"}),
     "task.edge.remove": frozenset({"edge_id", "source_task_id", "target_task_id", "reason", "expected_revisions"}),
@@ -109,13 +113,13 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "durability.reconcile": frozenset({"scope_refs", "reason"}),
     "checkpoint.create.user": frozenset({"reason", "retry_operation_id", "minimum_event_seq"}),
     "checkpoint.create": frozenset({"reason", "minimum_event_seq"}),
-    "inbox.claim": frozenset({"limit"}),
+    "inbox.claim": frozenset({"limit", "unread"}),
     "inbox.fetch": frozenset({"message_id"}),
     "inbox.presented": frozenset({"message_id", "evidence_digest", "evidence_kind"}),
     "inbox.ack": frozenset({"message_id", "reason"}),
     "message.send": frozenset({
         "recipient_agent_id", "kind", "subject_ref", "summary", "payload", "priority",
-        "response_contract", "in_reply_to",
+        "response_contract", "in_reply_to", "wake",
     }),
     "message.respond": frozenset({"obligation_id", "response_message_id"}),
     "context.project_read": frozenset({"since_revision"}),

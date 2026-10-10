@@ -236,7 +236,9 @@
 | 工具 | 必须产生的字段 | handler 还会看 / 语义 |
 |---|---|---|
 | `task__begin` | `task_id`、`expected_task_revision`（整数；不是整数报 `expected_task_revision_required`） | revision 不符报 `task_revision_conflict`；任务状态不是 `open`/`blocked`（且不是自己 running 的 Attempt）报 `task_not_beginable`；依赖没完成报 `task_dependency_pending:<id>`；有未决用户决定报 `user_decision_pending:<decision_id>`。**成功**才返回 `attempt_id`、`execution_scope`、`workspace_id`、`reservation_id` |
-| `task__submit` | `task_id`、`attempt_id`、`summary` | 可选 `evidence_refs`、`artifact_refs`、`validation_metadata`（其中只有 `command` 与 `exit_code` 必填）。Attempt 不是自己的/不是 running 报 `attempt_owner_required`、`attempt_not_running`。交活会自动收工作区结果、释放占用、给 main 发 `task.submitted`（带 `result_id` + `result_digest`） |
+| `task__submit` | `task_id`、`attempt_id`、`summary` | 可选 `evidence_refs`、`artifact_refs`、`validation_metadata`（其中只有 `command` 与 `exit_code` 必填；时间戳、`tool`、`tool_version`、`workspace_digest`、输出 digest **给了就校验**，缺字段的拒绝会点名 `missing`）。Attempt 不是自己的/不是 running 报 `attempt_owner_required`、`attempt_not_running`。交活会自动收工作区结果、释放占用、给 main 发 `task.submitted`（带 `result_id` + `result_digest` + 一份**证据摘要**） |
+| `task__get` | `task_id` | 读**一条**任务的现状：`status`/`revision`/`acceptance`/`execution_scope`/`required_contract_ids`（以及还没被接受的 `contracts_pending`）/当前 `attempt`/最近一次 `latest_result`，还有 `next`（现在最该做的一件事）。只想知道一条任务时用它，别用 `context__project_read`（那条会返回全部 assignment，随任务数增长） |
+| `task__result_get` | `task_id`（`result_id` 可选，缺省取最近一次） | 读一次交付的**可重放证据**：`validation_metadata`（每条 `command`+`exit_code`…）、`changed_paths`/`untracked_summary`、`scope_paths` 与 **`scope_violations`**（声明范围之外的改动）、`environment_digest`/`environment_files`（依赖清单指纹，用来回答"环境被动过没有"）、`patch_artifact_ref`、`evidence_level`。验收前读它，不要自己重跑一遍 |
 | `task__block` | `task_id`、`attempt_id`（工具面必填）；`reason_code` 或 `reason` 至少一个 | 先验证 Attempt 归自己（`attempt_owner_required`）；状态不是 `claimed`/`running`/`cancel_requested` 报 `attempt_not_running`。挂起会释放占用 |
 | `task__progress` | `task_id`、`attempt_id` | `summary`、`evidence_refs` 可选。是执行命令，需要 `task.execute` 权限 |
 | `task__fail` | `task_id`、`attempt_id`、`reason` | Attempt 归自己；终态 Attempt 报 `attempt_not_failible` |
@@ -249,14 +251,26 @@
 
 | 工具 | 必填 | 可选 / 语义 |
 |---|---|---|
-| `inbox__claim` | 无（`limit` 可选，默认 50） | 领取自己收件箱的**摘要**；正文要 `inbox__fetch` |
+| `inbox__claim` | 无（`limit` 可选，默认 50） | 领取自己收件箱的**摘要**；正文要 `inbox__fetch`。`unread: true` 只给**没展示过**的那些（已经 `inbox__presented` 过的不会再吐回来；不传就是老的默认行为） |
 | `inbox__fetch` | `message_id` | 只有收件人是自己才行（否则 `inbox_access_denied`）；返回全文、`in_reply_to` 和 `response_obligations[]` |
 | `inbox__presented` | `message_id` | `evidence_kind`、`evidence_digest` 可选。只记"我呈现过"，**不核证据强度** |
-| `inbox__ack` | `message_id` | `reason` 可选。**ACK 不履行回应义务** —— 有 `response_obligations` 时要另发一条回复并 `message__respond` |
-| `message__send` | `recipient_agent_id`、`summary` | `kind`（默认 `message`）、`subject_ref`、`payload`、`priority`、`in_reply_to`、`response_contract`。回复时把收到的 `message_id` 填进 `in_reply_to`。返回的 `next` 会直说这条会不会唤醒对方 |
+| `inbox__ack` | `message_id` | `reason` 可选。**幂等**：重复 ACK 成功（不必重新 claim）；**ACK 不履行回应义务** —— 有 `response_obligations` 时要另发一条回复并 `message__respond` |
+| `message__send` | `recipient_agent_id`、`summary` | `kind`（默认 `message`）、`subject_ref`、`payload`、`priority`、`in_reply_to`、`response_contract`、**`wake`**。回复时把收到的 `message_id` 填进 `in_reply_to`。**要它立刻动就带 `wake: true`**（普通消息默认不唤醒；见下）。返回的 `next` 会直说这条会不会唤醒对方 |
 | `message__respond` | `obligation_id`、`response_message_id` | 用**已经发出去的那条回复**的 `message_id` 来履行义务 |
 
-**哪些消息会唤醒对方**（决定"我发了它会不会动"）：唤醒白名单是 `task.assigned`、`task.submitted`、`task.reviewed`、`task.taken_over`、`contract.proposed`、`contract.revised`、`user_decision.resolved`、`discrepancy.arbitration_requested`（`modules/messaging.py` 的 `WAKE_WORTHY_KINDS`）；**其他 kind 不会唤醒** —— 普通 `message`/`notice` 不在白名单里，`user_decision.pending` 也故意不在（它的收件人本来就有一个 running Attempt，暂停由 `task.begin` 的闸门保证）。带 `response_contract.required=true` 的消息**不会自己唤醒**，但会出现在 `coordination__wake_candidates` 里，可以对它显式 `coordination__wake`；`message__send` 的返回 `next` 会直说这条属于哪一种。细节见[唤醒指南](agent-wake-guide.md)。
+**哪些消息会唤醒对方**（决定"我发了它会不会动"）：唤醒白名单是 `task.assigned`、`task.submitted`、`task.reviewed`、`task.taken_over`、`task.refused`、`contract.proposed`、`contract.revised`、`user_decision.resolved`、`discrepancy.arbitration_requested`、`coordination.stalled`、`coordination.waiting`、`task.resume`（`modules/messaging.py` 的 `WAKE_WORTHY_KINDS`）；**其他 kind 默认不唤醒**。但你有两条路让它立刻动：**①发送时带 `wake: true`**（2026-10-10 起，任何 kind 都可以）②带 `response_contract.required=true`，它会出现在 `coordination__wake_candidates` 里，可以对它显式 `coordination__wake`。`message__send` 的返回 `next` 会直说这条属于哪一种，并且**在你还没发的时候就告诉你下次该怎么发**。细节见[唤醒指南](agent-wake-guide.md)。
+
+### 2.8 其余零星工具（都在桥的工具面上，别靠猜）
+
+| 工具 | 必填 | 语义 |
+|---|---|---|
+| `task__cancel_ack` | `task_id`、`attempt_id`、`reason` | 收到 `task.cancel_request` 后**停手并确认**；`stop_evidence` 可选。它释放资源、撤销执行授权 |
+| `task__self_accept` | `task_id`、`result_id`、`result_digest` | 任务策略允许时自己验收（`reason`、`evidence_refs` 可选）。能不能自验收由任务策略说，不是你自己决定 |
+| `discrepancy__create` | `subject_ref`、`report_refs`、`severity`、`summary` | 从既有认知报告里挑出**互相矛盾**的地方，做成一条可见的分歧 |
+| `discrepancy__advance` | `discrepancy_id`、`status` | 把分歧推进到澄清/协商阶段 |
+| `discrepancy__resolve` | `discrepancy_id`、`kind` | 按共识/驳回/显式覆盖结清分歧（main 权威） |
+| `durability__reconcile` | `reason` | 项目完工后重试失败的 checkpoint 物化（main 权威）；`scope_refs` 可选 |
+| `project__configure` | `policy_patch`、`reason` | 开/关项目级自动唤醒（`policy_patch.auto_wake_multi_agent`，未配置时视为开启）。**它同时管空闲看门狗**（§6.1） |
 
 ---
 
@@ -280,7 +294,7 @@
 | `cross_module_contract_required` | `coordination.plan` 某行 `cross_module: true` 但没给 `required_contract_ids`（`handlers.py:1407`） | 同一行补上契约 id；先谈接口再开工 |
 | `file_task_requires_scope` | `task.create`/`task.publish` 时声明 `requires_files` 却空着 `execution_scope`（`handlers.py:616,653`） | 在 `execution_scope` 里给出 paths 或 roots。`task__update_plan` **不接受** scope 参数，所以给已有任务补范围要走 `task.scope.request` → main `task.scope.resolve`（批准会改 `execution_scope` 并抬 `scope_revision`；已有工作区决定必须**重选**一次，否则 begin 报 `main_workspace_selection_required`） |
 | `worker_not_member` | `coordination.plan` 行的 `assigned_worker_id` 不存在、不是 active，或者是 main 自己（`handlers.py:1377`） | 用 `context__project_read` 的 `members[]` 取一个真实 `agent_id`。新 worker 入席是**用户**的决定 |
-| `task_not_beginable` | 任务状态不是 `open`/`blocked`，且当前 Attempt 不是自己 running 的（`task_execution.py:98`） | 看任务状态：`draft` → 先 ready 再 publish；`changes_requested` → 退回不会自动回可领取状态，要 main 先 `task.ready` 再 `task.publish` |
+| `task_not_beginable` | 任务状态不是 `open`/`blocked`，且当前 Attempt 不是自己 running 的（`task_execution.py:98`） | 看任务状态：`draft` 或 `changes_requested` → **一次** `task.publish` 就够（它已隐含 ready，2026-10-10 起）；`submitted` → 等验收；`completed`/`cancelled` → 换一条 |
 | `attempt_owner_required` | 用别人的 / 已结束的 Attempt 发进度、挂起、交活、失败（`handlers.py:713,778`；`task_execution.py:96,135`；`tasks.py` 多处） | 只在自己的 Attempt 上操作；要接着干就重新 `task.begin` 拿新 Attempt |
 | `task_revision_conflict` | `task.begin` 的 `expected_task_revision` 不是当前 revision（`task_execution.py:92`） | 重读任务当前 revision（`context__project_read`）再 begin。别猜 |
 | `main_workspace_selection_required` | 文件任务 begin 时没有该任务的策略决定，或决定的 `scope_revision` 落后（`execution_commands.py:216`） | `workspace.select` 一次（`shared` 最省事）；scope 改了要重选 |
@@ -320,7 +334,10 @@
 
 1. 先读拒绝里的 `next` / `next_steps` 与详情字段（`task_id`、`status`、`existing_contract_ids`、`registered`、`holders`…）—— 它们就是为这一步准备的；
 2. 记住**工具 schema 现在与运行时的字段集是同一个**（2026-10-10 起：生成器从 `PAYLOAD_FIELDS` 与命令目录对齐，`tests/protocol/test_command_surface_contract.py` 逐条比对 schema / 目录 / 白名单 / handler）。所以**两边不一致就是缺陷本身**，不是"照 handler 写就行"：按 §4 上报。MCP 不会拿工具 schema 校验参数（`CallToolRequestParamsSchema` 里 `arguments` 就是自由对象），daemon 也不按工具 schema 拒 —— 它只按 `PAYLOAD_FIELDS`（顶层键）和 handler 自己校验；
-3. 确实机制不对（例如某条命令需要的值在工具面上根本拿不到），**上报给 main**，并在结论里写清"缺什么、在哪一步缺的、影响哪条任务"，让 main 记录阻塞或修桥 —— 不要用旁路把这一次对付过去。
+3. 确实机制不对（例如某条命令需要的值在工具面上根本拿不到），**按"谁有权回答"上报**（2026-10-10 修正：单机模式下"上报 main"常常是自问自答，因为 main 就是链条顶端）：
+   - **实现缺陷 / 文档与实现不一致** → 写一条 `cognition__report`（claims 里写清"缺什么、在哪一步缺的、影响哪条任务"），并在给用户的结论里点名它。**不要**绕桥把这一次对付过去。
+   - **需要设计或权限决定**（改协议字段、改授权边界、跨机器、验收口径）→ 交给 main，由它用 `user_decision.propose` 提请**用户**决定；main 自己不能替用户答。
+   - **我卡在某条任务上**（缺前置、缺决定）→ `task.block`（写 `reason_code`/`reason`），把它变成可见状态，而不是静默停手。
 
 ---
 

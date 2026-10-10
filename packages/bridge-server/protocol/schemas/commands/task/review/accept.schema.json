@@ -30,7 +30,6 @@
     "evidence_refs",
     "reason",
     "result_digest",
-    "slot_id",
     "task_id"
   ],
   "title": "TaskReviewAcceptPayload",

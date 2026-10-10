@@ -274,6 +274,8 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "task.cancel_request": "请求取消",
         "task.cancel_ack": "确认取消",
         "task.submit": "交活",
+        "task.get": "读一条任务",
+        "task.result.get": "读交付证据",
         "task.self_accept": "自验收",
         "task.review.accept": "验收通过",
         "task.review.request_changes": "要求返工",

@@ -553,7 +553,8 @@
     },
     "inbox.claim": {
       "payload_fields": [
-        "limit"
+        "limit",
+        "unread"
       ],
       "principal": "B",
       "required_fields": [],
@@ -630,7 +631,8 @@
         "recipient_agent_id",
         "response_contract",
         "subject_ref",
-        "summary"
+        "summary",
+        "wake"
       ],
       "principal": "B",
       "required_fields": [
@@ -1286,6 +1288,17 @@
       "schema": "commands/task/fail.schema.json",
       "uri": "/tasks/{id}:fail"
     },
+    "task.get": {
+      "payload_fields": [
+        "task_id"
+      ],
+      "principal": "B",
+      "required_fields": [
+        "task_id"
+      ],
+      "schema": "commands/task/get.schema.json",
+      "uri": "/tasks/{id}"
+    },
     "task.progress": {
       "payload_fields": [
         "attempt_id",
@@ -1343,6 +1356,18 @@
       "schema": "commands/task/recover.schema.json",
       "uri": "/tasks/{id}:recover"
     },
+    "task.result.get": {
+      "payload_fields": [
+        "result_id",
+        "task_id"
+      ],
+      "principal": "B",
+      "required_fields": [
+        "task_id"
+      ],
+      "schema": "commands/task/result/get.schema.json",
+      "uri": "/tasks/{id}/result"
+    },
     "task.review.accept": {
       "payload_fields": [
         "attempt_id",
@@ -1358,7 +1383,6 @@
         "evidence_refs",
         "reason",
         "result_digest",
-        "slot_id",
         "task_id"
       ],
       "schema": "commands/task/review/accept.schema.json",
@@ -1379,7 +1403,6 @@
         "evidence_refs",
         "reason",
         "result_digest",
-        "slot_id",
         "task_id"
       ],
       "schema": "commands/task/review/request_changes.schema.json",
@@ -1651,6 +1674,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:f0b17e7f877117b50fc0792f25e7c50e075068ad23cb238a8fe1d2286304f8a5",
+  "schema_bundle_digest": "sha256:25235b3fd3f51491e2625f7fc23dd3628c9d6772390dc7bddbfd6a9f041b79ff",
   "supported_previous_version": "0.9"
 }

@@ -83,9 +83,11 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | task.begin | `/tasks/{id}:begin` | B / task.claim | expected_revisions?,expected_task_revision,task_id | 一次取得 owner、基线、资源占用和执行授权；同 owner running 可恢复；失败不保留半套准备 |
 | task.progress | `/tasks/{id}:progress` | X / task.execute | attempt_id,evidence_refs,summary,task_id | ProgressRecord；running |
 | task.block | `/tasks/{id}:block` | B / task.coordinate_self | attempt_id,checkpoint_summary,dependency_refs,evidence_refs,reason?,reason_code,task_id | Suspension；current owner claimed/running |
+| task.get | `/tasks/{id}` | B / coordination.read | task_id | 单条任务的现状：status/revision/acceptance/execution_scope/required_contract_ids/contracts_pending/attempt/latest_result，以及 `next`（"现在最该做的一件事"）。2026-10-10：此前没有单任务读取，想知道一条任务的 revision 只能 `context.project_read`（随任务数线性膨胀）|
+| task.result.get | `/tasks/{id}/result` | B / coordination.read | result_id?,task_id | 一次交付的**可重放证据**：validation_metadata（验证回执）、changed_paths/untracked_summary、scope_paths 与 scope_violations（声明范围之外的改动）、environment_digest/environment_files（依赖清单指纹）、patch_artifact_ref、evidence_level；缺省取该任务最近一次结果。2026-10-10：验收方此前只拿到三个 id，只能自己写探针重建证据 |
 | task.submit | `/tasks/{id}:submit` | B / task.execute | artifact_refs?,attempt_id,evidence_refs?,expected_revisions?,summary,task_id,validation_metadata? | 自动收集 WorkspaceResult，提交后显式释放资源/撤执行权；submitted 等待 main 审查 |
-| task.review.accept | `/reviews/{id}:accept` | R / task.review | attempt_id?,evidence_refs,reason,result_digest,result_id?,slot_id,task_id | ReviewDecision；指定round/slot；**任务声明了非空 execution_scope 时，结果里必须有工作区产物**（`workspace_result_ref`/`workspace_id`/`manifest_id`），否则 `workspace_evidence_required` —— 没有工作区就没有证据，不接受（空 scope 的任务不受此门约束） |
-| task.review.request_changes | `/reviews/{id}:request-changes` | R / task.review | attempt_id?,evidence_refs,reason,result_digest,result_id?,slot_id,task_id | ReviewDecision+Task changes_requested |
+| task.review.accept | `/reviews/{id}:accept` | R / task.review | attempt_id?,evidence_refs,reason,result_digest,result_id?,slot_id?,task_id | ReviewDecision；指定round/slot；**任务声明了非空 execution_scope 时，结果里必须有工作区产物**（`workspace_result_ref`/`workspace_id`/`manifest_id`），否则 `workspace_evidence_required` —— 没有工作区就没有证据，不接受（空 scope 的任务不受此门约束） |
+| task.review.request_changes | `/reviews/{id}:request-changes` | R / task.review | attempt_id?,evidence_refs,reason,result_digest,result_id?,slot_id?,task_id | ReviewDecision+Task changes_requested |
 | task.self_accept | `/reviews/{id}:self-accept` | B / task.coordinate_self | evidence_refs,reason,result_digest,result_id,task_id | ReviewDecision；原owner、policy low-risk self |
 | task.cancel_request | `/tasks/{id}:request-cancel` | M / task.coordinate | reason,task_id | current Attempt claimed/running 时 cancel_requested；否则直接 cancelled，保留 submitted 结果 |
 | task.cancel_ack | `/tasks/{id}:ack-cancel` | B / task.coordinate_self | attempt_id,reason,stop_evidence,task_id | Task cancelled；owner，仅收敛 |
@@ -139,10 +141,10 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| message.send | `/api/v1/commands/message.send` | B / message.send | in_reply_to?,kind?,payload?,priority?,recipient_agent_id,response_contract?,subject_ref?,summary | message_id+recipient_agent_id；发送者取认证身份；summary 非空且最多4096字符，payload最多256KiB |
+| message.send | `/api/v1/commands/message.send` | B / message.send | in_reply_to?,kind?,payload?,priority?,recipient_agent_id,response_contract?,subject_ref?,summary,wake? | message_id+recipient_agent_id；发送者取认证身份；summary 非空且最多4096字符，payload最多256KiB |
 | message.respond | `/api/v1/commands/message.respond` | B / message.respond | obligation_id,response_message_id | 已存在的关联回复满足 Obligation；仅原recipient |
 | message.waive_response | `/response-obligations/{id}:waive` | B / message.send | reason | Obligation；原sender；main只能以原sender身份 |
-| inbox.claim | `/api/v1/commands/inbox.claim` | B / inbox.consume | limit? | messages 摘要列表+count；authenticated self；limit为1–200，默认50；不返回payload正文 |
+| inbox.claim | `/api/v1/commands/inbox.claim` | B / inbox.consume | limit?,unread? | messages 摘要列表+count；authenticated self；limit为1–200，默认50；不返回payload正文 |
 | inbox.fetch | `/api/v1/commands/inbox.fetch` | B / inbox.consume | message_id | 完整Message视图含payload/in_reply_to/响应义务；仅原recipient |
 | inbox.renew | `/deliveries/{id}:renew` | B / inbox.consume | delivery_lease_id | DeliveryLease；不超过2分钟 |
 | inbox.presented | `/api/v1/commands/inbox.presented` | B / inbox.consume | evidence_digest?,evidence_kind?,message_id | message_id+presented；仅记录展示声明，当前不验证摘要格式或证据强度 |

@@ -45,7 +45,8 @@
     "in_reply_to": {
       "type": "string",
       "minLength": 1
-    }
+    },
+    "wake": {}
   },
   "required": [
     "recipient_agent_id",

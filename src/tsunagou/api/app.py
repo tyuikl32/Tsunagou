@@ -19,6 +19,7 @@ from tsunagou.shared_kernel.errors import (
     CommandRefused,
     IdempotencyConflict,
     LockUnavailable,
+    PermissionRefused,
     ResourceConflict,
     RevisionConflict,
 )
@@ -340,6 +341,14 @@ def create_app(
                     # committed inbox command must remain successful even if
                     # the private host-wake journal is temporarily unavailable.
                     pass
+        except PermissionRefused as exc:
+            # 权限拒绝也有结构化的一份（2026-10-10：被拒的 worker 需要知道"我到底持有什么、
+            # 下一个能走通的调用是什么"，而不是只得到一句 capability_denied）。
+            code = exc.code
+            reference = _task_reference(request.payload)
+            if reference and code not in SESSION_RECOVERY_CODES:
+                _record_denial(command_kind, {"code": code, **exc.detail, **reference})
+            raise HTTPException(status_code=403, detail={"code": code, **exc.detail}) from exc
         except PermissionError as exc:
             if principal is None and wake_dispatcher is not None:
                 wake_dispatcher.record_command_failure(

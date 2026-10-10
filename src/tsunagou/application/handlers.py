@@ -38,30 +38,58 @@ from tsunagou.platform.checkpoint_worker import CheckpointWorker
 from tsunagou.platform.checkpoints import CheckpointStore
 from tsunagou.shared_kernel.baseline import missing_admission_capabilities
 from tsunagou.shared_kernel.digests import canonical_digest
-from tsunagou.shared_kernel.errors import CommandRefused
+from tsunagou.shared_kernel.errors import CommandRefused, PermissionRefused
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
-def _delivery_next_step(kind: str, *, required: bool) -> str:
+def _delivery_next_step(kind: str, *, required: bool, wake: bool = False) -> str:
     """告诉发送者：这条消息会不会唤醒对方，以及要它立刻动手该怎么办。
 
     唤醒花掉的是对方一整个宿主回合，所以唤醒名单是特意收窄的白名单
     （``modules/messaging.py`` 的 ``WAKE_WORTHY_KINDS``）—— "什么算紧急"只由一处决定，
     不交给每个调用方各自判断。发送者看不到这条规则时，2026-10-05 的实测结果是它绕道
     取消旧任务、新建替代任务来把对方叫醒（多花约 13 分钟）。
+
+    2026-10-10 又补了两件事：①**发送时就能要求唤醒**（``wake: true``），不必等这条返回才
+    知道该怎么做；②返回值里那句提示改成"下一次怎么发"，而不是"这一次发错了"。
     """
 
+    if wake:
+        return f"已投递（kind={kind}）：发送时带了 wake=true，已排进自动唤醒通道 —— 对方会被叫起来。"
     if kind in WAKE_WORTHY_KINDS:
         return f"已投递（kind={kind}）：这类消息会唤醒对方的宿主。"
     if required:
         return (f"已投递（kind={kind}）：这类消息本身不会唤醒对方，但它带了 "
                 "response_contract.required=true —— 它会出现在 coordination.wake_candidates 里，"
                 "可以对它显式调用 coordination.wake。")
-    return (f"已投递（kind={kind}）：这类消息不会唤醒对方。要它立刻动手，请用会唤醒的形态"
+    return (f"已投递（kind={kind}）：这类消息不会唤醒对方。**下次**要它立刻动手，发送时带 "
+            "wake=true（本命令的可选字段），或者用会唤醒的形态"
             "（task.assigned / task.submitted / task.reviewed / contract.proposed / "
             "contract.revised / user_decision.resolved；例如让它返工用 task.review.request_changes），"
-            "或者带上 response_contract.required=true 之后显式 coordination.wake。")
+            "也可以带 response_contract.required=true 之后显式 coordination.wake。")
+
+
+def _task_next_step(task: Any, attempt: Any, latest: Any, unaccepted: list[str]) -> str:
+    """一条任务"现在最该做的一件事"。读单条任务的意义就在这里：省掉状态考古。"""
+
+    status = str(getattr(task, "status", ""))
+    if unaccepted:
+        return (f"还领不了活：契约 { '、'.join(unaccepted) } 还没被接受。归你自己的槽位你自己 "
+                "contract.accept；归对方的等它接受 —— 用 coordination.contracts 看槽位归属。")
+    if status in {"draft", "changes_requested"}:
+        return "用 task.publish 发布（它已隐含 ready，一次调用即可进领取队列）。"
+    if status == "open":
+        return "等人领取；要指名派活并唤醒它，用 coordination.plan 或 message.send(summary…, wake=true)。"
+    if status == "running":
+        return "有人在跑；要它的进度用 inbox / task.get，要它交活用会唤醒的形态催（task.review.request_changes 会把球踢回去）。"
+    if status == "blocked":
+        return f"阻塞中（{getattr(task, 'block_reason', None) or '未写原因'}）：让 main 用 task.recover 重新开工，或换人。"
+    if status == "submitted":
+        return "有结果待验收：读 task.result.get 拿证据，然后 task.review.accept 或 request_changes。"
+    if status in {"completed", "cancelled"}:
+        return f"已经结束（{status}），不需要动作。"
+    return "用 context.project_read 看整体；这条任务本身没有待办。"
 
 
 def _conversation_id(evidence: Any) -> str:
@@ -571,7 +599,17 @@ def build_handlers(
             task_id=task_id, attempt_id=attempt_id,
         )
         if grant is None:
-            raise PermissionError("capability_denied")
+            # 被拒的人自己得知道下一个能走通的调用是什么（2026-10-10：worker 撞 capability_denied
+            # 后明细只聚合给 main，它自己只能反复试同一个调用）。
+            held = sorted({
+                str(item.kind) for item in authority.grants.values()
+                if item.principal_id == agent_id and item.status == "active"
+            })
+            raise PermissionRefused("capability_denied", {
+                "capability": capability, "held": held,
+                "next": f"这条调用需要 {capability} 授权；执行类能力由 task.begin 建立，"
+                        "被收回/中断时让 main 用 task.recover 或重新指派 —— 别重复试同一个调用。",
+            })
         authority.authorize(
             agent_id=agent_id, session_id=session_id, grant_id=grant.grant_id,
             capability=capability, task_id=task_id, attempt_id=attempt_id,
@@ -945,6 +983,11 @@ def build_handlers(
         existing = tasks.tasks[task_id]
         if existing.requires_files and not existing.execution_scope:
             raise ValueError("file_task_requires_scope")
+        # ``publish`` **隐含 ready**（2026-10-10：实测里"一个意图要两次调用"，而且忘了 ready 就
+        # 永久停住、没有任何信号）。``draft`` 与 ``changes_requested`` 都是 ``ready`` 接受的来源，
+        # 所以两者都直接进领取队列；已经 ready 的任务照旧。它不改语义，只是不再要求调用方记住顺序。
+        if existing.status in {"draft", "changes_requested"}:
+            tasks.ready(task_id)
         task = tasks.publish(task_id)
         hint = _scope_next(task.execution_scope)
         # 发布**不通知任何人**：它只把任务放进领取队列。2026-10-08 实测里"已发布但没人开工"
@@ -986,6 +1029,96 @@ def build_handlers(
         target = _required_str(payload, "target_task_id")
         tasks.remove_block(source, target)
         return {"source_task_id": source, "target_task_id": target, "removed": True}
+
+    def task_get(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        """**一条**任务的现状：状态、revision、尝试、范围、契约、最近一次结果。
+
+        2026-10-10 实测：没有"读单条任务"的出口，想知道一条任务的 revision 就得
+        ``context.project_read``（返回全部 assignment，随任务数线性膨胀，后期每次约 10 KB）。
+        这条只回答一条任务，并且把"现在最该做的一件事"写在 ``next`` 里。
+        """
+
+        _authorize(context, "coordination.read")
+        task_id = _required_str(payload, "task_id")
+        task = tasks.tasks.get(task_id)
+        if task is None:
+            raise CommandRefused("task_not_found", {"task_id": task_id,
+                                                    "known_task_ids": sorted(tasks.tasks)[:20]})
+        attempt = tasks.attempts.get(task.current_attempt_id or "")
+        results = sorted((item for item in tasks.results.values() if item.task_id == task_id),
+                         key=lambda item: item.result_id)
+        latest = results[-1] if results else None
+        contracts = sorted(set(getattr(task, "required_contract_ids", ()) or ()))
+        unaccepted = sorted(
+            contract_id for contract_id in contracts
+            if getattr(cognition.proposals.get(contract_id), "status", None) != "accepted"
+        )
+        return {
+            "task_id": task_id, "title": getattr(task, "title", None), "status": task.status,
+            "revision": task.revision, "acceptance": getattr(task, "acceptance", None),
+            "requires_files": bool(getattr(task, "requires_files", False)),
+            "execution_scope": getattr(task, "execution_scope", None),
+            "required_contract_ids": contracts, "contracts_pending": unaccepted,
+            "attempt": None if attempt is None else {
+                "attempt_id": attempt.attempt_id, "owner_agent_id": attempt.owner_agent_id,
+                "status": attempt.status, "started_at": attempt.started_at,
+            },
+            "latest_result": None if latest is None else {
+                "result_id": latest.result_id, "digest": latest.digest,
+                "submitted_by": latest.submitted_by,
+                "workspace_result_ref": (latest.payload or {}).get("workspace_result_ref"),
+            },
+            "next": _task_next_step(task, attempt, latest, unaccepted),
+        }
+
+    def task_result_get(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        """一次交付的**可重放证据**：验证回执、改动、范围比对、环境指纹、产物引用。
+
+        2026-10-10 实测：验收方只拿到 ``{task_id,result_id,result_digest}``，为了判定 8 个任务
+        写了 5 个专用探针（books 22 项 / loans 41 项 …）。清单里本来就有这些事实，缺的只是一个
+        读取出口 —— 这条把它交出来，不重做任何判定。
+        """
+
+        _authorize(context, "coordination.read")
+        task_id = _required_str(payload, "task_id")
+        wanted = payload.get("result_id")
+        candidates = [item for item in tasks.results.values() if item.task_id == task_id]
+        if not candidates:
+            raise CommandRefused("task_result_not_found", {"task_id": task_id, "results": 0})
+        if wanted:
+            result = next((item for item in candidates if item.result_id == wanted), None)
+            if result is None:
+                raise CommandRefused("task_result_not_found", {
+                    "task_id": task_id, "result_id": wanted,
+                    "known_result_ids": sorted(item.result_id for item in candidates),
+                })
+        else:
+            result = sorted(candidates, key=lambda item: item.result_id)[-1]
+        manifest_ref = (result.payload or {}).get("workspace_result_ref")
+        manifest = workspaces.results.get(str(manifest_ref)) if manifest_ref else None
+        return {
+            "task_id": task_id, "result_id": result.result_id, "result_digest": result.digest,
+            "submitted_by": result.submitted_by,
+            "payload": dict(result.payload or {}),
+            "workspace_result": None if manifest is None else {
+                "manifest_id": manifest.manifest_id, "digest": manifest.digest,
+                "baseline_digest": manifest.baseline_digest, "commit_refs": list(manifest.commit_refs),
+                "patch_artifact_ref": manifest.patch_artifact_ref,
+                "changed_paths": list(manifest.changed_paths),
+                "untracked_summary": list(manifest.untracked_summary),
+                "validation_metadata": [dict(item) for item in manifest.validation_metadata],
+                "validation_refs": list(manifest.validation_refs),
+                "evidence_level": manifest.evidence_level,
+                "baseline_conflict": manifest.baseline_conflict,
+                "scope_paths": list(manifest.scope_paths) if manifest.scope_paths is not None else "all",
+                "scope_violations": list(manifest.scope_violations),
+                "environment_digest": manifest.environment_digest,
+                "environment_dirty": manifest.environment_dirty,
+                "environment_files": dict(manifest.environment_files),
+            },
+            "next": ("证据随结果一起给出：回执条数、改动清单、范围比对与环境指纹都在上面；"
+                     "判断这份交付够了没有用它们，不必自己重跑一遍。"),
+        }
 
 
 
@@ -1629,8 +1762,11 @@ def build_handlers(
     def inbox_claim(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
         limit = int(payload.get("limit", 50))
-        claimed = messages.fetch(context["principal_id"], limit=limit)
-        return {"messages": [_message_view(message, messages) for message in claimed], "count": len(claimed)}
+        # ``unread``：已经展示过的消息不再吐回来（2026-10-10：调用方反复看到同一批处理过的消息）。
+        unread = bool(payload.get("unread", False))
+        claimed = messages.fetch(context["principal_id"], limit=limit, unread=unread)
+        return {"messages": [_message_view(message, messages) for message in claimed],
+                "count": len(claimed), "unread_only": unread}
 
     def inbox_fetch(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
@@ -1671,8 +1807,21 @@ def build_handlers(
             response_contract=payload.get("response_contract"),
             in_reply_to=payload.get("in_reply_to"),
         )
+        # 显式唤醒：这条消息的种类不在 ``WAKE_WORTHY_KINDS`` 里，但发送方明确要求"让对方现在
+        # 就动"（2026-10-10 实测：11 条澄清消息全是惰性的，因为"这类消息不会唤醒对方"只在**发送
+        # 之后**才被告知，于是"纠正"只能升级成任务状态变更）。走的是既有 host_wake outbox，
+        # 与看门狗同一条路，不是新机制。
+        woken = bool(payload.get("wake"))
+        if woken:
+            uow = context.get("_uow")
+            if uow is None:
+                raise RuntimeError("wake_staging_requires_transaction")
+            # 排程要等到这次命令的**事件**落库之后（outbox 行要挂 event_seq）：交给
+            # ``state_runtime.persist`` 在 append 之后排，见 ``platform/state.py``。
+            uow.explicit_wakes = [*getattr(uow, "explicit_wakes", ()), message.message_id]
         return {"message_id": message.message_id, "recipient_agent_id": recipient_agent_id,
-                "next": _delivery_next_step(message.kind, required=required)}
+                "wake_requested": woken,
+                "next": _delivery_next_step(message.kind, required=required, wake=woken)}
 
     def assist_wake(payload: dict[str, Any], context: dict[str, Any], action: str) -> dict[str, Any]:
         _authorize(context, "coordination.read" if action == "peers" else "message.send")
@@ -1753,11 +1902,29 @@ def build_handlers(
                           if getattr(cognition.proposals.get(item), "status", None) != "accepted"]
             if unresolved:
                 known = sorted(str(item) for item in cognition.proposals)
+                # 槽位归谁说清（2026-10-10）：任务可以要求一个"归它自己执行者"的槽位，而
+                # ``task.begin`` 又有契约门 ⇒ 工人到 begin 才发现，只能各自追问、各自写长信
+                # （有一位明确表示"不冒领自己没给过的同意"）。谁该 accept 是**计划那一刻**就能
+                # 说清的事实，所以这里把未接受的槽位连同归属一起给出来；不拒绝 —— 先计划、
+                # 再让槽位接受是设计内的顺序（自指形状由 main 的 contract.accept_proxy 兜底）。
+                ownership = []
+                for contract_id in unresolved:
+                    proposal = cognition.proposals.get(contract_id)
+                    for slot in getattr(proposal, "participants_required", ()) or ():
+                        owner = str(getattr(slot, "agent_id", "") or "")
+                        if not owner:
+                            continue
+                        if owner == worker_id:
+                            ownership.append(f"{contract_id} 的槽位 {getattr(slot, 'slot', '?')} 归**你自己**"
+                                             "（用 contract.accept 接受它，或让 main 用 contract.accept_proxy）")
+                        else:
+                            ownership.append(f"{contract_id} 的槽位 {getattr(slot, 'slot', '?')} 归 {owner[:8]}")
                 pending_contract_notes.append(
                     f"任务「{row.get('title') or ''}」要求的契约还没结清（{ '、'.join(unresolved) }）："
                     "它现在还领不了活（task.begin 会报 required_contract_not_accepted）。"
                     "本项目现有的契约 id："
                     + ("、".join(known) if known else "（一个都没有，先 contract.propose 建一份）")
+                    + ("。槽位归属：" + "；".join(ownership) if ownership else "")
                 )
             task = tasks.create_task(_required_str(row, "title"), _required_str(row, "task_objective"),
                                      parent_task_id=row.get("parent_task_id"), blocks=set(row.get("dependencies") or ()),
@@ -2229,6 +2396,8 @@ def build_handlers(
         "root.bind": root_bind,
         "repository.register": repository_register,
         "task.create": task_create,
+        "task.get": task_get,
+        "task.result.get": task_result_get,
         "task.ready": task_ready,
         "task.publish": task_publish,
         "task.update_plan": task_update_plan,

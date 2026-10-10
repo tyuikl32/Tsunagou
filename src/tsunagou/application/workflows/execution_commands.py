@@ -14,7 +14,7 @@ from tsunagou.modules.coordination import CoordinationService
 from tsunagou.modules.messaging import MessageStore
 from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceService
 from tsunagou.modules.tasks import Task, TaskService
-from tsunagou.modules.workspaces import Workspace, WorkspaceService
+from tsunagou.modules.workspaces import Workspace, WorkspaceService, _path_in_scope
 from tsunagou.shared_kernel.digests import canonical_digest
 from tsunagou.shared_kernel.ids import new_id
 
@@ -31,6 +31,65 @@ def _same_place(left: str, right: str) -> bool:
         return str(value or "").strip().replace("\\", "/").rstrip("/").casefold()
 
     return bool(normalise(left)) and normalise(left) == normalise(right)
+
+
+def _declared_scope_paths(execution_scope: Any) -> list[str] | None:
+    """任务**声明**的执行范围里的路径（``None`` = 没有按路径限定的声明）。
+
+    ``task.create`` 的 ``execution_scope`` 有两种形状：``roots``（整个根，等于不限定路径）与
+    ``resources``（逐条路径，可能带 mode）。只有后者能拿来判"改动是否越界"。
+    """
+
+    if not isinstance(execution_scope, dict):
+        return None
+    paths: list[str] = []
+    for entry in execution_scope.get("resources") or ():
+        if not isinstance(entry, dict) or str(entry.get("kind")) != "path":
+            continue
+        segments = entry.get("segments")
+        if isinstance(segments, (list, tuple)) and segments:
+            paths.append("/".join(str(segment) for segment in segments))
+    return sorted(set(paths)) or None
+
+
+def _outside_declared(changed_paths: Any, declared: list[str] | None) -> list[str]:
+    """改动里落在**任务声明范围**之外的那些。声明没有按路径限定时返回空。"""
+
+    if declared is None:
+        return []
+    allowed = tuple(declared)
+    outside = []
+    for path in changed_paths or ():
+        candidate = str(path)
+        if not _path_in_scope(candidate, allowed):
+            outside.append(candidate)
+    return sorted(set(outside))
+
+
+def _evidence_summary(manifest: Any) -> dict[str, Any]:
+    """随 ``task.submitted`` 一起给验收方的一份**短**摘要（全文用 ``task.result.get`` 取）。
+
+    2026-10-10 实测：通知里只有 ``{task_id,result_id,result_digest}``，验收方为了判 8 个任务写了
+    5 个探针才敢下结论。清单里本来就有这些事实 —— 摘要不替人做判断，只回答"这份交付交代了没有、
+    要不要读全文"。
+    """
+
+    if manifest is None:
+        return {"evidence": {"present": False, "reason": "no_workspace_result"}}
+    receipts = list(getattr(manifest, "validation_metadata", ()) or ())
+    commands = [{"command": str(item.get("command"))[:200], "exit_code": item.get("exit_code")}
+                for item in receipts[:5] if isinstance(item, dict)]
+    return {"evidence": {
+        "present": True,
+        "manifest_id": getattr(manifest, "manifest_id", None),
+        "receipts": len(receipts),
+        "commands": commands,
+        "changed_paths": len(getattr(manifest, "changed_paths", ()) or ()),
+        "scope_violations": list(getattr(manifest, "scope_violations", ()) or ())[:10],
+        "environment_dirty": bool(getattr(manifest, "environment_dirty", False)),
+        "environment_digest": getattr(manifest, "environment_digest", None),
+        "baseline_conflict": bool(getattr(manifest, "baseline_conflict", False)),
+    }}
 
 
 class ExecutionCommands:
@@ -317,6 +376,17 @@ class ExecutionCommands:
         prepared = context["_prepared"]
         workspace, observed = prepared["workspace"], prepared["observed"]
         result_ref = None
+        # 任务**声明**的执行范围（``execution_scope``）与工作区自己的 scope 是两份数据：后者在
+        # ``record_result`` 里硬拒越界，前者从来没有人比对过。2026-10-10 实测里一位 worker 改了
+        # 声明之外的 ``e2e/global-setup.ts``，main 只能靠 ``git status`` 自己发现，所以这条事实
+        # 现在随结果一起给出（不拒绝：范围声明是任务级约定，是否越界由 main 验收时判断）。
+        declared = _declared_scope_paths(getattr(self.tasks.tasks.get(task_id), "execution_scope", None))
+        violations = []
+        if observed is not None:
+            # 两条来源：观察里"被范围过滤掉的安全路径"（工作区自己比出来的），以及拿**任务声明**
+            # 再比一次的改动清单（两者可能不同：声明是任务级、范围是工作区级）。
+            violations = sorted(set(observed.get("scope_violations") or ())
+                                | set(_outside_declared(observed["changed_paths"], declared)))
         # 只有"主机亲自看过"的那一条才写工作区清单：清单里的基线、改动与冲突判定，都是本地观察
         # 的产物。远端自己那份副本没有基线（见 D192），于是**没有清单** —— 那正是它诚实的样子：
         # 结果里留下的是那台机器自己的交代，而不是一份看起来像观察的记录。
@@ -334,6 +404,7 @@ class ExecutionCommands:
                 baseline_conflict=observed["tracked_state_digest"] != baseline.tracked_state_digest,
                 submitted_by=context["principal_id"], root_observations=observed["root_observations"],
                 evidence_level="system_verified", validation_metadata=payload.get("validation_metadata"),
+                scope_violations=violations, environment=observed.get("environment"),
             )
             result_ref = manifest.manifest_id
         elif workspace is not None:
@@ -357,11 +428,17 @@ class ExecutionCommands:
             # Sending the id without the digest leaves the reviewer able to see the
             # obligation but unable to act on it, so both travel together. The digest is
             # a version pin, not a secret: it is the value review already requires back.
+            #
+            # 2026-10-10 实测：only ids 到这里，验收方就只能**自己重建证据**（那次 main 写了 5 个
+            # 探针才敢判 8 个任务）。清单里本来就有这些事实，所以随通知带一份**摘要**：它足以判断
+            # "这份交付有没有交代"和"要不要读全文"，而全文用 ``task.result.get`` 单独取。
+            manifest = self.workspaces.results.get(str(result_ref)) if result_ref else None
             self.messages.send(command_id=context["command_id"] + ":submitted", sender_agent_id=context["principal_id"],
                                recipient_agent_id=main, kind="task.submitted", subject_ref="task/" + task_id,
                                summary="有结果待验收",
                                payload={"task_id": task_id, "result_id": result.result_id,
-                                        "result_digest": result.digest})
+                                        "result_digest": result.digest,
+                                        **_evidence_summary(manifest)})
         return {"task_id": task_id, "attempt_id": attempt_id, "result_id": result.result_id, "digest": result.digest,
                 "workspace_result_ref": result_ref, "status": "submitted"}
 

@@ -115,6 +115,17 @@ class WorkspaceEvidence:
             if patch:
                 chunks.append((f"# tsunagou-root {root['root_id']}\n".encode() if len(current) > 1 else b"") + patch)
             roots.append({"root_id": root["root_id"], **observed})
+        # 逐根观察里那两条新事实要**聚合上来**，否则它们只躺在 root_observations 里没人读：
+        # ``environment`` 是清单类文件的指纹（"依赖被动过"），``scope_violations`` 是落在该根
+        # 允许路径之外的改动（2026-10-10：worker 改了范围外的文件，main 只能靠 git status 发现）。
+        environment_files: dict[str, str] = {}
+        violations: list[str] = []
+        for root in roots:
+            prefix = root["root_id"] + "/" if len(roots) > 1 else ""
+            files = root.get("environment", {}).get("files") if isinstance(root.get("environment"), dict) else {}
+            for name, digest in (files or {}).items():
+                environment_files[prefix + str(name)] = str(digest)
+            violations.extend(prefix + str(path) for path in root.get("scope_violations") or ())
         return {
             "head_commit": roots[0]["head_commit"] if len(roots) == 1 else None,
             "branch": roots[0]["branch"] if len(roots) == 1 else None,
@@ -124,4 +135,6 @@ class WorkspaceEvidence:
             "dirty": any(r["dirty"] for r in roots), "patch_bytes": b"\n".join(chunks),
             "root_identities": [r["physical_identity"] for r in current],
             "root_observations": roots,
+            "environment": {"files": environment_files, "digest": canonical_digest(environment_files)},
+            "scope_violations": sorted(set(violations)),
         }

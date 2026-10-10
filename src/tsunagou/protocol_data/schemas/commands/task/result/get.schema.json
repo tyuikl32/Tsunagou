@@ -1,0 +1,20 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.result.get",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "result_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id"
+  ],
+  "title": "TaskResultGetPayload",
+  "type": "object"
+}

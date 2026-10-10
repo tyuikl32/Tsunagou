@@ -660,10 +660,60 @@ def test_the_submit_notification_carries_what_review_already_requires(runtime):
     assert payload["task_id"] == task["task_id"]
     assert payload["result_id"] == submitted["result_id"]
     assert payload["result_digest"] == submitted["digest"]
+    # 通知还带一份**证据摘要**（2026-10-10：只给三个 id 时，验收方只能自己重建证据 —— 那次
+    # main 为此写了 5 个探针）。这条任务不碰文件，所以摘要如实说"没有工作区证据"。
+    assert payload["evidence"]["present"] is False
+    assert payload["evidence"]["reason"] == "no_workspace_result"
 
-    # 照抄通知里那三个值就能验收：不需要别的出口，也不需要猜。
-    reviewed = call("task.review.accept", {**payload, "reason": "looks right"}, main)
+    # 照抄通知里那三个值就能验收：不需要别的出口，也不需要猜。**三个值显式取**，不要把整条
+    # payload 展开 —— 摘要不是 review 的字段（review 的 schema 只收它自己那几个）。
+    reviewed = call("task.review.accept", {
+        "task_id": payload["task_id"], "result_id": payload["result_id"],
+        "result_digest": payload["result_digest"], "reason": "looks right",
+    }, main)
     assert reviewed["status"] == "completed"
+
+
+def test_a_file_task_submission_carries_replayable_evidence(runtime):
+    """碰文件的任务：通知里就有可重放的证据，验收方不必自己重建。
+
+    2026-10-10 实测：main 为了判 8 个任务写了 5 个专用探针（books 22 项 / loans 41 项 / insights
+    26 项 / persistence 16 项）。清单里本来就有这些事实，缺的是"随结果一起到达"和"能单独取全文"
+    （``task.result.get``）。这条钉住前者：命令、退出码、改动数、环境指纹都在通知里。
+    """
+
+    app, call, main, worker = runtime
+    # 碰文件的任务要先有一个已登记的根，而且 scope 里必须用它**真实**的 root_id
+    # （这 11 条既有失败的成因就是夹具里写死了 "coordination"）。
+    fixture = app.state.state_runtime.project_registry.repository
+    call("root.register", {"name": "coordination", "kind": "directory", "required": False,
+                           "binding_request": {"absolute_path": str(fixture)}}, main)
+    (root_id,) = list(app.state.project_registry.project.roots)
+    created = call("task.create", {
+        "title": "evidence", "objective": "写一个文件",
+        "execution_scope": {"resources": [{"kind": "path", "root_id": root_id,
+                                           "segments": ["demo.txt"], "mode": "exclusive_write"}]},
+    }, main)
+    call("workspace.select", {"task_id": created["task_id"], "driver_kind": "shared"}, main)
+    call("task.ready", {"task_id": created["task_id"]}, main)
+    task = call("task.publish", {"task_id": created["task_id"]}, main)
+    started = begin(call, task, worker)
+    repo_file = app.state.project_registry.repository / "demo.txt"
+    repo_file.write_text("hello\n", encoding="utf-8")
+    call("task.submit", {
+        "task_id": task["task_id"], "attempt_id": started["attempt_id"], "summary": "done",
+        "validation_metadata": [{"command": "python -m pytest -q", "exit_code": 0}],
+    }, worker)
+
+    inbox = call("inbox.claim", {"limit": 20}, main)
+    (notice,) = [item for item in inbox["messages"] if item["kind"] == "task.submitted"]
+    evidence = call("inbox.fetch", {"message_id": notice["message_id"]}, main)["payload"]["evidence"]
+    assert evidence["present"] is True and evidence["manifest_id"]
+    assert evidence["receipts"] == 1
+    assert evidence["commands"] == [{"command": "python -m pytest -q", "exit_code": 0}]
+    assert evidence["changed_paths"] >= 1
+    assert evidence["environment_digest"], "环境指纹要随结果一起给出"
+    assert evidence["scope_violations"] == []
 
 
 def test_a_plan_reports_its_own_shape_and_says_when_it_looks_heavy(runtime):
