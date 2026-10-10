@@ -660,6 +660,30 @@ describe("控制台页面（web/）结构冒烟", () => {
       expect(historyCalls()).toHaveLength(2);
     });
 
+    it("出口支持 order=desc 时：一次请求就拿到尾巴，且不拿更旧的那一段", async () => {
+      /* 待改 16 的剩余边界（2026-10-10）：正向翻页在事件多到十页以上的项目上**走不到尾**，
+         所以出口加了 `order=desc`（最新一页），并在载荷里回显 `order`。页面先问它：
+         ① 一次请求就够（第一页就是最新的 200 条）；② 屏上是**最新**那几条、而且仍按先后排。*/
+      const newest = [128, 127, 126].map((seq) => item(
+        seq, `2026-10-08T09:19:0${128 - seq}.000Z`,
+        seq === 128 ? "project.completion.confirm" : "task.submit"));
+      const api = await loadTail((url) => {
+        expect(url.searchParams.get("order")).toBe("desc");
+        return {
+          project_id: "p-1", items: newest, next_cursor: "after:126",
+          // 出口回显方向 —— 页面据此知道第一页就是尾巴，不会去跟这个游标。
+          order: "desc", as_of_event_seq: 128, snapshot_event_seq: 128, projection_version: "v1",
+        };
+      });
+
+      await api.refresh(["timeline"]);
+
+      expect(historyCalls()).toHaveLength(1);
+      const rows = calls();
+      expect(rows.map((row) => row.getAttribute("data-row-id"))).toEqual(["e-126", "e-127", "e-128"]);
+      expect(rows[2]!.textContent).toContain("完工确认");
+    });
+
     it("载荷形状与一页审计一样（as_of_event_seq 等留着）—— §7 的形状函数不用改", async () => {
       const api = await loadTail(() => auditPage(
         [item(1, "2026-10-08T09:00:01.000Z", "operation.created")], { watermark: 1 }));
@@ -2120,8 +2144,10 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(text()).not.toContain("（已取消）后端");
     /* 统计行把两类分开报，不再让"已取消"混进"没做完"（表格渲染成相邻两格，标签与值之间没有空格） */
     expect(text()).toContain("3 个（已完成 2、已取消 1）");
-    /* 百分比仍是 已完成 / 全部任务记录：2/3 = 67%，证明这次没有偷改分母 */
-    expect(text()).toContain("67%");
+    /* 百分比**只算还算数的任务**（用户 2026-10-10 定的口径）：被取消/被替代的不进分母。
+       这里 2 条算数、2 条完成 → 100%（旧口径是 2/3 = 67%，那会把撤掉的活算成"还没干"）。*/
+    expect(text()).toContain("100%");
+    expect(text()).not.toContain("67%");
 
     /* 没有取消的任务时，那一截不出现 —— 不永远挂一句"已取消 0" */
     taskItems = [
@@ -2131,6 +2157,7 @@ describe("控制台页面（web/）结构冒烟", () => {
     await win.Tsunagou.refresh(["project"]);
     expect(text()).toContain("2 个（已完成 1）");
     expect(text()).not.toContain("已取消");
+    expect(text()).toContain("50%");
 
     /* 被替代的任务要显示成"已被替代"，不能和"被取消"混为一谈：2026-10-05 的返工正是
        "取消旧的 + 新建替代的"，在那之前旧任务永远算没做完（事件 E012/E014）。*/
@@ -2143,6 +2170,19 @@ describe("控制台页面（web/）结构冒烟", () => {
     expect(text()).not.toContain("（已取消）原管理员端任务");
     /* 统计据此归类：被替代的单独报，且不与"已取消"重复计数 */
     expect(text()).toContain("2 个（已完成 1、已被替代 1）");
+    /* 用户报的那件事（2026-10-10）：被替代的旧任务不该把进度压下去 —— 算数的只有那一条，
+       它已经完成 ⇒ 100%，而不是 1/2 = 50%。*/
+    expect(text()).toContain("100%");
+    expect(text()).not.toContain("50%");
+
+    /* 全都被取消/替代掉：分母是空的，那个问题没有答案 —— 写 `—`，不编一个 0% 或 100%。*/
+    taskItems = [
+      { id: "t1", title: "撤掉的任务", status: "cancelled" },
+      { id: "t2", title: "被替代的任务", status: "cancelled", superseded_by: "t3" },
+    ];
+    await win.Tsunagou.refresh(["project"]);
+    expect(text()).toContain("—");
+    expect(text()).not.toContain("0%");
   });
 
 });

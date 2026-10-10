@@ -6860,12 +6860,39 @@
         });
     }
 
-    /* 翻页本身：一路 `?cursor=…` 走到尾巴（或撞上上面那三道闸），把走过的条目按升序攒起来。
-       回 `{items, page}`：`page` 是最后拿到的那一份（载荷形状就是出口原样那一份）。*/
+    /* 翻页本身：先问**尾巴**（`order=desc`），出口不认这个参数时退回逐页正向走法。
+       回 `{items, page}`：`items` 一律**升序**（形状函数与以前完全一样）。*/
     function readAuditTail(pathKey) {
+        /* `order=desc` 是出口的"给我最新一页"（待改 16 的剩余边界：事件多到十页以上的项目，
+           正向翻页**走不到尾**）。第一页就是最新的 200 条 —— 与下面的 AUDIT_TAIL_ITEMS 同量级，
+           所以一次请求就够。出口在载荷里回显 `order`：老 daemon 不认这个参数、照旧给升序第一页时，
+           这里认得出它，于是拿这一页当升序首页继续走 —— 不会被"第一页=最旧"骗成"最新在那里"。*/
+        return api.get(pathKey, { limit: AUDIT_PAGE_LIMIT, order: 'desc' }, { silent: true })
+            .then(function (raw) {
+                const first = isPlainObject(raw) ? raw : {};
+                if (toText(first.order) !== 'desc') return walkForward(pathKey, first);
+                const items = toArray(first.items).slice().reverse();
+                return { items: items, page: first };
+            });
+    }
+
+    /* 正向逐页走到底（老路径，原样保留）。`seed` 是已经拿到手的第一页（可能来自降序请求
+       被老 daemon 忽略后的那一份），从这里接着往下问。*/
+    function walkForward(pathKey, seed) {
         const collected = [];
         const asked = [];          /* 走过的 cursor：同一个游标不再问第二遍（成环就停） */
-        let page = {};
+        let page = isPlainObject(seed) ? seed : {};
+        const seeded = toArray(page.items);
+        for (let i = 0; i < seeded.length; i++) collected.push(seeded[i]);
+        if (seeded.length && auditTailReached(seeded, numberOrNull(page.as_of_event_seq))) {
+            return Promise.resolve({ items: collected, page: page });
+        }
+        /* 第一页没有下一段 = 它就是全部（与"走到尾巴"同一个结果），不必再问一次。
+           已经拿到的那个游标先记上：这样"下一页又是它"（成环）会被立刻认出来，
+           而不是多问一次才停。*/
+        const seededCursor = toText(page.next_cursor);
+        if (!seededCursor) return Promise.resolve({ items: collected, page: page });
+        asked.push(seededCursor);
 
         /* 一次一段地接着问：`round` 是页数（含第一页），到 AUDIT_MAX_PAGES 就停。
            每一页都拿**同一个** cursor（出口自己封装了"从哪条之后开始"），页面不解释它。*/
@@ -6889,7 +6916,9 @@
             });
         }
 
-        return step(null, 0).then(function () { return { items: collected, page: page }; });
+        return step(seededCursor, 0).then(function () {
+            return { items: collected, page: page };
+        });
     }
 
     /* 时间线要的那一份：`readAuditTail` 走完，最后那 AUDIT_TAIL_ITEMS 条原样进去。
@@ -8406,8 +8435,15 @@
                     { label: '主 Agent', value: main ? agentDisplayName(main) : '未指定', active: !!main }
                 ],
                 progress: {
-                    /* 左边那个 60px 大字是进度百分数：已完成 / 全部（没有任务就是 0%）。*/
-                    total: (tasks.length ? Math.round(done.length / tasks.length * 100) : 0) + '%',
+                    /* 左边那个 60px 大字是进度百分数：已完成 / **还算数的任务**。
+                       被取消与被替代的**不进分母**（用户 2026-10-10 定的口径）：
+                       它们不是"没做完的活"，留在分母里会让面板读起来像"还有一半没干"
+                       （2026-10-05 实测：验收 12/12，面板写 50%）。两者互不重叠，见上面。
+                       全都取消/替代掉了（分母为 0）时给一个 `—`：那个问题已经空了，
+                       写 0% 或 100% 都是编一个答案。右边清单照旧逐条列出来。*/
+                    total: (tasks.length - superseded.length - cancelled.length > 0
+                        ? Math.round(done.length / (tasks.length - superseded.length - cancelled.length) * 100) + '%'
+                        : (tasks.length ? '—' : '0%')),
                     /* 右边是可滚动的任务清单，就是"计划进度"：
                        ✓ 已完成（.taskF）· ● 在做（.taskD）· 没有图标 = 未完成（.task）。
                        图标与颜色由 CSS 给，这里只报状态和标题。*/
