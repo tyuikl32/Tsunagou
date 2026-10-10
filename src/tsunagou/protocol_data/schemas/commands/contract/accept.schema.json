@@ -4,11 +4,17 @@
   "additionalProperties": false,
   "properties": {
     "evidence_refs": {},
-    "proposal_digest": {}
+    "participant_slot": {},
+    "proposal_digest": {},
+    "proposal_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
-    "evidence_refs",
-    "proposal_digest"
+    "participant_slot",
+    "proposal_digest",
+    "proposal_id"
   ],
   "title": "ContractAcceptPayload",
   "type": "object"

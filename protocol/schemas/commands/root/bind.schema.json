@@ -23,7 +23,6 @@
   },
   "required": [
     "absolute_path",
-    "expected_physical_identity",
     "reason",
     "root_id"
   ],

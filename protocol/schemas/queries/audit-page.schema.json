@@ -34,14 +34,23 @@
     "snapshot_event_seq": {
       "type": "integer",
       "minimum": 0
+    },
+    "order": {
+      "description": "Which direction this page was served in. ``asc`` (the default) starts at the oldest event and follows next_cursor forward; ``desc`` starts at the newest and is therefore already the tail -- a caller that asked for ``order=desc`` can tell it got a descending page by reading this back, and an older daemon that does not know the parameter echoes nothing.",
+      "type": "string",
+      "enum": [
+        "asc",
+        "desc"
+      ]
     }
   },
   "required": [
-    "project_id",
+    "as_of_event_seq",
     "items",
     "next_cursor",
+    "order",
+    "project_id",
     "projection_version",
-    "as_of_event_seq",
     "snapshot_event_seq"
   ],
   "$defs": {

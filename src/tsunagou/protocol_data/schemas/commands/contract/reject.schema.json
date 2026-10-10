@@ -5,6 +5,10 @@
   "properties": {
     "evidence_refs": {},
     "proposal_digest": {},
+    "proposal_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "reason": {
       "maxLength": 4096,
       "type": "string"
@@ -13,6 +17,7 @@
   "required": [
     "evidence_refs",
     "proposal_digest",
+    "proposal_id",
     "reason"
   ],
   "title": "ContractRejectPayload",

@@ -1,0 +1,20 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/task.ready",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id"
+  ],
+  "title": "TaskReadyPayload",
+  "type": "object"
+}

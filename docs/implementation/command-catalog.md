@@ -25,18 +25,18 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 |---|---|---|---|---|
 | project.initialize | `/api/v1/projects`（全路径） | U / — | name,objective,coordination_root,initial_policy | Project+Operation；已有Git仓库，创建genesis |
 | project.configure | `:configure` | M / project.configure | policy_patch,reason | ProjectPolicy；不能扩大用户ceiling |
-| root.register | `/roots` | M / root.manage | name,kind,repository_id?,required,binding_request,reason | RootRegistration；超边界先用户决定。**root_id 由本命令生成**（不是调用方起的名字），任务 scope 必须用返回的那个 id |
-| root.bind | `/roots/{id}:bind` | M / root.manage | root_id,absolute_path,expected_physical_identity?,reason | RootBinding+Operation；**物理验证当场发生**：路径不在记 `status:"missing"`、该是目录却是文件记 `"not_a_directory"`（不拒绝 —— 那是有意义的状态），只有验证通过才是 `"bound"` |
-| repository.register | `/repositories` | M / root.manage | name,root_id,required | RepositoryRegistration+Operation；根没绑定时拒绝，detail 带 `root_id`、`registered`（该根登记过没有）与 `next` |
+| root.register | `/roots` | M / root.manage | binding_request,kind,name,reason,repository_id?,required | RootRegistration；超边界先用户决定。**root_id 由本命令生成**（不是调用方起的名字），任务 scope 必须用返回的那个 id |
+| root.bind | `/roots/{id}:bind` | M / root.manage | absolute_path,expected_physical_identity?,reason,root_id | RootBinding+Operation；**物理验证当场发生**：路径不在记 `status:"missing"`、该是目录却是文件记 `"not_a_directory"`（不拒绝 —— 那是有意义的状态），只有验证通过才是 `"bound"` |
+| repository.register | `/repositories` | M / root.manage | name,required,root_id | RepositoryRegistration+Operation；根没绑定时拒绝，detail 带 `root_id`、`registered`（该根登记过没有）与 `next` |
 | project.reconcile | `:reconcile` | M / project.reconcile | scope_refs,reason | Operation；只读观察、合并计划另确认 |
 | ceiling.set | `/control/ceiling:set` | U / — | ceiling,reason | UserCeiling；撤销不再满足范围的Grant |
 | project.trust_change | `/control/trust:change` | U / — | change_kind,proposal_ref,proposal_digest,expected_revisions,reason | UserDecision+Operation；协调根/信任边界/高敏root |
-| user_decision.propose | `/decisions` | M / decision.propose | kind,proposal_ref,proposal_digest?,expected_revisions?,choices,summary | UserDecision pending，无deadline；省略 proposal_digest 时由 daemon 根据提案内容计算，省略 expected_revisions 时按初始版本 1。`kind` 是自由字符串，其中 `project.objective` 为**保留值**：`summary` 写主 Agent 与用户谈定的项目目标、`choices` 给可选项，用户确认后它才是项目目标（见[决策](../decisions/2026-10-01-objective-from-dialogue.md)） |
-| user_decision.resolve | `/control/decisions/{id}:resolve` | U / — | decision_id,choice,proposal_digest,expected_revisions,reason? | UserDecision；审批与相应领域变更同UoW或生成Operation |
+| user_decision.propose | `/decisions` | M / decision.propose | choices,expected_revisions?,kind,proposal_digest?,proposal_ref,summary | UserDecision pending，无deadline；省略 proposal_digest 时由 daemon 根据提案内容计算，省略 expected_revisions 时按初始版本 1。`kind` 是自由字符串，其中 `project.objective` 为**保留值**：`summary` 写主 Agent 与用户谈定的项目目标、`choices` 给可选项，用户确认后它才是项目目标（见[决策](../decisions/2026-10-01-objective-from-dialogue.md)） |
+| user_decision.resolve | `/control/decisions/{id}:resolve` | U / — | choice,decision_id,expected_revisions,proposal_digest,reason? | UserDecision；审批与相应领域变更同UoW或生成Operation |
 | user_decision.cancel | `/decisions/{id}:cancel` | M / decision.propose | reason | UserDecision；仅尚pending，不等于用户拒绝 |
-| project.completion.propose.main | `/completion-proposals` | M / project.configure | objective_ref,evidence_refs,outstanding_summary,expected_project_revision | CompletionProposal |
-| project.completion.propose.owner | `/completion-proposals:from-owner` | X / task.execute | objective_ref,evidence_refs,outstanding_summary,expected_project_revision | CompletionProposal；必须root/objective owner |
-| project.completion.confirm | `/control/completion-proposals/{id}:confirm` | U / — | proposal_digest,expected_project_revision,expected_revisions | Project completed+checkpoint Operation；current Attempts先收敛；独占 daemon 在本次确认响应发送完毕且对应 checkpoint 成功后自动退出，共享 daemon 保持运行 |
+| project.completion.propose.main | `/completion-proposals` | M / project.configure | evidence_refs,expected_project_revision,objective_ref,outstanding_summary | CompletionProposal；**目标门**（2026-10-10）：`objective_ref` 必须等于一条已 resolved 的 `kind=project.objective` 决定的 `subject_ref` —— 没有就报 `project_objective_not_confirmed`，不是那一条就报 `project_objective_ref_mismatch`（详情带 `confirmed_objective_ref`）。返回与提案 payload 都带 `anchoring`（已登记仓库、存档点 digest、绑定根里哪些是 git 树）与 `warning` |
+| project.completion.propose.owner | `/completion-proposals:from-owner` | X / task.execute | objective_ref,evidence_refs,outstanding_summary,expected_project_revision | CompletionProposal；必须root/objective owner。**协议里已登记，但当前 daemon 没有注册 handler**（调用得 `handler_not_registered`）|
+| project.completion.confirm | `/control/completion-proposals/{id}:confirm` | U / — | expected_project_revision,expected_revisions,proposal_digest,proposal_id | Project completed+checkpoint Operation；current Attempts先收敛；独占 daemon 在本次确认响应发送完毕且对应 checkpoint 成功后自动退出，共享 daemon 保持运行。**目标门重跑一遍**（提案的 `subject_ref` 必须指向已确认的目标，否则同上两码拒绝）；`anchoring.warning` 非空时返回里带 `anchoring_warning` —— 用户接受与否由人决定，但"这份交付没有锚点"不静默 |
 | project.archive | `:archive` | M / project.archive | reason,expected_checkpoint_digest | Operation；barrier完成再archived |
 | project.reactivate.main | `:reactivate` | M / project.configure | reason,expected_runtime_epoch | Project+Operation；policy预授权，无ceiling扩大 |
 | project.reactivate.user | `/control:reactivate` | U / — | reason,expected_runtime_epoch | Project+Operation；新runtime，旧执行权不恢复 |
@@ -53,13 +53,13 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
 | agent.ticket.create | `/enrollment-tickets` | M / agent.enroll | kind:worker\|session_rebind,adapter_allowlist,ceiling_template,installation_binding?,target_agent_id? | TicketReceipt；secret仅私有交付 |
-| agent.ticket.create.user | `/control/enrollment-tickets`（实际统一入口 `/api/v1/commands/agent.ticket.create.user`） | U / — | installation_id,conversation_evidence:{conversation_id},kind:worker\|main\|session_rebind?,role:worker\|main?,ttl_seconds?,host_binding? | `role` 为用户请求，默认 worker；host_binding 的 provider/endpoint/thread_id/host_generation 绑定原会话，thread_id 必须等于票据 conversation_id。enroll/rebind 提交后自动登记唤醒 provider，不允许 Worker 指定其他 Agent |
-| agent.enroll | `/sessions:enroll` | T / — | installation_id,conversation_evidence,descriptor_ref,probe_payload,client_nonce,negotiation | EnrollmentResult；secret走专用header/安全通道。`descriptor_ref` 今天只用来带**跨机器远端自报**的东西：机器名（裸字符串或对象里的 `machine`），以及它那份代码副本的位置与基线（`{"copy":{"path","baseline"}}`；`agent import --machine/--copy/--baseline` 写进本机身份文件，桥在入席时上送）。两者都只是**自报**：不参与角色/范围/准入判断，乱填当没报；副本位置让主机把工作区按"外部准备"指向它（主机不读该路径，无基线、无清单，见 D192） |
-| session.rebind | `/sessions:rebind` | T / — | target_agent_id,installation_id,conversation_evidence,probe_payload,client_nonce | replacement HostSession；旧token和Grant撤销 |
-| session.reconnect | `/sessions/{id}:reconnect` | D / — | expected_connection_epoch,reconnect_nonce,continuity_evidence,probe_payload,host_binding_refresh? | ConnectionResult；token认证+nonce CAS；私有宿主刷新仅作用于当前已绑定Agent |
+| agent.ticket.create.user | `/control/enrollment-tickets`（实际统一入口 `/api/v1/commands/agent.ticket.create.user`） | U / — | conversation_evidence:{conversation_id},host_binding?,installation_id,kind:worker\|main\|session_rebind?,role:worker\|main?,ttl_seconds? | `role` 为用户请求，默认 worker；host_binding 的 provider/endpoint/thread_id/host_generation 绑定原会话，thread_id 必须等于票据 conversation_id。enroll/rebind 提交后自动登记唤醒 provider，不允许 Worker 指定其他 Agent |
+| agent.enroll | `/sessions:enroll` | T / — | client_nonce,conversation_evidence,descriptor_ref,installation_id,negotiation,probe_payload | EnrollmentResult；secret走专用header/安全通道。`descriptor_ref` 今天只用来带**跨机器远端自报**的东西：机器名（裸字符串或对象里的 `machine`），以及它那份代码副本的位置与基线（`{"copy":{"path","baseline"}}`；`agent import --machine/--copy/--baseline` 写进本机身份文件，桥在入席时上送）。两者都只是**自报**：不参与角色/范围/准入判断，乱填当没报；副本位置让主机把工作区按"外部准备"指向它（主机不读该路径，无基线、无清单，见 D192） |
+| session.rebind | `/sessions:rebind` | T / — | client_nonce,conversation_evidence,installation_id,probe_payload,target_agent_id | replacement HostSession；旧token和Grant撤销 |
+| session.reconnect | `/sessions/{id}:reconnect` | D / — | continuity_evidence,expected_connection_epoch,host_binding_refresh?,probe_payload,reconnect_nonce | ConnectionResult；token认证+nonce CAS；私有宿主刷新仅作用于当前已绑定Agent |
 | session.reprobe | `/sessions/{id}:reprobe` | D / — | probe_payload,descriptor_ref,reason | CapabilitySnapshot；仅self |
 | session.end | `/sessions/{id}:end` | D / — | reason,stop_evidence? | HostSession；self，撤Grant/处理Attempts |
-| authority.appoint | `/control/authority:appoint` | U / — | agent_id,expected_authority_epoch,ceiling_template,reason | Authority；ready且baseline通过 |
+| authority.appoint | `/control/authority:appoint` | U / — | agent_id,ceiling_template,expected_authority_epoch,reason | Authority；ready且baseline通过 |
 | authority.revoke | `/control/authority:revoke` | U / — | expected_authority_epoch,reason | Authority unassigned，撤权 |
 | context.project_read | `/context:project-read` | B / coordination.read | since_revision? | 脱敏项目上下文：本会话身份、角色、`members`（每个 Agent 的 agent_id/role/status/session_status，按 agent_id 排序）、owned/open 任务与在效契约；仅当前会话与授权可见；带上一次的 revision 且其间无变化时只回 `{revision, unchanged}`。另有一个**稳定块** `stable`（把平台本来就知道的值直接说出来，省得主 Agent 去猜或先被拒一次；它进 revision 摘要，所以差量读没变化时不重发）：`roots`（每个已登记根的 `root_id`/`name`/`kind`/`status`/`physical_identity` —— 最后一项是 `root.bind` 的 `expected_physical_identity` 要原样回填的那个不透明串，`inode:<dev>:<ino>` 或 `unresolved:<os>:<path>`；**不含任何绝对路径字段**）、`repositories`（`exists`/`items`〔`repository_id`/`name`/`root_id`〕/`total`/`next`）、`contracts.accepted`（`proposal_id`/`subject_ref`/`status`，即 `required_contract_ids` 能填的 id）、`goal`（`objective_ref`/`decision_id`/`status`/`confirmed`/`objective`/`note`：项目目标确认状态）。**只在第一次读**（不带 `since_revision`）另给 `capability_index`：一张 `area \| tools \| what it is for` 的表，按当前角色过滤（worker 看不到 `principal=M` 的工具），工具名与桥的工具表逐字一致 |
 | authority.handoff | `/authority:handoff` | M / authority.handoff | target_agent_id,expected_authority_epoch,adoption_plan,reason | AuthorityTransition |
@@ -73,32 +73,32 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| task.create | `/tasks` | M / task.create | title,objective,execution_scope,parent_task_id?,required_contract_ids?,blocks?,requires_files? | Task draft；`execution_scope` 必填但可为 `{}`（**空 = 不认领任何路径 → 这个任务不做文件改动**：begin 不准备 workspace、不产生占用、改动也不进结果 —— 要改文件就给 `resources`（path/root_id/segments/mode）或 `roots`；为空时结果里带一句 `next` 说清这点）；**声明了路径就必须指向已登记的根，否则 `unknown_root_id:<id>`**（悬空的 root_id 以前要到 begin 才炸）；**`requires_files:true` 而 scope 为空 → 拒绝**（`file_task_requires_scope`，发布时同样拦一道）；parent非终态或明确follow-up |
+| task.create | `/tasks` | M / task.create | blocks?,execution_scope,objective,parent_task_id?,required_contract_ids?,requires_files?,title | Task draft；`execution_scope` 必填但可为 `{}`（**空 = 不认领任何路径 → 这个任务不做文件改动**：begin 不准备 workspace、不产生占用、改动也不进结果 —— 要改文件就给 `resources`（path/root_id/segments/mode）或 `roots`；为空时结果里带一句 `next` 说清这点）；**声明了路径就必须指向已登记的根，否则 `unknown_root_id:<id>`**（悬空的 root_id 以前要到 begin 才炸）；**`requires_files:true` 而 scope 为空 → 拒绝**（`file_task_requires_scope`，发布时同样拦一道）；parent非终态或明确follow-up |
 | task.create.user | `/control/tasks` | U / — | 同task.create | Task；不自动任命自己owner |
-| task.update_plan | `/tasks/{id}:update-plan` | M / task.coordinate | title?,objective?,acceptance?,required_contract_ids?,reason? | Task；仅无执行的可编辑态 |
-| task.ready | `/tasks/{id}:ready` | M / task.publish | reason? | Task ready；完整结构检查 |
-| task.publish | `/tasks/{id}:publish` | M / task.publish | reason? | Task open；ready或changes_requested关闭旧Attempt后；**发布不通知任何人**（不发消息、不唤醒宿主），结果里的 `next` 会说明这点，并指向 `coordination.plan`（默认发 `task.assigned` 唤醒指名 worker）或 `message.send`；范围为空时同一句 `next` 里还带 task.create 那句范围提示（两句合并，都不丢） |
-| task.edge.add | `/task-edges` | M / task.coordinate | source_task_id,target_task_id,kind,expected_revisions | TaskEdge；blocks无环 |
-| task.edge.remove | `/task-edges/{id}:remove` | M / task.coordinate | reason,expected_revisions | EdgeRemoved；留事件 |
-| task.begin | `/tasks/{id}:begin` | B / task.claim | expected_task_revision | 一次取得 owner、基线、资源占用和执行授权；同 owner running 可恢复；失败不保留半套准备 |
-| task.progress | `/tasks/{id}:progress` | X / task.execute | summary,evidence_refs | ProgressRecord；running |
-| task.block | `/tasks/{id}:block` | B / task.coordinate_self | attempt_id,reason_code,dependency_refs,checkpoint_summary,evidence_refs | Suspension；current owner claimed/running |
-| task.submit | `/tasks/{id}:submit` | B / task.execute | attempt_id,summary,evidence_refs?,artifact_refs?,validation_metadata? | 自动收集 WorkspaceResult，提交后显式释放资源/撤执行权；submitted 等待 main 审查 |
-| task.review.accept | `/reviews/{id}:accept` | R / task.review | slot_id,result_digest,evidence_refs,reason | ReviewDecision；指定round/slot；**任务声明了非空 execution_scope 时，结果里必须有工作区产物**（`workspace_result_ref`/`workspace_id`/`manifest_id`），否则 `workspace_evidence_required` —— 没有工作区就没有证据，不接受（空 scope 的任务不受此门约束） |
-| task.review.request_changes | `/reviews/{id}:request-changes` | R / task.review | slot_id,result_digest,evidence_refs,reason | ReviewDecision+Task changes_requested |
-| task.self_accept | `/reviews/{id}:self-accept` | B / task.coordinate_self | result_digest,evidence_refs,reason | ReviewDecision；原owner、policy low-risk self |
-| task.cancel_request | `/tasks/{id}:request-cancel` | M / task.coordinate | reason | current Attempt claimed/running 时 cancel_requested；否则直接 cancelled，保留 submitted 结果 |
-| task.cancel_ack | `/tasks/{id}:ack-cancel` | B / task.coordinate_self | attempt_id,stop_evidence,reason | Task cancelled；owner，仅收敛 |
-| task.fail | `/tasks/{id}:fail` | B / task.coordinate_self | attempt_id,reason,evidence_refs,stop_evidence? | Task failed；owner，无成功伪装 |
-| task.recover | `/tasks/{id}:recover` | M / task.coordinate | task_id,expected_attempt_id,disposition:reopen\|cancel\|fail,reason? | Task；关闭旧Attempt再reopen |
-| task.scope.request | `/tasks/{id}/scope-requests` | B / task.coordinate_self | attempt_id,requested_scope,reason,expected_revisions | ScopeExpansionRequest；owner |
-| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | scope_request_id,choice:approve\|reject,approved_scope?,reason? | ScopeRequest+Task；审批不超ceiling，执行先block |
+| task.update_plan | `/tasks/{id}:update-plan` | M / task.coordinate | acceptance?,objective?,reason?,required_contract_ids?,task_id,title? | Task；仅无执行的可编辑态 |
+| task.ready | `/tasks/{id}:ready` | M / task.publish | reason?,task_id | Task ready；完整结构检查 |
+| task.publish | `/tasks/{id}:publish` | M / task.publish | reason?,task_id | Task open；ready或changes_requested关闭旧Attempt后；**发布不通知任何人**（不发消息、不唤醒宿主），结果里的 `next` 会说明这点，并指向 `coordination.plan`（默认发 `task.assigned` 唤醒指名 worker）或 `message.send`；范围为空时同一句 `next` 里还带 task.create 那句范围提示（两句合并，都不丢） |
+| task.edge.add | `/task-edges` | M / task.coordinate | expected_revisions,kind,source_task_id,target_task_id | TaskEdge；blocks无环 |
+| task.edge.remove | `/task-edges/{id}:remove` | M / task.coordinate | edge_id?,expected_revisions,reason,source_task_id,target_task_id | EdgeRemoved；留事件 |
+| task.begin | `/tasks/{id}:begin` | B / task.claim | expected_revisions?,expected_task_revision,task_id | 一次取得 owner、基线、资源占用和执行授权；同 owner running 可恢复；失败不保留半套准备 |
+| task.progress | `/tasks/{id}:progress` | X / task.execute | attempt_id,evidence_refs,summary,task_id | ProgressRecord；running |
+| task.block | `/tasks/{id}:block` | B / task.coordinate_self | attempt_id,checkpoint_summary,dependency_refs,evidence_refs,reason?,reason_code,task_id | Suspension；current owner claimed/running |
+| task.submit | `/tasks/{id}:submit` | B / task.execute | artifact_refs?,attempt_id,evidence_refs?,expected_revisions?,summary,task_id,validation_metadata? | 自动收集 WorkspaceResult，提交后显式释放资源/撤执行权；submitted 等待 main 审查 |
+| task.review.accept | `/reviews/{id}:accept` | R / task.review | attempt_id?,evidence_refs,reason,result_digest,result_id?,slot_id,task_id | ReviewDecision；指定round/slot；**任务声明了非空 execution_scope 时，结果里必须有工作区产物**（`workspace_result_ref`/`workspace_id`/`manifest_id`），否则 `workspace_evidence_required` —— 没有工作区就没有证据，不接受（空 scope 的任务不受此门约束） |
+| task.review.request_changes | `/reviews/{id}:request-changes` | R / task.review | attempt_id?,evidence_refs,reason,result_digest,result_id?,slot_id,task_id | ReviewDecision+Task changes_requested |
+| task.self_accept | `/reviews/{id}:self-accept` | B / task.coordinate_self | evidence_refs,reason,result_digest,result_id,task_id | ReviewDecision；原owner、policy low-risk self |
+| task.cancel_request | `/tasks/{id}:request-cancel` | M / task.coordinate | reason,task_id | current Attempt claimed/running 时 cancel_requested；否则直接 cancelled，保留 submitted 结果 |
+| task.cancel_ack | `/tasks/{id}:ack-cancel` | B / task.coordinate_self | attempt_id,reason,stop_evidence,task_id | Task cancelled；owner，仅收敛 |
+| task.fail | `/tasks/{id}:fail` | B / task.coordinate_self | attempt_id,evidence_refs,reason,stop_evidence?,task_id | Task failed；owner，无成功伪装 |
+| task.recover | `/tasks/{id}:recover` | M / task.coordinate | disposition:reopen\|cancel\|fail,expected_attempt_id,reason?,task_id | Task；关闭旧Attempt再reopen |
+| task.scope.request | `/tasks/{id}/scope-requests` | B / task.coordinate_self | attempt_id,expected_revisions,reason,requested_scope,task_id | ScopeExpansionRequest；owner |
+| task.scope.resolve | `/scope-requests/{id}:resolve` | M / task.coordinate | approved_scope?,choice:approve\|reject,reason?,scope_request_id | ScopeRequest+Task；审批不超ceiling，执行先block |
 
 ## Main 协调计划与 Worker 唤醒
 
 | command kind | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| coordination.plan | `/coordination/plans` | M / coordination.write | objective,assignments,auto_wake? | 原子创建 Task、Assignment、持久通知；依赖读取 Task，唤醒读取 hostwake；不设模型 ready 回执 |
+| coordination.plan | `/coordination/plans` | M / coordination.write | assignments,auto_wake?,objective | 原子创建 Task、Assignment、持久通知；依赖读取 Task，唤醒读取 hostwake；不设模型 ready 回执。**计划期校验**（2026-10-10，待改 22-③）：每行的 `execution_scope` 跑与 `task.create` 同一套登记根校验（悬空引用报 `unknown_root_id:<id>`，详情带 `registered_root_ids`），整条计划不留一半任务；`required_contract_ids` 没结清**不拒绝**（先计划、再让槽位接受是设计内的顺序），但写进该行 `contracts_pending[]` 与返回的 `next`，并列出本项目现有契约 id |
 | coordination.takeover | `/coordination/assignments/{id}:takeover` | M / coordination.write | assignment_id,takeover_reason | 显式 Main 接管；记录原 worker、失败状态证据和原因后才能 claim |
 | coordination.peer_hosts | `/coordination/peer-hosts` | B / coordination.read | — | 本机私有路由与当前认证会话证据形成的宿主摘要；未知不推测，不返回私有连接信息 |
 | coordination.wake_candidates | `/coordination/wake-candidates` | B / message.send | source_command_id | 仅查询调用者原命令产生的定向分派、提交和需要回复的消息引用；不读取对方收件箱 |
@@ -109,16 +109,16 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| cognition.report | `/reports` | B / cognition.report | task_id,attempt_id?,boundary,understanding,assumptions,uncertainties,claims,confidence,confidence_reason,evidence_refs,input_revisions,supersedes_id? | EpistemicReport；owner/指定参与者 |
-| discrepancy.create | `/discrepancies` | B / cognition.discuss | subject_ref,report_refs,severity,participants,summary,affected_actions | Discrepancy；有subject参与关系 |
-| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | discrepancy_id,status:clarifying\|negotiating,reason?,evidence_refs? | Discrepancy；participant |
-| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | discrepancy_id,kind:consensus\|dismissal\|override,reason?,evidence_refs?,accepted_by?,input_digest? | Resolution；override不冒充共识 |
+| cognition.report | `/reports` | B / cognition.report | assumptions,attempt_id,boundary,claims,confidence,confidence_reason,evidence_refs,input_revisions,supersedes_id?,task_id,uncertainties,understanding | EpistemicReport；owner/指定参与者 |
+| discrepancy.create | `/discrepancies` | B / cognition.discuss | affected_actions,discrepancy_id?,participants,report_refs,severity,subject_ref,summary | Discrepancy；有subject参与关系 |
+| discrepancy.advance | `/discrepancies/{id}:advance` | B / cognition.discuss | discrepancy_id,evidence_refs?,reason?,status:clarifying\|negotiating | Discrepancy；participant |
+| discrepancy.resolve | `/discrepancies/{id}:resolve` | M / cognition.resolve | accepted_by?,discrepancy_id,evidence_refs?,input_digest?,kind:consensus\|dismissal\|override,reason? | Resolution；override不冒充共识 |
 | discrepancy.request_arbitration | `/discrepancies/{id}:request-arbitration` | U / — | discrepancy_id,note? | 用户请求主 Agent 裁决；只投一条"需行动"的协作消息，裁决权限仍属主 Agent |
-| contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,subject_ref?,contract_kind?,payload,participants_required,participants_optional?,input_refs?,supersedes_id? | 两组元素为 {slot,agent_id}；required 至少一项、slot 全局唯一、Agent 属于本项目；替代只允许原提议者。`contract_id` 是调用方给这份提案起的 id：合法（非空、无控制字符、≤128）且未被占用时**就是** `proposal_id`（重复报 `contract_id_taken`），省略则系统发 UUID；返回值回显 `proposal_id`/`contract_id`，任务用这个值填 `required_contract_ids` |
-| contract.accept | `/contract-proposals/{id}:accept` | B / contract.accept | participant_slot,proposal_digest,evidence_refs? | self slot；仅 proposed；status 表示本 slot 接受，proposal_status 表示整个契约 |
-| contract.accept_proxy | `/contract-proposals/{id}:accept-proxy` | M / contract.accept_proxy | participant_slot_id,proposal_digest,proxy_policy_ref?,reason?,evidence_refs? | 仅 proposed；返回 proposal_status、real_actor_id 与 represented_participant（实际 Agent ID） |
-| contract.reject | `/contract-proposals/{id}:reject` | B / contract.accept | proposal_digest,reason,evidence_refs | Proposal rejected；participant |
-| contract.withdraw | `/contract-proposals/{id}:withdraw` | B / contract.propose | reason | Proposal；原提议者，尚未accepted |
+| contract.propose | `/contracts:propose` | B / contract.propose | contract_id?,contract_kind?,input_refs?,participants_optional?,participants_required,payload,subject_ref?,supersedes_id? | 两组元素为 {slot,agent_id}；required 至少一项、slot 全局唯一、Agent 属于本项目；替代只允许原提议者。`contract_id` 是调用方给这份提案起的 id：合法（非空、无控制字符、≤128）且未被占用时**就是** `proposal_id`（重复报 `contract_id_taken`），省略则系统发 UUID；返回值回显 `proposal_id`/`contract_id`，任务用这个值填 `required_contract_ids` |
+| contract.accept | `/contract-proposals/{id}:accept` | B / contract.accept | evidence_refs?,participant_slot,proposal_digest,proposal_id | self slot；仅 proposed；status 表示本 slot 接受，proposal_status 表示整个契约 |
+| contract.accept_proxy | `/contract-proposals/{id}:accept-proxy` | M / contract.accept_proxy | evidence_refs?,participant_slot_id,proposal_digest,proposal_id,proxy_policy_ref?,reason? | 仅 proposed；返回 proposal_status、real_actor_id 与 represented_participant（实际 Agent ID） |
+| contract.reject | `/contract-proposals/{id}:reject` | B / contract.accept | evidence_refs,proposal_digest,proposal_id,reason | Proposal rejected；participant |
+| contract.withdraw | `/contract-proposals/{id}:withdraw` | B / contract.propose | proposal_id,reason | Proposal；原提议者，尚未accepted |
 | risk.request | `/risk-assessments` | B / cognition.report | attempt_id,input_snapshot,input_digest,candidates | RiskRequest；owner；默认120秒fallback窗口 |
 | risk.submit | `/risk-assessments/{id}:submit` | M / risk.assess | input_digest,risk_level,reason,recommended_driver,scope,conditions,evidence_refs | RiskSubmission；输入仍当前 |
 | risk.accept | `/risk-acceptances` | M / risk.accept | subject_ref,input_digest,accepted_risks,reason | RiskAcceptance；不绕用户/结构不变量 |
@@ -128,10 +128,10 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| workspace.select | `/workspace-decisions` | M / workspace.select | task_id,driver_kind,root_binding_refs?,repository_id?,external_locator?,hard_constraints?,evidence_refs?,reason? | Task policy; scope revision bound; main prepares Git paths before begin |
+| workspace.select | `/workspace-decisions` | M / workspace.select | driver_kind,evidence_refs?,external_locator?,hard_constraints?,reason?,repository_id?,root_binding_refs?,task_id | Task policy; scope revision bound; main prepares Git paths before begin |
 | workspace.attach_external | `/workspaces:attach-external` | M / workspace.manage | attempt_id,decision_id,root_binding_refs,external_locator,evidence_refs | Workspace+Operation；不创建容器 |
-| workspace.git.report | `/git-requests/{id}:report` | M / git.control | exact_input_digest,outcome,evidence_refs,result_manifest | GitActionReport+Operation；main实际执行 |
-| workspace.integrate | `/integrations` | M / git.control | source_result_ref,target_repository_id,target_baseline_digest,plan_digest,reason | Integration+Operation；main执行 |
+| workspace.git.report | `/git-requests/{id}:report` | M / git.control | evidence_refs,exact_input_digest,outcome,request_id?,result_manifest | GitActionReport+Operation；main实际执行 |
+| workspace.integrate | `/integrations` | M / git.control | plan_digest,reason,source_result_ref,target_baseline_digest,target_repository_id | Integration+Operation；main执行 |
 | workspace.cleanup | `/workspaces/{id}:cleanup` | M / workspace.manage | input_digest,required_checkpoint_ref,reason | Operation；terminal+干净，Git仍main执行 |
 | workspace.cleanup_force | `/control/workspaces/{id}:cleanup-force` | U / — | input_digest,required_checkpoint_ref,exact_paths_digest,data_loss_acceptance,reason | UserDecision+Operation；dirty/最后副本要求 |
 
@@ -139,25 +139,25 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 
 | command | URI后缀 | 权限 / capability | payload | result/谓词 |
 |---|---|---|---|---|
-| message.send | `/api/v1/commands/message.send` | B / message.send | recipient_agent_id,summary,kind?,subject_ref?,payload?,priority?,response_contract?,in_reply_to? | message_id+recipient_agent_id；发送者取认证身份；summary 非空且最多4096字符，payload最多256KiB |
+| message.send | `/api/v1/commands/message.send` | B / message.send | in_reply_to?,kind?,payload?,priority?,recipient_agent_id,response_contract?,subject_ref?,summary | message_id+recipient_agent_id；发送者取认证身份；summary 非空且最多4096字符，payload最多256KiB |
 | message.respond | `/api/v1/commands/message.respond` | B / message.respond | obligation_id,response_message_id | 已存在的关联回复满足 Obligation；仅原recipient |
 | message.waive_response | `/response-obligations/{id}:waive` | B / message.send | reason | Obligation；原sender；main只能以原sender身份 |
 | inbox.claim | `/api/v1/commands/inbox.claim` | B / inbox.consume | limit? | messages 摘要列表+count；authenticated self；limit为1–200，默认50；不返回payload正文 |
 | inbox.fetch | `/api/v1/commands/inbox.fetch` | B / inbox.consume | message_id | 完整Message视图含payload/in_reply_to/响应义务；仅原recipient |
 | inbox.renew | `/deliveries/{id}:renew` | B / inbox.consume | delivery_lease_id | DeliveryLease；不超过2分钟 |
-| inbox.presented | `/api/v1/commands/inbox.presented` | B / inbox.consume | message_id,evidence_kind?,evidence_digest? | message_id+presented；仅记录展示声明，当前不验证摘要格式或证据强度 |
+| inbox.presented | `/api/v1/commands/inbox.presented` | B / inbox.consume | evidence_digest?,evidence_kind?,message_id | message_id+presented；仅记录展示声明，当前不验证摘要格式或证据强度 |
 | inbox.ack | `/api/v1/commands/inbox.ack` | B / inbox.consume | message_id,reason? | message_id+acked；仅原recipient；不自动响应 |
 | inbox.defer | `/deliveries/{id}:defer` | B / inbox.consume | defer_until,reason | Delivery；只改投递调度 |
 | artifact.upload.create | `/artifact-uploads` | B / artifact.attach | domain_ref,visibility:project_shared\|recipient_only,size_bytes,media_type,expected_digest | UploadIntent；领域允许该actor附加 |
 | artifact.upload.finalize | `/artifact-uploads/{id}:finalize` | B / artifact.attach | digest,size_bytes | ArtifactRef；相同领域授权重验 |
 | artifact.promote | `/artifacts/{digest}:promote` | M / artifact.promote | domain_ref,reason | ArtifactRef+Operation；project_shared，禁止hash绕授权 |
 | artifact.promote.user | `/control/artifacts/{digest}:promote` | U / — | domain_ref,reason | 同上 |
-| checkpoint.create | `/checkpoints` | M / durability.checkpoint | reason?,minimum_event_seq? | Operation；事务保存固定快照，提交后物化 |
-| checkpoint.create.user | `/control/checkpoints` | U / — | reason?,minimum_event_seq?,retry_operation_id? | Operation；retry复用原里程碑快照 |
+| checkpoint.create | `/checkpoints` | M / durability.checkpoint | minimum_event_seq?,reason? | Operation；事务保存固定快照，提交后物化 |
+| checkpoint.create.user | `/control/checkpoints` | U / — | minimum_event_seq?,reason?,retry_operation_id? | Operation；retry复用原里程碑快照 |
 | operation.cancel | `/operations/{id}:cancel` | M / operation.coordinate | reason | Operation；能否中止取决于handler，不伪造撤回外部效果 |
 | operation.resolve | `/operations/{id}:resolve` | M / operation.coordinate | conclusion,evidence_refs,reason,followup_plan? | OperationResolution；原unknown保留，只能可授权范围 |
 | operation.resolve.user | `/control/operations/{id}:resolve` | U / — | 同上 | User保留动作与越权风险专用 |
-| durability.reconcile | `/durability:reconcile` | M / durability.checkpoint | scope_refs,reason | Operation；重试物化，非盲重外部动作 |
+| durability.reconcile | `/durability:reconcile` | M / durability.checkpoint | reason,scope_refs | Operation；重试物化，非盲重外部动作 |
 | publication.report | `/publication-reports` | M / git.control | repository_id,remote_name,ref_name,commit_oid,checkpoint_digest,evidence_refs,reported_at | PublicationReport；main_reported |
 | shared.reconcile | `/shared-state:reconcile` | M / project.reconcile | ancestor_digest,left_digest,right_digest,resolution_plan,expected_revisions,plan_digest | Operation；同lineage且冲突已明确解决 |
 

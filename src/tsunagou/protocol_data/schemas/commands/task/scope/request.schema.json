@@ -19,13 +19,18 @@
       "maxLength": 4096,
       "type": "string"
     },
-    "requested_scope": {}
+    "requested_scope": {},
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
     "attempt_id",
     "expected_revisions",
     "reason",
-    "requested_scope"
+    "requested_scope",
+    "task_id"
   ],
   "title": "TaskScopeRequestPayload",
   "type": "object"

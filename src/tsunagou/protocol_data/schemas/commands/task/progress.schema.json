@@ -3,15 +3,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "evidence_refs": {},
     "summary": {
       "maxLength": 4096,
       "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
+    "attempt_id",
     "evidence_refs",
-    "summary"
+    "summary",
+    "task_id"
   ],
   "title": "TaskProgressPayload",
   "type": "object"

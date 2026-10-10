@@ -1,0 +1,15 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/authority.transition.report",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "stopped_refs": {}
+  },
+  "required": [
+    "evidence_refs",
+    "stopped_refs"
+  ],
+  "title": "AuthorityTransitionReportPayload",
+  "type": "object"
+}

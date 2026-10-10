@@ -1,20 +1,28 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tsunagou.local/schema/commands/task.begin",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "task_id": {
-      "type": "string",
-      "minLength": 1
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
     },
     "expected_task_revision": {
-      "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "type": "integer"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
-    "task_id",
-    "expected_task_revision"
-  ]
+    "expected_task_revision",
+    "task_id"
+  ],
+  "type": "object"
 }

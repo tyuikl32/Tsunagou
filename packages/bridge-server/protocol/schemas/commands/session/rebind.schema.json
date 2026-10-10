@@ -1,0 +1,27 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/session.rebind",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "client_nonce": {},
+    "conversation_evidence": {},
+    "installation_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "probe_payload": {},
+    "target_agent_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "client_nonce",
+    "conversation_evidence",
+    "installation_id",
+    "probe_payload",
+    "target_agent_id"
+  ],
+  "title": "SessionRebindPayload",
+  "type": "object"
+}

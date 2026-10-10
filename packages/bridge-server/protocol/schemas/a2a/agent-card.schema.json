@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/a2a/1.0/agent-card.json",
+  "title": "Tsunagou A2A Agent Card",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["name", "version", "protocolVersion", "url", "supportedInterfaces", "capabilities", "skills"],
+  "properties": {
+    "name": {"type": "string"},
+    "version": {"type": "string"},
+    "protocolVersion": {"const": "1.0"},
+    "url": {"type": "string", "format": "uri"},
+    "supportedInterfaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["url", "protocolBinding", "protocolVersion"],
+        "properties": {
+          "url": {"type": "string", "format": "uri"},
+          "protocolBinding": {"const": "JSONRPC"},
+          "protocolVersion": {"const": "1.0"}
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["streaming", "pushNotifications"],
+      "properties": {"streaming": {"type": "boolean"}, "pushNotifications": {"type": "boolean"}}
+    },
+    "skills": {"type": "array", "minItems": 1}
+  }
+}

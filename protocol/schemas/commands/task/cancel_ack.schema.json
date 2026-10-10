@@ -11,12 +11,17 @@
       "maxLength": 4096,
       "type": "string"
     },
-    "stop_evidence": {}
+    "stop_evidence": {},
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
     "attempt_id",
     "reason",
-    "stop_evidence"
+    "stop_evidence",
+    "task_id"
   ],
   "title": "TaskCancel_AckPayload",
   "type": "object"

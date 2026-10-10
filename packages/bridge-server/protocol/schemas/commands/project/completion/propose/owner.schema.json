@@ -1,0 +1,26 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.completion.propose.owner",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evidence_refs": {},
+    "expected_project_revision": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "objective_ref": {},
+    "outstanding_summary": {}
+  },
+  "required": [
+    "evidence_refs",
+    "expected_project_revision",
+    "objective_ref",
+    "outstanding_summary"
+  ],
+  "title": "ProjectCompletionProposeOwnerPayload",
+  "type": "object"
+}

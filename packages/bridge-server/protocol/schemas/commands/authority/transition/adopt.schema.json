@@ -1,0 +1,27 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/authority.transition.adopt",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adopted_refs": {},
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "adopted_refs",
+    "expected_revisions",
+    "reason"
+  ],
+  "title": "AuthorityTransitionAdoptPayload",
+  "type": "object"
+}

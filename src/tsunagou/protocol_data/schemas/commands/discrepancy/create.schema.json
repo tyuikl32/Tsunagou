@@ -4,6 +4,10 @@
   "additionalProperties": false,
   "properties": {
     "affected_actions": {},
+    "discrepancy_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "participants": {},
     "report_refs": {},
     "severity": {},

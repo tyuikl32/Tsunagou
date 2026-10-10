@@ -1,0 +1,36 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/user_decision.resolve",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "choice": {},
+    "decision_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "proposal_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "choice",
+    "decision_id",
+    "expected_revisions",
+    "proposal_digest"
+  ],
+  "title": "User_DecisionResolvePayload",
+  "type": "object"
+}

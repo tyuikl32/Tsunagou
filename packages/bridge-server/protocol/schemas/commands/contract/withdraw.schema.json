@@ -1,0 +1,21 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/contract.withdraw",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "proposal_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "proposal_id",
+    "reason"
+  ],
+  "title": "ContractWithdrawPayload",
+  "type": "object"
+}

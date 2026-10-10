@@ -435,6 +435,14 @@
             ],
             "title": "Next Cursor"
           },
+          "order": {
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Order",
+            "type": "string"
+          },
           "project_id": {
             "minLength": 1,
             "title": "Project Id",
@@ -457,7 +465,8 @@
           "next_cursor",
           "projection_version",
           "as_of_event_seq",
-          "snapshot_event_seq"
+          "snapshot_event_seq",
+          "order"
         ],
         "title": "AuditPageModel",
         "type": "object"
@@ -3164,6 +3173,20 @@
             }
           },
           {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
             "in": "header",
             "name": "Authorization",
             "required": false,
@@ -3967,6 +3990,20 @@
                 }
               ],
               "title": "Subject Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
             }
           },
           {

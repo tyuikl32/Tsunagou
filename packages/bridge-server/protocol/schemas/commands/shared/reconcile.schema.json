@@ -1,0 +1,30 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/shared.reconcile",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "ancestor_digest": {},
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "left_digest": {},
+    "plan_digest": {},
+    "resolution_plan": {},
+    "right_digest": {}
+  },
+  "required": [
+    "ancestor_digest",
+    "expected_revisions",
+    "left_digest",
+    "plan_digest",
+    "resolution_plan",
+    "right_digest"
+  ],
+  "title": "SharedReconcilePayload",
+  "type": "object"
+}

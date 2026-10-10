@@ -1,0 +1,18 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/checkpoint.create",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "reason": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "minimum_event_seq": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [],
+  "title": "CheckpointCreatePayload",
+  "type": "object"
+}

@@ -1,0 +1,27 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/workspace.integrate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "plan_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "source_result_ref": {},
+    "target_baseline_digest": {},
+    "target_repository_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_digest",
+    "reason",
+    "source_result_ref",
+    "target_baseline_digest",
+    "target_repository_id"
+  ],
+  "title": "WorkspaceIntegratePayload",
+  "type": "object"
+}

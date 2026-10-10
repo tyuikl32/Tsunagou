@@ -1,0 +1,32 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/authority.appoint",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "ceiling_template": {},
+    "expected_authority_epoch": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent_id",
+    "ceiling_template",
+    "expected_authority_epoch",
+    "reason"
+  ],
+  "title": "AuthorityAppointPayload",
+  "type": "object"
+}

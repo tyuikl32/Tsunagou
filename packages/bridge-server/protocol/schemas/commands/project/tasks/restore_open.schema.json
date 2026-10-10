@@ -1,0 +1,29 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.tasks.restore_open",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "plan_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "task_ids": {}
+  },
+  "required": [
+    "expected_revisions",
+    "plan_digest",
+    "reason",
+    "task_ids"
+  ],
+  "title": "ProjectTasksRestore_OpenPayload",
+  "type": "object"
+}

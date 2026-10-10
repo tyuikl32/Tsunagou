@@ -64,7 +64,7 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "task.begin": frozenset({"task_id", "expected_task_revision", "expected_revisions"}),
     "task.ready": frozenset({"task_id", "reason"}),
     "task.publish": frozenset({"task_id", "reason"}),
-    "task.update_plan": frozenset({"task_id", "title", "objective", "required_contract_ids", "reason"}),
+    "task.update_plan": frozenset({"task_id", "title", "objective", "acceptance", "required_contract_ids", "reason"}),
     "task.edge.add": frozenset({"source_task_id", "target_task_id", "kind", "expected_revisions"}),
     "task.edge.remove": frozenset({"edge_id", "source_task_id", "target_task_id", "reason", "expected_revisions"}),
     "task.progress": frozenset({"task_id", "attempt_id", "summary", "evidence_refs"}),
@@ -120,6 +120,14 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "message.respond": frozenset({"obligation_id", "response_message_id"}),
     "context.project_read": frozenset({"since_revision"}),
     "discrepancy.request_arbitration": frozenset({"discrepancy_id", "note"}),
+    # 用户删 Agent：`agent.retire.user` 的 schema 与目录一直声明 agent_id/reason，而运行时白名单
+    # 里没有它 —— 那条路只有 handler 在等，任何真实调用都先吃 `unknown_payload_field`（22-①）。
+    "agent.retire.user": frozenset({"agent_id", "reason"}),
+    # 集成请求的 5 个字段。它**服务中却没有白名单条目**，而缺条目等于没有校验
+    # （`_dispatch` 只在有条目时才比对），所以补上：surface 说收什么，运行时就只收什么。
+    "workspace.integrate": frozenset({
+        "source_result_ref", "target_repository_id", "target_baseline_digest", "plan_digest", "reason",
+    }),
     "workspace.select": frozenset({"task_id", "driver_kind", "root_binding_refs", "repository_id", "external_locator",
                                      "hard_constraints", "evidence_refs", "reason"}),
     "workspace.git.report": frozenset({"request_id", "evidence_refs", "exact_input_digest", "outcome", "result_manifest"}),

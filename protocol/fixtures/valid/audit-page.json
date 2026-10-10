@@ -62,12 +62,15 @@
       "revision_after": null,
       "evidence_level": null,
       "session_status": null,
-      "missing_admission": ["identity_continuity"],
+      "missing_admission": [
+        "identity_continuity"
+      ],
       "changes": []
     }
   ],
   "next_cursor": null,
   "projection_version": "v1",
   "as_of_event_seq": 2,
-  "snapshot_event_seq": 2
+  "snapshot_event_seq": 2,
+  "order": "asc"
 }

@@ -1,0 +1,22 @@
+{
+  "$id": "https://tsunagou.local/schema/results/contract-accept",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContractAcceptanceResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["proposal_id", "participant_slot", "status", "proposal_status"],
+  "properties": {
+    "proposal_id": {"type": "string", "minLength": 1},
+    "participant_slot": {"type": "string", "pattern": "\\S"},
+    "status": {"const": "accepted"},
+    "proposal_status": {"enum": ["proposed", "accepted"]},
+    "via_proxy": {"const": true},
+    "real_actor_id": {"type": "string", "minLength": 1},
+    "represented_participant": {"type": "string", "minLength": 1}
+  },
+  "dependentRequired": {
+    "via_proxy": ["real_actor_id", "represented_participant"],
+    "real_actor_id": ["via_proxy", "represented_participant"],
+    "represented_participant": ["via_proxy", "real_actor_id"]
+  }
+}

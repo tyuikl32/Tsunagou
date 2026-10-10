@@ -1,0 +1,25 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.archive",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expected_checkpoint_digest": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "expected_checkpoint_digest",
+    "reason"
+  ],
+  "title": "ProjectArchivePayload",
+  "type": "object"
+}

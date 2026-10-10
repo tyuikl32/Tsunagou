@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/queries/checkpoint-page",
+  "title": "CheckpointPage",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "project_id": { "type": "string", "minLength": 1 },
+    "current": { "anyOf": [{ "$ref": "#/$defs/CheckpointPointer" }, { "type": "null" }] },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/CheckpointSummary" } },
+    "projection_version": { "type": "string", "const": "v1" },
+    "as_of_event_seq": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["project_id", "current", "items", "projection_version", "as_of_event_seq"],
+  "$defs": {
+    "CheckpointPointer": {
+      "title": "CheckpointPointer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["sealed", "verified"] },
+        "through_event_seq": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["digest", "status", "through_event_seq"]
+    },
+    "CheckpointSummary": {
+      "title": "CheckpointSummary",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "type": "string", "minLength": 1 },
+        "parent_digest": { "type": ["string", "null"] },
+        "project_id": { "type": ["string", "null"] },
+        "lineage_id": { "type": "string", "minLength": 1 },
+        "through_event_seq": { "type": "integer", "minimum": 0 },
+        "format_version": { "type": "integer", "minimum": 1 },
+        "schema_bundle_digest": { "type": "string", "minLength": 1 },
+        "created_at": { "anyOf": [{ "$ref": "../common/timestamp.schema.json" }, { "type": "null" }] },
+        "created_by": { "type": ["string", "null"] },
+        "reason": { "type": ["string", "null"] },
+        "projection_version": { "type": "string", "minLength": 1 },
+        "verified_at": { "anyOf": [{ "$ref": "../common/timestamp.schema.json" }, { "type": "null" }] },
+        "status": { "type": "string", "enum": ["sealed", "verified"] },
+        "artifact_digests": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["digest", "parent_digest", "project_id", "lineage_id", "through_event_seq", "format_version", "schema_bundle_digest", "created_at", "created_by", "reason", "projection_version", "verified_at", "status", "artifact_digests"]
+    }
+  }
+}

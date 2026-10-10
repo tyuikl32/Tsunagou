@@ -1,0 +1,34 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.trust_change",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "change_kind": {},
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "proposal_digest": {},
+    "proposal_ref": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "change_kind",
+    "expected_revisions",
+    "proposal_digest",
+    "proposal_ref",
+    "reason"
+  ],
+  "title": "ProjectTrust_ChangePayload",
+  "type": "object"
+}

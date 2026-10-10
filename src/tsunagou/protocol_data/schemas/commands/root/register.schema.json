@@ -24,7 +24,6 @@
     "kind",
     "name",
     "reason",
-    "repository_id",
     "required"
   ],
   "title": "RootRegisterPayload",

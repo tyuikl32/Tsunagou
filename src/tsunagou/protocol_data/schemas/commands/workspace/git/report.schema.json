@@ -6,6 +6,10 @@
     "evidence_refs": {},
     "exact_input_digest": {},
     "outcome": {},
+    "request_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "result_manifest": {}
   },
   "required": [

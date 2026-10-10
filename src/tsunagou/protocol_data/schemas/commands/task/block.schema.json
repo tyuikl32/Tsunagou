@@ -10,14 +10,23 @@
     "checkpoint_summary": {},
     "dependency_refs": {},
     "evidence_refs": {},
-    "reason_code": {}
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "reason_code": {},
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
     "attempt_id",
     "checkpoint_summary",
     "dependency_refs",
     "evidence_refs",
-    "reason_code"
+    "reason_code",
+    "task_id"
   ],
   "title": "TaskBlockPayload",
   "type": "object"

@@ -1,0 +1,27 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/agent.retire",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
+    },
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "stop_evidence": {}
+  },
+  "required": [
+    "expected_revisions",
+    "reason",
+    "stop_evidence"
+  ],
+  "title": "AgentRetirePayload",
+  "type": "object"
+}

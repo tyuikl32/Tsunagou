@@ -3,13 +3,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "evidence_refs": {},
     "reason": {
       "maxLength": 4096,
       "type": "string"
     },
     "result_digest": {},
+    "result_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "slot_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
       "minLength": 1,
       "type": "string"
     }
@@ -18,7 +30,8 @@
     "evidence_refs",
     "reason",
     "result_digest",
-    "slot_id"
+    "slot_id",
+    "task_id"
   ],
   "title": "TaskReviewRequest_ChangesPayload",
   "type": "object"

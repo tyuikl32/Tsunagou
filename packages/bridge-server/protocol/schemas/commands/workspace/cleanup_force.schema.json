@@ -1,0 +1,24 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/workspace.cleanup_force",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data_loss_acceptance": {},
+    "exact_paths_digest": {},
+    "input_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "required_checkpoint_ref": {}
+  },
+  "required": [
+    "data_loss_acceptance",
+    "exact_paths_digest",
+    "input_digest",
+    "reason",
+    "required_checkpoint_ref"
+  ],
+  "title": "WorkspaceCleanup_ForcePayload",
+  "type": "object"
+}

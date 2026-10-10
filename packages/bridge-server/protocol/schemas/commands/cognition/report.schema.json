@@ -1,0 +1,84 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/cognition.report",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "attempt_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "boundary": {},
+    "claims": {
+      "items": {
+        "properties": {
+          "claim_type": {
+            "type": "string"
+          },
+          "equality_key": {
+            "type": "string"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "subject": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {}
+        },
+        "required": [
+          "subject_key"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "confidence": {},
+    "confidence_reason": {},
+    "evidence_refs": {},
+    "input_revisions": {},
+    "supersedes_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "uncertainties": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "understanding": {}
+  },
+  "required": [
+    "assumptions",
+    "attempt_id",
+    "boundary",
+    "claims",
+    "confidence",
+    "confidence_reason",
+    "evidence_refs",
+    "input_revisions",
+    "task_id",
+    "uncertainties",
+    "understanding"
+  ],
+  "title": "CognitionReportPayload",
+  "type": "object"
+}

@@ -19,12 +19,17 @@
         "object"
       ]
     },
-    "proposal_digest": {}
+    "proposal_digest": {},
+    "proposal_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
     "expected_project_revision",
     "expected_revisions",
-    "proposal_digest"
+    "proposal_digest",
+    "proposal_id"
   ],
   "title": "ProjectCompletionConfirmPayload",
   "type": "object"

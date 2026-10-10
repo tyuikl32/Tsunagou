@@ -1,0 +1,25 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/risk.accept",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted_risks": {},
+    "input_digest": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "subject_ref": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "accepted_risks",
+    "input_digest",
+    "reason",
+    "subject_ref"
+  ],
+  "title": "RiskAcceptPayload",
+  "type": "object"
+}

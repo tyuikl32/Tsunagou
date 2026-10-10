@@ -4,10 +4,10 @@
   "additionalProperties": false,
   "properties": {
     "assumptions": {
-      "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "type": "array"
     },
     "attempt_id": {
       "minLength": 1,
@@ -15,36 +15,36 @@
     },
     "boundary": {},
     "claims": {
-      "type": "array",
       "items": {
-        "type": "object",
-        "required": [
-          "subject_key"
-        ],
         "properties": {
-          "subject_key": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "subject": {
-            "minLength": 1,
-            "type": "string"
-          },
           "claim_type": {
             "type": "string"
           },
           "equality_key": {
             "type": "string"
           },
-          "value": {},
           "evidence_refs": {
-            "type": "array",
             "items": {
               "type": "string"
-            }
-          }
-        }
-      }
+            },
+            "type": "array"
+          },
+          "subject": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {}
+        },
+        "required": [
+          "subject_key"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
     "confidence": {},
     "confidence_reason": {},
@@ -59,10 +59,10 @@
       "type": "string"
     },
     "uncertainties": {
-      "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "type": "array"
     },
     "understanding": {}
   },
@@ -75,7 +75,6 @@
     "confidence_reason",
     "evidence_refs",
     "input_revisions",
-    "supersedes_id",
     "task_id",
     "uncertainties",
     "understanding"

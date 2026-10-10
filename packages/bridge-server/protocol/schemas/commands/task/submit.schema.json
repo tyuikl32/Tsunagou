@@ -1,33 +1,40 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tsunagou.local/schema/commands/task.submit",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "task_id": {
-      "type": "string",
-      "minLength": 1
+    "artifact_refs": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
     },
     "attempt_id": {
-      "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "expected_revisions": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "string",
+        "object"
+      ]
     },
     "summary": {
       "type": "string"
     },
-    "evidence_refs": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "artifact_refs": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
     },
     "validation_metadata": {
       "description": "Optional evidence records. Keep each one SHORT: only `command` and `exit_code` are required, and everything else (timestamps, tool, digests, evidence_level) is optional. Prefer pointing at where the evidence can be checked -- `evidence_refs` / `artifact_refs`, or a workspace result -- over inlining long command lines, logs or transcripts: the host parses this as JSON in one streamed response, and a long payload is what breaks it (2026-10-07: a submission with the full seven-field records killed the session with 'tool input is invalid JSON'). Main can attach the long evidence when it reviews the result.",
@@ -92,8 +99,9 @@
     }
   },
   "required": [
-    "task_id",
     "attempt_id",
-    "summary"
-  ]
+    "summary",
+    "task_id"
+  ],
+  "type": "object"
 }

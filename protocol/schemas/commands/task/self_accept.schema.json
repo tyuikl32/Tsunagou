@@ -8,12 +8,22 @@
       "maxLength": 4096,
       "type": "string"
     },
-    "result_digest": {}
+    "result_digest": {},
+    "result_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
+    }
   },
   "required": [
     "evidence_refs",
     "reason",
-    "result_digest"
+    "result_digest",
+    "result_id",
+    "task_id"
   ],
   "title": "TaskSelf_AcceptPayload",
   "type": "object"

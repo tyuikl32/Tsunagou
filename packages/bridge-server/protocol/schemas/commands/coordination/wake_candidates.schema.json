@@ -1,0 +1,16 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/coordination.wake_candidates",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "source_command_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_command_id"
+  ],
+  "title": "CoordinationWake_CandidatesPayload",
+  "type": "object"
+}

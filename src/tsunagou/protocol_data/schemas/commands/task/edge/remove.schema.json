@@ -3,6 +3,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "edge_id": {
+      "minLength": 1,
+      "type": "string"
+    },
     "expected_revisions": {
       "minimum": 0,
       "type": [
@@ -14,11 +18,21 @@
     "reason": {
       "maxLength": 4096,
       "type": "string"
+    },
+    "source_task_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "target_task_id": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
     "expected_revisions",
-    "reason"
+    "reason",
+    "source_task_id",
+    "target_task_id"
   ],
   "title": "TaskEdgeRemovePayload",
   "type": "object"

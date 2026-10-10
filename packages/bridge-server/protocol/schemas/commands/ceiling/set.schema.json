@@ -1,0 +1,18 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/ceiling.set",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "ceiling": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "ceiling",
+    "reason"
+  ],
+  "title": "CeilingSetPayload",
+  "type": "object"
+}

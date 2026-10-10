@@ -1,43 +1,92 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tsunagou.local/schema/commands/coordination.plan",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "objective": {
-      "type": "string",
-      "minLength": 1
-    },
     "assignments": {
-      "type": "array",
-      "minItems": 1,
       "items": {
-        "type": "object",
+        "additionalProperties": false,
         "properties": {
           "acceptance": {
-            "type": "string",
+            "description": "How this task will be judged done, in a form someone can check: a command and its expected output, or the exact steps and result. Required: a task without it can only be judged by hand, after integration, which is where 2026-10-05's most expensive rework happened.",
             "minLength": 1,
-            "description": "How this task will be judged done, in a form someone can check: a command and its expected output, or the exact steps and result. Required: a task without it can only be judged by hand, after integration, which is where 2026-10-05's most expensive rework happened."
+            "type": "string"
           },
-          "supersedes_task_id": {
-            "type": "string",
+          "assigned_worker_id": {
+            "description": "The Agent this row is handed to. Required: coordination.plan sends one task.assigned message per row to this Agent and wakes it.",
             "minLength": 1,
-            "description": "The task this one replaces. The named task leaves the claim queue and keeps a link to its replacement, so 'we changed our minds' stays readable instead of looking like unfinished work."
+            "type": "string"
           },
           "cross_module": {
-            "type": "boolean",
-            "description": "Declares that this task shares an interface with another module. Declaring it makes required_contract_ids mandatory in the same row: the most expensive semantic conflict on 2026-10-05 (a reader calling /requests while the backend served /api/applications) overlapped no files at all, so a contract enforced only on file overlap cannot catch it."
+            "description": "Declares that this task shares an interface with another module. Declaring it makes required_contract_ids mandatory in the same row: the most expensive semantic conflict on 2026-10-05 (a reader calling /requests while the backend served /api/applications) overlapped no files at all, so a contract enforced only on file overlap cannot catch it.",
+            "type": "boolean"
+          },
+          "dependencies": {
+            "description": "Task ids this row waits for (blocks edges). The dependency gate only accepts a dependency whose status is completed.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "execution_scope": {
+            "description": "Same shape as task.create: {\"roots\": [...]} or {\"resources\": [...]}. Empty means the task claims no path.",
+            "type": "object"
+          },
+          "parent_task_id": {
+            "description": "Navigation only: this does not make the parent wait for the child.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "required_contract_ids": {
+            "description": "Accepted contract ids this row depends on -- the proposal_id/contract_id contract.propose returned, never a label of your own.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "supersedes_task_id": {
+            "description": "The task this one replaces. The named task leaves the claim queue and keeps a link to its replacement, so 'we changed our minds' stays readable instead of looking like unfinished work.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_objective": {
+            "description": "What this task must produce. This is the row's objective, not the plan's top-level objective.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspace": {
+            "description": "A workspace.select payload for this row (task_id is filled in). Given it, the plan selects the policy in the same call instead of leaving it to begin.",
+            "type": "object"
           }
         },
-        "required": ["acceptance"]
-      }
+        "required": [
+          "acceptance",
+          "assigned_worker_id",
+          "task_objective",
+          "title"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
     },
     "auto_wake": {
       "type": "boolean"
+    },
+    "objective": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
-    "objective",
-    "assignments"
-  ]
+    "assignments",
+    "objective"
+  ],
+  "type": "object"
 }

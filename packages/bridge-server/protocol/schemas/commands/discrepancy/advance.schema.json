@@ -1,0 +1,23 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/discrepancy.advance",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "discrepancy_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "evidence_refs": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "status": {}
+  },
+  "required": [
+    "discrepancy_id",
+    "status"
+  ],
+  "title": "DiscrepancyAdvancePayload",
+  "type": "object"
+}

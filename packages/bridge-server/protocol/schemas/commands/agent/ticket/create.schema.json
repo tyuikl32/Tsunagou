@@ -1,0 +1,22 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/agent.ticket.create",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapter_allowlist": {},
+    "ceiling_template": {},
+    "installation_binding": {},
+    "kind": {},
+    "target_agent_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "adapter_allowlist",
+    "ceiling_template",
+    "kind"
+  ],
+  "title": "AgentTicketCreatePayload",
+  "type": "object"
+}

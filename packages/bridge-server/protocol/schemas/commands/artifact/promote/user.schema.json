@@ -1,0 +1,18 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/artifact.promote.user",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "domain_ref": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "domain_ref",
+    "reason"
+  ],
+  "title": "ArtifactPromoteUserPayload",
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/project.replica.activate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checkpoint_digest": {},
+    "mode": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "recovery_evidence_refs": {}
+  },
+  "required": [
+    "checkpoint_digest",
+    "mode",
+    "reason",
+    "recovery_evidence_refs"
+  ],
+  "title": "ProjectReplicaActivatePayload",
+  "type": "object"
+}

@@ -287,6 +287,7 @@
       "principal": "B",
       "required_fields": [
         "assumptions",
+        "attempt_id",
         "boundary",
         "claims",
         "confidence",
@@ -313,12 +314,14 @@
       "payload_fields": [
         "evidence_refs",
         "participant_slot",
-        "proposal_digest"
+        "proposal_digest",
+        "proposal_id"
       ],
       "principal": "B",
       "required_fields": [
         "participant_slot",
-        "proposal_digest"
+        "proposal_digest",
+        "proposal_id"
       ],
       "schema": "commands/contract/accept.schema.json",
       "uri": "/contract-proposals/{id}:accept"
@@ -328,13 +331,15 @@
         "evidence_refs",
         "participant_slot_id",
         "proposal_digest",
+        "proposal_id",
         "proxy_policy_ref",
         "reason"
       ],
       "principal": "M",
       "required_fields": [
         "participant_slot_id",
-        "proposal_digest"
+        "proposal_digest",
+        "proposal_id"
       ],
       "schema": "commands/contract/accept_proxy.schema.json",
       "uri": "/contract-proposals/{id}:accept-proxy"
@@ -362,12 +367,14 @@
       "payload_fields": [
         "evidence_refs",
         "proposal_digest",
+        "proposal_id",
         "reason"
       ],
       "principal": "B",
       "required_fields": [
         "evidence_refs",
         "proposal_digest",
+        "proposal_id",
         "reason"
       ],
       "schema": "commands/contract/reject.schema.json",
@@ -375,10 +382,12 @@
     },
     "contract.withdraw": {
       "payload_fields": [
+        "proposal_id",
         "reason"
       ],
       "principal": "B",
       "required_fields": [
+        "proposal_id",
         "reason"
       ],
       "schema": "commands/contract/withdraw.schema.json",
@@ -469,6 +478,7 @@
     "discrepancy.create": {
       "payload_fields": [
         "affected_actions",
+        "discrepancy_id",
         "participants",
         "report_refs",
         "severity",
@@ -692,13 +702,15 @@
       "payload_fields": [
         "expected_project_revision",
         "expected_revisions",
-        "proposal_digest"
+        "proposal_digest",
+        "proposal_id"
       ],
       "principal": "U",
       "required_fields": [
         "expected_project_revision",
         "expected_revisions",
-        "proposal_digest"
+        "proposal_digest",
+        "proposal_id"
       ],
       "schema": "commands/project/completion/confirm.schema.json",
       "uri": "/control/completion-proposals/{id}:confirm"
@@ -1131,11 +1143,14 @@
     },
     "task.begin": {
       "payload_fields": [
-        "expected_task_revision"
+        "expected_revisions",
+        "expected_task_revision",
+        "task_id"
       ],
       "principal": "B",
       "required_fields": [
-        "expected_task_revision"
+        "expected_task_revision",
+        "task_id"
       ],
       "schema": "commands/task/begin.schema.json",
       "uri": "/tasks/{id}:begin"
@@ -1146,7 +1161,9 @@
         "checkpoint_summary",
         "dependency_refs",
         "evidence_refs",
-        "reason_code"
+        "reason",
+        "reason_code",
+        "task_id"
       ],
       "principal": "B",
       "required_fields": [
@@ -1154,7 +1171,8 @@
         "checkpoint_summary",
         "dependency_refs",
         "evidence_refs",
-        "reason_code"
+        "reason_code",
+        "task_id"
       ],
       "schema": "commands/task/block.schema.json",
       "uri": "/tasks/{id}:block"
@@ -1163,24 +1181,28 @@
       "payload_fields": [
         "attempt_id",
         "reason",
-        "stop_evidence"
+        "stop_evidence",
+        "task_id"
       ],
       "principal": "B",
       "required_fields": [
         "attempt_id",
         "reason",
-        "stop_evidence"
+        "stop_evidence",
+        "task_id"
       ],
       "schema": "commands/task/cancel_ack.schema.json",
       "uri": "/tasks/{id}:ack-cancel"
     },
     "task.cancel_request": {
       "payload_fields": [
-        "reason"
+        "reason",
+        "task_id"
       ],
       "principal": "M",
       "required_fields": [
-        "reason"
+        "reason",
+        "task_id"
       ],
       "schema": "commands/task/cancel_request.schema.json",
       "uri": "/tasks/{id}:request-cancel"
@@ -1230,13 +1252,18 @@
     },
     "task.edge.remove": {
       "payload_fields": [
+        "edge_id",
         "expected_revisions",
-        "reason"
+        "reason",
+        "source_task_id",
+        "target_task_id"
       ],
       "principal": "M",
       "required_fields": [
         "expected_revisions",
-        "reason"
+        "reason",
+        "source_task_id",
+        "target_task_id"
       ],
       "schema": "commands/task/edge/remove.schema.json",
       "uri": "/task-edges/{id}:remove"
@@ -1246,45 +1273,57 @@
         "attempt_id",
         "evidence_refs",
         "reason",
-        "stop_evidence"
+        "stop_evidence",
+        "task_id"
       ],
       "principal": "B",
       "required_fields": [
         "attempt_id",
         "evidence_refs",
-        "reason"
+        "reason",
+        "task_id"
       ],
       "schema": "commands/task/fail.schema.json",
       "uri": "/tasks/{id}:fail"
     },
     "task.progress": {
       "payload_fields": [
+        "attempt_id",
         "evidence_refs",
-        "summary"
+        "summary",
+        "task_id"
       ],
       "principal": "X",
       "required_fields": [
+        "attempt_id",
         "evidence_refs",
-        "summary"
+        "summary",
+        "task_id"
       ],
       "schema": "commands/task/progress.schema.json",
       "uri": "/tasks/{id}:progress"
     },
     "task.publish": {
       "payload_fields": [
-        "reason"
+        "reason",
+        "task_id"
       ],
       "principal": "M",
-      "required_fields": [],
+      "required_fields": [
+        "task_id"
+      ],
       "schema": "commands/task/publish.schema.json",
       "uri": "/tasks/{id}:publish"
     },
     "task.ready": {
       "payload_fields": [
-        "reason"
+        "reason",
+        "task_id"
       ],
       "principal": "M",
-      "required_fields": [],
+      "required_fields": [
+        "task_id"
+      ],
       "schema": "commands/task/ready.schema.json",
       "uri": "/tasks/{id}:ready"
     },
@@ -1306,34 +1345,42 @@
     },
     "task.review.accept": {
       "payload_fields": [
+        "attempt_id",
         "evidence_refs",
         "reason",
         "result_digest",
-        "slot_id"
+        "result_id",
+        "slot_id",
+        "task_id"
       ],
       "principal": "R",
       "required_fields": [
         "evidence_refs",
         "reason",
         "result_digest",
-        "slot_id"
+        "slot_id",
+        "task_id"
       ],
       "schema": "commands/task/review/accept.schema.json",
       "uri": "/reviews/{id}:accept"
     },
     "task.review.request_changes": {
       "payload_fields": [
+        "attempt_id",
         "evidence_refs",
         "reason",
         "result_digest",
-        "slot_id"
+        "result_id",
+        "slot_id",
+        "task_id"
       ],
       "principal": "R",
       "required_fields": [
         "evidence_refs",
         "reason",
         "result_digest",
-        "slot_id"
+        "slot_id",
+        "task_id"
       ],
       "schema": "commands/task/review/request_changes.schema.json",
       "uri": "/reviews/{id}:request-changes"
@@ -1343,14 +1390,16 @@
         "attempt_id",
         "expected_revisions",
         "reason",
-        "requested_scope"
+        "requested_scope",
+        "task_id"
       ],
       "principal": "B",
       "required_fields": [
         "attempt_id",
         "expected_revisions",
         "reason",
-        "requested_scope"
+        "requested_scope",
+        "task_id"
       ],
       "schema": "commands/task/scope/request.schema.json",
       "uri": "/tasks/{id}/scope-requests"
@@ -1374,13 +1423,17 @@
       "payload_fields": [
         "evidence_refs",
         "reason",
-        "result_digest"
+        "result_digest",
+        "result_id",
+        "task_id"
       ],
       "principal": "B",
       "required_fields": [
         "evidence_refs",
         "reason",
-        "result_digest"
+        "result_digest",
+        "result_id",
+        "task_id"
       ],
       "schema": "commands/task/self_accept.schema.json",
       "uri": "/reviews/{id}:self-accept"
@@ -1390,13 +1443,16 @@
         "artifact_refs",
         "attempt_id",
         "evidence_refs",
+        "expected_revisions",
         "summary",
+        "task_id",
         "validation_metadata"
       ],
       "principal": "B",
       "required_fields": [
         "attempt_id",
-        "summary"
+        "summary",
+        "task_id"
       ],
       "schema": "commands/task/submit.schema.json",
       "uri": "/tasks/{id}:submit"
@@ -1407,10 +1463,13 @@
         "objective",
         "reason",
         "required_contract_ids",
+        "task_id",
         "title"
       ],
       "principal": "M",
-      "required_fields": [],
+      "required_fields": [
+        "task_id"
+      ],
       "schema": "commands/task/update_plan.schema.json",
       "uri": "/tasks/{id}:update-plan"
     },
@@ -1520,6 +1579,7 @@
         "evidence_refs",
         "exact_input_digest",
         "outcome",
+        "request_id",
         "result_manifest"
       ],
       "principal": "M",
@@ -1591,6 +1651,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:76d880db1b35b3d4cf16b8752d80c060b763a743ba7ead3ae2ba3af79e68c471",
+  "schema_bundle_digest": "sha256:f0b17e7f877117b50fc0792f25e7c50e075068ad23cb238a8fe1d2286304f8a5",
   "supported_previous_version": "0.9"
 }

@@ -6,10 +6,14 @@
     "reason": {
       "maxLength": 4096,
       "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
-    "reason"
+    "task_id"
   ],
   "title": "TaskPublishPayload",
   "type": "object"

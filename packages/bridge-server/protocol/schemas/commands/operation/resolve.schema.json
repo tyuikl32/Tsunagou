@@ -1,0 +1,22 @@
+{
+  "$id": "https://tsunagou.local/schema/commands/operation.resolve",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "conclusion": {},
+    "evidence_refs": {},
+    "followup_plan": {},
+    "reason": {
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "conclusion",
+    "evidence_refs",
+    "followup_plan",
+    "reason"
+  ],
+  "title": "OperationResolvePayload",
+  "type": "object"
+}

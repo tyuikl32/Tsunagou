@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/common/command-envelope",
+  "title": "CommandEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["command_id", "protocol_version", "schema_bundle_digest", "payload"],
+  "properties": {
+    "command_id": {"$ref": "id.schema.json"},
+    "protocol_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "schema_bundle_digest": {"$ref": "digest.schema.json"},
+    "expected_authority_epoch": {"type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991},
+    "attempt_id": {"anyOf": [{"$ref": "id.schema.json"}, {"type": "null"}]},
+    "expected_execution_epoch": {"type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991},
+    "payload": {"type": "object", "additionalProperties": false}
+  }
+}

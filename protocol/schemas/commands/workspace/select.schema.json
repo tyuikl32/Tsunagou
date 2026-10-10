@@ -1,13 +1,8 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tsunagou.local/schema/commands/workspace.select",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "task_id": {
-      "type": "string",
-      "minLength": 1
-    },
     "driver_kind": {
       "enum": [
         "shared",
@@ -15,37 +10,42 @@
         "external"
       ]
     },
-    "root_binding_refs": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "repository_id": {
-      "type": "string",
-      "minLength": 1
+    "evidence_refs": {
+      "type": "array"
     },
     "external_locator": {
-      "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "type": "string"
     },
     "hard_constraints": {
-      "type": "array",
       "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "evidence_refs": {
+        "minLength": 1,
+        "type": "string"
+      },
       "type": "array"
     },
     "reason": {
       "type": "string"
+    },
+    "repository_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "root_binding_refs": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
-    "task_id",
-    "driver_kind"
-  ]
+    "driver_kind",
+    "task_id"
+  ],
+  "type": "object"
 }

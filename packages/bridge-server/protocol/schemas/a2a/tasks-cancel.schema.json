@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tsunagou.local/schema/a2a/1.0/tasks-cancel.json",
+  "title": "Tsunagou A2A tasks/cancel request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jsonrpc", "id", "method", "params"],
+  "properties": {
+    "jsonrpc": {"const": "2.0"},
+    "id": {"type": ["string", "number"]},
+    "method": {"const": "tasks/cancel"},
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "metadata": {"type": "object"}
+      }
+    }
+  }
+}

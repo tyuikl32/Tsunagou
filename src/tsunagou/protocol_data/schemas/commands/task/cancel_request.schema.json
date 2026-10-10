@@ -6,10 +6,15 @@
     "reason": {
       "maxLength": 4096,
       "type": "string"
+    },
+    "task_id": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [
-    "reason"
+    "reason",
+    "task_id"
   ],
   "title": "TaskCancel_RequestPayload",
   "type": "object"
