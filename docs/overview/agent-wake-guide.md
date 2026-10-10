@@ -6,12 +6,17 @@ hook 只提醒发送方核对宿主和处理待办。**当前工具返回 unsupp
 
 ## 先选通道
 
-| 双方宿主与范围 | 处理 |
-| --- | --- |
-| Codex → Codex | 固定走 Tsunagou 已有 Codex 唤醒通道，不提供补位 wake 命令；保留项目开关、绑定与重试规则 |
-| 不同宿主、OpenCode → OpenCode、DSH → DSH | 既有通道未覆盖时，允许发送方显式使用已验证的同机补位入口 |
-| 宿主未知或资料冲突 | 先核实，不猜宿主或原会话 |
-| 跨机器 | 本轮补位不支持，返回原因并向 main 升级 |
+| 双方宿主与范围 | 自动通道 | 投递时机 | 处理 |
+| --- | --- | --- | --- |
+| Codex → Codex（托管 / 已挂接 app-server） | 有 | **未知**：仓库内从未观测过忙时会话 | 固定走已有 Codex 唤醒通道，不提供补位 wake 命令；保留项目开关、绑定与重试规则 |
+| Codex Desktop 原会话 | 有 | `idle_only`：**会话忙时根本不发**，留给下一次轮询 | 同上，且不要用「已入队」解释它；忙时没有发送这就是它的行为 |
+| DSH Desktop（`--profile desktop` 已接入原会话） | 有 | `turn_boundary`（`wake_mode` 默认 `queue`）；切成 `steer` 则是 `step` | 自动通道与显式 `coordination__wake` 走同一条 loopback 路径；两者都只在**本机已核实的绑定**上执行 |
+| OpenCode | 无 | `turn_boundary`（脚本固定 `delivery='queue'`） | 既有通道未覆盖时，允许发送方显式使用已验证的同机补位入口 |
+| Claude Code / ZCode | 无 | `none` | 没有唤醒路径：消息留在本机收件箱，等对方自己来取 |
+| 远端（跨机器） | 无 | `none` | 本轮补位不支持，`error_code = cross_machine_unsupported` 并向 main 升级 |
+| 宿主未知或资料冲突 | 未知 | `unknown` | 先核实，不猜宿主、原会话或时机 |
+
+自动通道是否存在、以及**实际用了哪个投递时机**，都写在返回里（见下方「投递时机」）。`coordination.wake_status` 的 `native.automatic_channel_available` 为 `null` 只表示这次读不到该事实，不是「有通道」。
 
 已有原生唤醒仍在排队、派发或结果不明时，不叠加补位调用。Codex 通道失败也不能自动切换脚本或自行开启项目开关。hook 是临时补位指引，不是另一套自动调度器。
 
@@ -42,7 +47,23 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 
 同一请求已运行时不再启动。处理其他请求时，只在宿主明确支持且已有授权允许时排队；不打断现有工作 —— 切到 `steer` 也不例外，它只是在下一个步骤边界读取提醒，并不中止任何在飞步骤。
 
-四项进度分别呈现：**Tsunagou 已接收消息、宿主回合已启动、接收方已展示/读取、已有相关业务回应**。ACK、入队或命令退出成功不能替代其他阶段的证据，业务回应也不自动等于问题已解决。
+### 投递时机
+
+返回里的 `delivery` 只回答一个问题：**这条提醒什么时候被读到**。
+
+| 取值 | 含义 |
+| --- | --- |
+| `step` | 在**当前回合的下一个步骤边界**被读取；回合继续，在飞的步骤不被取消（DSH 插件 `wake_mode=steer`） |
+| `turn_boundary` | 在**下一个回合边界**被读取，当前回合不受影响（DSH `queue`、OpenCode `delivery='queue'`） |
+| `idle_only` | **只在会话空闲时**才投递；会话忙时什么都不发（Codex Desktop 原会话） |
+| `none` | 这个宿主根本没有唤醒路径；消息留在收件箱，等对方自己来取 |
+| `unknown` | 读不到任何能说明时机的证据。**这是诚实的答案，不是失败** |
+
+`delivery` 同时给出 `declared`（宿主声明的能力）与 `used`（这次**实际**用的）。当调用方要求的时机无法兑现、或实际投递比声明更晚时，返回里会出现 `degraded: true`、`degraded_from` 和一句 `reason` —— **绝不静默降级**。今天 `coordination.wake` 只接受 `message_id`，所以 `requested` 恒为 `null`，等协议加上按消息选时机后这个字段才会被填。
+
+远端 Agent 的拒绝理由同样是写实的：`cross_machine_unsupported` 表示「它在另一台机器上，本机没有可核实的本地路由、也没有入向通道」，返回的 `next` 会明说要**对方自己来取**。这不等于「宿主身份无法核实」（那是 `host_identity_unverified`，用于本机接入但路由对不上的情况）。
+
+四项进度分别呈现：**Tsunagou 已接收消息、宿主回合已启动、接收方已展示/读取、已有相关业务回应**。ACK、入队或命令退出成功不能替代其他阶段的证据，业务回应也不自动等于问题已解决。`host_turn_started` 只在宿主**真的报告**已启动回合时才为真；DSH 插件只报告「受理」，所以那条路径上它保持 false —— 这是**未经证明**，不是「证明没发生」。
 
 ## 宿主脚本
 
@@ -53,6 +74,10 @@ main 和 Worker 规则相同。需要对方处理的消息使用 `response_contr
 **DeepSeek Harness Desktop**：已接入后台唤醒插件，实测基线为 **0.2.0-rc.2 / Windows**。`tsunagou agent prepare --adapter deepseek --profile desktop` 注册随安装交付的插件并创建私有配置；原会话完成正常接入后，系统自动添加已认证的项目/Agent/会话绑定。无需用户手填密钥、端口或会话 ID。插件从实际宿主发布 loopback 地址，调用端按现有消息权限校验后执行 `coordination__wake_status` / `coordination__wake`。
 
 插件默认使用 `sessionController.prompt(queue)`，原会话忙碌时排队；已保存但未加载状态保留为 `unloaded`，由宿主恢复原会话。**本机可把投递模式切成 `steer`**：`agent prepare --adapter deepseek --profile desktop --wake-mode steer`（写进私有配置的 `wake_mode`；每机一份，不是每条消息可选）。`steer` 让提醒在原会话**当前回合的下一个步骤边界**被读取，并让该回合继续而不是结束；**它不是「打断」** —— 宿主没有「只中止当前步」的操作（`dsh-agent/README.md`），在飞的工具调用照跑，只是提醒读得更早。该模式已在**真机验证**（2026-10-08，Desktop 0.2.0-rc.2）：一次真实的 `steer` 唤醒落进**正在运行**的会话 —— 提醒在**同一回合的步边界**被读取、回合继续往下走、且**没有产生新的 `turn/start`**（这正是它区别于 `queue` 的地方）；空闲会话与冷恢复尚未观测。细节见 [插件说明](../../packages/dsh-wake-plugin/README.md)。无需打开窗口、抢焦点、粘贴或点击发送。HTTP 202 只证明受理，不证明新回合或业务完成。独立插件的真实业务回复及忙碌去重已经用户验收；idle 首轮、冷恢复配置保持仍有实测缺口，见 [集成验收边界](../acceptance/dsh-wake-integration-2026-10-05.md)。Web/TUI 和其他版本不因这一事实自动成为已验证支持。
+
+**自动通道（daemon 投递，不必人工点）**：daemon 现在把 DSH 也登记为一个唤醒通道（`deepseek_wake`），因此 `message.send` / `coordination.plan` 触发的自动投递可以直接落到同一条 loopback 插件路径上。它的绑定**只来自两处已存在的事实**：插件自己的 `managed.json` 声明，以及本项目的私有路由 + 会话凭据。两者齐备才 `ready`；缺任一条就当作**没有绑定**（回到 `host_binding_not_found`，即自动通道不可用），而不是「假定支持」后盲发。这个通道**不能**由 HTTP API 创建绑定，也不会去改插件的配置；自动通道失败会把它标记为 `degraded`（记在 daemon 自己的状态文件里，不动插件配置），一次核实过的成功唤醒再把它恢复成 `ready`。
+
+唤醒前会先问一次插件的 status 路由，所以**成功唤醒后返回的 `state` / `can_queue` 是这次真实观测到的值**，不再退化成 `unknown`；观测发生在提交之前，返回的 `delivery.source` 会区分这是 `plugin_wake_mode`（提交时读到的配置）还是 `plugin_wake_mode_declared`（只读、未提交）。插件只报告受理，所以 `turn_started` 在这条路径上**不会**被写成 true。
 
 初始化沿用安装目录中的标准 npm 包，通过正式 file URL 加载，与现有身份插件一致；目录须随 Tsunagou 安装保留。私有配置通过文件读取，不依赖新增环境变量进入已运行 Desktop。初始化完成仅表示已配置；只有插件已加载且状态调用成功才证明入口可用。已有手工 `TSUNAGOU:WAKE` 块返回明确配置冲突并保留原文，避免加载两份同名路由；先核对并移除旧独立插件加载行，再重新 prepare，重新接入需要继续保留的原会话。不要删除原会话或盲目清理凭据。
 

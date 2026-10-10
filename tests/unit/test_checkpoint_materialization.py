@@ -383,17 +383,20 @@ def test_remote_ref_and_reflog_are_not_anchors_and_tree_symlinks_are_rejected(tm
     relative = manifest_file.relative_to(tmp_path).as_posix()
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "--quiet", "-m", "valid"], cwd=tmp_path, check=True)
-    oid = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True).strip()
+    oid = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True,
+                                  encoding="utf-8", errors="replace").strip()
     subprocess.run(["git", "update-ref", "refs/remotes/origin/saved", oid], cwd=tmp_path, check=True)
     subprocess.run(["git", "update-ref", "-d", "refs/heads/main"], cwd=tmp_path, check=True)
     scanner = GitAnchorScanner()
     assert scanner.scan(tmp_path, {manifest.digest}, {manifest.digest: relative}) == []
     blob = subprocess.check_output(["git", "hash-object", "-w", "--stdin"], cwd=tmp_path, input=manifest_file.read_bytes()).decode().strip()
     subprocess.run(["git", "update-index", "--cacheinfo", f"120000,{blob},{relative}"], cwd=tmp_path, check=True)
-    tree = subprocess.check_output(["git", "write-tree"], cwd=tmp_path, text=True).strip()
+    tree = subprocess.check_output(["git", "write-tree"], cwd=tmp_path, text=True,
+                                   encoding="utf-8", errors="replace").strip()
     # A parentless commit prevents the valid old tree from qualifying as an
     # ancestor; only the deliberately wrong symlink-mode entry is reachable.
-    bad_commit = subprocess.check_output(["git", "commit-tree", tree, "-m", "bad mode"], cwd=tmp_path, text=True).strip()
+    bad_commit = subprocess.check_output(["git", "commit-tree", tree, "-m", "bad mode"], cwd=tmp_path, text=True,
+                                         encoding="utf-8", errors="replace").strip()
     subprocess.run(["git", "update-ref", "refs/heads/main", bad_commit], cwd=tmp_path, check=True)
     result = scanner.scan(tmp_path, {manifest.digest}, {manifest.digest: relative})
     assert len(result) == 1 and result[0].checkpoint_digest is None

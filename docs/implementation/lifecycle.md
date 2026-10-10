@@ -31,7 +31,8 @@ main 可以在可授权范围内留证接受风险、证明结果或授权新 Op
 
 ## 完成、归档与重激活
 
-1. objective owner 或 main 创建 CompletionProposal，含精确目标、证据、未解决事项与 project revision。此时其自身 Attempt 可以仍在收敛。
+1. objective owner 或 main 创建 CompletionProposal，含精确目标、证据、未解决事项与 project revision。此时其自身 Attempt 可以仍在收敛。**目标必须已经被用户确认**（一条 resolved 的 `kind=project.objective` 用户决定），且 `objective_ref` 就是那条决定的 `subject_ref`；否则拒绝（`project_objective_not_confirmed` / `project_objective_ref_mismatch`，拒因里给出该填的引用）。项目记录里那句 `objective` 在确认前只是占位符（`PENDING_OBJECTIVE`），**不构成目标** —— 2026-10-08 实测有项目带着占位符走到了 completed（待改 17）。
+1b. 提案与确认都报**锚点事实**（`anchoring`：已登记仓库、存档点 digest、绑定根里哪些是 git 树）。没有仓库或没有存档点时给出 `warning` 并写进给用户看的那一行；**不拒绝**（这是用户的决定），但不静默通过。
 2. 确认前所有 current Attempts 逻辑关闭，执行 Grant/Lease 归零。每项完成/取消/失败/封存有 reason；离线不等于 stop，残余外部风险明确交用户核对。
 3. user_control 确认 exact digest/revisions。一个 UoW 写 Project completed、decision approved、completion event、强制 checkpoint Operation/outbox；没有 completing。
 4. checkpoint 后续失败不撤销 completed；只阻塞依赖该证据的归档完成、发布、迁移。查询、repair、撤权仍可用。
@@ -39,6 +40,16 @@ main 可以在可授权范围内留证接受风险、证明结果或授权新 Op
 6. reactivate 由 user 或完成前 policy 已授权 main 发起，新 runtime，不恢复旧执行权。main 路径先验证旧授权，再要求显式建立新 session/Grant；无法建立新会话就 unassigned 等待用户，不能复活 token。非终态 Task 显式 restore_open，completed 只可 follow-up。
 
 独占 daemon 的进程收尾：仅对本次运行收到并提交的 `project.completion.confirm`，在对应 checkpoint Operation 成功且确认响应发送完毕后优雅退出。失败或未完成时保留运行，原 Operation 在同次运行重试成功后可触发退出。退出判断与项目注册共用锁；共享 daemon 保持运行。该收尾不等于归档，不改项目状态、权限或协议字段，不扫描历史完成项目，也不增加空闲计时或控制台自动启动策略。
+
+## 空闲看门狗与自动续跑（2026-10-10，待改 23 / 22-⑨）
+
+DSH 上的唤醒永远由某个 Agent 显式调用（`coordination.wake`）才会发生，于是"没人动 ⇒ 没人叫"正好闭在最需要它的那一步。daemon 里因此有一个**空闲看门狗**（`application/idle_watchdog.py`，lifespan 上的周期任务）：它只做一件事 —— 在**确定没人能再动**的时候给 main 发一条自解释的消息。
+
+- **两个触发条件**：`deadlock`（活还在、没有在跑的 Attempt、没有可领的任务、没有已交付待验收的结果、没有待确认的完工提案、没有未决的用户决定，且连事件都安静了 `IDLE_SECONDS`）；`auto_continue`（main 有活 —— 待验收的结果或收件箱里的未读 —— 而其他人都停了）。消息种类分别是 `coordination.stalled` / `coordination.waiting`，都在 `WAKE_WORTHY_KINDS` 里，所以投递走既有的 `outbox(kind='host_wake')` 通道，不是新机制。
+- **硬约束**：只要还有**任何一个会话在活动**（判据是已认证会话调用 —— 桥每 30 秒一次便宜读取），就完全不叫。2026-10-10 实测里 main 的 51 分钟"静默"期间 worker 正以 48–154 次调用的强度干活，那时叫 main 是纯噪音。
+- **防循环**：冷却 `COOLDOWN_SECONDS`；同一判定叫够 `MAX_ATTEMPTS` 次还没人动就停手，并提一条 `coordination.stalled` 用户决定（控制台既有通道），交给用户。
+- **可审计**：每次判定落一条 `coordination.idle_watchdog` 事件，payload 里带当时**全部**判据值（在线会话数、在跑的尝试、可领任务、待验收、未决决定、安静秒数）——"当时为什么叫"事后可查。
+- **开关**：直接复用项目设置 `auto_wake_multi_agent`（默认 true）。不新增命令字段 ⇒ 协议与 `schema_bundle_digest` 不变。**范围**：只叫 main；空闲 worker 的唤醒仍靠派活与唤醒策略（后续）。
 
 ## checkpoint 回退与 replica 切换
 

@@ -10,6 +10,22 @@ import sys
 from pathlib import Path
 
 
+def _json_stdout(completed: subprocess.CompletedProcess[str], *, what: str) -> object:
+    """Read a child's JSON, or say which child returned nothing and why.
+
+    Without this, a reader thread that died on a decode error leaves ``stdout`` as
+    ``None`` and the caller reports ``TypeError: the JSON object must be str, bytes or
+    bytearray, not NoneType`` — which names neither the child nor the codec.
+    """
+
+    assert completed.stdout, (
+        f"{what}: the child's stdout came back as {completed.stdout!r} "
+        f"(returncode={completed.returncode}); its stderr was "
+        f"{(completed.stderr or '<empty>').strip()[:600]!r}"
+    )
+    return json.loads(completed.stdout)
+
+
 def test_background_daemon_survives_starting_cli_and_resolves_from_subdirectory(tmp_path: Path):
     root = tmp_path / "business"
     subprocess.run(["git", "init", "--quiet", str(root)], check=True)
@@ -24,9 +40,9 @@ def test_background_daemon_survives_starting_cli_and_resolves_from_subdirectory(
 
     def cli(*args, cwd=root):
         result = subprocess.run([sys.executable, "-m", "tsunagou", *args], cwd=cwd, env=env,
-                                capture_output=True, text=True, timeout=20)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
         assert result.returncode == 0, result.stderr or result.stdout
-        return json.loads(result.stdout)
+        return _json_stdout(result, what=f"tsunagou {args}")
 
     started = cli("daemon", "start")
     try:
@@ -63,9 +79,10 @@ def test_one_connect_and_shared_mcp_keep_two_host_conversations_separate(tmp_pat
 
     def cli(*args):
         result = subprocess.run([sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
-                                cwd=nested, env=env, capture_output=True, text=True, timeout=45)
+                                cwd=nested, env=env, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=45)
         assert result.returncode == 0, result.stderr or result.stdout
-        return json.loads(result.stdout)
+        return _json_stdout(result, what=f"tsunagou {args}")
 
     project = cli("project", "init", "--coordination-root", str(root))
     requests = []
@@ -96,9 +113,9 @@ def test_one_connect_and_shared_mcp_keep_two_host_conversations_separate(tmp_pat
         exercised = subprocess.run([
             "node", str(source / "packages/bridge-server/scripts/smoke-shared-host.mjs"),
             connected[0]["bridge_config"], *requests,
-        ], cwd=nested, env=env, capture_output=True, text=True, timeout=45)
+        ], cwd=nested, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=45)
         assert exercised.returncode == 0, exercised.stderr or exercised.stdout
-        assert json.loads(exercised.stdout)["same_process_calls"] == 20
+        assert _json_stdout(exercised, what="bridge smoke-shared-host")["same_process_calls"] == 20
         agents = cli("agent", "list", "--json")
         assert {row["role"] for row in agents["items"]} == {"main", "worker"}
         assert all(row["last_activity_at"].endswith("Z") and row["session_status"] == "ready" for row in agents["items"])
@@ -127,9 +144,10 @@ def test_deepseek_native_connect_preserves_identity_and_role_without_an_overlay(
 
     def cli(*args):
         result = subprocess.run([sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
-                                cwd=root, env=env, capture_output=True, text=True, timeout=45)
+                                cwd=root, env=env, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=45)
         assert result.returncode == 0, result.stderr or result.stdout
-        return json.loads(result.stdout)
+        return _json_stdout(result, what=f"tsunagou {args}")
 
     cli("project", "init", "--coordination-root", str(root))
     args = ["agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host"]
@@ -181,25 +199,25 @@ def test_deepseek_pending_selection_controls_real_bridge_and_rejects_rebinding(t
 
     def cli(*args: str, cwd: Path = other) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, "-m", "tsunagou", *args], cwd=cwd, env=env,
-                              capture_output=True, text=True, timeout=45)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=45)
 
     init = cli("--project-root", str(selected), "project", "init", "--coordination-root", str(selected))
     assert init.returncode == 0, init.stderr or init.stdout
-    project_id = json.loads(init.stdout)["project_id"]
+    project_id = _json_stdout(init, what="project init")["project_id"]
     store = EnrollmentStore(tmp_path / "enrollments")
     request = store.create(project_id=project_id, project_root=selected, role="worker", adapter="deepseek")
     try:
         result = cli("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
                      "--pending-enrollment-id", request["enrollment_id"])
         assert result.returncode == 0, result.stderr or result.stdout
-        connected = json.loads(result.stdout)
+        connected = _json_stdout(result, what="agent connect")
         assert connected["project_id"] == project_id and connected["role"] == "worker"
         linked = store.get(request["enrollment_id"])
         assert linked["agent_id"] == connected["agent_id"] and linked["place"] == "local"
         repeated = cli("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
                        "--pending-enrollment-id", request["enrollment_id"])
         assert repeated.returncode == 0, repeated.stdout
-        assert json.loads(repeated.stdout)["agent_id"] == connected["agent_id"]
+        assert _json_stdout(repeated, what="agent connect (repeat)")["agent_id"] == connected["agent_id"]
         assert store.get(request["enrollment_id"])["revision"] == linked["revision"]
         route = json.loads((tmp_path / "routes" / (conversation_key("real-dsh-chat") + ".json")).read_text(encoding="utf-8"))
         assert route["project_id"] == project_id and Path(route["project_root"]) == selected
@@ -212,7 +230,7 @@ def test_deepseek_pending_selection_controls_real_bridge_and_rejects_rebinding(t
         conflict = cli("agent", "connect", "--adapter", "deepseek", "--profile", "desktop", "--no-register-host",
                        "--pending-enrollment-id", wrong["enrollment_id"])
         assert conflict.returncode == 4, conflict.stderr or conflict.stdout
-        assert json.loads(conflict.stdout)["error"] == "onboarding_project_mismatch"
+        assert _json_stdout(conflict, what="agent connect (conflict)")["error"] == "onboarding_project_mismatch"
         assert not (other / ".tsunagou/bridges").exists()
         assert json.loads((tmp_path / "routes" / (conversation_key("real-dsh-chat") + ".json")).read_text(encoding="utf-8")) == route
     finally:

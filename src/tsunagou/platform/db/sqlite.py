@@ -693,12 +693,19 @@ class ProjectDatabase:
         subject_ref: str | None = None,
         event_type_like: str | None = None,
         through_event_seq: int | None = None,
+        descending: bool = False,
     ) -> list[dict[str, Any]]:
         """Return a stable, scope-bound audit page in ascending event order.
 
         ``cursor`` is the last returned ``event_seq``.  The caller owns the
         public ``next_cursor`` wrapper; keeping the database primitive numeric
         makes replay and migration deterministic.
+
+        ``descending`` walks the same keyset from the newest end instead: ``cursor`` then
+        means "strictly before this seq" and rows come back newest-first. It exists so a
+        project with more events than one page can be asked for its **tail** directly,
+        instead of walking every page from the beginning (待改 16's remaining boundary:
+        the forward export could not reach the newest events of a >2000-event project).
         """
         # One internal look-ahead row is allowed; the public API still caps
         # returned pages at 200. Clamping this primitive to 200 loses next_cursor.
@@ -708,7 +715,7 @@ class ProjectDatabase:
         predicates = ["project_id=?"]
         values: list[Any] = [self.project_id]
         if cursor is not None:
-            predicates.append("event_seq > ?")
+            predicates.append("event_seq < ?" if descending else "event_seq > ?")
             values.append(int(cursor))
         if through_event_seq is not None:
             predicates.append("event_seq <= ?")
@@ -731,6 +738,7 @@ class ProjectDatabase:
             predicates.append("event_type LIKE ?")
             values.append(event_type_like)
         values.append(bounded)
+        order = "DESC" if descending else "ASC"
         with contextlib.closing(self._connect()) as conn:
             rows = conn.execute(
                 f"""SELECT project_id,lineage_id,schema_version,event_id,event_seq,event_type,aggregate_ref,actor_ref,command_id,
@@ -738,7 +746,7 @@ class ProjectDatabase:
                           caused_by_command_id,revision_before,revision_after,
                           evidence_refs_json,projection_version,payload_json,digest
                    FROM events WHERE {' AND '.join(predicates)}
-                   ORDER BY event_seq ASC LIMIT ?""",
+                   ORDER BY event_seq {order} LIMIT ?""",
                 values,
             ).fetchall()
         return [

@@ -136,18 +136,20 @@
 | `required_contract_ids` | 可选 | 读 | **契约 id 清单**（见 §2.5）。重复项或空串报 `invalid_required_contract_ids` |
 | `blocks` / `parent_task_id` | 可选 | 读 | 阻塞依赖 / 父任务 |
 
-`task__ready` / `task__publish`：工具面要求 `task_id`（`task__ready` / `task__publish` 的手写 schema 是 `required: ["task_id"]`；生成的命令 schema 里写的是 `reason` —— 生成物与工具面不一致，**以工具面为准，同时带上 `reason` 最省事**）。
+`task__ready` / `task__publish`：`task_id` 必填（`reason` 可选）。工具面 schema 与生成的命令 schema
+现在是**同一个字段集**（2026-10-10 起由 `tools/codegen/generate_protocol.py` 强制、并由
+`tests/protocol/test_command_surface_contract.py` 钉住）；在那之前两边不一致，照 schema 写会被拒。
 `publish` 的机械门槛是 `ready`：状态不合法报 `invalid_transition:<现在>->open`；顺序是 `draft` →（`ready`）→ `open`。声明了 `requires_files` 却仍空着 scope 的任务**不许发布**（`file_task_requires_scope`）。
 
 > **`task.publish` 不通知任何人。** 它只把任务放进领取队列：不发消息、不唤醒宿主。没人动就什么都不会发生，也不会有东西来提醒你。要有人真的开工，用 `coordination.plan`（默认给每行发一条 `task.assigned` 并唤醒指名的 worker），或另行 `message.send`。
 
-`task__update_plan`：`task_id` 必填，其余（`title`、`objective`、`required_contract_ids`、`acceptance`）给了才改。这是**唯一**改已有任务契约依赖的入口；注意 handler 的 `PAYLOAD_FIELDS` 里**没有** `acceptance` 之外的额外字段，但 `acceptance` 确实在 `task.update_plan` 的允许集合里（`runtime.py`）。任务已经有人领活时改不动（`task_plan_not_editable`）。
+`task__update_plan`：`task_id` 必填，其余（`title`、`objective`、`required_contract_ids`、`acceptance`）给了才改。这是**唯一**改已有任务契约依赖的入口（改范围另走 `task.scope.request`）。任务已经有人领活时改不动（`task_plan_not_editable`）。
 
 ### 2.3 `coordination__plan`（main 专属，最常用的派活路径）
 
 顶层必填：`objective`（非空字符串）、`assignments`（非空数组）。可选 `auto_wake`（默认 `true`，非布尔报 `auto_wake_boolean_required`）。
 
-**每一行（row）真正必填的字段** —— 工具面 schema 里**只声明了 `acceptance`**，因为它没有把行内字段写进 `items.properties`；但 handler 逐个读下面这些，缺一个就报 `<字段名>_required`：
+**每一行（row）真正必填的字段** —— 工具面 schema（`coordination/plan.schema.json` 的 `items.properties`）与 handler 现在声明同一组：
 
 | 行内字段 | 工具面 | handler | 说明 |
 |---|---|---|---|
@@ -155,8 +157,8 @@
 | `title` | **未声明** | **必读**（`title_required`） | 任务标题 |
 | `task_objective` | **未声明** | **必读**（`task_objective_required`） | 注意字段名是 `task_objective`，**不是** `objective`（顶层那个 `objective` 是计划的目标，两者不同） |
 | `acceptance` | 必填 | **必读**（`acceptance_required`） | 验收怎么判：一条命令加预期输出，或确切步骤与结果。**必须能被人照着核**，这是本行唯一被 schema 承认的必填字段 |
-| `execution_scope` | 未声明 | 读，默认 `{}` | 文件任务必须给 paths/roots，否则等于"不做文件改动"。行内给的 `root_id` 会当场校验，没登记过报 `unknown_root_id:<id>` |
-| `required_contract_ids` | 未声明 | 读 | 契约 id 清单（见 §2.5） |
+| `execution_scope` | 未声明 | 读，默认 `{}` | 文件任务必须给 paths/roots，否则等于"不做文件改动"。行内给的 `root_id` 会**当场**校验（与 `task.create` 同一套实现）：没登记过报 `unknown_root_id:<id>`，详情带 `registered_root_ids`（本项目现有根）与 `next` —— 计划这一层就拒，不留到 begin |
+| `required_contract_ids` | 未声明 | 读 | 契约 id 清单（见 §2.5）。**这一条不会拒**（先计划、再让槽位接受是设计内的顺序），但没结清的契约会写进那一行的 `contracts_pending[]` 与返回的 `next`："这些任务现在还领不了活" + 本项目现有的契约 id 清单 |
 | `cross_module` | 可选 | 读 | `true` 且同一行没有 `required_contract_ids` → `cross_module_contract_required`（拒绝，不是警告） |
 | `dependencies` | 未声明 | 读 | 阻塞依赖的 task_id 清单；不存在的 id 报 `dependency_task_not_found` |
 | `parent_task_id` | 未声明 | 读 | 父任务 |
@@ -172,7 +174,13 @@
 5. 行里有 `supersedes_task_id` → `tasks.supersede(旧任务, superseded_by_task_id=新任务)` —— 旧任务记下承接关系并**退出领取队列**（不终端、不改名）；
 6. 整批进 `coordination.create_plan(...)` 成为一条 plan，再为每个 assignment 建一条消息；`auto_wake` 为真时发 `kind="task.assigned"`、`summary="有任务可领"`、`subject_ref="task/<task_id>"` —— **`task.assigned` 会唤醒对方宿主**。
 
-返回：`plan_id`、`objective`、`assignments[]`（每项含 `assignment_id`、`task_id`、`assigned_worker_id`、`status`、`message_id`、`acceptance`、`cross_module`、`superseded_task_id`）、`coverage`，以及 `next`（自指契约与替代关系的说明）。**`message_id` 要留着**：唤醒状态就是按它查的。
+返回：`plan_id`、`objective`、`assignments[]`（每项含 `assignment_id`、`task_id`、`assigned_worker_id`、`status`、`message_id`、`acceptance`、`cross_module`、`superseded_task_id`、`contracts_pending`）、`coverage`，以及 `next`（自指契约、替代关系、没结清的契约都在这里说）。**`message_id` 要留着**：唤醒状态就是按它查的。
+
+**计划期就校验的那两件事**（2026-10-10 起）：① `execution_scope` 里的 `root_id` 必须已登记 ——
+悬空引用在**计划**这一层就拒（`unknown_root_id`，并列出可用的 root_id），不再等到 `task.begin`
+才暴露：那时任务已经建好、派出去、有人认领了，等于让人白跑一趟；② 契约没结清**不拒**，但在
+那一行的 `contracts_pending[]` 与 `next` 里说清，并列出本项目现有的契约 id ——
+2026-10-08 实测里 main 填了一个自己起的标签，计划照常成功，到 begin 连拒 4 次、最后三个任务被取消重建。
 
 要让 coordinator 静默建任务（不唤醒任何人），传 `auto_wake: false`；要替换已发布的任务，就在**新行**上给 `supersedes_task_id`，不要先 `task.cancel_request` 再新建（两步会让旧任务在看板上永远算"没做完"）。
 
@@ -254,13 +262,16 @@
 
 ## 3. 常见拒绝 → 下一步
 
-拒绝**不改变任何状态**（命令自身事务回滚），并且会在 `command.<kind>.denied` 事件里留一行（带 `code`，可归因时带 `task_id`）。照现在这样重试只会再被拒一次。
+拒绝**不改变任何状态**（命令自身事务回滚）。**可归因**的拒绝会留一行 `command.<kind>.denied`
+（带 `code` 与 `task_id`），main 每回合的 `context__project_read` 会把它聚合成 `coordination.denied`；
+同一个任务被同一个 code 拒到第二次时，任务会被标出（`block_reason = refused:<code>`）并且
+**main 会收到一条 `task.refused` 消息** —— 照现在这样重试只会再被拒一次。
 
 | code | 什么时候出现 | 下一步 |
 |---|---|---|
 | `physical_identity_conflict` | `root.bind` 传的 `expected_physical_identity` 与 `physical_identity(absolute_path)` 算出来的不同（`handlers.py:483-484`） | 你手上的值是**别人/别的路径**的。不带 `expected_physical_identity` 重调一次 `root.bind`，把返回里的 `physical_identity` 存下来；要用它做校验就原样回填 |
 | `root_binding_required` | `repository.register` 时该根没有有效绑定（详情含 `root_id`、`registered`、`next`）（`handlers.py:507`） | 看 `registered`：`false` → 先 `root.register`；`true` → 先 `root.bind` 到本机绝对路径，再登记仓库 |
-| `unknown_root_id:<id>` | 建任务/发计划时 `execution_scope` 引用了项目里**没登记**的根（`handlers.py:596,599`） | 用 `root.register` 登记这个根，或改用已登记的 root_id。别指望它"以后就好了"：悬空引用以前会被静默存下，现在当场拒 |
+| `unknown_root_id:<id>` | `task.create` **或** `coordination.plan` 的 `execution_scope` 引用了项目里**没登记**的根（详情含 `root_id`、`registered_root_ids`、`next`） | 用 `root.register` 登记这个根，或改用 `registered_root_ids` 里的某一个。别指望它"以后就好了"：悬空引用以前会被静默存下，现在**计划这一层**就拒（2026-10-10 起与 `task.create` 同一套校验） |
 | `required_contract_not_accepted:<你填的值>` | `task.begin` 时任务声明的契约不存在或未被接受（`task_execution.py:105-110`） | 看详情：`status: "missing"` → 你填的是标签而不是 id，照 `existing_contract_ids` 改用真 id（或先 `contract.propose`）；有 status → 等槽位被接受，或由 main `contract.accept_proxy` 代接受 |
 | `contract_not_accepted` | `task.begin` / `task.submit` 时任务依赖的契约未结清或还有在谈的修订（`execution_commands.py:76,315`） | 读当前版本、接受或驳回；不一致就升级给 main。这条不关任何东西 |
 | `contract_revision_conflict` | 你声明的契约版本与在册版本不符（`execution_commands.py:100-103`） | 调 `context__project_read` 读回在册版本，让工作对齐当前版本后再交。Attempt 与文件都还在 |
@@ -282,7 +293,9 @@
 | `task_plan_not_editable` | 对已被人领活/非可编辑状态的任务 `task.update_plan`（`tasks.py:193`） | 等它停下，或另建任务并在 `coordination.plan` 里用 `supersedes_task_id` |
 | `invalid_transition:<现在>-><目标>` | `task.ready`/`task.publish` 顺序不对（`tasks.py:700`） | `draft` → ready → `open`。`changes_requested` 也走 ready |
 | `capability_denied` | 当前角色/会话没有这个能力（`handlers.py:298`） | 交给 main 或用户；worker 看不到 main 专属工具是**故意**的（注册表 principal=M），不是缺功能 |
-| `unknown_payload_field` | payload 顶层带了该命令不接受的键（`runtime.py:244`，按 `PAYLOAD_FIELDS` 判） | 按工具 schema 重发。注意有些 schema **漏声明**了 handler 真会读的字段（见 §2.3）；漏声明不会让字段被拒，写错名字才会 |
+| `unknown_payload_field` | payload 顶层带了该命令不接受的键（`runtime.py:244`，按 `PAYLOAD_FIELDS` 判） | 按工具 schema 重发。工具 schema、命令目录与 `PAYLOAD_FIELDS` 现在是**同一个字段集**（2026-10-10 起有契约测试钉住）—— 若三者仍不一致，那是缺陷，按 §4 上报，不要绕 |
+| `project_objective_not_confirmed` | `project.completion.propose.main` / `project.completion.confirm` 时项目**没有**一条已 resolved 的 `kind=project.objective` 用户决定（详情含 `objective_ref`、`next`） | 先与用户把目标谈清楚，用 `user_decision.propose`（`kind=project.objective`、`proposal_ref=<你会复用的引用>`）提出来，等用户确认，再用**同一个引用**提完工。记录里那句 `objective` 在确认前只是占位符，不是目标 |
+| `project_objective_ref_mismatch` | 完工提案引用的 `objective_ref` 与已确认目标的 `subject_ref` 不一致（详情含 `confirmed_objective_ref`） | 把 `objective_ref` 改成 `confirmed_objective_ref` —— 它同时就是 `context__project_read` 的 `stable.goal.objective_ref`；或者先与用户谈一个新的目标 |
 | `daemon_unreachable` | 桥连不上主机（远端最常见） | 这次调用**没发生**，什么都没变：通道恢复后重试一次。别改走别的路 |
 
 ---
@@ -306,12 +319,84 @@
 **工具的形状看着不对时怎么办**（而不是绕）：
 
 1. 先读拒绝里的 `next` / `next_steps` 与详情字段（`task_id`、`status`、`existing_contract_ids`、`registered`、`holders`…）—— 它们就是为这一步准备的；
-2. 记住**工具 schema 不是事实源**：handler 才是。schema 漏声明字段时，**照 handler 要的字段名写**（例如 `coordination.plan` 行内的 `assigned_worker_id` / `title` / `task_objective` 这一层：见 §2.3）。MCP 不会拿工具 schema 校验参数（`CallToolRequestParamsSchema` 里 `arguments` 就是自由对象），daemon 也不按工具 schema 拒 —— 它只按 `PAYLOAD_FIELDS`（顶层键）和 handler 自己校验；
+2. 记住**工具 schema 现在与运行时的字段集是同一个**（2026-10-10 起：生成器从 `PAYLOAD_FIELDS` 与命令目录对齐，`tests/protocol/test_command_surface_contract.py` 逐条比对 schema / 目录 / 白名单 / handler）。所以**两边不一致就是缺陷本身**，不是"照 handler 写就行"：按 §4 上报。MCP 不会拿工具 schema 校验参数（`CallToolRequestParamsSchema` 里 `arguments` 就是自由对象），daemon 也不按工具 schema 拒 —— 它只按 `PAYLOAD_FIELDS`（顶层键）和 handler 自己校验；
 3. 确实机制不对（例如某条命令需要的值在工具面上根本拿不到），**上报给 main**，并在结论里写清"缺什么、在哪一步缺的、影响哪条任务"，让 main 记录阻塞或修桥 —— 不要用旁路把这一次对付过去。
 
 ---
 
-## 5. 去哪读更多
+## 5. 跨进程与工具面：两条"看起来像你的错"的假象
+
+### 5.1 `Error: unknown tool "mcp__tsunagou__…"`（纯文本那句）
+
+那是**宿主**的工具目录没就绪时发的，**这次调用根本没到达桥** —— 桥既看不见、也无法回答它。
+它不是"你把工具名拼错了"，而是"工具面当时不在"：会话比桥先起来、宿主正在重载配置、
+或者这个 profile 里没装 Tsunagou 的 provider。**读作"重试一次"**：
+
+- **读命令**（`context__project_read`、`inbox__claim`、各种查询）直接再调一次即可，8 秒后的同样调用通常就成功（实测 2026-10-10 15:49:20）；
+- **写命令**：如果你自己会重试，**把 `command_id` 一起传**。桥接受调用方给的 `command_id`，daemon 按它去重（同一个 `command_id` + 同样的参数 → 返回第一次的结果，不会执行两遍；参数不同则报 `idempotency_conflict`）。这样"瞬断后重试"不会变成"同一条活干两次"。
+
+桥**自己**答的那种长得不一样：它是 JSON（`{"error":"unknown_tool","code":"unknown_tool","next_steps":[…]}`），
+说明工具面当时是通的、名字确实不在目录里。两种要分得开，因为处置正好相反。
+
+**事后怎么查清是哪一种**：项目私有目录里的生命周期时间线
+`<项目>/.tsunagou/local/bridge-lifecycle.ndjson`（桥每次启动/接上 stdio/回答 `tools/list`/
+答自己的 `unknown_tool` 都追加一行，含时刻、pid、角色、工具数）。宿主那句不会在里面留痕；
+如果那个时刻桥正在回答 `tools/list` 且数量正常，就说明问题在宿主侧的目录刷新。这个文件超过
+256 KiB 会被清空重写，所以它只回答"最近一次"，不当作长期账本。
+
+### 5.2 跨进程的 JSON 一律 UTF-8（2026-10-10 起）
+
+规则只有一条：**两端都显式写出来**，不依赖区域编码。
+
+- 父进程读子进程输出时一律 `encoding="utf-8", errors="replace"`（Windows 上只写 `text=True` 就是用 GBK 解，
+  子进程按 UTF-8 打的中文会炸掉读线程、`stdout` 直接变成 `None`，症状是 `json.loads(None)` 报 `TypeError`）；
+- CLI / daemon 入口先把 `stdout`/`stderr` 钉成 UTF-8 再打印（`PYTHONIOENCODING=utf-8` 传给子进程）。
+
+**例外**：读的是**二进制内容**（例如 checkpoint blob）时保持字节、绝不加 `errors="replace"`。
+
+这条修好之前，中文根名、契约 `subject_ref`、用户确认的目标都"理论上合法、实际上踩雷" ——
+平台侧甚至因此把快照文本限制成 ASCII。**那个限制已经取消**：调用方给的原样值就按原样存、原样读回。
+
+---
+
+## 6. 静默、唤醒与看门狗
+
+### 6.1 空闲看门狗会替你造一条消息（2026-10-10 起）
+
+DSH 上的唤醒**永远由某个 Agent 显式调用**才会发生（`coordination__wake`），所以"没人动 ⇒ 没人叫"
+正好闭在最需要它的那一步。daemon 里现在有一个**空闲看门狗**，它只做一件事：**在确定没人能再动的时候，
+给 main 发一条自解释的消息**（投递走既有的自动通道，不是新机制）。
+
+它叫的两种情形（消息种类就是判据的名字）：
+
+| 消息 `kind` | 什么时候 | 它会说什么 |
+|---|---|---|
+| `coordination.stalled` | 没有任何会话在活动、没有在跑的 Attempt、没有可领的任务、没有已交付待验收的结果、没有待确认的完工提案、**没有未决的用户决定**，且安静够久 | "协作停住了：N 分钟没有任何事件……检查一下是不是都停了，然后接手、让 worker 继续，或者提请完工" |
+| `coordination.waiting` | main 手上有活（有待验收的结果或未读消息），而其他人都停了 | "有活等你处理……验收、发布或回复之后这条协作才会继续动" |
+
+**它不会在你正干活的时候打扰你**：只要还有**任何一个会话在活动**（判据是已认证会话调用 ——
+桥每 30 秒一次便宜读取），它就完全不叫。这比"看事件间隔"更准：agent 在本地写代码、跑构建时
+本来就不发 Tsunagou 命令。它也**不会**在球在用户手上时叫（未决决定、待确认完工）。
+同一个判定在冷却期内只叫一次；叫够 3 次还没人动，它会停下来并**提一条 `coordination.stalled`
+的用户决定**（控制台"待用户决定"那一节），交给用户。
+
+**你要知道的两条**：①**空闲 worker 不在这里的范围里** —— 看门狗只叫 main；一个 worker 长时间
+空闲仍然要靠派活与唤醒策略（`coordination.plan` 的行内 `workspace`、交活后的自动续跑）；②
+**它叫了你，你就得动**：`context__project_read` 的 `coordination` 那一块与收件箱都会显示它。
+每次判定都会落一条 `coordination.idle_watchdog` 事件，里面写着当时的各项判据值 ——
+"为什么叫"事后可查。
+
+### 6.2 唤醒的投递时机是宿主的属性，不是你的选择
+
+`coordination__wake_status` 的返回里现在会说明这个宿主**什么时候能把消息送进去**：
+`turn_boundary`（排到下一回合边界）、`step`（插进当前回合的下一个步边界 —— DSH 的 `steer`，
+**不打断**在飞的工具调用）、`idle_only`（只在会话空闲时送）、`none`（根本没有唤醒路径，
+例如任意远端）。请求的时机与**实际用的**时机都会回报；做不到时会明确说降级，
+**不会静默当成做到了**。
+
+---
+
+## 7. 去哪读更多
 
 | 要什么 | 读哪一节 |
 |---|---|

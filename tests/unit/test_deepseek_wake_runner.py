@@ -70,9 +70,43 @@ def test_http_original_session_status_and_admission_are_separate(host: Any, monk
     assert value["result"] == "queued" and value["request_associated"] is True
     assert value["turn_started"] is False and value["version"] is None
     assert "private-key" not in json.dumps(value) and "original-session" not in json.dumps(value)
-    assert host["calls"][1] == ("/tsunagou/wake", {
+    # The wake observes the session before it submits, so it can report what the
+    # session was actually doing instead of ``unknown`` — and it says the observation
+    # came first rather than pretending the wake produced that state.
+    assert value["state"] == "unloaded" and value["can_queue"] is True
+    assert value["delivery"]["used"] == "turn_boundary"
+    assert value["delivery"]["source"] == "plugin_wake_mode"
+    assert host["calls"][1] == ("/tsunagou/wake/status", {
+        "project_id": "project", "agent_id": "worker", "session_id": "original-session",
+    })
+    assert host["calls"][2] == ("/tsunagou/wake", {
         "project_id": "project", "agent_id": "worker", "session_id": "original-session", "message_id": "message",
     })
+
+
+def test_steer_is_reported_as_a_step_boundary_not_as_a_turn_boundary(
+    host: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner, "read_deepseek_wake_configuration",
+                        lambda: {"format_version": 1, "key": "private-key",
+                                 "bindings": [{"project_id": "project", "agent_id": "worker",
+                                               "session_id": "original-session"}],
+                                 "wake_mode": "steer"})
+    value = invoke("wake")
+    assert value["result"] == "queued"
+    assert value["delivery"]["used"] == "step" and value["delivery"]["declared"] == "step"
+    assert "degraded" not in value["delivery"]
+
+
+def test_an_unreadable_plugin_mode_is_reported_as_unknown_never_guessed(
+    host: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A configuration the plugin would refuse is not silently read as ``queue`` here."""
+    monkeypatch.setattr(runner, "_configured_mode", lambda _config: "abort")
+    value = invoke("wake")
+    assert value["result"] == "queued"
+    assert value["delivery"]["used"] == "unknown"
+    assert value["delivery"]["declared"] == "unknown"
 
 
 @pytest.mark.parametrize("endpoint", ["http://example.com:80", "http://127.0.0.1:80@evil.example", "http://localhost:80",
@@ -105,4 +139,6 @@ def test_plugin_errors_are_safe_and_unknown_is_not_success(host: Any, code: int,
 def test_redirect_is_not_followed(host: Any) -> None:
     host["error"] = 302, {"error": "redirect"}
     assert invoke("wake")["result"] == "unknown"
-    assert len(host["calls"]) == 1
+    # The observation and the submission, and nothing after the redirect: the
+    # credential never reaches the Location target.
+    assert [path for path, _payload in host["calls"]] == ["/tsunagou/wake/status", "/tsunagou/wake"]

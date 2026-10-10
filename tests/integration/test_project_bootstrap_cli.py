@@ -13,10 +13,16 @@ def _cli(*args: str, cwd: Path, env: dict[str, str] | None = None) -> dict[str, 
         cwd=cwd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         env={**os.environ, **(env or {})},
     )
     assert completed.returncode == 0, completed.stderr or completed.stdout
+    assert completed.stdout, (
+        f"tsunagou {args}: child stdout was {completed.stdout!r} (returncode={completed.returncode}); "
+        f"stderr={(completed.stderr or '<empty>').strip()[:600]!r}"
+    )
     return json.loads(completed.stdout)
 
 

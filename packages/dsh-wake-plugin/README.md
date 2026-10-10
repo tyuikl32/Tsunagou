@@ -294,6 +294,22 @@ business directory and a coordination project directory may legitimately differ.
 Outside the plugin, Tsunagou enforces the authenticated sending
 agent, message-permission checks, and the authoritative binding source of truth.
 
+### Automatic wake from the daemon
+
+These same two routes are also how the Tsunagou daemon delivers a wake on its
+own, without anyone clicking anything: it registers DSH as a host-wake channel
+whose bindings are read from **this plugin's own managed configuration** and
+cross-checked against that project's private route and session credential.
+Declared *and* verified is what makes a binding wakeable; anything less is
+treated as no binding, so an unverified Agent is never called. The daemon never
+adds, removes or edits a binding here, and it advertises the delivery timing the
+configured `wake_mode` produces (`turn_boundary` for `queue`, `step` for
+`steer`) rather than a guess.
+
+Because the plugin reports admission only, the daemon's automatic path records a
+delivered reminder as `queued` and never as a started turn: the plugin says
+nothing about turns, so nothing is claimed about them.
+
 ---
 
 ## Verification client

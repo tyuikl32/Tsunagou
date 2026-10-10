@@ -263,6 +263,17 @@ def test_m1_task_workspace_review_and_user_completion_survive_rebuild(
     }, "control")
     assert (chosen["status"], chosen["decision"]) == ("resolved", "再补一轮回归")
 
+    # 完工门（待改 17）：目标必须先由用户确认，且完工提案引用的就是那一个目标。
+    goal = agent_call("user_decision.propose", {
+        "kind": "project.objective", "proposal_ref": "project",
+        "summary": "run the whole M1 flow end to end",
+        "choices": ["approved", "rejected"], "expected_revisions": {"decision": 1},
+    }, main)
+    call("user_decision.resolve", {
+        "decision_id": goal["decision_id"], "choice": "approved",
+        "expected_revisions": {"decision": goal["revision"]},
+        "proposal_digest": goal["proposal_digest"], "reason": "goal agreed with the user",
+    }, "control")
     completion = agent_call(
         "project.completion.propose.main",
         {

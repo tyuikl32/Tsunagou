@@ -183,6 +183,59 @@ def test_same_request_running_and_presented_are_independent_no_drive_proofs(tmp_
     assert f.calls == ["status"]
 
 
+def test_a_successful_wake_reports_the_observed_state_and_delivery_timing(tmp_path: Path) -> None:
+    """A wake must not degrade a real observation to ``unknown``.
+
+    Before this, the wake runner left ``state``/``can_queue`` at ``unknown`` for the
+    wake action and this layer overwrote the true values it had just read from the
+    host's status route with those unknowns — looking up the truth and discarding it.
+    """
+    f = Fixture(tmp_path, ("opencode", "deepseek"))
+    f.host_state.update(state="idle", can_queue=True, delivery={
+        "requested": None, "declared": "turn_boundary", "used": "turn_boundary",
+        "source": "plugin_wake_mode_declared",
+    })
+    # The wake's own observation, taken before it submitted, is what must survive.
+    f.outcome.update(state="unloaded", can_queue=True, delivery={
+        "requested": None, "declared": "turn_boundary", "used": "turn_boundary",
+        "source": "plugin_wake_mode", "description": "read at the next turn boundary",
+    })
+    result = f.invoke(f.message(), wake=True)
+    assert result["result"] == "queued"
+    assert result["state"] == "unloaded" and result["can_queue"] is True
+    assert result["delivery"]["used"] == "turn_boundary"
+    assert result["delivery"]["source"] == "plugin_wake_mode"
+    assert "degraded" not in result["delivery"]
+    # The timing is a statement about the wake, not about a turn: unproven stays false.
+    assert result["progress"]["host_turn_started"] is False
+    assert f.calls == ["status", "wake"]
+
+
+def test_a_degraded_delivery_is_reported_rather_than_looking_successful(tmp_path: Path) -> None:
+    """A host that delivers later than it declared must say so out loud."""
+    f = Fixture(tmp_path)
+    f.outcome.update(delivery={
+        "requested": "step", "declared": "step", "used": "turn_boundary",
+        "source": "plugin_wake_mode",
+    })
+    result = f.invoke(f.message(), wake=True)
+    assert result["result"] == "queued"
+    assert result["delivery"]["degraded"] is True
+    assert result["delivery"]["degraded_from"] == "step"
+    assert result["delivery"]["used"] == "turn_boundary"
+    assert "step" in result["delivery"]["reason"]
+
+
+def test_an_unknown_host_states_unknown_timing_instead_of_guessing(tmp_path: Path) -> None:
+    f = Fixture(tmp_path)
+    f.host_state.update(delivery={})
+    f.outcome.update(delivery={})
+    result = f.invoke(f.message(), wake=True)
+    assert result["delivery"]["used"] == "unknown"
+    assert result["delivery"]["declared"] == "unknown"
+    assert "degraded" not in result["delivery"]
+
+
 def test_unrelated_message_stale_epoch_and_conflicting_route_fail_closed(tmp_path: Path) -> None:
     f = Fixture(tmp_path)
     message = f.message()
@@ -193,10 +246,20 @@ def test_unrelated_message_stale_epoch_and_conflicting_route_fail_closed(tmp_pat
     route = json.loads(f.route_files[1].read_text())
     route["project_id"] = "foreign"
     f.route_files[1].write_text(json.dumps(route))
+    # No route this daemon can verify: this Agent is not woken, and the reason is
+    # that its local identity is unproven — not that it is somewhere else.
     assert f.invoke(message, wake=True)["error_code"] == "host_identity_unverified"
+    assert f.invoke(message, wake=True)["target"]["machine_scope"] == "unknown"
     f.authority.agents[f.agents[1].agent_id].machine = "remote-workstation"
-    assert f.invoke(message, wake=True)["error_code"] == "host_identity_unverified"
-    assert f.invoke(message)["target"]["machine"] == "unknown"
+    # A machine name is only ever recorded at invitation time, so it is this
+    # project's own evidence that the Agent is on another machine. The refusal must
+    # say that, not "we could not verify its host identity"; a remote has no
+    # verified local route and no inbound channel, so it comes and collects instead.
+    remote = f.invoke(message, wake=True)
+    assert remote["error_code"] == "cross_machine_unsupported"
+    assert "跨机器" in remote["next"] and "自己来取" in remote["next"]
+    assert f.invoke(message)["target"]["machine"] == "remote-workstation"
+    assert f.invoke(message)["target"]["machine_scope"] == "remote"
     assert f.calls == []
 
 
@@ -266,6 +329,10 @@ def test_associated_queue_is_not_a_same_request_active_turn(tmp_path: Path) -> N
     result = f.invoke(f.message(), wake=True)
     assert result["result"] == "queued"
     assert result["progress"]["host_turn_started"] is False
+    # The observation taken before deciding is the session's real state, and it is the
+    # returned state; the wake is not driven, because an associated queued submission
+    # is not proof that this message owns a running turn.
+    assert result["state"] == "running" and result["can_queue"] is True
     assert f.calls == ["status"]
 
 

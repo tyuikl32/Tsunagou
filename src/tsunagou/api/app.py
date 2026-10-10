@@ -85,6 +85,31 @@ def _delivery_timestamps(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+#: Permission refusals that are session churn rather than a finding: the caller's session was
+#: replaced, reset, or never authenticated at all. Recording these would fill the refusal
+#: ledger -- which main reads on every turn -- with the noise of one reconnect.
+SESSION_RECOVERY_CODES = frozenset({
+    "authentication_failed", "session_not_found", "session_not_rebindable",
+    "stale_connection_epoch", "stale_authority_epoch", "stale_runtime_epoch",
+    "stale_execution_epoch", "invalid_session_or_grant",
+})
+
+
+def _task_reference(payload: Any) -> dict[str, str]:
+    """The task a refused command was about, when the caller named one.
+
+    "This task has been refused twice" is only answerable if the refusal carries the task.
+    ``task.begin``'s dependency gate and ``task_not_beginable`` named it only in free text,
+    so those refusals could not be attributed to anything at all (待改 18).
+    """
+
+    if isinstance(payload, dict):
+        task_id = payload.get("task_id")
+        if isinstance(task_id, str) and task_id.strip():
+            return {"task_id": task_id.strip()}
+    return {}
+
+
 def create_app(
     dispatcher: CommandDispatcher | None = None,
     *, authenticator: LocalCommandAuthenticator | None = None,
@@ -93,6 +118,8 @@ def create_app(
     wake_dispatcher: Any | None = None,
     hostwake_provider: Any | None = None,
     telemetry: Telemetry | None = None,
+    denial_escalation: Callable[..., dict[str, Any] | None] | None = None,
+    denial_state: Any | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Tsunagou", version=__version__, docs_url=None, redoc_url=None)
     if dispatcher is None:
@@ -185,21 +212,37 @@ def create_app(
         The command's own transaction has already rolled back, so the denial is
         appended in a separate transaction: "this attempt was rejected, and why"
         must stay queryable and replayable, not just returned as an error string.
+
+        ``denial_escalation`` (wired from the container, where the domain services live)
+        gets to turn a *repeat* into something main has to see -- a note on the task and one
+        message to main (待改 18-③). It mutates in-memory state inside this same transaction,
+        so a failure here has to put that state back the way the dispatcher does it: a
+        memory/disk divergence must not outlive one lost audit line.
         """
         store = getattr(dispatcher, "database", None)
         if store is None:
             return
+        snapshot = denial_state.capture() if denial_state is not None else None
         try:
             with store.transaction() as uow:
+                escalation = (
+                    denial_escalation(uow, command_kind, dict(detail))
+                    if denial_escalation is not None else None
+                )
+                payload: dict[str, Any] = {"command_kind": command_kind, **detail}
+                if escalation:
+                    payload["escalation"] = escalation
                 uow.append_event(
                     lineage_id="local-lineage",
                     event_type=f"command.{command_kind}.denied",
                     aggregate_ref=f"project/{store.project_id}",
                     actor_ref="runtime",
-                    payload={"command_kind": command_kind, **detail},
+                    payload=payload,
                 )
         except Exception:
             # Losing the audit line must never turn a clean rejection into a 5xx.
+            if snapshot is not None and denial_state is not None:
+                denial_state.restore(snapshot)
             return
 
     @app.post("/api/v1/commands/{command_kind}")
@@ -304,6 +347,23 @@ def create_app(
                     command_id=request.command_id, command_kind=command_kind, error_code=str(exc),
                 )
             code = str(exc)
+            reference = _task_reference(request.payload)
+            if reference and code not in SESSION_RECOVERY_CODES:
+                # A capability refusal used to leave no trace at all: the audit only recorded
+                # ValueError-shaped rejections, so "this worker keeps being denied the one
+                # capability it needs" was invisible (measured 2026-10-08: `task__progress`
+                # came back `capability_denied` and the event store had nothing).
+                #
+                # This also covers refusals the *authenticator* raises to a session whose grant
+                # is missing (`api/auth.py`): by then the session is verified, so the refusal is
+                # attributable even though the route never got a principal object -- which is
+                # why the condition is the code, not `principal is not None`.
+                #
+                # Session recovery stays excluded (a stale session is churn, not a finding), and
+                # so does any refusal that names no task: "a rejected command changes no state"
+                # is a property this project keeps, and all 待改 18 needs is the attributable
+                # half -- "this task keeps being refused".
+                _record_denial(command_kind, {"code": code, **reference})
             raise HTTPException(
                 status_code=401 if code == "authentication_failed" else 403,
                 detail={"code": code},
@@ -333,10 +393,20 @@ def create_app(
         except ValueError as exc:
             detail: dict[str, Any] = {"code": str(exc)}
             extra = getattr(exc, "detail", None)
-            if isinstance(extra, dict):
+            structured = isinstance(extra, dict)
+            if structured:
                 # Structured rejection: hand the caller the full reason, and make the
                 # rejection itself a shared, replayable fact.
                 detail.update(extra)
+            # A rejection that names a task is attributed to it, and therefore recorded.
+            # Otherwise the ledger could only see the rejections that happened to be
+            # structured, and "this task has been refused four times" -- the fact main needs --
+            # was exactly the one that stayed invisible (2026-10-08: `task_dependency_pending`
+            # left no line at all). An unattributable rejection still leaves no event: "a
+            # refused command changes no state" stays true, and 待改 18 only needs this half.
+            reference = _task_reference(request.payload)
+            if structured or reference:
+                detail.update({key: value for key, value in reference.items() if key not in detail})
                 _record_denial(command_kind, detail)
             raise HTTPException(status_code=400, detail=detail) from exc
         response.headers["ETag"] = dispatched.command_hash
@@ -778,6 +848,7 @@ def create_app(
         to_timestamp: Annotated[str | None, Query(alias="to")] = None,
         actor_ref: Annotated[str | None, Query()] = None,
         subject_ref: Annotated[str | None, Query()] = None,
+        order: Annotated[Literal["asc", "desc"], Query()] = "asc",
         authorization: Annotated[str | None, Header(alias="Authorization")] = None,
         session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
         connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
@@ -789,11 +860,12 @@ def create_app(
             )
             if query_provider is None:
                 return {"project_id": project_id, "items": [], "next_cursor": None,
-                        "projection_version": "v1", "as_of_event_seq": 0, "snapshot_event_seq": 0}
+                        "projection_version": "v1", "as_of_event_seq": 0, "snapshot_event_seq": 0,
+                        "order": order}
             return query_provider(
                 "audit", project_id, cursor=cursor, limit=limit,
                 from_timestamp=from_timestamp, to_timestamp=to_timestamp,
-                actor_ref=actor_ref, subject_ref=subject_ref, viewer=viewer,
+                actor_ref=actor_ref, subject_ref=subject_ref, viewer=viewer, order=order,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
@@ -811,13 +883,14 @@ def create_app(
         to_timestamp: Annotated[str | None, Query(alias="to")] = None,
         actor_ref: Annotated[str | None, Query()] = None,
         subject_ref: Annotated[str | None, Query()] = None,
+        order: Annotated[Literal["asc", "desc"], Query()] = "asc",
         authorization: Annotated[str | None, Header(alias="Authorization")] = None,
         session_id: Annotated[str | None, Header(alias="Tsunagou-Session-Id")] = None,
         connection_epoch: Annotated[int | None, Header(alias="Tsunagou-Connection-Epoch")] = None,
     ) -> dict[str, Any]:
         return project_audit(
             project_id, cursor, limit, from_timestamp, to_timestamp, actor_ref, subject_ref,
-            authorization, session_id, connection_epoch,
+            order, authorization, session_id, connection_epoch,
         )
 
     @app.get("/api/v1/projects/{project_id}/history/export", response_model=AuditExportModel)

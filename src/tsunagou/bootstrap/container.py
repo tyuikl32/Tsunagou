@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import json
@@ -18,6 +19,14 @@ from tsunagou.api.app import create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.api.liveness import SessionLiveness
 from tsunagou.application.handlers import Handler, build_handlers
+from tsunagou.application.idle_watchdog import (
+    WATCHDOG_INTERVAL_SECONDS,
+    IdleWatchdog,
+    WatchdogFactsReader,
+    run_idle_watchdog,
+)
+from tsunagou.application.onboarding import deepseek_routing_directory
+from tsunagou.application.refusal_escalation import RefusalEscalation
 from tsunagou.application.wake_assistance import WakeAssistance
 from tsunagou.application.workflows.lifecycle import LifecycleService
 from tsunagou.hostwake import (
@@ -26,6 +35,11 @@ from tsunagou.hostwake import (
     ManagedCodexProvider,
     PrivateBindingStore,
     WakeDispatcher,
+)
+from tsunagou.hostwake.deepseek_wake import (
+    CombinedBindingStore,
+    DeepSeekWakeBindingStore,
+    DeepSeekWakeProvider,
 )
 from tsunagou.interfaces.runtime import CommandDispatcher, PrincipalContext
 from tsunagou.modules.artifacts import ArtifactService
@@ -157,10 +171,23 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         )
         if config.get("TSUNAGOU_HOST_WAKE", "").casefold() in {"managed", "desktop", "auto"}:
             binding_store = PrivateBindingStore(state_path / "host-bindings.json")
+            # DSH's automatic wake channel. Its bindings come from the installed wake
+            # plugin's own configuration and are verified against this project's private
+            # route, never created here; until the daemon also looks at them, every
+            # daemon-delivered DSH wake ends as failed/host_binding_not_found.
+            deepseek_bindings = DeepSeekWakeBindingStore(
+                routes_dir=deepseek_routing_directory(), project_id=project_id or "local-project",
+                project_root=project_root or state_path.parent,
+                overlay_path=state_path / "host-bindings-deepseek.json",
+            )
             hostwake_provider = HostWakeProviderRegistry(
                 ManagedCodexProvider(binding_store),
                 DesktopAttachProvider(binding_store),
+                extra=(DeepSeekWakeProvider(deepseek_bindings),),
             )
+            # One lookup, two stores: the dispatcher must see both the Codex and the DSH
+            # bindings, but it still dispatches through the registry above.
+            hostwake_provider.store = CombinedBindingStore(binding_store, deepseek_bindings)
             wake_dispatcher = WakeDispatcher(
                 hostwake_provider,
                 attempts_path=state_path / "host-wake-attempts.json",
@@ -212,6 +239,13 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         authority=authority, control_token=config.get("TSUNAGOU_CONTROL_TOKEN"),
         liveness=session_liveness,
     )
+    # 被拒两次的任务要有回响（待改 18-③）：判定与动作都在应用层，HTTP 层只报"这次被拒了"。
+    refusal_escalation = None
+    if database is not None and state_runtime is not None:
+        refusal_escalation = RefusalEscalation(
+            database=database, tasks=tasks, messages=messages, authority=authority,
+            state_runtime=state_runtime,
+        )
     application = create_app(
         dispatcher, authenticator=authenticator,
         query_provider=_query_provider(
@@ -229,6 +263,8 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         wake_dispatcher=wake_dispatcher,
         hostwake_provider=hostwake_provider,
         telemetry=telemetry,
+        denial_escalation=refusal_escalation,
+        denial_state=state_runtime,
     )
     application.state.project_database = database
     application.state.runtime_info = {
@@ -268,6 +304,32 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         @application.on_event("shutdown")
         def stop_runtime_maintenance() -> None:
             maintenance.stop()
+    # 空闲看门狗（待改 23）：周期任务挂在 lifespan 上，判定与动作都在应用层
+    # （application/idle_watchdog.py）。它只做"没人能动的时候给 main 造一条消息"，
+    # 投递仍然走既有的 host_wake 通道 —— 不新增命令、不改协议。
+    watchdog_task: asyncio.Task[None] | None = None
+    idle_watchdog: IdleWatchdog | None = None
+    if database is not None and state_runtime is not None and project_registry is not None:
+        idle_watchdog = IdleWatchdog(
+            reader=WatchdogFactsReader(
+                database=database, tasks=tasks, messages=messages, authority=authority,
+                lifecycle=lifecycle, liveness=session_liveness, project_registry=project_registry,
+            ),
+            database=database, messages=messages, authority=authority, lifecycle=lifecycle,
+            state_runtime=state_runtime,
+        )
+
+        @application.on_event("startup")
+        async def start_idle_watchdog() -> None:
+            nonlocal watchdog_task
+            watchdog_task = asyncio.create_task(
+                run_idle_watchdog(idle_watchdog, interval_seconds=WATCHDOG_INTERVAL_SECONDS)
+            )
+
+        @application.on_event("shutdown")
+        def stop_idle_watchdog() -> None:
+            if watchdog_task is not None:
+                watchdog_task.cancel()
     return application
 
 
@@ -484,6 +546,7 @@ def _query_provider(
         project_filter: str | None = None,
         agent_id: str | None = None,
         verify: bool = False,
+        order: str = "asc",
     ) -> dict[str, Any]:
         if kind == "artifact":
             if artifacts is None or viewer is None:
@@ -1069,7 +1132,7 @@ def _query_provider(
             return query(
                 "audit", requested_project_id, cursor=cursor, limit=limit,
                 from_timestamp=from_timestamp, to_timestamp=to_timestamp,
-                actor_ref=actor_ref, task_id=task_id, viewer=viewer,
+                actor_ref=actor_ref, task_id=task_id, viewer=viewer, order=order,
             )
 
         if kind == "diagnostics":
@@ -1117,14 +1180,22 @@ def _query_provider(
         if kind == "audit":
             if viewer is None:
                 raise PermissionError("authentication_failed")
+            if order not in {"asc", "desc"}:
+                raise ValueError("invalid_audit_order")
             if database is None:
                 return {"project_id": requested_project_id, "items": [], "next_cursor": None, "projection_version": "v1",
-                        "as_of_event_seq": 0, "snapshot_event_seq": 0}
+                        "as_of_event_seq": 0, "snapshot_event_seq": 0, "order": order}
             projector = AuditProjector()
             audit_items: list[dict[str, Any]] = []
             if not 1 <= limit <= 200:
                 raise ValueError("invalid_audit_limit")
             bounded = limit
+            # ``order=desc`` 是"给我尾巴"：同一个 keyset 从最新那一条往回走，第一页就是
+            # 最新的一页。这样事件比一页还多的项目不必从头翻到尾（待改 16 的剩余边界：
+            # 正向出口在 >2000 条事件的项目上根本取不到尾部）。载荷里回显 ``order``，
+            # 所以调用方看得出这一页是哪个方向 —— 老 daemon 不认这个参数时会照旧回升序，
+            # 页面据此退回逐页走法，不会被"第一页=最旧"骗到。
+            descending = order == "desc"
             from_ms, to_ms = parse_timestamp(from_timestamp), parse_timestamp(to_timestamp)
             if from_ms is not None and to_ms is not None and from_ms > to_ms:
                 raise ValueError("invalid_time_range")
@@ -1134,9 +1205,14 @@ def _query_provider(
                            "session_id": viewer.session_id, "connection_epoch": viewer.connection_epoch},
                 "from_ms": from_ms, "to_ms": to_ms, "actor_ref": actor_ref,
                 "subject_ref": subject_ref, "task_id": task_id,
-                "limit": limit, "sort": "event_seq_asc",
+                "limit": limit, "sort": "event_seq_desc" if descending else "event_seq_asc",
             }
-            after, watermark = cursor_codec.decode(cursor, context=cursor_context) if cursor else (0, database.last_event_seq())
+            if cursor:
+                after, watermark = cursor_codec.decode(cursor, context=cursor_context)
+            else:
+                # 升序从头（0）走，降序从"尾巴之后"（watermark+1，即最新那条）往回走。
+                watermark = database.last_event_seq()
+                after = watermark + 1 if descending else 0
             audit_events: list[dict[str, Any]] = []
             scanned = after
             related_refs = task_subject_refs(task_id) if task_id else None
@@ -1147,7 +1223,8 @@ def _query_provider(
                     limit=201, cursor=scanned, from_ms=from_ms, to_ms=to_ms,
                     actor_ref=actor_ref,
                     subject_ref=subject_ref if related_refs is None else None,
-                    through_event_seq=watermark,
+                    through_event_seq=None if descending else watermark,
+                    descending=descending,
                 )
                 if not batch:
                     break
@@ -1221,11 +1298,14 @@ def _query_provider(
             return {
                 "project_id": requested_project_id,
                 "items": audit_items,
+                # 降序时游标指向**本页最后（最旧）那条**，下一段继续往回；方向回显在
+                # ``order`` 里，调用方据此知道自己拿到的是尾巴还是开头。
                 "next_cursor": cursor_codec.encode(
                     context=cursor_context, after_seq=audit_items[-1]["event_seq"], as_of_event_seq=watermark,
                 ) if has_next and audit_items else None,
                 "projection_version": "v1",
                 "as_of_event_seq": watermark, "snapshot_event_seq": watermark,
+                "order": order,
             }
         if kind == "decisions":
             if viewer is None:

@@ -647,6 +647,10 @@ class ManagedCodexProvider:
     """Stage A provider that owns one app-server client per Agent binding."""
 
     provider_name = "managed_app_server"
+    # ``turn/start`` is called with no busy check anywhere in this repository, so what
+    # app-server does to a turn that is already running has never been observed here.
+    # Reporting ``turn_boundary`` would be a guess; ``unknown`` is the honest answer.
+    delivery_timing = "unknown"
 
     def __init__(
         self,
@@ -1219,11 +1223,18 @@ class DesktopAttachProvider(ManagedCodexProvider):
 
 
 class HostWakeProviderRegistry:
-    """Route one shared host-wake port to managed or explicitly attached Codex."""
+    """Route one shared host-wake port to managed or explicitly attached Codex.
+
+    ``extra`` carries non-Codex providers (today only DSH's loopback plugin). They are
+    ordinary ``HostWakePort`` implementations whose own ``store`` owns their bindings;
+    adding one here neither changes nor weakens the Codex lanes, and a binding whose
+    provider is unknown everywhere still fails closed with ``host_provider_unsupported``.
+    """
 
     def __init__(
         self, managed: ManagedCodexProvider, desktop: DesktopAttachProvider,
         native: CodexDesktopProvider | None = None,
+        extra: tuple[HostWakePort, ...] = (),
     ) -> None:
         self.managed = managed
         self.desktop = desktop
@@ -1231,6 +1242,13 @@ class HostWakeProviderRegistry:
         if native is None:
             native = CodexDesktopProvider(self.store)
         self.native = native
+        self.extra = tuple(extra)
+
+    def _extra_provider(self, provider_name: str) -> HostWakePort | None:
+        for candidate in self.extra:
+            if getattr(candidate, "provider_name", None) == provider_name:
+                return candidate
+        return None
 
     def register_binding(self, *, provider: str = "managed_app_server", **kwargs: Any) -> HostBindingRef:
         if provider == "managed_app_server":
@@ -1239,6 +1257,11 @@ class HostWakeProviderRegistry:
             return self.desktop.register_binding(**kwargs)
         if provider == "codex_desktop_app":
             return self.native.register_binding(**kwargs)
+        extra = self._extra_provider(provider)
+        if extra is not None:
+            register = getattr(extra, "register_binding", None)
+            if callable(register):
+                return cast(HostBindingRef, register(**kwargs))
         raise HostWakeError("host_provider_unsupported", "unknown host binding provider")
 
     def _provider(self, binding: HostBindingRef) -> HostWakePort:
@@ -1248,6 +1271,9 @@ class HostWakeProviderRegistry:
             return self.managed
         if binding.provider == "codex_desktop_app":
             return self.native
+        extra = self._extra_provider(binding.provider)
+        if extra is not None:
+            return extra
         raise HostWakeError("host_provider_unsupported", "unknown host binding provider")
 
     def probe(self, binding: HostBindingRef) -> HostCapabilityReport:
@@ -1260,7 +1286,7 @@ class HostWakeProviderRegistry:
         return self._provider(request.binding).wake(request)
 
     def poll(self, wake_attempt_id: str) -> WakeAttempt | None:
-        for provider in (self.native, self.desktop, self.managed):
+        for provider in (self.native, self.desktop, self.managed, *self.extra):
             result = provider.poll(wake_attempt_id)
             if result is not None:
                 return result

@@ -57,9 +57,13 @@ def test_console_join_through_real_daemon_and_bridge(tmp_path, monkeypatch, role
     def cli(*args):
         result = subprocess.run(
             [sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
-            cwd=source, capture_output=True, text=True, encoding="utf-8", timeout=45,
+            cwd=source, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=45,
         )
         assert result.returncode == 0, result.stderr or result.stdout
+        assert result.stdout, (
+            f"tsunagou {args}: child stdout was {result.stdout!r} (returncode={result.returncode}); "
+            f"stderr={(result.stderr or '<empty>').strip()[:600]!r}"
+        )
         return json.loads(result.stdout)
 
     project = cli("project", "init", "--coordination-root", str(root))
@@ -108,9 +112,15 @@ try {
             env=os.environ.copy(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=45,
         )
         assert observed.returncode == 0, observed.stderr or observed.stdout
+        assert observed.stdout, (
+            f"bridge call: child stdout was {observed.stdout!r} (returncode={observed.returncode}); "
+            f"stderr={(observed.stderr or '<empty>').strip()[:600]!r}"
+        )
         assert json.loads(observed.stdout)["agent_id"] == joined["agent_id"]
         arrived = enrollment.status(pending["enrollment_id"], settings=config, directory=directory)
         assert arrived["status"] == "arrived" and arrived["agent_id"] == joined["agent_id"]

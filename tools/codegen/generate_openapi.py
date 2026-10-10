@@ -30,8 +30,11 @@ def main() -> None:
                                     "Must match the URL ID."),
                 })
     content = json.dumps(schema, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    output.write_text(content, encoding="utf-8")
-    (ROOT / "src/tsunagou/protocol_data/openapi.json").write_text(content, encoding="utf-8")
+    # ``newline="\n"``: ``.gitattributes`` pins ``*.json`` to LF, and a CRLF working tree makes
+    # every packaged-copy comparison and every diff unreadable (the two copies below are
+    # compared byte-for-byte by the contract tests).
+    output.write_text(content, encoding="utf-8", newline="\n")
+    (ROOT / "src/tsunagou/protocol_data/openapi.json").write_text(content, encoding="utf-8", newline="\n")
     print(f"generated {output.relative_to(ROOT)}")
 
 

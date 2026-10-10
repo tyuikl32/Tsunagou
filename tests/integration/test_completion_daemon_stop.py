@@ -74,6 +74,22 @@ def _proposal(app: Any) -> dict[str, Any]:
         secret=ticket["secret"],
     )
     _call(app, "authority.appoint", {"agent_id": main["agent_id"]})
+    # 完工门（待改 17）要求目标**已由用户确认**，且完工提案引用的就是那个目标：
+    # 所以先按真实流程谈一次目标，再提完工。
+    goal = _call(
+        app,
+        "user_decision.propose",
+        {"kind": "project.objective", "proposal_ref": "project",
+         "summary": "let the daemon stop after a confirmed completion",
+         "choices": ["approved", "rejected"]},
+        main,
+        main["secret_token"],
+    )
+    _call(app, "user_decision.resolve", {
+        "decision_id": goal["decision_id"], "choice": "approved",
+        "proposal_digest": goal["proposal_digest"],
+        "expected_revisions": {"decision": goal["revision"]},
+    })
     proposed = _call(
         app,
         "project.completion.propose.main",

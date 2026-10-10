@@ -15,12 +15,23 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from tsunagou.hostwake.timing import plan_delivery
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 _STAGES = {
     "input", "launcher", "version", "service", "service_version", "session", "location",
     "state", "inbox", "message", "admission", "complete",
 }
+
+# OpenCode's own runner submits with ``delivery='queue'`` (``host_wake_runner.ps1``),
+# so the reminder is read at the session's next turn boundary. That is a statement
+# about what the script sends, which is why it is declared here and not guessed.
+_OPENCODE_DELIVERY = plan_delivery(used="turn_boundary", declared="turn_boundary",
+                                   source="opencode_delivery_field").to_public()
+
+
+def _unobserved_delivery() -> dict[str, object]:
+    return plan_delivery(used="unknown", declared="unknown", source="unobserved").to_public()
 
 
 def sanitize_diagnostics(value: Any) -> dict[str, Any] | None:
@@ -66,16 +77,20 @@ def run_host_operation(
         "host": adapter, "version": None, "state": "unknown", "can_queue": "unknown",
         "result": "unsupported", "error_code": None, "evidence": [],
         "observed_at": format_timestamp(now_ms()), "turn_started": False, "request_associated": False,
+        # When the reminder is read. Unknown means nothing here can say — never a guess.
+        "delivery": _unobserved_delivery(),
     }
     if action not in {"status", "wake"}:
         return {**result, "error_code": "host_action_invalid"}
     if adapter == "deepseek":
         from tsunagou.application.deepseek_wake_runner import run_deepseek_operation
 
+        # The DSH client observes the session and reports its own timing.
         return run_deepseek_operation(action, project_id=project_id, agent_id=agent_id,
                                      conversation_id=conversation_id, message_id=message_id)
     if adapter != "opencode":
         return {**result, "error_code": "host_runner_unsupported"}
+    result["delivery"] = _OPENCODE_DELIVERY
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if powershell is None:
         return {**result, "error_code": "powershell_unavailable"}

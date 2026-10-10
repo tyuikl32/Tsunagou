@@ -92,6 +92,8 @@ def _git_commit(source_root: Path | None) -> str | None:
             capture_output=True,
             check=False,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
     except (OSError, subprocess.TimeoutExpired):

@@ -79,12 +79,19 @@ def _with_completeness(path: str, answered: Any) -> Any:
     ``next_cursor`` 缺席 = 出口自己说的"没有下一段了"；有它就只是**一页**，不是时间线。
     字段名 ``complete`` 与历史存储的其余字段一样是载荷上的普通键（``HistoryStore`` 原样
     存 dict），换个出口、换个项目都不会互相串。
+
+    ``order=desc``（2026-10-10，待改 16 的剩余边界）另说：降序页**从最新那条开始**，
+    所以它本身就是尾巴 —— 哪怕后面还挂着"更旧一段"的游标。出口在载荷里回显 ``order``，
+    这里据此把 ``complete`` 写成真；否则卡片会因为"还有更旧的"而退回记录时刻，
+    把刚刚发生的事说成"不知道"。
     """
 
     if not _HISTORY_TAIL.match(str(path).split("?", 1)[0]):
         return answered
     if not isinstance(answered, dict) or "items" not in answered:
         return answered
+    if str(answered.get("order") or "") == "desc":
+        return {**answered, "complete": True}
     return {**answered, "complete": not answered.get("next_cursor")}
 
 

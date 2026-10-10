@@ -22,8 +22,12 @@ def test_two_projects_share_process_but_not_agents_or_authority(tmp_path: Path) 
 
     def cli(root: Path, *args: str) -> dict:
         result = subprocess.run([sys.executable, "-m", "tsunagou", *args], cwd=root, env=env,
-                                capture_output=True, text=True, timeout=45)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=45)
         assert result.returncode == 0, result.stdout or result.stderr
+        assert result.stdout, (
+            f"tsunagou {args}: child stdout was {result.stdout!r} (returncode={result.returncode}); "
+            f"stderr={(result.stderr or '<empty>').strip()[:600]!r}"
+        )
         return json.loads(result.stdout)
 
     initial = cli(roots[0], "daemon", "start")

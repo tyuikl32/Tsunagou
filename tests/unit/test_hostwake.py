@@ -5,10 +5,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import subprocess
 import sys
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
@@ -16,8 +18,10 @@ from fastapi import HTTPException
 import tsunagou.hostwake.dispatcher as dispatcher_module
 from tsunagou.api.app import HostBindingRequest, create_app
 from tsunagou.api.auth import LocalCommandAuthenticator
+from tsunagou.application.wake_assistance import WakeAssistance
 from tsunagou.hostwake import (
     CodexAppServerClient,
+    CodexDesktopProvider,
     DesktopAttachProvider,
     HostWakeError,
     HostWakeProviderRegistry,
@@ -27,7 +31,19 @@ from tsunagou.hostwake import (
     UnixWebSocketAppServerClient,
     WakeDispatcher,
 )
+from tsunagou.hostwake.deepseek_wake import (
+    DEEPSEEK_WAKE_PROVIDER,
+    CombinedBindingStore,
+    DeepSeekWakeBindingStore,
+    DeepSeekWakeProvider,
+)
+from tsunagou.hostwake.timing import plan_delivery
 from tsunagou.interfaces.runtime import CommandDispatcher
+from tsunagou.modules.authority import AuthorityService
+from tsunagou.modules.messaging import MessageStore
+from tsunagou.platform.db.sqlite import ProjectDatabase
+from tsunagou.platform.deepseek_wake import bind_deepseek_wake, ensure_deepseek_wake_configuration, set_deepseek_wake_mode
+from tsunagou.shared_kernel.baseline import BASELINE_CAPABILITIES
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 
@@ -747,3 +763,323 @@ def test_the_callback_fact_is_recorded_without_starting_a_turn(tmp_path: Path) -
         callback_status="delivered", command_id="a2a:message:1", actor_id="peer",
     )
     assert len(dispatcher.diagnostics(project_id="project-1")) == 1
+
+
+# ---------------------------------------------------------------------------
+# DSH: the automatic channel that used to be missing entirely
+# ---------------------------------------------------------------------------
+
+def _dsh_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, agent_id: str = "agent-dsh",
+                 conversation: str = "dsh-original-session", route_agent: str | None = None,
+                 wake_mode: str = "queue", with_route: bool = True) -> tuple[DeepSeekWakeBindingStore, Path, Path]:
+    """A verified DSH enrollment on disk: managed config plus this project's own route."""
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    ensure_deepseek_wake_configuration()
+    set_deepseek_wake_mode(wake_mode)
+    bind_deepseek_wake("project-1", agent_id, conversation)
+    routes = tmp_path / "routing"
+    routes.mkdir(parents=True, exist_ok=True)
+    if with_route:
+        credential = tmp_path / "bridge-session.json"
+        credential.write_text(json.dumps({"agent_id": route_agent if route_agent is not None else agent_id,
+                                          "session_id": "session-1"}), encoding="utf-8")
+        (routes / (hashlib.sha256(conversation.encode()).hexdigest() + ".json")).write_text(json.dumps({
+            "format_version": 1, "adapter": "deepseek", "conversation_id": conversation,
+            "project_id": "project-1", "project_root": str(tmp_path), "session_file": str(credential),
+        }), encoding="utf-8")
+    store = DeepSeekWakeBindingStore(
+        routes_dir=routes, project_id="project-1", project_root=tmp_path,
+        overlay_path=tmp_path / "host-bindings-deepseek.json",
+    )
+    return store, routes, tmp_path / "bridge-session.json"
+
+
+def _dsh_runner(declared: str = "turn_boundary") -> Any:
+    def runner(action: str, **kwargs: Any) -> dict[str, Any]:
+        assert kwargs["conversation_id"] == "dsh-original-session"
+        if action == "wake":
+            return {"host": "deepseek", "state": "idle", "can_queue": True, "result": "queued",
+                    "error_code": None, "evidence": ["deepseek:wake-plugin:accepted"],
+                    "observed_at": format_timestamp(now_ms()), "turn_started": False,
+                    "request_associated": True,
+                    "delivery": plan_delivery(used=declared, declared=declared, source="plugin_wake_mode").to_public()}
+        return {"host": "deepseek", "state": "idle", "can_queue": True, "result": "observed",
+                "error_code": None, "evidence": ["deepseek:wake-plugin:status"],
+                "observed_at": format_timestamp(now_ms()), "turn_started": False, "request_associated": False,
+                "delivery": plan_delivery(used=declared, declared=declared,
+                                          source="plugin_wake_mode_declared").to_public()}
+    return runner
+
+
+def test_a_verified_dsh_binding_has_a_working_automatic_channel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """DSH could never be woken automatically: every delivery died on the binding lookup.
+
+    Before this, no provider store held a DSH binding, so ``WakeDispatcher`` ended every
+    daemon-delivered DSH wake as ``failed / host_binding_not_found`` (16 of 16 on disk).
+    """
+    store, _routes, _credential = _dsh_fixture(tmp_path, monkeypatch)
+    provider = DeepSeekWakeProvider(store, runner=_dsh_runner())
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "host-wake-attempts.json")
+    result = dispatcher.on_delivery(message_id="message-dsh", recipient_agent_id="agent-dsh",
+                                    project_id="project-1")
+    assert result["state"] == "queued"
+    assert result["error_code"] is None
+    assert result["provider"] == DEEPSEEK_WAKE_PROVIDER
+    assert result["delivery"]["used"] == "turn_boundary"
+    assert result["delivery"]["declared"] == "turn_boundary"
+    assert "degraded" not in result["delivery"]
+    assert "host_binding_not_found" not in json.dumps(dispatcher.status(
+        message_id="message-dsh", recipient_agent_id="agent-dsh"))
+    journal = (tmp_path / "host-wake-attempts.json").read_text(encoding="utf-8")
+    assert "host_binding_not_found" not in journal
+    kinds = [item["kind"] for item in dispatcher.diagnostics(project_id="project-1")]
+    # Requested, then the host's own acceptance, then the state the attempt reached.
+    assert kinds == ["wake_requested", "wake_starting", "accepted", "wake_queued"]
+
+
+def test_the_declared_timing_follows_the_plugin_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for mode, expected in (("queue", "turn_boundary"), ("steer", "step")):
+        root = tmp_path / mode
+        root.mkdir()
+        store, _routes, _credential = _dsh_fixture(root, monkeypatch, wake_mode=mode)
+        provider = DeepSeekWakeProvider(store, runner=_dsh_runner(declared=expected))
+        assert provider.delivery_timing("agent-dsh") == (expected, "plugin_wake_mode")
+        report = provider.probe(store.get("agent-dsh")[0])  # type: ignore[index]
+        assert report.delivery_timing == expected
+        dispatcher = WakeDispatcher(provider, attempts_path=root / "attempts.json")
+        result = dispatcher.on_delivery(message_id="message-dsh", recipient_agent_id="agent-dsh",
+                                        project_id="project-1")
+        assert result["delivery"]["used"] == expected
+        assert "degraded" not in result["delivery"]
+
+
+def test_an_unbound_or_unverified_dsh_host_still_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declared is not the same as verified, and neither is the same as unknown."""
+    store, _routes, _credential = _dsh_fixture(tmp_path, monkeypatch)
+    provider = DeepSeekWakeProvider(store, runner=_dsh_runner())
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json")
+    # Nobody at all.
+    unknown = dispatcher.on_delivery(message_id="message-unknown", recipient_agent_id="agent-nobody",
+                                     project_id="project-1")
+    assert unknown["state"] == "failed"
+    assert unknown["error_code"] == "host_binding_not_found"
+
+    # Configured for this Agent, but this project holds no route that verifies it: the
+    # plugin would accept the call, and that is exactly why it must not be made.
+    declared_but_unverified, routes, _credential = _dsh_fixture(
+        tmp_path / "other", monkeypatch, agent_id="agent-other", conversation="other-session", with_route=False)
+    assert declared_but_unverified.get("agent-other") is None
+    unverified = WakeDispatcher(DeepSeekWakeProvider(declared_but_unverified, runner=_dsh_runner()),
+                               attempts_path=tmp_path / "attempts-2.json").on_delivery(
+        message_id="message-other", recipient_agent_id="agent-other", project_id="project-1")
+    assert unverified["state"] == "failed"
+    assert unverified["error_code"] == "host_binding_not_found"
+    del routes
+
+    # A route that names another Agent is not this Agent's route either.
+    mismatched, _routes, _credential = _dsh_fixture(
+        tmp_path / "mismatch", monkeypatch, route_agent="agent-somebody-else")
+    assert mismatched.get("agent-dsh") is None
+
+
+def test_the_combined_store_keeps_both_channels_visible(tmp_path: Path) -> None:
+    """One lookup, two stores: neither channel may hide the other's bindings."""
+    codex_store = PrivateBindingStore(tmp_path / "codex-bindings.json")
+    codex_provider = ManagedCodexProvider(codex_store, client_factory=lambda record: FakeClient())
+    codex_provider.register_binding(
+        agent_id="agent-codex", binding_id="binding-1", adapter_profile="codex-worker",
+        cwd=tmp_path, scope_digest="sha256:scope", policy_digest="sha256:policy",
+    )
+    combined = CombinedBindingStore(codex_store, _NoBindings())
+    assert combined.get("agent-codex")[0].provider == "managed_app_server"
+    assert combined.get("agent-dsh") is None
+    with pytest.raises(KeyError):
+        combined.update_status("agent-nobody", "degraded")
+
+
+class _NoBindings:
+    def get(self, agent_id: str) -> None:
+        del agent_id
+        return None
+
+
+def test_a_degraded_dsh_binding_is_remembered_and_can_recover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A judgement about the automatic lane must outlive the process, and be reversible."""
+    store, _routes, _credential = _dsh_fixture(tmp_path, monkeypatch)
+    store.update_status("agent-dsh", "degraded", reason="host_wake_capability_unsupported")
+    assert store.get("agent-dsh")[0].status == "degraded"  # type: ignore[index]
+    reloaded = DeepSeekWakeBindingStore(
+        routes_dir=tmp_path / "routing", project_id="project-1", project_root=tmp_path,
+        overlay_path=tmp_path / "host-bindings-deepseek.json",
+    )
+    assert reloaded.get("agent-dsh")[0].status == "degraded"  # type: ignore[index]
+    provider = DeepSeekWakeProvider(reloaded, runner=_dsh_runner())
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json")
+    blocked = dispatcher.on_delivery(message_id="message-dsh", recipient_agent_id="agent-dsh",
+                                     project_id="project-1")
+    assert blocked["error_code"] == "host_binding_degraded"
+    reloaded.update_status("agent-dsh", "ready")
+    assert reloaded.get("agent-dsh")[0].status == "ready"  # type: ignore[index]
+    assert "degraded" not in (tmp_path / "host-bindings-deepseek.json").read_text(encoding="utf-8")
+
+
+def test_the_provider_class_timing_table_matches_the_declaration_table() -> None:
+    """``wake_assistance`` reads a literal table; it must not drift from the classes."""
+    from tsunagou.application.wake_assistance import _PROVIDER_DELIVERY_TIMING
+
+    assert _PROVIDER_DELIVERY_TIMING == {
+        "codex_desktop_app": CodexDesktopProvider.delivery_timing,
+        "managed_app_server": ManagedCodexProvider.delivery_timing,
+        "desktop_attach": DesktopAttachProvider.delivery_timing,
+    }
+
+
+def test_a_dsh_binding_is_never_created_by_the_http_api(tmp_path: Path) -> None:
+    """The plugin's own configuration is the only source of a DSH binding."""
+    store = _NoBindings()
+    provider = DeepSeekWakeProvider(store)  # type: ignore[arg-type]
+    registry = HostWakeProviderRegistry(
+        ManagedCodexProvider(PrivateBindingStore(tmp_path / "codex.json"), client_factory=lambda record: FakeClient()),
+        DesktopAttachProvider(PrivateBindingStore(tmp_path / "codex.json"), client_factory=lambda record: FakeClient()),
+        extra=(provider,),
+    )
+    with pytest.raises(HostWakeError, match="unknown host binding provider"):
+        registry.register_binding(provider=DEEPSEEK_WAKE_PROVIDER, agent_id="agent-x", binding_id="b",
+                                  adapter_profile="deepseek", cwd=tmp_path,
+                                  scope_digest="sha256:s", policy_digest="sha256:p")
+
+
+# ---------------------------------------------------------------------------
+# Why a wake is refused: one classification per lane, including the dead branch
+# ---------------------------------------------------------------------------
+
+class _RefusalFixture:
+    """A project with one local sender and one target whose machine scope is chosen.
+
+    ``target_machine`` writes the invitation-time machine name; ``with_target_route``
+    removes (or keeps) the project's own local route for that Agent. The two together
+    are what decide ``machine_scope``: a verified route means local, a name without one
+    means remote, and neither means unknown.
+    """
+
+    def __init__(self, root: Path, target_machine: str | None, *, with_target_route: bool = True) -> None:
+        self.root = root
+        root.mkdir(parents=True, exist_ok=True)
+        self.authority = AuthorityService()
+        self.messages = MessageStore()
+        self.routes = {host: root / "routes" / host for host in ("codex", "opencode", "deepseek")}
+        self.agents = []
+        for index, host in enumerate(("opencode", "opencode")):
+            conversation = f"refusal-conversation-{index}"
+            ticket = self.authority.issue_ticket(f"{host}:test", conversation)
+            receipt = self.authority.redeem_ticket(ticket, f"{host}:test", conversation, baseline={"baseline": {
+                name: {"status": "supported", "evidence_refs": [f"fixture:{name}"]} for name in BASELINE_CAPABILITIES
+            }})
+            self.agents.append(receipt)
+            session = root / f"session-{index}.json"
+            session.write_text(json.dumps(asdict(receipt)), encoding="utf-8")
+            route = self.routes[host] / (hashlib.sha256(conversation.encode()).hexdigest() + ".json")
+            route.parent.mkdir(parents=True, exist_ok=True)
+            route.write_text(json.dumps({"format_version": 1, "adapter": host, "project_id": "project",
+                                        "project_root": str(root), "conversation_id": conversation,
+                                        "session_file": str(session)}), encoding="utf-8")
+            if index == 1 and not with_target_route:
+                route.unlink()
+        if target_machine is not None:
+            self.authority.agents[self.agents[1].agent_id].machine = target_machine
+        self.database = ProjectDatabase(root / "state.sqlite3", project_id="project")
+        self.service = WakeAssistance(
+            authority=self.authority, messages=self.messages, project_id="project", project_root=root,
+            state_dir=root, database=self.database, native=WakeDispatcher(object()),  # type: ignore[arg-type]
+            route_directories=self.routes, runner=lambda action, **kwargs: {"state": "idle", "can_queue": True,
+                                                                          "result": "observed"},
+        )
+
+    def send(self) -> str:
+        return self.messages.send(command_id="origin", sender_agent_id=self.agents[0].agent_id,
+                                  recipient_agent_id=self.agents[1].agent_id, kind="message",
+                                  subject_ref="task/t", summary="body",
+                                  response_contract={"required": True}).message_id
+
+    def status(self, message_id: str) -> dict[str, Any]:
+        receipt = self.agents[0]
+        return self.service.status({"message_id": message_id}, {
+            "principal_id": receipt.agent_id, "session_id": receipt.session_id,
+            "connection_epoch": receipt.connection_epoch,
+        })
+
+
+def test_the_shipped_container_wires_both_channels_into_one_dispatcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The registry routes, and the dispatcher looks bindings up through a combined store.
+
+    Wiring the combined store *as* the dispatcher's provider instead of onto the
+    registry is silent and expensive: ``getattr(provider, "store")`` is then ``None``,
+    so every delivery — including the Codex lanes that worked before — fails with
+    ``host_binding_not_found``. Nothing else catches that, so this test does.
+    """
+    from tsunagou.bootstrap.container import build_application
+    from tsunagou.modules.projects import ProjectRegistry
+
+    root = tmp_path / "project"
+    root.mkdir()
+    subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+    ProjectRegistry.initialize(root, name="wiring", objective="verify the wake wiring only")
+    monkeypatch.setenv("TSUNAGOU_PROJECT_ROOT", str(root))
+    monkeypatch.setenv("TSUNAGOU_STATE_DIR", str(root / ".tsunagou" / "local"))
+    monkeypatch.setenv("TSUNAGOU_CONTROL_TOKEN", "control")
+    monkeypatch.setenv("TSUNAGOU_HOST_WAKE", "auto")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    app = build_application()
+    try:
+        registry = app.state.hostwake_provider
+        dispatcher = app.state.wake_dispatcher
+        assert dispatcher.provider is registry
+        assert [type(item).__name__ for item in registry.extra] == ["DeepSeekWakeProvider"]
+        assert isinstance(registry.store, CombinedBindingStore)
+        assert registry.store.get("nobody-at-all") is None
+    finally:
+        app.state.host_delivery.stop()
+        app.state.project_database.release_process_lock()
+
+
+def test_each_lane_reports_its_own_refusal_reason(tmp_path: Path) -> None:
+    """Pinning the classification, including the branch that used to be unreachable.
+
+    ``cross_machine_unsupported`` could never be produced: the machine field was only
+    ever ``unknown`` or ``local``, so a network-enrolled Agent was always reported as
+    ``host_identity_unverified`` — which is not what was wrong with it.
+    """
+    # Enrolled here, route intact: this is a local Agent, so nothing is refused.
+    local = _RefusalFixture(tmp_path / "local", None)
+    assert local.status(local.send())["error_code"] is None
+    assert local.status(local.send())["target"]["machine_scope"] == "local"
+
+    # Enrolled here but no verifiable local route: unproven, not remote.
+    unproven = _RefusalFixture(tmp_path / "unproven", None, with_target_route=False)
+    assert unproven.status(unproven.send())["error_code"] == "host_identity_unverified"
+    assert unproven.status(unproven.send())["target"]["machine_scope"] == "unknown"
+
+    # Invited from another machine: nothing here can reach it, and the refusal says so.
+    remote = _RefusalFixture(tmp_path / "remote", "workstation-b", with_target_route=False)
+    refused = remote.status(remote.send())
+    assert refused["lane"] == "unsupported"
+    assert refused["error_code"] == "cross_machine_unsupported"
+    assert refused["target"]["machine"] == "workstation-b"
+    assert refused["target"]["machine_scope"] == "remote"
+    # The caller is told the truth in words as well as in code: it comes and collects.
+    assert "跨机器" in refused["next"] and "自己来取" in refused["next"]
+
+
+def test_a_local_route_beats_a_self_reported_machine_name(tmp_path: Path) -> None:
+    """Where an Agent is, is decided by the verified route — not by what it called itself."""
+    fixture = _RefusalFixture(tmp_path, "some-other-name")
+    target = fixture.status(fixture.send())["target"]
+    assert target["machine_scope"] == "local"
+    assert target["machine"] == "local"
+    # The raw self-reported value stays visible: it is a fact, just not the verdict.
+    assert target["machine_name"] == "some-other-name"

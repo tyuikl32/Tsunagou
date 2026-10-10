@@ -92,14 +92,25 @@ process.stdin.once("data", () => {
         status = run_deepseek_operation("status", **ids)
         assert status["state"] == "unloaded" and status["can_queue"] is True
         assert status["result"] == "observed" and not captured.exists()
+        assert status["delivery"]["declared"] == ("turn_boundary" if wake_mode == "queue" else "step")
+        assert status["delivery"]["source"] == "plugin_wake_mode_declared"
         accepted = run_deepseek_operation("wake", **ids)
         assert accepted["result"] == "queued" and accepted["request_associated"] is True
+        # The wake observes the session *before* submitting, so the session's real
+        # state is reported instead of ``unknown`` — and no turn is claimed to have
+        # started, because the plugin never reports one.
+        assert accepted["state"] == "unloaded" and accepted["can_queue"] is True
         assert accepted["turn_started"] is False
+        assert accepted["delivery"]["used"] == ("turn_boundary" if wake_mode == "queue" else "step")
+        assert accepted["delivery"]["declared"] == accepted["delivery"]["used"]
+        assert "degraded" not in accepted["delivery"]
         submission = json.loads(captured.read_text(encoding="utf-8"))
         expected_id = "tsunagou-wake-v1:" + hashlib.sha256(json.dumps(
             [project, agent, session, message], separators=(",", ":"),
         ).encode()).hexdigest()
-        assert submission["inspected"] == [session, session]
+        # Three reads of the same bound session: the caller's status call, the wake's own
+        # pre-submission observation, and the plugin's existence check inside the wake.
+        assert submission["inspected"] == [session, session, session]
         assert submission["request"] == {
             "requestId": expected_id, "sessionId": session, "mode": wake_mode,
             "content": [{"type": "text", "text": (

@@ -16,6 +16,7 @@ surface lands, the bridge sends them in the payload and each handler fails with 
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -299,6 +300,121 @@ def _contract_subject_ref(proposal: Any) -> str:
     if isinstance(body, dict):
         return _bounded_row(body.get("subject_ref") or body.get("task_id"))
     return ""
+
+
+#: Refusal codes the completion gate answers with. Both are facts the record can prove;
+#: neither is a matter of taste.
+OBJECTIVE_NOT_CONFIRMED = "project_objective_not_confirmed"
+OBJECTIVE_REF_MISMATCH = "project_objective_ref_mismatch"
+
+
+def _resolved_goal(lifecycle: Any) -> Any | None:
+    """The user-confirmed project goal decision, or ``None``.
+
+    The project record's ``objective`` is a **placeholder** until the user answers a
+    ``kind=project.objective`` decision (``modules/projects.PENDING_OBJECTIVE``), so "is
+    there a goal" is a question about that decision and never about the record's text.
+    One helper answers it for both the per-turn read and the completion gate: two
+    spellings of "the goal" is exactly how a project completes without one.
+    """
+
+    if lifecycle is None:
+        return None
+    resolved = [item for item in lifecycle.decisions.values()
+                if item.kind == "project.objective" and item.status == "resolved"]
+    return max(resolved, key=lambda row: row.decision_id) if resolved else None
+
+
+def _anchoring_report(project: Any, bindings: Any, checkpoint_store: Any) -> dict[str, Any]:
+    """What the delivery is anchored to: a registered repository, a checkpoint, a git tree.
+
+    Nothing here blocks a completion — the user decides, and this project does not put a
+    version-control requirement in front of them. It exists so the user decides with the
+    fact in front of them: repositories and checkpoints are the design's way of pinning
+    "the content that was accepted" to something that can be named again, and a project
+    could otherwise reach ``completed`` with neither. Measured on 2026-10-08 (project
+    ``4816f3fa``): ``repositories = {}``, no checkpoint, and a delivery root that is not a
+    git repository — while the completion decision cited ten evidence files that hung off
+    nothing but a directory path, so "the revision that was accepted" was unprovable
+    afterwards. The report says that plainly instead of passing in silence.
+    """
+
+    repository_ids = sorted(str(key) for key in (getattr(project, "repositories", None) or {}))
+    checkpoint_digest: str | None = None
+    pointer = getattr(checkpoint_store, "pointer", None)
+    try:
+        if pointer is not None and pointer.is_file():
+            value = json.loads(pointer.read_text(encoding="utf-8"))
+            digest = value.get("digest") if isinstance(value, dict) else None
+            checkpoint_digest = digest if isinstance(digest, str) and digest else None
+    except (OSError, ValueError, UnicodeError, AttributeError):
+        checkpoint_digest = None
+    git_roots: list[str] = []
+    for root_id, descriptor in (getattr(project, "roots", None) or {}).items():
+        binding = (bindings or {}).get(root_id)
+        path = binding.get("absolute_path") if isinstance(binding, dict) else None
+        if not isinstance(path, str) or not path:
+            continue
+        try:
+            if (Path(path) / ".git").exists():
+                git_roots.append(_bounded_row(descriptor.get("name") if isinstance(descriptor, dict) else None))
+        except OSError:
+            continue
+    if not repository_ids:
+        warning: str | None = (
+            "this delivery has no registered repository: the accepted content is not under "
+            "version control, so the revision that was accepted cannot be named again"
+        )
+    elif checkpoint_digest is None:
+        warning = (
+            "no checkpoint has been materialized: the accepted content is not pinned to a "
+            "version that can be restored"
+        )
+    else:
+        warning = None
+    return {
+        "repositories": repository_ids,
+        "checkpoint_digest": checkpoint_digest,
+        "git_roots": git_roots,
+        "anchored": warning is None,
+        "warning": warning,
+    }
+
+
+def _completion_goal_gate(lifecycle: Any, objective_ref: str) -> Any:
+    """Refuse a completion that is not about a goal the user actually confirmed.
+
+    Run before the proposal is created *and* again before the user's confirmation: the
+    first keeps a proposal for an unagreed goal out of the record, the second makes the
+    gate hold even for a proposal that got in some other way. The refusal carries the
+    reference that would have worked, so the caller does not have to go and ask.
+    """
+
+    goal = _resolved_goal(lifecycle)
+    if goal is None:
+        raise CommandRefused(OBJECTIVE_NOT_CONFIRMED, {
+            "objective_ref": objective_ref,
+            "confirmed_objective_ref": None,
+            "next": (
+                "the project goal is not confirmed, so there is nothing to complete against: "
+                "agree the goal with the user, propose it with user_decision.propose "
+                "(kind=project.objective, proposal_ref=<a reference you will reuse>), and let "
+                "the user confirm it. Then propose completion with objective_ref set to that "
+                "same reference."
+            ),
+        })
+    if objective_ref != goal.subject_ref:
+        raise CommandRefused(OBJECTIVE_REF_MISMATCH, {
+            "objective_ref": objective_ref,
+            "confirmed_objective_ref": goal.subject_ref,
+            "confirmed_objective": _bounded_text(getattr(goal, "summary", ""), CONTEXT_OBJECTIVE_LIMIT),
+            "next": (
+                "this completion names a goal the user never confirmed: pass objective_ref="
+                f"{goal.subject_ref} (the confirmed goal's own reference, also visible as "
+                "stable.goal.objective_ref in context.project_read), or agree a new goal first."
+            ),
+        })
+    return goal
 
 
 def _capability_index_lines(
@@ -737,26 +853,44 @@ def build_handlers(
     def _scope_next(scope: Any) -> str | None:
         return EMPTY_SCOPE_NEXT if isinstance(scope, dict) and not scope else None
 
+    def _scope_root_ids(scope: dict[str, Any]) -> list[str]:
+        declared: list[str] = []
+        for resource in scope.get("resources") or []:
+            if not isinstance(resource, dict):
+                continue
+            root_id = str(resource.get("root_id") or "")
+            if root_id:
+                declared.append(root_id)
+        for root_id in scope.get("roots") or []:
+            declared.append(str(root_id))
+        return declared
+
     def _require_registered_roots(scope: dict[str, Any]) -> None:
         """声明了路径，就必须指向**已登记**的根。
 
         悬空引用（主 Agent 2026-10-07 写的 `root_id:"workspace"`，而该协作 `roots` 为空）以前会被
         静默存下，直到 begin / 工作区准备那一刻才炸，报的还是 `root_binding_required` —— 指不出真因。
         没有项目可查时（只挂了部分处理器的宿主）不在这里判，交给后面的绑定检查。
+
+        ``coordination.plan`` 走**同一个**函数（待改 22-①③）：计划才是任务真正被写下来的那一刻，
+        到 begin 才发现"根不存在"意味着已经有人认领了一条做不了的任务 —— 2026-10-08 观察到的
+        `unknown_root_id` 全部出现在 begin 期，就是这个顺序的代价。拒绝里带上现有的 root_id 清单：
+        撞墙的人能当场照抄，不必再问人（与 待改 2 的契约 id 同一个做法）。
         """
 
         if project_registry is None or project_registry.project is None:
             return
-        registered = set(project_registry.project.roots)
-        for resource in scope.get("resources") or []:
-            if not isinstance(resource, dict):
-                continue
-            root_id = str(resource.get("root_id") or "")
-            if root_id and root_id not in registered:
-                raise ValueError(f"unknown_root_id:{root_id}")
-        for root_id in scope.get("roots") or []:
-            if str(root_id) not in registered:
-                raise ValueError(f"unknown_root_id:{root_id}")
+        registered = sorted(str(key) for key in project_registry.project.roots)
+        for root_id in _scope_root_ids(scope):
+            if root_id not in set(registered):
+                raise CommandRefused(f"unknown_root_id:{root_id}", {
+                    "root_id": root_id,
+                    "registered_root_ids": registered,
+                    "next": (
+                        f"根 {root_id} 在这个协作里没有登记：先 root.register 拿到它的 root_id"
+                        "（必要时再用 root.bind 指到具体的盘），或者改用下面这些已登记的 root_id。"
+                    ),
+                })
 
     def task_create(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
@@ -1118,14 +1252,37 @@ def build_handlers(
         if lifecycle is None or lifecycle.registry.project is None:
             raise RuntimeError("lifecycle_not_available")
         project = lifecycle.registry.project
+        objective_ref = _required_str(payload, "objective_ref")
+        # 完工门的第一半：一个**从未与用户商定过目标**的协作不许走到"提请完工"。
+        # 这里拒绝而不是"提了再说"，是因为提案一旦落进记录，用户看到的就是一张待确认的
+        # 完工卡 —— 而项目记录里那句 objective 在确认前只是占位符（PENDING_OBJECTIVE）。
+        goal = _completion_goal_gate(lifecycle, objective_ref)
+        anchoring = _anchoring_report(project, lifecycle.registry.local_bindings, checkpoint_store)
+        outstanding = payload.get("outstanding_summary")
+        # 卡片上"这一条在说什么"由 ``payload.title`` / ``payload.summary`` 决定（见
+        # ``web/assets/js/behavior.js`` 的 render.overview：title 优先，detail 取 summary）。
+        # 所以：正文仍旧是主 Agent 自己写的那段（title），而 summary 这一行专门留给**锚点**这个
+        # 用户必须在点确认之前看见的事实 —— 没有它，卡片只会写"完工提案"，用户无从知道这份交付
+        # 不在任何版本控制之下（2026-10-08 实测就是这么通过并完成的）。
+        summary_line = (
+            "完工提案：目标已由用户确认；交付有仓库与存档点锚定。"
+            if anchoring["anchored"] else
+            "完工提案：⚠ 这份交付**没有锚点** —— " + str(anchoring["warning"])
+            + "。确认之后就无法再指认被验收的那一版内容；要留下可指认的一版，先登记仓库并建一个存档点。"
+        )
         decision = lifecycle.request_decision(
-            kind="project.complete", subject_ref=_required_str(payload, "objective_ref"),
-            payload={"outstanding_summary": payload.get("outstanding_summary"),
-                     "evidence_refs": payload.get("evidence_refs")},
+            kind="project.complete", subject_ref=objective_ref,
+            payload={"outstanding_summary": outstanding,
+                     "title": outstanding,
+                     "summary": summary_line,
+                     "evidence_refs": payload.get("evidence_refs"),
+                     "objective": _bounded_text(getattr(goal, "summary", ""), CONTEXT_OBJECTIVE_LIMIT),
+                     "anchoring": anchoring},
             expected_revision=int(payload.get("expected_project_revision", project.policy_revision)),
         )
         return {"proposal_id": decision.decision_id, "proposal_digest": decision.input_digest,
-                "revision": decision.expected_revision, "status": decision.status}
+                "revision": decision.expected_revision, "status": decision.status,
+                "objective_ref": objective_ref, "anchoring": anchoring}
 
     def completion_confirm(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         if context["kind"] != "U" or lifecycle is None or lifecycle.registry.project is None:
@@ -1137,6 +1294,10 @@ def build_handlers(
             raise KeyError(proposal_id)
         if int(payload.get("expected_project_revision", project.policy_revision)) != project.policy_revision:
             raise ValueError("project_revision_conflict")
+        # 完工门的第二半（同一条判据、第二道）：即使一条完工提案以别的路径进了记录（改了之前的
+        # 版本、或从别的运行时写进来），**确认**这一步也不许把一个没有目标的项目写成 completed。
+        goal = _completion_goal_gate(lifecycle, str(item.subject_ref or ""))
+        anchoring = _anchoring_report(project, lifecycle.registry.local_bindings, checkpoint_store)
         lifecycle.resolve_decision(
             proposal_id, actor_kind="user_control", decision="approved",
             input_digest=_required_str(payload, "proposal_digest"), reason="project_completion_confirmed",
@@ -1144,7 +1305,12 @@ def build_handlers(
         project.lifecycle = "completed"
         project.policy_revision += 1
         result = {"proposal_id": proposal_id, "project_id": project.project_id,
-                  "status": project.lifecycle, "revision": project.policy_revision}
+                  "status": project.lifecycle, "revision": project.policy_revision,
+                  "objective_ref": goal.subject_ref, "anchoring": anchoring}
+        if anchoring["warning"] is not None:
+            # 明确提示，不静默通过：用户当时是否接受由人决定，但"这份交付没有锚点"必须留在
+            # 完工这个动作的返回里（记录里也留着提案的 payload）。
+            result["anchoring_warning"] = anchoring["warning"]
         if checkpoint_worker is not None:
             result.update(request_checkpoint(context, "project_completion"))
         elif strict_runtime:
@@ -1538,6 +1704,14 @@ def build_handlers(
             for dependency in row.get("dependencies") or ():
                 if dependency not in tasks.tasks:
                     raise ValueError("dependency_task_not_found")
+            # 计划期就跑 task.create 那一套范围校验（待改 22-①③）：`task.create` 会拒的
+            # 悬空根引用，在计划里也必须当场拒 —— 否则这些任务会被建出来、被派出去，
+            # 到 begin 才报 `unknown_root_id`，而那时已经有人认领了一条做不了的任务。
+            scope = row.get("execution_scope")
+            if scope is not None and not isinstance(scope, dict):
+                raise ValueError("invalid_task_execution_scope")
+            if isinstance(scope, dict) and scope:
+                _require_registered_roots(scope)
             normalized.append(row)
         auto_wake = payload.get("auto_wake", True)
         if not isinstance(auto_wake, bool):
@@ -1545,6 +1719,8 @@ def build_handlers(
         specs = []
         contract_notes: list[str] = []
         supersede_notes: list[str] = []
+        pending_contract_notes: list[str] = []
+        pending_by_task: dict[str, list[str]] = {}
         for row in normalized:
             contracts = _required_contracts(row)
             cross_module = bool(row.get("cross_module"))
@@ -1568,6 +1744,21 @@ def build_handlers(
                     "note": f"任务「{row.get('title') or ''}」声明了跨模块交界（cross_module），"
                             "必须在同一行给出 required_contract_ids：双方先就接口达成契约再开工。",
                 })
+            # 契约**不**在计划期拒绝，只在计划期说清（待改 22-①③）：先计划、再让槽位接受是
+            # 设计内的顺序（自指形状那一段就是这么走的，main 还能 accept_proxy 代接受），
+            # 所以这里给的是"这些任务现在还领不了活"+ 本项目现有的契约 id 清单。
+            # 2026-10-08 实测：main 填了一个自己起的标签（`library-api-v1`），计划照常成功，
+            # 到 begin 才连拒 4 次、最后三个任务被取消重建 —— 那句话本该在计划那一刻就说出来。
+            unresolved = [item for item in contracts
+                          if getattr(cognition.proposals.get(item), "status", None) != "accepted"]
+            if unresolved:
+                known = sorted(str(item) for item in cognition.proposals)
+                pending_contract_notes.append(
+                    f"任务「{row.get('title') or ''}」要求的契约还没结清（{ '、'.join(unresolved) }）："
+                    "它现在还领不了活（task.begin 会报 required_contract_not_accepted）。"
+                    "本项目现有的契约 id："
+                    + ("、".join(known) if known else "（一个都没有，先 contract.propose 建一份）")
+                )
             task = tasks.create_task(_required_str(row, "title"), _required_str(row, "task_objective"),
                                      parent_task_id=row.get("parent_task_id"), blocks=set(row.get("dependencies") or ()),
                                      execution_scope=row.get("execution_scope") or {},
@@ -1592,6 +1783,8 @@ def build_handlers(
                     f"后者退出领取队列、记下 superseded_by={task.task_id}，不再需要取消。"
                 )
             specs.append({**row, "task_id": task.task_id})
+            if unresolved:
+                pending_by_task[task.task_id] = unresolved
         plan = coordination.create_plan(main_agent_id=context["principal_id"], objective=_required_str(payload, "objective"),
                                         assignments=specs, auto_wake=auto_wake)
         row_by_task = {spec["task_id"]: spec for spec in specs}
@@ -1608,12 +1801,60 @@ def build_handlers(
                            "assigned_worker_id": item.assigned_worker_id, "status": tasks.tasks[item.task_id].status,
                            "message_id": item.message_id, "acceptance": tasks.tasks[item.task_id].acceptance,
                            "cross_module": tasks.tasks[item.task_id].cross_module,
+                           # 还领不了活的原因（机器可读的那一份）：这些契约要先结清。
+                           "contracts_pending": pending_by_task.get(item.task_id, []),
                            "superseded_task_id": row_by_task.get(item.task_id, {}).get("supersedes_task_id")})
-        notes = [*contract_notes, *supersede_notes]
+        notes = [*contract_notes, *supersede_notes, *pending_contract_notes]
+        shape, shape_note = _plan_shape(normalized, result)
+        if shape_note:
+            notes.append(shape_note)
         return {"plan_id": plan.plan_id, "objective": plan.objective, "assignments": result,
                 "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}, plan.plan_id),
+                "shape": shape,
                 **({"next": "；".join(notes)} if notes else {})}
 
+
+    def _plan_shape(rows: list[dict[str, Any]], result: list[dict[str, Any]]) -> tuple[dict[str, Any], str | None]:
+        """这次计划的"形状" —— 机械计数，外加一句只在数字很大时才说的建议（待改 22-⑦）。
+
+        只看能机械数出来的东西：多少条任务、多少个人、几个互不重叠的租约分区、多少份契约、
+        多少条依赖边。它们不是"好坏"，但 2026-10-08 那次复盘的结论是**机制成本 ∝ 需要显式化的
+        接口决策数**，而分区数目正是把工作切成目录时最容易涨的那个数。所以：
+
+        * 数字永远给（一次调用本来就知道的事，不给等于让人自己数）；
+        * 建议只在"看着就重"时给，而且说清它只是计数：**任务多、人少**往往该合成一条
+          "单 Agent + 精确 scope"的活；**分区多**说明租约粒度正在逼着切目录。
+        """
+
+        workers = {str(row.get("assigned_worker_id") or "") for row in rows}
+        partitions: set[tuple[str, str]] = set()
+        for row in rows:
+            scope = row.get("execution_scope") or {}
+            for root_id in scope.get("roots") or []:
+                partitions.add((str(root_id), ""))
+            for resource in scope.get("resources") or []:
+                if not isinstance(resource, dict):
+                    continue
+                segments = resource.get("segments") or []
+                head = str(segments[0]) if segments else ""
+                partitions.add((str(resource.get("root_id") or ""), head))
+        contracts = {item for row in rows for item in _required_contracts(row)}
+        edges = sum(len(row.get("dependencies") or ()) for row in rows)
+        shape = {"tasks": len(result), "workers": len({item for item in workers if item}),
+                 "lease_partitions": len(partitions), "contracts": len(contracts),
+                 "dependency_edges": edges}
+        advice: list[str] = []
+        if len(result) >= 5 and shape["workers"] <= 2:
+            advice.append(
+                f"{shape['tasks']} 条任务交给 {shape['workers']} 个人：任务数远多于人数时，"
+                "每条都要各自的 scope、验收与交接，机制成本按条数涨 —— 合一条'单 Agent + 精确 scope'的活通常更省"
+            )
+        if shape["lease_partitions"] >= 4:
+            advice.append(
+                f"这次计划切出 {shape['lease_partitions']} 个互不重叠的租约分区：分区越多，"
+                "文件与接口通常也被切得越碎（接口决策数跟着涨），值得再看一眼能不能少切两刀"
+            )
+        return shape, ("；".join(advice) if advice else None)
 
     def coordination_takeover(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "coordination.write")
@@ -1763,15 +2004,13 @@ def build_handlers(
         # 自己给的目标，不是秘密；截到 CONTEXT_OBJECTIVE_LIMIT。
         goal_decision: Any | None = None
         if lifecycle is not None:
-            resolved_goals = [
-                item for item in sorted(lifecycle.decisions.values(), key=lambda row: row.decision_id)
-                if item.kind == "project.objective" and item.status == "resolved"
-            ]
             pending_goals = [
                 item for item in sorted(lifecycle.decisions.values(), key=lambda row: row.decision_id)
                 if item.kind == "project.objective" and item.status == "pending"
             ]
-            goal_decision = resolved_goals[-1] if resolved_goals else (pending_goals[0] if pending_goals else None)
+            # 已确认的那一条由 ``_resolved_goal`` 给出 —— **完工门用的是同一个函数**。两处各写一份
+            # "哪个决定算目标"，正是"没有目标也能完工"这类缺陷长出来的方式（待改 17）。
+            goal_decision = _resolved_goal(lifecycle) or (pending_goals[0] if pending_goals else None)
         if goal_decision is not None and goal_decision.status == "resolved":
             goal_row: dict[str, Any] = {
                 "objective_ref": _bounded_row(goal_decision.subject_ref),

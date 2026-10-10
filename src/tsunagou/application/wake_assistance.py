@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from tsunagou.application.host_wake_runner import sanitize_diagnostics
+from tsunagou.hostwake.timing import declared_timing, plan_delivery
 from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.messaging import MessageStore
 from tsunagou.platform.private_files import write_private_bytes
@@ -25,6 +26,15 @@ def _object(path: Path) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+# The delivery timing each automatic channel's own class declares. Kept as a literal
+# table so reading a capability never needs to import (or construct) a provider.
+_PROVIDER_DELIVERY_TIMING: dict[str, str] = {
+    "codex_desktop_app": "idle_only",
+    "managed_app_server": "unknown",
+    "desktop_attach": "unknown",
+}
 
 
 class WakeAssistance:
@@ -87,10 +97,14 @@ class WakeAssistance:
 
     def _identity_committed(self, agent_id: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
         public: dict[str, Any] = {"agent_id": agent_id, "host": "unknown", "version": None,
-                                  "machine": "unknown", "identity_evidence": []}
+                                  "machine": "unknown", "identity_evidence": [], **self._machine_fields(agent_id)}
         agent = self.authority.agents.get(agent_id)
         if agent is None or agent.status != "active":
             return public, None
+        # A machine name is only ever recorded when an Agent arrived through an
+        # invitation (``agent import --machine``), so this project's own record already
+        # says "somewhere else"; ``_machine_fields`` keeps the name rather than
+        # collapsing it, because "which machine" is what a reader needs.
         candidates: list[tuple[str, dict[str, Any]]] = []
         for host, directory in self.routes.items():
             for path in directory.glob("*.json"):
@@ -119,13 +133,40 @@ class WakeAssistance:
                 candidates.append((host, route))
         if len(candidates) != 1:
             # A machine label is self-reported, never sufficient to claim local access.
+            # Where it does say "elsewhere", ``_machine_fields`` already reports that;
+            # otherwise the answer stays "unknown" rather than being upgraded by a name.
             return public, None
         host, route = candidates[0]
         credential = _object(Path(route["session_file"]))
-        public.update(host=host, machine="local", identity_evidence=[agent.conversation_digest, canonical_digest({
-            "session_id": credential.get("session_id"), "connection_epoch": credential.get("connection_epoch"),
-        })])
+        public.update(host=host, **self._machine_fields(agent_id, verified_local=True),
+                      identity_evidence=[agent.conversation_digest, canonical_digest({
+                          "session_id": credential.get("session_id"), "connection_epoch": credential.get("connection_epoch"),
+                      })])
         return public, route
+
+    def _machine_fields(self, agent_id: str, *, verified_local: bool = False) -> dict[str, Any]:
+        """Where an Agent is, split into what was reported and what was verified.
+
+        ``machine`` is the name a reader can act on; ``machine_name`` is the raw
+        self-reported value; ``machine_scope`` is the judgement that decides whether a
+        wake is possible at all. Only ``machine_scope`` may drive that decision.
+        """
+        agent = self.authority.agents.get(agent_id)
+        reported = str(getattr(agent, "machine", "") or "").strip()
+        if verified_local:
+            return {"machine": "local", "machine_name": reported or None, "machine_scope": "local"}
+        if reported:
+            return {"machine": reported, "machine_name": reported, "machine_scope": "remote"}
+        return {"machine": "unknown", "machine_name": None, "machine_scope": "unknown"}
+
+    @staticmethod
+    def _remote_reason(machine: str) -> str:
+        """Why a network-enrolled Agent cannot be woken from here, in plain words."""
+        return (
+            f"跨机器不支持主动唤醒：{machine or '远端'} 上的这个 Agent 不在本机，"
+            "本机既没有可核实的本地宿主路由，也没有入向通道。消息留在本机收件箱里，"
+            "需要对方自己来取（coordination.wake_status 只能报告这个事实）。"
+        )
 
     def peers(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         with self._domain_lock():
@@ -225,7 +266,10 @@ class WakeAssistance:
             enabled = self.native_policy() if self.native_policy is not None else None
         attempt = self.native.status(message_id=message_id, recipient_agent_id=recipient) if self.native else None
         native: dict[str, Any] = {"enabled": enabled, "outbox_status": None, "attempt_count": None,
-                                  "attempt_state": None, "error_code": None}
+                                  "attempt_state": None, "error_code": None,
+                                  # Whether a daemon-delivered wake can even reach this Agent.
+                                  # ``None`` = not answerable here, never a hopeful True.
+                                  "automatic_channel_available": self._native_lane_available(recipient)}
         if self.database is not None:
             with self.database.lock, contextlib.closing(self.database._connect()) as conn:
                 row = conn.execute(
@@ -240,6 +284,9 @@ class WakeAssistance:
         if attempt is not None:
             native.update(attempt_state=attempt.get("state"), error_code=attempt.get("error_code"))
             base["error_code"] = attempt.get("error_code")
+            if isinstance(attempt.get("delivery"), dict):
+                # The automatic lane's own report: when its provider observed the timing.
+                base["delivery"] = attempt["delivery"]
             proven = any(isinstance(item, dict) and item.get("kind") == "turn_started"
                          and item.get("message_id") == message_id for item in attempt.get("evidence", []))
             if proven and attempt.get("turn_id_digest") and not attempt.get("coalesced_into"):
@@ -302,9 +349,18 @@ class WakeAssistance:
                 "entry": {"tool": "coordination__wake_status", "arguments": {"message_id": message_id}},
                 "evidence": [], "observed_at": format_timestamp(now_ms()),
             }
+            base.update(self._delivery_report(target))
             if sender_route is None or target_route is None:
-                remote = "remote" in {sender["machine"], target["machine"]}
-                base["error_code"] = "cross_machine_unsupported" if remote else "host_identity_unverified"
+                # Two different refusals, and the difference is the whole point:
+                # a name recorded at invitation time means the Agent is on another
+                # machine, which has no verified local route and no inbound channel;
+                # anything else only means this daemon cannot prove a local route.
+                remote = "remote" in {sender.get("machine_scope"), target.get("machine_scope")}
+                if remote:
+                    machine = target["machine"] if target.get("machine_scope") == "remote" else sender["machine"]
+                    base.update(error_code="cross_machine_unsupported", next=self._remote_reason(str(machine)))
+                else:
+                    base["error_code"] = "host_identity_unverified"
                 return base
             if sender["host"] == target["host"] == "codex":
                 base.update(lane="native", result="native_channel_only", error_code=None)
@@ -325,11 +381,14 @@ class WakeAssistance:
                     base["diagnostics"] = diagnostics
                 base["retry_allowed"] = False
                 base["progress"]["host_turn_started"] = bool(prior.get("turn_started"))
+                base.update(self._delivery_report(target, prior))
                 return base
             observed = self._host("status", target, target_route, message_id)
-            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at", "diagnostics"):
+            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at",
+                        "diagnostics", "delivery"):
                 if key in observed:
                     base[key] = observed[key]
+            base.update(self._delivery_report(target, observed))
             target["version"] = observed.get("version")
             base["progress"]["host_turn_started"] = bool(observed.get("turn_started") and observed.get("request_associated"))
             if prior is not None:
@@ -384,12 +443,100 @@ class WakeAssistance:
                     )
             outcome = self._host("wake", target, target_route, message_id)
             self._save(message_id, outcome)
-            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at", "diagnostics"):
+            for key in ("state", "can_queue", "result", "error_code", "evidence", "observed_at",
+                        "diagnostics", "delivery"):
                 if key in outcome:
                     base[key] = outcome[key]
+            base.update(self._delivery_report(target, outcome, fallback=observed))
             base["progress"]["host_turn_started"] = bool(outcome.get("turn_started") and outcome.get("request_associated"))
             base["entry"] = {"tool": "coordination__wake_status", "arguments": {"message_id": message_id}}
             return base
+
+    def _declared_timing(self, target: dict[str, Any], provider: str | None = None) -> tuple[str, str]:
+        """What this Agent's host says it can do, and where that statement comes from.
+
+        Read from the automatic provider's own binding when this daemon has one (that is
+        the only place a host capability is declared), never guessed from the adapter
+        name. An adapter we know nothing about reports ``unknown``.
+        """
+        store = getattr(self.native, "store", None) if self.native is not None else None
+        get_item = getattr(store, "get", None) if store is not None else None
+        item = get_item(str(target.get("agent_id"))) if callable(get_item) else None
+        if item is not None:
+            ref = item[0]
+            declared = declared_timing(getattr(ref, "delivery_timing", None),
+                                       (getattr(ref, "capabilities", None) or {}).get("delivery_timing"))
+            if declared != "unknown":
+                return declared, "host_binding"
+        if provider is not None:
+            # The automatic attempt records which channel handled it, and a channel that
+            # has a known busy-behaviour answer declares it on its own class.
+            declared = _PROVIDER_DELIVERY_TIMING.get(provider)
+            if declared is not None:
+                return declared, "provider_declaration"
+        return "unknown", "no_host_capability_declaration"
+
+    def _native_lane_available(self, recipient: str) -> bool | None:
+        """Whether this daemon holds a *usable* automatic channel for that Agent.
+
+        ``None`` means the question cannot be answered here (no dispatcher bound, or its
+        provider keeps no binding store). It is never upgraded to ``True`` by the
+        adapter's name: an automatic channel needs a binding, and only a binding store
+        can say whether one exists.
+        """
+        if self.native is None:
+            return None
+        store = getattr(self.native, "store", None)
+        get_item = getattr(store, "get", None) if store is not None else None
+        if not callable(get_item):
+            return None
+        item = get_item(recipient)
+        if item is None:
+            return False
+        return getattr(item[0], "status", None) == "ready"
+
+    def _delivery_report(self, target: dict[str, Any], *sources: Any, fallback: Any = None) -> dict[str, Any]:
+        """When this attempt's reminder is (or will be) read.
+
+        The runner reports the timing it actually got, so that statement wins over the
+        declared capability. Nothing observed anywhere stays ``unknown``: a caller that
+        cannot be told the timing must not be told a convenient one, and a request that
+        cannot be honoured is reported as an explicit degradation instead of a success.
+
+        ``sources`` are read latest-first, so the wake's own report beats the earlier
+        precheck; ``fallback`` is only consulted when nothing else said anything.
+        """
+        provider = None
+        for value in (*sources, fallback):
+            if isinstance(value, dict) and isinstance(value.get("provider"), str):
+                provider = value["provider"]
+        declared, source = self._declared_timing(target, provider)
+        lane = self._native_lane_available(str(target.get("agent_id")))
+        if lane is None and provider in _PROVIDER_DELIVERY_TIMING:
+            # A known channel class, but this daemon exposes no binding store to check.
+            # Whatever it delivers, this reader cannot see it.
+            lane = False
+        if lane is None:
+            source = source if source != "unknown" else "automatic_channel_unknown"
+        used = declared
+        for value in (fallback, *reversed(sources)):
+            if not isinstance(value, dict):
+                continue
+            delivery = value.get("delivery")
+            if not isinstance(delivery, dict):
+                continue
+            if isinstance(delivery.get("declared"), str):
+                declared = delivery["declared"]
+            if isinstance(delivery.get("used"), str):
+                used = delivery["used"]
+            if isinstance(delivery.get("source"), str):
+                source = delivery["source"]
+        if lane is False and used == "unknown":
+            # Nobody can be woken through a channel that does not exist, so "unknown"
+            # would understate what is known here: there is no wake path at all.
+            declared = used = "none"
+            source = "no_automatic_channel"
+        return {"delivery": plan_delivery(used=used, declared=declared, source=source).to_public()}
 
     def _host(self, action: str, target: dict[str, Any], route: dict[str, Any], message_id: str) -> dict[str, Any]:
         if self.runner is None:

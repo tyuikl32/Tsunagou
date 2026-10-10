@@ -121,7 +121,16 @@ def test_proxy_identity_and_cancel_survive_restart_with_audit_times(runtime, mon
     with pytest.raises(HTTPException) as exc:
         call("task.cancel_request", payload, main)
     assert exc.value.detail["code"] == "terminal_task"
-    assert events(app) == before
+    # 被拒的命令不改变状态：这一条仍然成立。唯一的例外是**可归因的**拒绝会补记一条
+    # `command.<kind>.denied`（待改 18-③：同一个任务被反复拒是 main 要看的事实），
+    # 所以这里比的是"除拒绝记录以外的事件"。
+    def state_events() -> list[dict]:
+        return [event for event in events(app) if not event["event_type"].endswith(".denied")]
+
+    assert state_events() == [event for event in before if not event["event_type"].endswith(".denied")]
+    (denial,) = [event for event in events(app) if event["event_type"] == "command.task.cancel_request.denied"
+                 and event not in before]
+    assert json.loads(denial["payload_json"])["task_id"] == task["task_id"], "拒绝要能归到这个任务上"
     proxy_event = next(e for e in before if e["event_type"] == "contract.accept_proxy"
                        and e["subject_ref"].startswith("contract_acceptance/"))
     assert main["agent_id"] in proxy_event["actor_ref"]

@@ -22,6 +22,12 @@ def _dry_run(*args: str) -> dict[str, object]:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert completed.stdout, (
+        f"installer {args}: child stdout was {completed.stdout!r} (returncode={completed.returncode}); "
+        f"stderr={(completed.stderr or '<empty>').strip()[:600]!r}"
     )
     return json.loads(completed.stdout)
 

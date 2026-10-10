@@ -473,6 +473,23 @@ class GitAnchorScanner:
             check=check, capture_output=True, timeout=15,
         )
 
+    @staticmethod
+    def _git_utf8(repository: Path, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+        """The text half of the same pipe.
+
+        Ref names, object ids and the scan's own diagnostics are text, and the
+        cross-process rule for this project is UTF-8 explicitly on both ends
+        (``text=True`` alone is the Windows locale codec). ``_git`` above keeps the raw
+        bytes: the blobs it reads are **checkpoint content**, which is arbitrary bytes,
+        so decoding them with ``errors="replace"`` would corrupt the digests this class
+        exists to verify.
+        """
+
+        return subprocess.run(
+            ["git", "--no-optional-locks", "--literal-pathspecs", *args], cwd=repository,
+            check=check, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+        )
+
     def _regular_blob(self, repository: Path, commit: str, path: str) -> bytes:
         entry = self._git(repository, ["ls-tree", "-z", "--full-tree", commit, "--", path]).stdout
         records = [record for record in entry.split(b"\0") if record]
@@ -490,21 +507,21 @@ class GitAnchorScanner:
     ) -> list[GitAnchor]:
         root = Path(repository)
         try:
-            refs = self._git(root, ["for-each-ref", "refs/heads", "refs/tags", "--format=%(refname) %(objectname)"])
+            refs = self._git_utf8(root, ["for-each-ref", "refs/heads", "refs/tags", "--format=%(refname) %(objectname)"])
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
             # A project can use checkpoints before it has a Git repository.
             # The checkpoint remains verifiable; it simply has no Git anchor.
             return []
         anchors: list[GitAnchor] = []
-        for line in refs.stdout.decode("utf-8").splitlines():
+        for line in refs.stdout.splitlines():
             ref_name, object_oid = line.split(" ", 1)
             if not ref_name.startswith(("refs/heads/", "refs/tags/")):
                 continue
-            check = self._git(root, ["rev-parse", "--verify", f"{object_oid}^{{commit}}"], check=False)
+            check = self._git_utf8(root, ["rev-parse", "--verify", f"{object_oid}^{{commit}}"], check=False)
             if check.returncode != 0:
                 continue
-            tip = check.stdout.decode("ascii").strip()
-            commits = self._git(root, ["rev-list", tip]).stdout.decode("ascii").splitlines()
+            tip = check.stdout.strip()
+            commits = self._git_utf8(root, ["rev-list", tip]).stdout.splitlines()
             found = False
             for digest in sorted(checkpoint_digests):
                 path = (checkpoint_paths or {}).get(digest)

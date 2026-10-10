@@ -275,6 +275,8 @@ tsunagou project complete COMPLETION_PROPOSAL_ID `
 
 该命令只调用用户控制身份的 `project.completion.confirm`。成功后项目状态立即变为 `completed`，同时创建强制 checkpoint Operation。checkpoint 物化失败不会撤销已经确认的完成事实；应查询 Operation，修复持久化问题后再 retry。
 
+**完工门（2026-10-10，待改 17）**：确认（以及主 Agent 的 `project.completion.propose.main` 提案）要求**目标已由用户确认**——项目记录里那句 `objective` 在用户答完一条 `kind=project.objective` 的用户决定之前只是占位符 `待主 Agent 与用户确认`，它不构成目标。没有已确认的目标报 `project_objective_not_confirmed`，提案引用的不是那一条目标的 `subject_ref` 报 `project_objective_ref_mismatch`（拒因里带 `confirmed_objective_ref`，也就是该填的值；工具面 `context__project_read` 的 `stable.goal.objective_ref` 是同一个值）。此外提案与确认都会报**锚点**事实（`anchoring`：已登记仓库、存档点 digest、绑定根里哪些是 git 树）；没有仓库或没有存档点时不拒绝，但会在给用户看的那一行里写明，确认的返回里也带 `anchoring_warning` —— 交付有没有锚点由用户决定，但不会静默通过。
+
 独占 daemon 在本次运行收到完成确认后，等待对应 checkpoint 成功和确认响应发送完毕，再自动退出并释放端口。checkpoint 失败或仍在处理中时保持运行；同一运行期间重试该 Operation 成功后也会退出。多个项目共用的 daemon 不自动停止，仍由用户执行 `daemon stop`。手动重新启动已完成项目不会仅因历史完成状态而自动退出；本规则不改变控制台的浏览和自动启动配置。
 
 ### 6.3 查看 Operation、checkpoint 和恢复状态

@@ -143,6 +143,9 @@ class CodexDesktopProvider:
     """Wake a user-created thread through its original Desktop application."""
 
     provider_name = "codex_desktop_app"
+    # Observed behaviour: while the thread is busy this provider does not send at all
+    # and leaves the delivery to a later poll. That is ``idle_only``, not a queue.
+    delivery_timing = "idle_only"
 
     def __init__(
         self, store: PrivateBindingStore, *,

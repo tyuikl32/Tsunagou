@@ -270,6 +270,7 @@ def _project_root_for(
     try:
         completed = subprocess.run(
             ["git", "init", "--quiet", str(root)], capture_output=True, text=True, check=False,
+            encoding="utf-8", errors="replace",
         )
     except FileNotFoundError:
         # 控制台进程的 PATH 里没有 git:项目本来是要成为 git 仓库的

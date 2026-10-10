@@ -531,12 +531,22 @@ def test_a_refused_begin_names_the_task_and_main_can_see_it_keeps_failing(runtim
     assert refused.value.detail["code"] == "required_contract_not_accepted:library-api-v1"
 
     recorded = [event for event in events(app) if event not in before]
-    assert [event["event_type"] for event in recorded] == ["command.task.begin.denied"] * 2
-    for event in recorded:
+    denials = [event for event in recorded if event["event_type"] == "command.task.begin.denied"]
+    assert len(denials) == 2, "两次被拒就是两条拒绝事件"
+    for event in denials:
         payload = json.loads(event["payload_json"])
         assert payload["task_id"] == task["task_id"], "拒绝要归到具体的任务上"
         assert payload["command_kind"] == "task.begin"
         assert payload["code"] == "required_contract_not_accepted:library-api-v1"
+
+    # 待改 18-③：第二次撞同一堵墙不再只是"又一条事件"—— 任务被标出、main 收到一条消息，
+    # 并且这次回响本身也留痕（运行层事件，没有对应的命令）。
+    repeats = [event for event in recorded if event["event_type"] == "coordination.refusal_repeat"]
+    assert len(repeats) == 1, "越过阈值的那一次要有一条回响事件"
+    escalation = json.loads(denials[1]["payload_json"])["escalation"]
+    assert escalation["refusal_count"] == 2
+    assert escalation["task_marked"] is True
+    assert escalation["notified_agent_id"] == main["agent_id"]
 
     main_view = call("context.project_read", {}, main)
     (row,) = main_view["coordination"]["denied"]
@@ -544,10 +554,150 @@ def test_a_refused_begin_names_the_task_and_main_can_see_it_keeps_failing(runtim
     assert row["count"] == 2 and "required_contract_not_accepted:library-api-v1" == row["code"]
     assert row["last_at"]
     assert task["task_id"] in main_view["next"], "反复被拒要给一句提示"
+    (open_task,) = [item for item in main_view["open_tasks"] if item["task_id"] == task["task_id"]]
+    assert open_task["block_reason"] == "refused:required_contract_not_accepted:library-api-v1", (
+        "任务本身要带着'开不了工'的可见理由（状态不变，理由可见）"
+    )
+    inbox = call("inbox.claim", {"limit": 20}, main)
+    (refusal,) = [item for item in inbox["messages"] if item["kind"] == "task.refused"]
+    assert refusal["subject_ref"] == f"task/{task['task_id']}"
+    assert refusal["sender_agent_id"] == "runtime"
 
     worker_view = call("context.project_read", {}, worker)
     assert "denied" not in worker_view["coordination"], "别人的卡点不该出现在 worker 的上下文里"
     assert "next" not in worker_view
+
+
+def test_a_permission_refusal_is_recorded_and_never_marks_the_task(runtime):
+    """待改 18：拒绝都要留痕；但"调用方没能力"不是"这条任务开不了工"。
+
+    2026-10-08 实测的那一条是 ``task__progress`` 被 ``capability_denied`` 拒（没 begin 就想
+    progress）：事件库里**一条都没有** —— 审计只记带 detail 的 ValueError 形状的拒绝。
+    这样的拒绝要进审计与 main 的拒绝清单，但不该给任务盖章：任务可能好好的，只是叫错了人。
+    """
+
+    app, call, main, worker = runtime
+    task = published(call, main)
+    before = events(app)
+    for _ in range(2):
+        with pytest.raises(HTTPException) as refused:
+            call("task.progress", {"task_id": task["task_id"], "attempt_id": "not-an-attempt", "summary": "x"}, worker)
+    assert refused.value.detail["code"] == "capability_denied"
+
+    recorded = [event for event in events(app) if event not in before]
+    denials = [json.loads(event["payload_json"]) for event in recorded
+               if event["event_type"] == "command.task.progress.denied"]
+    assert [item["code"] for item in denials] == ["capability_denied"] * 2, "权限拒绝也要留痕"
+    assert denials[0]["task_id"] == task["task_id"], "调用方点了任务，就归到这个任务上"
+    assert not [event for event in recorded if event["event_type"] == "coordination.refusal_repeat"], (
+        "调用方少能力不该触发'任务开不了工'的回响"
+    )
+    view = call("context.project_read", {}, main)
+    (open_task,) = [item for item in view["open_tasks"] if item["task_id"] == task["task_id"]]
+    assert open_task["block_reason"] is None
+
+
+def test_planning_validates_the_scope_the_create_path_would_refuse(runtime):
+    """计划期跑**同一套**范围校验（待改 22-①③）：悬空根引用当场拒，并列出可用的 root_id。
+
+    没有这一步时，`unknown_root_id` 只在 `task.begin` 暴露 —— 那时任务已经建好、派出去、
+    有人认领了，等于让人白跑一趟（2026-10-08 观察到的那些 `unknown_root_id` 全在 begin 期）。
+    """
+
+    app, call, main, worker = runtime
+    scope = {"resources": [{"kind": "path", "root_id": "coordination",
+                            "segments": ["a.py"], "mode": "exclusive_write"}]}
+    with pytest.raises(HTTPException) as refusal:
+        call("coordination.plan", {"objective": "file work", "assignments": [
+            {"title": "server", "task_objective": "写服务", "assigned_worker_id": worker["agent_id"],
+             "acceptance": "接口联调通过", "execution_scope": scope},
+        ]}, main)
+    assert refusal.value.status_code == 409
+    assert refusal.value.detail["code"] == "unknown_root_id:coordination"
+    assert refusal.value.detail["registered_root_ids"] == []
+    assert "root.register" in refusal.value.detail["next"]
+    assert app.state.state_runtime.tasks.tasks == {}, "整条计划不许留下一半任务"
+
+
+def test_a_plan_says_which_rows_cannot_start_yet_because_of_contracts(runtime):
+    """契约没结清要在**计划那一刻**说出来（待改 22-①③）。
+
+    2026-10-08 实测：main 把契约**名字**填进 `required_contract_ids`，计划照常成功，到 begin
+    连拒 4 次、最后三个任务被取消重建。这里不拒绝（先计划、再让槽位接受是设计内的顺序），
+    但要说清"这两条现在还领不了活"以及本项目现有的契约 id。
+    """
+
+    app, call, main, worker = runtime
+    planned = call("coordination.plan", {"objective": "contract work", "assignments": [
+        {"title": "server", "task_objective": "写服务", "assigned_worker_id": worker["agent_id"],
+         "acceptance": "接口联调通过", "required_contract_ids": ["library-api-v1"]},
+    ]}, main)
+    (row,) = planned["assignments"]
+    assert row["contracts_pending"] == ["library-api-v1"]
+    assert "library-api-v1" in planned["next"] and "required_contract_not_accepted" in planned["next"]
+    assert "一个都没有" in planned["next"], "现有契约 id 的清单（这里是空的）也要给出来"
+
+
+def test_the_submit_notification_carries_what_review_already_requires(runtime):
+    """`inbox.fetch` 回来的那条本身就能喂给 `task.review.accept`（待改 22-⑥ / F）。
+
+    验收边界拿 `result_digest` 与存下来的结果比对，而"有个结果待验收"这件事**只由通知带来**：
+    通知里只给 `result_id` 的话，main 看得见义务、却无法直接履行 —— 它得再问一次 results 出口，
+    或者干脆猜一个 digest 然后吃 `result_digest_mismatch`。所以三者必须同行。
+    """
+
+    app, call, main, worker = runtime
+    task = published(call, main)
+    started = begin(call, task, worker)
+    submitted = call("task.submit", {
+        "task_id": task["task_id"], "attempt_id": started["attempt_id"], "summary": "done",
+    }, worker)
+
+    inbox = call("inbox.claim", {"limit": 20}, main)
+    (notice,) = [item for item in inbox["messages"] if item["kind"] == "task.submitted"]
+    fetched = call("inbox.fetch", {"message_id": notice["message_id"]}, main)
+    payload = fetched["payload"]
+    assert payload["task_id"] == task["task_id"]
+    assert payload["result_id"] == submitted["result_id"]
+    assert payload["result_digest"] == submitted["digest"]
+
+    # 照抄通知里那三个值就能验收：不需要别的出口，也不需要猜。
+    reviewed = call("task.review.accept", {**payload, "reason": "looks right"}, main)
+    assert reviewed["status"] == "completed"
+
+
+def test_a_plan_reports_its_own_shape_and_says_when_it_looks_heavy(runtime):
+    """计划的"形状"是机械计数，重的时候给一句建议（待改 22-⑦）。
+
+    2026-10-08 的复盘结论是**机制成本 ∝ 需要显式化的接口决策数**：任务多、人少时每条都要各自的
+    scope/验收/交接；租约分区多往往意味着工作被切成了目录。这两句只在数字大时说，而且说清它只是计数。
+    """
+
+    app, call, main, worker = runtime
+    rows = [
+        {"title": f"task-{index}", "task_objective": "写一段",
+         "assigned_worker_id": worker["agent_id"], "acceptance": "跑得起来",
+         "execution_scope": {"resources": [{"kind": "path", "root_id": "coordination",
+                                            "segments": [f"area-{index}", "app.py"],
+                                            "mode": "exclusive_write"}]}}
+        for index in range(5)
+    ]
+    # 这五条都要一个已登记的根：先登记一个（用 scope 里的那个 id 名）。
+    fixture = app.state.state_runtime.project_registry.repository
+    call("root.register", {"name": "workspace", "kind": "directory", "required": False,
+                           "binding_request": {"absolute_path": str(fixture)}}, main)
+    # 登记生成的 root_id 才是 scope 里该用的值；这里直接改写 scope 用真实 id。
+    (root_id,) = list(app.state.project_registry.project.roots)
+    for row in rows:
+        row["execution_scope"]["resources"][0]["root_id"] = root_id
+
+    planned = call("coordination.plan", {"objective": "five slices", "assignments": rows}, main)
+    shape = planned["shape"]
+    assert shape["tasks"] == 5 and shape["workers"] == 1
+    assert shape["lease_partitions"] == 5, "五个互不重叠的分区"
+    assert shape["dependency_edges"] == 0 and shape["contracts"] == 0
+    assert "5 条任务交给 1 个人" in planned["next"], "任务多、人少时要说一句"
+    assert "租约分区" in planned["next"], "分区多时也要说一句"
 
 
 def test_declaring_a_cross_module_boundary_requires_a_contract(runtime):
@@ -705,21 +855,14 @@ def test_the_read_states_roots_identities_and_accepted_contracts_instead_of_maki
     assert str(fixture) not in strings, "本机绝对路径一个都不进快照"
     assert not [item for item in strings if item.startswith(("E:\\", "C:\\", "/"))]
 
-    # 快照会原样穿过桥的 stdout，而那条通道在 GBK 控制台上解码非 ASCII 会炸掉调用方 ——
-    # 实测：这一块里放过一行中文提示之后，``test_remote_machine_end_to_end`` 的桥就再也读不到
-    # 输出（表面报 ``json.loads(None)``，真因是 reader 线程 ``UnicodeDecodeError: 'gbk' codec``）。
-    # 表头、状态、提示一律 ASCII；文本是调用方给的（``subject_ref``、根名、用户确认的目标），
-    # 不在此列。
-    machine_text = {
-        key: value for key, value in stable.items() if key != "goal"
-    } | {"goal": {key: value for key, value in stable["goal"].items()
-                  if key not in {"objective", "objective_ref", "note"}}}
-    machine_text = json.loads(json.dumps(machine_text, ensure_ascii=False))
-    for row in machine_text["roots"]["items"]:
-        row.pop("name", None)
-    for row in machine_text["contracts"]["accepted"]:
-        row.pop("subject_ref", None)
-    assert json.dumps(machine_text, ensure_ascii=False).isascii(), f"机器面的文本必须是 ASCII：{machine_text}"
+    # 快照现在**可以**带中文（2026-10-10 待改 21 之后）：跨进程 JSON 管道两端都显式 UTF-8，
+    # 所以调用方给的原样值（``subject_ref``、根名、用户确认的目标）不必再被剥掉。
+    # 原来这里有一条"机器面的文本必须 ASCII"的守卫，它是那次编码事故的产物：桥写的 UTF-8
+    # 被父进程按 GBK 读，reader 线程直接炸、`stdout` 变 None。修好之后，中文留在这里就是
+    # 回归证据 —— 它要穿过 `subprocess`（见 tests/integration/test_cross_process_utf8.py 与
+    # test_remote_machine_end_to_end）原样到达调用方。
+    assert stable["contracts"]["accepted"][0]["subject_ref"] == "后端接口 v1"
+    assert json.loads(json.dumps(stable, ensure_ascii=False))["contracts"]["accepted"][0]["subject_ref"] == "后端接口 v1"
 
     # worker 读同一份快照：这些事实它也拿得到（它要按 root_id 填 scope），
     # 但 main 专属的东西不长出来。
@@ -742,8 +885,7 @@ def test_the_read_states_whether_the_goal_is_confirmed(runtime):
     unset = call("context.project_read", {}, main)["stable"]["goal"]
     assert unset["confirmed"] is False and unset["objective_ref"] is None
     assert unset["status"] == "unset" and unset["note"]
-    # 同一份快照里最长的那段提示（还没确认目标）也必须是 ASCII：见物理身份那条用例里的说明。
-    assert unset["note"].isascii()
+    # 同一份快照里最长的那段提示也照旧读得到（ASCII 限制已随待改 21 一起取消，见上一条用例）。
 
     asked = "让两个 Agent 对齐接口并交付可运行实现"
     proposed = call("user_decision.propose", {

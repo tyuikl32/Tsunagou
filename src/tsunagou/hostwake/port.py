@@ -131,6 +131,10 @@ class WakeAttempt:
     error_code: str | None = None
     error_message: str | None = None
     updated_at: str = field(default_factory=utc_now)
+    # When this attempt's reminder is (or will be) read. ``{}`` means the provider
+    # observed nothing, which is reported as ``unknown`` rather than assumed.
+    # ``delivery_timing`` is only an annotation: see ``_serialize`` in the dispatcher.
+    delivery: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +147,10 @@ class HostCapabilityReport:
     capabilities: dict[str, CapabilityStatus] = field(default_factory=dict)
     evidence_digest: str | None = None
     reason: str | None = None
+    # The "when is it delivered" dimension, kept out of ``capabilities`` because that
+    # mapping is a method catalogue (``wake`` / ``turn/start``) that the dispatcher
+    # acts on. Values come from ``hostwake.timing.DELIVERY_TIMINGS``.
+    delivery_timing: str = "unknown"
     observed_at: str = field(default_factory=utc_now)
 
 

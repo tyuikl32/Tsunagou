@@ -370,6 +370,12 @@ def test_prepare_cli_runs_without_a_daemon(tmp_path: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     assert process.returncode == 0
+    assert process.stdout, (
+        f"prepare CLI: child stdout was {process.stdout!r} (returncode={process.returncode}); "
+        f"stderr={(process.stderr or '<empty>').strip()[:600]!r}"
+    )
     assert json.loads(process.stdout)["status"] == "prepared"

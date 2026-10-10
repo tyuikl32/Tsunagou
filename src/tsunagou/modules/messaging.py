@@ -24,10 +24,19 @@ WAKE_WORTHY_KINDS = frozenset({
     "task.submitted",          # a result is waiting to be reviewed
     "task.reviewed",           # a verdict the executor has to act on
     "task.taken_over",         # the work was taken away: the recipient must stop, not finish
+    # A task that could not be started twice running. Only main can fix what this names
+    # (settle the contract, finish the dependency, define the scope), and until main does,
+    # every attempt somebody makes is a wasted turn. Sent once per (task, code) by
+    # ``application/refusal_escalation.py`` -- 待改 18.
+    "task.refused",
     "contract.proposed",       # the recipient's answer is required for a contract to exist
     "contract.revised",        # a version is in force that the executor has to catch up with
     "user_decision.resolved",  # the answer unblocks work that was paused for it
     "discrepancy.arbitration_requested",  # the user asked main to arbitrate; nothing moves until it does
+    # 空闲看门狗（待改 23 与 22-⑨）：整个协作都停了，或者 main 手上有活而其他人都停了。
+    # 这两条消息说的就是"有人卡住了"本身，所以它们在白名单里 —— 投递走既有的自动通道。
+    "coordination.stalled",
+    "coordination.waiting",
 })
 # Deliberately absent: plain ``message``/``notice`` peer traffic (nothing is blocked), and
 # ``user_decision.pending`` — its recipient is a running attempt by construction, so the

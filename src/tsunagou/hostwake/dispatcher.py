@@ -46,6 +46,26 @@ DEGRADING_WAKE_CODES = frozenset({
     "host_wake_capability_unsupported",
 })
 
+# Providers whose attempt can be observed again after it was dispatched: they keep a
+# local binding store and an inspectable host session, so a queued intent may coalesce
+# and an interrupted attempt may be resumed and polled. Codex Desktop's own conversation
+# and the DSH loopback plugin both qualify; the managed app-server lane does not (its
+# turn is driven by this process, so a restart cannot inspect it).
+_OBSERVABLE_PROVIDERS = frozenset({"codex_desktop_app", "deepseek_wake"})
+
+
+def _binding_provider(binding_item: Any | None) -> str | None:
+    """The provider name behind one stored binding, or ``None`` when unreadable."""
+    if binding_item is None:
+        return None
+    try:
+        ref = binding_item[0]
+    except (IndexError, KeyError, TypeError):
+        return None
+    provider = getattr(ref, "provider", None)
+    return provider if isinstance(provider, str) else None
+
+
 
 def _binding_block_code(binding_item: Any | None) -> str:
     """Why a wake cannot be dispatched for this Agent.
@@ -127,7 +147,7 @@ class WakeDispatcher:
                 prior = self.attempts.get(key)
                 stored = getattr(self.provider, "store", None)
                 binding_item = stored.get(recipient_agent_id) if stored is not None else None
-                native = binding_item is not None and binding_item[0].provider == "codex_desktop_app"
+                native = _binding_provider(binding_item) in _OBSERVABLE_PROVIDERS
                 retry = prior is not None and (
                     prior.get("error_code") == "host_wake_process_restarted" and not native
                     or prior.get("error_code") in {"host_binding_not_found", "host_binding_not_ready"}
@@ -150,6 +170,10 @@ class WakeDispatcher:
                     "attempt_id": business_attempt_id, "actor_id": actor_id,
                     "trigger_source": "daemon_delivery",
                     "pending_count": pending_count, "oldest_pending_seconds": oldest_pending_seconds,
+                    # Which channel this attempt used. A reader that outlives this process
+                    # needs it to say what the host can do (delivery timing included)
+                    # without re-deriving it from a binding it can no longer see.
+                    "provider": _binding_provider(binding_item) or getattr(self.provider, "provider_name", None),
                 }
                 self._append_diagnostic("wake_requested", **self._correlation(base), occurred_at=base["updated_at"])
                 if callback_status is not None:
@@ -355,7 +379,7 @@ class WakeDispatcher:
         if prior.get("state") not in {"queued", "starting", "running", "unknown"}:
             return
         item = self.provider.store.get(str(prior.get("agent_id"))) if hasattr(self.provider, "store") else None
-        if prior.get("state") == "unknown" and (item is None or item[0].provider != "codex_desktop_app"):
+        if prior.get("state") == "unknown" and _binding_provider(item) not in _OBSERVABLE_PROVIDERS:
             return
         watcher_key = f"watch:{key}"
         with self._lock:
@@ -420,7 +444,7 @@ class WakeDispatcher:
                 if prior.get("coalesced_into") or prior.get("state") not in {"queued", "starting", "running", "unknown"}:
                     continue
                 item = self.provider.store.get(str(prior.get("agent_id"))) if hasattr(self.provider, "store") else None
-                if item is None or item[0].provider != "codex_desktop_app":
+                if _binding_provider(item) not in _OBSERVABLE_PROVIDERS:
                     continue
                 restore = getattr(self.provider, "restore_attempt", None)
                 if callable(restore):
@@ -704,6 +728,9 @@ class WakeDispatcher:
             "evidence": [asdict(item) for item in attempt.evidence],
             "error_code": attempt.error_code,
             "error_message": "Host wake failed; inspect the error code" if attempt.error_code else None,
+            # When the host reads this reminder. A provider that observed nothing leaves
+            # this empty and the caller is told ``unknown`` — never a convenient guess.
+            "delivery": dict(attempt.delivery),
             "updated_at": attempt.updated_at,
         }
 

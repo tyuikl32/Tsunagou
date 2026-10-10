@@ -1,5 +1,5 @@
 """Generated from protocol/schemas/queries/audit-page.schema.json; do not edit."""
-# Source digest: sha256:4ce893bab4133a37e5a422adbc089eea47121af614604126a5cdd36fc396b1ab; generator: query-v1
+# Source digest: sha256:300be31b7e1f0026004a595cec03fc6a34a38a6bb6569259662689312af06e87; generator: query-v1
 
 from typing import Literal
 
@@ -55,3 +55,4 @@ class AuditPageModel(BaseModel):
     projection_version: Literal['v1']
     as_of_event_seq: int = Field(ge=0)
     snapshot_event_seq: int = Field(ge=0)
+    order: Literal['asc', 'desc']

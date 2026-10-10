@@ -91,10 +91,14 @@ def test_daemon_parent_job_exit(tmp_path: Path, scenario: str) -> None:
     if os.environ.get("TSUNAGOU_PROJECT_INDEX"):
         env["TSUNAGOU_PROJECT_INDEX"] = os.environ["TSUNAGOU_PROJECT_INDEX"]
     result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--job-helper", str(root), str(report), scenario],
-                            env=env, capture_output=True, text=True, timeout=40,
+                            env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40,
                             creationflags=subprocess.CREATE_BREAKAWAY_FROM_JOB | subprocess.CREATE_NO_WINDOW)
     assert report.is_file(), result.stderr or result.stdout
     recorded = json.loads(report.read_text(encoding="utf-8"))
+    assert recorded["output"], (
+        f"the job helper recorded no CLI output (exit_code={recorded['exit_code']}); "
+        f"helper stderr={(result.stderr or '<empty>').strip()[:600]!r}"
+    )
     outcome = json.loads(recorded["output"])
     if scenario == "denied":
         assert recorded["exit_code"] == 1, recorded
@@ -116,11 +120,15 @@ def test_daemon_parent_job_exit(tmp_path: Path, scenario: str) -> None:
         assert outcome["project_id"] in health["runtime"]["project_ids"]
     finally:
         stopped = subprocess.run([sys.executable, "-m", "tsunagou", "--project-root", str(root), "daemon", "stop"],
-                                 env=env, capture_output=True, text=True, timeout=20)
+                                 env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
         assert stopped.returncode == 0, stopped.stdout or stopped.stderr
+        assert stopped.stdout, (
+            f"daemon stop: child stdout was {stopped.stdout!r} (returncode={stopped.returncode}); "
+            f"stderr={(stopped.stderr or '<empty>').strip()[:600]!r}"
+        )
         assert json.loads(stopped.stdout)["status"] == "stopped"
     repeated = subprocess.run([sys.executable, "-m", "tsunagou", "--project-root", str(root), "daemon", "stop"],
-                              env=env, capture_output=True, text=True, timeout=20)
+                              env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
     assert repeated.returncode == 0, repeated.stdout or repeated.stderr
     assert json.loads(repeated.stdout)["status"] == "already_stopped"
     assert (root / ".tsunagou/local/endpoint.json").exists()

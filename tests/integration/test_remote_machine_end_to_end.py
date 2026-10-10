@@ -86,9 +86,14 @@ class Bridge:
             ["node", "--input-type=module", "-e", CALL, str(self.config_path),
              self.meta_key, self.conversation, tool, json.dumps(arguments)],
             cwd=SOURCE / "packages" / "bridge-server", env=os.environ.copy(),
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
         assert observed.returncode == 0, observed.stderr or observed.stdout
+        assert observed.stdout, (
+            f"bridge call {tool}: the child's stdout came back as {observed.stdout!r} "
+            f"(returncode={observed.returncode}); its stderr was "
+            f"{(observed.stderr or '<empty>').strip()[:600]!r}"
+        )
         return json.loads(observed.stdout)
 
     def session(self) -> dict[str, Any]:
@@ -126,9 +131,14 @@ class RemoteMachine:
              "--workdir", str(self.copy), "--state-dir", str(self.state),
              "--machine", self.machine, "--copy", str(self.copy), "--baseline", "main",
              "--daemon-url", daemon_url],
-            cwd=SOURCE, capture_output=True, text=True, timeout=120,
+            cwd=SOURCE, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
         assert result.returncode == 0, result.stderr or result.stdout
+        assert result.stdout, (
+            f"agent import: the child's stdout came back as {result.stdout!r} "
+            f"(returncode={result.returncode}); its stderr was "
+            f"{(result.stderr or '<empty>').strip()[:600]!r}"
+        )
         self.imported = json.loads(result.stdout)
         self.bridge = Bridge(self.bridge_config, "ai.opencode/sessionID", conversation)
 
@@ -167,9 +177,14 @@ def host_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     def cli(*args: str) -> dict[str, Any]:
         result = subprocess.run(
             [sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
-            cwd=SOURCE, capture_output=True, text=True, timeout=120,
+            cwd=SOURCE, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
         assert result.returncode == 0, result.stderr or result.stdout
+        assert result.stdout, (
+            f"tsunagou {args}: the child's stdout came back as {result.stdout!r} "
+            f"(returncode={result.returncode}); its stderr was "
+            f"{(result.stderr or '<empty>').strip()[:600]!r}"
+        )
         return json.loads(result.stdout)
 
     project = cli("project", "init", "--coordination-root", str(root))
@@ -243,10 +258,15 @@ def host_handle(tmp_path: Path, root: Path, project: dict[str, Any], cli) -> dic
         session = f"ses_main-{os.urandom(4).hex()}"
         joined = subprocess.run(
             [sys.executable, "-m", "tsunagou", "agent", "join", "--adapter", "opencode"],
-            cwd=root, capture_output=True, text=True, timeout=120,
+            cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
             env={**os.environ, "TSUNAGOU_HOST_CONVERSATION_ID": session},
         )
         assert joined.returncode == 0, joined.stderr or joined.stdout
+        assert joined.stdout, (
+            f"agent join: the child's stdout came back as {joined.stdout!r} "
+            f"(returncode={joined.returncode}); its stderr was "
+            f"{(joined.stderr or '<empty>').strip()[:600]!r}"
+        )
         bridge = Bridge(Path(str(json.loads(joined.stdout)["bridge_config"])),
                         "ai.opencode/sessionID", session)
         arrived = bridge.call("context__project_read", {})

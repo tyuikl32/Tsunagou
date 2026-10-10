@@ -53,6 +53,7 @@ def test_project_completion_survives_checkpoint_materialization_failure(
         }},
     }, ticket["secret"])
     call("authority.appoint", {"agent_id": main["agent_id"]}, "control")
+    _confirm_goal(call, main, "project")
     proposal = call("project.completion.propose.main", {
         "expected_project_revision": 1,
         "objective_ref": "project",
@@ -135,6 +136,28 @@ def _enroll_main(call: Any, identity: str) -> dict[str, Any]:
     return main
 
 
+def _confirm_goal(call: Any, main: dict[str, Any], reference: str) -> dict[str, Any]:
+    """Agree the project goal with the user the way the product requires.
+
+    The completion gate (待改 17) refuses to complete a project whose goal the user never
+    confirmed, and it wants the completion proposal to name *that* goal. So the recorded
+    flow is: main proposes ``kind=project.objective``, the user answers, then completion
+    cites the same reference.
+    """
+
+    goal = call("user_decision.propose", {
+        "kind": "project.objective", "proposal_ref": reference,
+        "summary": "exercise the checkpoint failure path",
+        "choices": ["approved", "rejected"],
+    }, main["secret_token"], main)
+    call("user_decision.resolve", {
+        "decision_id": goal["decision_id"], "choice": "approved",
+        "proposal_digest": goal["proposal_digest"],
+        "expected_revisions": {"decision": goal["revision"]},
+    }, "control")
+    return goal
+
+
 def test_checkpoint_failures_exit_lists_what_never_materialized(tmp_path: Path, monkeypatch: Any) -> None:
     """A page of sealed checkpoints cannot answer "was anything ever lost?".
 
@@ -152,6 +175,7 @@ def test_checkpoint_failures_exit_lists_what_never_materialized(tmp_path: Path, 
     app = build_application()
     call = _caller(app)
     main = _enroll_main(call, "checkpoint-failures")
+    _confirm_goal(call, main, "project")
     proposal = call("project.completion.propose.main", {
         "expected_project_revision": 1,
         "objective_ref": "project",

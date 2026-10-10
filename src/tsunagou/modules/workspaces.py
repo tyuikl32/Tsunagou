@@ -329,7 +329,7 @@ class GitReadOnlyPort:
         self.validate(args)
         result = subprocess.run(
             ["git", *args], cwd=Path(repository), check=True, capture_output=True,
-            text=True, timeout=15,
+            text=True, encoding="utf-8", errors="replace", timeout=15,
         )
         return result.stdout
 

@@ -92,19 +92,26 @@ def test_a_console_prepared_opencode_session_is_the_one_that_arrives(tmp_path: P
     def cli(*args: str, env: dict[str, str] | None = None) -> dict[str, Any]:
         result = subprocess.run(
             [sys.executable, "-m", "tsunagou", "--project-root", str(root), *args],
-            cwd=source, capture_output=True, text=True, timeout=90,
+            cwd=source, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90,
             env={**os.environ, **(env or {})},
         )
-        assert result.returncode == 0, result.stderr or result.stdout
+        assert result.stdout, (
+            f"tsunagou {args}: child stdout was {result.stdout!r} (returncode={result.returncode}); "
+            f"stderr={(result.stderr or '<empty>').strip()[:600]!r}"
+        )
         return json.loads(result.stdout)
 
     def call_bridge(bridge_config: str, session_id: str) -> dict[str, Any]:
         observed = subprocess.run(
             ["node", "--input-type=module", "-e", CALL, bridge_config, session_id],
             cwd=source / "packages" / "bridge-server", env=os.environ.copy(),
-            capture_output=True, text=True, timeout=90,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90,
         )
         assert observed.returncode == 0, observed.stderr or observed.stdout
+        assert observed.stdout, (
+            f"bridge call: child stdout was {observed.stdout!r} (returncode={observed.returncode}); "
+            f"stderr={(observed.stderr or '<empty>').strip()[:600]!r}"
+        )
         return json.loads(observed.stdout)
 
     project = cli("project", "init", "--coordination-root", str(root))

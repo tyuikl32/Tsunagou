@@ -241,6 +241,9 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "remote_worker_needs_a_code_copy": "远端没报副本",
         "remote_worker_requires_external_workspace": "远端外部准备",
         "remote_workspace_locator_mismatch": "副本位置不符",
+        # 完工门（待改 17）：目标没跟用户确认过、或提案写的是另一个目标 —— 都不许完工。
+        "project_objective_not_confirmed": "目标还没确认",
+        "project_objective_ref_mismatch": "目标引用不符",
     },
     # 事件自己那句"为什么"（审计出口的 reason_code）。拒绝码有单独一张表
     # （denial_reason），这里放的是**不是拒绝**的那些：用户裁决、后台作业用尽重试、
@@ -300,6 +303,10 @@ GLOSSARY: dict[str, dict[str, str]] = {
         "project.completion.propose.main": "提请完工",
         "project.completion.propose.owner": "属主提完工",
         "project.completion.confirm": "确认完工",
+        # 运行层写的事件（没有对应命令）：同一个任务被同一个错误反复拒绝时的那一条（待改 18）。
+        "coordination.refusal_repeat": "反复开不了工",
+        # 运行层写的事件：空闲看门狗叫了 main 一次（待改 23）。
+        "coordination.idle_watchdog": "空闲看门狗",
         "project.archive": "归档项目",
         "project.reactivate.main": "重启项目",
         "project.reactivate.user": "用户重启项目",
