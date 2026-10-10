@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import CommandRefused
 from tsunagou.shared_kernel.ids import new_id
 from tsunagou.shared_kernel.time import format_timestamp, now_ms, parse_timestamp
 
@@ -142,7 +143,17 @@ def _normalise_validation_metadata(
     values: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None,
     *, allow_stronger: bool = False,
 ) -> tuple[dict[str, Any], ...]:
-    """Validate a safe validation receipt without treating it as host proof."""
+    """Validate a safe validation receipt without treating it as host proof.
+
+    每条**只要** ``command`` 与 ``exit_code`` —— 这是 2026-10-07 定下的、也是给模型看的
+    schema 一直写着的东西（七个必填会把模型逼去吐一段巨长的 JSON，宿主解析一崩整段会话就
+    没了；见 ``tests/protocol/test_task_submit_metadata_shape.py`` 的来历）。**校验器当时没有
+    跟着放宽**，于是"照说明书做"反而被拒：2026-10-10 实测里同一个项目上 12 次
+    ``validation_metadata_fields_required`` 都是这么来的，工人干完活却交不上，回合就此结束。
+
+    现在两边一致：其余字段（时间戳、``tool``、``tool_version``、``workspace_digest``、输出
+    digest）**给了就照样严格校验**，不给就不进那条记录 —— 降的是必填门槛，不是删能力。
+    """
 
     if values is None:
         return ()
@@ -156,31 +167,48 @@ def _normalise_validation_metadata(
     for item in values:
         if not isinstance(item, dict) or set(item) - allowed:
             raise ValueError("invalid_validation_metadata")
-        required = {"started_at", "finished_at", "command", "exit_code", "tool", "tool_version", "workspace_digest"}
+        required = {"command", "exit_code"}
         if not required.issubset(item):
-            raise ValueError("validation_metadata_fields_required")
-        if not isinstance(item["started_at"], str) or not isinstance(item["finished_at"], str):
-            raise ValueError("validation_timestamp_required")
-        started = parse_timestamp(item["started_at"])
-        finished = parse_timestamp(item["finished_at"])
-        if started is None or finished is None or finished < started:
-            raise ValueError("validation_metadata_time_order")
+            # 点名缺什么：照 schema 写却被拒最贵的地方就是"不知道该加什么"，反复试三次才明白。
+            raise CommandRefused("validation_metadata_fields_required", {
+                "missing": sorted(required - set(item)),
+                "required": sorted(required),
+                "optional": sorted(allowed - required),
+                "note": "每条验证记录只要 command 与 exit_code；时间戳、tool、tool_version、"
+                        "workspace_digest、输出 digest 都可选，但给了就必须合法。",
+            })
         command = item["command"]
-        tool = item["tool"]
-        version = item["tool_version"]
-        workspace_value = item["workspace_digest"]
         exit_code = item["exit_code"]
         if (not isinstance(command, str) or not command or len(command) > 4096
                 or "\x00" in command or "\r" in command or "\n" in command):
             raise ValueError("invalid_validation_command")
-        if not isinstance(tool, str) or not tool or len(tool) > 256:
-            raise ValueError("invalid_validation_tool")
-        if not isinstance(version, str) or not version or len(version) > 256:
-            raise ValueError("invalid_validation_tool_version")
-        if not isinstance(workspace_value, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", workspace_value):
-            raise ValueError("validation_workspace_digest_required")
         if not isinstance(exit_code, int) or isinstance(exit_code, bool) or not -(2**31) <= exit_code < 2**31:
             raise ValueError("validation_exit_code_required")
+        row: dict[str, Any] = {"command": command, "exit_code": exit_code}
+        if "started_at" in item or "finished_at" in item:
+            if not isinstance(item.get("started_at"), str) or not isinstance(item.get("finished_at"), str):
+                raise ValueError("validation_timestamp_required")
+            started = parse_timestamp(item["started_at"])
+            finished = parse_timestamp(item["finished_at"])
+            if started is None or finished is None or finished < started:
+                raise ValueError("validation_metadata_time_order")
+            row["started_at"] = format_timestamp(started)
+            row["finished_at"] = format_timestamp(finished)
+        if "tool" in item or "tool_version" in item:
+            tool = item.get("tool")
+            version = item.get("tool_version")
+            if not isinstance(tool, str) or not tool or len(tool) > 256:
+                raise ValueError("invalid_validation_tool")
+            if not isinstance(version, str) or not version or len(version) > 256:
+                raise ValueError("invalid_validation_tool_version")
+            row["tool"] = tool
+            row["tool_version"] = version
+            row["tool_version_digest"] = canonical_digest({"tool": tool, "version": version})
+        if "workspace_digest" in item:
+            workspace_value = item["workspace_digest"]
+            if not isinstance(workspace_value, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", workspace_value):
+                raise ValueError("validation_workspace_digest_required")
+            row["workspace_digest"] = workspace_value
         level = item.get("evidence_level", "agent_asserted")
         # A worker may report what it claims, but cannot self-elevate its own
         # receipt to system or user evidence.  Keep the original claim as a
@@ -188,13 +216,7 @@ def _normalise_validation_metadata(
         if level not in EVIDENCE_LEVELS:
             raise ValueError("invalid_evidence_level")
         canonical_level = level if allow_stronger and level in {"system_verified", "user_confirmed"} else "agent_asserted"
-        row: dict[str, Any] = {
-            "started_at": format_timestamp(started), "finished_at": format_timestamp(finished),
-            "command": command, "exit_code": exit_code, "tool": tool,
-            "tool_version": version, "workspace_digest": workspace_value,
-            "tool_version_digest": canonical_digest({"tool": tool, "version": version}),
-            "evidence_level": canonical_level,
-        }
+        row["evidence_level"] = canonical_level
         if level != canonical_level:
             row["reported_evidence_level"] = level
         for digest_key in ("stdout_digest", "stderr_digest"):

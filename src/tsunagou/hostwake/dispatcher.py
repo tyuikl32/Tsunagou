@@ -53,6 +53,16 @@ DEGRADING_WAKE_CODES = frozenset({
 # turn is driven by this process, so a restart cannot inspect it).
 _OBSERVABLE_PROVIDERS = frozenset({"codex_desktop_app", "deepseek_wake"})
 
+# Lanes that only ever report **admission**: the host accepts the reminder and never says
+# whether a turn started, so ``poll()`` can only ever answer "nothing new". Watching them
+# cannot produce a better answer -- the watcher polls, learns nothing, and the attempt is
+# finally swept as ``host_wake_unknown_expired``, which reads exactly like a failure even
+# though the reminder was delivered (2026-10-10 实测：一个项目的 33 次尝试里 30 次是这种
+# "过期失败"，看着像"唤醒全坏"，而通道其实是通的）。对这种通道，诚实的表述是
+# **已投递、未确认**：不安排看护线程，让尝试停在 ``queued``，直到收件方自己 ACK 或展示
+# （``record_presented`` / ``deliveries_acked`` 那两条路照旧把它收尾）。
+_ADMISSION_ONLY_PROVIDERS = frozenset({"deepseek_wake"})
+
 
 def _binding_provider(binding_item: Any | None) -> str | None:
     """The provider name behind one stored binding, or ``None`` when unreadable."""
@@ -379,6 +389,9 @@ class WakeDispatcher:
         if prior.get("state") not in {"queued", "starting", "running", "unknown"}:
             return
         item = self.provider.store.get(str(prior.get("agent_id"))) if hasattr(self.provider, "store") else None
+        if _binding_provider(item) in _ADMISSION_ONLY_PROVIDERS:
+            # 这条通道只报"受理"：看护线程问不出任何东西，只会把"已投递"记成"过期失败"。
+            return
         if prior.get("state") == "unknown" and _binding_provider(item) not in _OBSERVABLE_PROVIDERS:
             return
         watcher_key = f"watch:{key}"

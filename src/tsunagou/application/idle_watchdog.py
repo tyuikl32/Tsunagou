@@ -51,10 +51,20 @@ WATCHDOG_INTERVAL_SECONDS = 30.0
 COOLDOWN_SECONDS = 1800.0
 #: 连续叫了这么多次还是没人动，就停下来交给用户（人永远是最后一道）。
 MAX_ATTEMPTS = 3
-#: ``resume``（P3）自己的窗口：尝试没提交、而它自己安静了这么久，才把它叫回来。
-#: 比 CONTINUE_SECONDS 大得多 —— 一个 worker 在本地写代码、跑构建时本来就不发命令，
-#: 十分钟是"大概率真的停了"的下限，不是"它必须一直在动"的要求。
-RESUME_SECONDS = 600.0
+#: ``resume``（P3）自己的窗口：尝试没提交、而它已经安静了这么久，才把它叫回来。
+#: **分两档**，因为判据的可靠性不同（2026-10-10 用户实测后的修正：在一个只有几十分钟的测试里，
+#: 十分钟的窗口等于没有；而"整个项目都安静"那道闸在活跃实验里永远不成立）：
+#:
+#: * 宿主**明确说**这条会话不在跑（``idle`` / ``unloaded``）⇒ 用短窗口。那是"它现在真的没在
+#:   执行任何东西"，所以短窗口不会打扰在干活的人：一个 agent 在本地跑五分钟构建时，它的回合是
+#:   **running**，宿主会直说，我们根本不看窗口。
+#: * 宿主不说话（``None``，例如 Codex 那条 lane）⇒ 用长窗口。那时唯一的证据是"它连命令都不发
+#:   了"，而本地写代码本来就不发命令，必须保守。
+RESUME_SECONDS = 90.0
+RESUME_UNVERIFIED_SECONDS = 600.0
+#: 同一条尝试两次叫它之间至少隔多久。必须比窗口小一个量级：半小时的冷却意味着一次几十分钟的
+#: 测试里"叫过一次就再也不会叫"（实测教训），而这条规则的目的是**把它拉回来继续干**。
+RESUME_COOLDOWN_SECONDS = 180.0
 #: 同一条尝试最多叫几次；再多就交给 main（它是协调者，由它决定催、换人还是让它阻塞）。
 RESUME_MAX_ATTEMPTS = 3
 #: 看门狗发给 main 的消息种类。两种都在 ``WAKE_WORTHY_KINDS`` 里，所以落库时会被排进
@@ -142,67 +152,69 @@ def idle_verdict(
 
 def resume_targets(
     facts: WatchdogFacts, *, resume_seconds: float = RESUME_SECONDS,
+    unverified_seconds: float = RESUME_UNVERIFIED_SECONDS,
 ) -> list[dict[str, Any]]:
     """谁该被叫回来（P3）：**有任务、但那条尝试还没提交**，而它自己已经安静够久。
 
-    这是唯一一个不看"别人在不在忙"的条件 —— 用户报的就是"别的活照常在跑，而某一个
-    Agent 停在半路没人知道"。但"是不是在**故意**等"必须判清，否则会把合法的等待当成
-    停在中途（用户 2026-10-10 指出的风险：做一半发现要等 main 或别的 Agent 做完）。
-    判据如下，每条都是读到的事实：
+    判据（每条都是读到的事实）：
 
-    1. 它有一条**没提交、也没结束**的尝试（提交了就是干完了，等验收是 main 的事）；
-    2. **整个项目也安静了** ``resume_seconds``。有人正在推进 ⇒ 它很可能是在等那个人，
-       这时催它是噪音（而且被别人推进这件事本身说明协作没停）；
-    3. **没有未决的用户决定**：球在用户手上，谁都不该被催；
-    4. **没有人在欠它答复**（``owed_replies``）：它在等一个明确问出去的答案，那是故意等；
-    5. 宿主**没有**说这条会话"正在跑"（正在跑就不打扰）；拿不到宿主说法的宿主
-       （``session_state is None``）不因此被排除 —— 那时靠第 2、6 条的证据；
-    6. 它自己安静了 ``resume_seconds`` 以上。用**它自己的**事件算，不是全局的。
+    1. 它有一条**没提交、也没结束**的尝试（``claimed`` / ``running`` / ``orphaned``）——
+       提交了就是干完了，等验收是 main 的事；``orphaned`` 是 daemon 重启时留下的"停在中途"，
+       正是最该被拉回来的那种。
+    2. **宿主没有说它"正在跑"**：正在跑就不打扰。宿主会说 ``idle`` / ``unloaded``（它没在
+       执行任何东西）或干脆不说（``None``）。
+    3. **它自己安静够了**，窗口按第 2 条的可靠性分档：宿主明确说它没在跑 ⇒
+       ``resume_seconds``（短，默认 90 秒）；宿主不说话 ⇒ ``unverified_seconds``（长，默认
+       600 秒）。**不再要求"整个项目安静"** —— 2026-10-10 实测：一个几十分钟的协作实验里
+       那条闸永远不成立，等于把这条规则关掉；而"别人在忙不代表它没停"本来就是它存在的理由。
+    4. 没有未决的用户决定（球在用户手上谁都不催），也没有人在欠它答复（那种安静是故意的）。
 
-    要等别人又不想被当成停在中途，协议里本来就有表达：``task.block`` 会结束这条尝试
-    （于是它根本不在候选里），或者回一条消息把球踢出去（第 4 条就会护住它）。
+    要等别人又不想被当成停在中途，协议里本来就有表达：``task.block`` 会结束这条尝试（于是它
+    根本不在候选里），或者回一条消息把球踢出去（第 4 条护住它）。
     """
 
     if not facts.automatic_wake or facts.lifecycle != "active":
         return []
-    # 球在用户手上、或者别人还在推进：静默是正确的。
     if facts.pending_user_decision:
-        return []
-    if facts.seconds_since_event is None or facts.seconds_since_event < resume_seconds:
         return []
     targets = []
     for entry in facts.unsubmitted:
         if str(entry.get("agent_id") or "") in facts.owed_replies:
             continue
-        if str(entry.get("session_state") or "").strip() == "running":
+        state = str(entry.get("session_state") or "").strip()
+        if state == "running":
             continue
+        window = resume_seconds if state else unverified_seconds
         quiet = entry.get("quiet_seconds")
-        if quiet is None or float(quiet) < resume_seconds:
+        if quiet is None or float(quiet) < window:
             continue
-        targets.append(dict(entry))
+        targets.append({**entry, "window_seconds": window})
     return targets
 
 
 def stalled_waiters(
-    facts: WatchdogFacts, *, resume_seconds: float = RESUME_SECONDS,
+    facts: WatchdogFacts, *, quiet_seconds: float = RESUME_UNVERIFIED_SECONDS,
 ) -> list[dict[str, Any]]:
     """有人**在等一个答复**、而整个项目也停了 —— 那件没结清的事得让 main 知道。
 
-    没有这一条会留一个盲区：候选被第 4 条护住（它在等人答复）之后，``deadlock`` 也因为它
-    还有在跑的尝试而不成立 ⇒ 谁都收不到消息。**谁欠的答复**是 main 能处理的事（催、换人、
-    或者判定那条依赖不再需要），所以交给它，不交给用户。
+    没有这一条会留一个盲区：候选被"它在等人答复"护住之后，``deadlock`` 也因为它还有在跑的
+    尝试而不成立 ⇒ 谁都收不到消息。**谁欠的答复**是 main 能处理的事（催、换人、或者判定那条
+    依赖不再需要），所以交给它，不交给用户。
+
+    窗口用**长**的那一档（默认 600 秒）：这条是"整个项目都没动"的信号，比"某一条会话停了"
+    重得多，早叫只会变成噪音。
     """
 
     if not facts.automatic_wake or facts.lifecycle != "active" or facts.pending_user_decision:
         return []
-    if facts.seconds_since_event is None or facts.seconds_since_event < resume_seconds:
+    if facts.seconds_since_event is None or facts.seconds_since_event < quiet_seconds:
         return []
     stalled = []
     for entry in facts.unsubmitted:
         if str(entry.get("agent_id") or "") not in facts.owed_replies:
             continue
         quiet = entry.get("quiet_seconds")
-        if quiet is None or float(quiet) < resume_seconds:
+        if quiet is None or float(quiet) < quiet_seconds:
             continue
         stalled.append(dict(entry))
     return stalled
@@ -307,7 +319,7 @@ class WatchdogFactsReader:
 
         entries = []
         for attempt in self.tasks.attempts.values():
-            if attempt.status not in {"claimed", "running"}:
+            if attempt.status not in {"claimed", "running", "orphaned"}:
                 continue
             quiet = self._quiet_seconds(getattr(attempt, "owner_agent_id", ""), attempt)
             entry: dict[str, Any] = {
@@ -400,7 +412,8 @@ class IdleWatchdog:
         idle_seconds: float = IDLE_SECONDS, continue_seconds: float = CONTINUE_SECONDS,
         cooldown_seconds: float = COOLDOWN_SECONDS, max_attempts: int = MAX_ATTEMPTS,
         resume_seconds: float = RESUME_SECONDS,
-        resume_cooldown_seconds: float = COOLDOWN_SECONDS,
+        resume_unverified_seconds: float = RESUME_UNVERIFIED_SECONDS,
+        resume_cooldown_seconds: float = RESUME_COOLDOWN_SECONDS,
         resume_max_attempts: int = RESUME_MAX_ATTEMPTS,
     ) -> None:
         self.reader = reader
@@ -415,6 +428,7 @@ class IdleWatchdog:
         self.cooldown_seconds = cooldown_seconds
         self.max_attempts = max_attempts
         self.resume_seconds = resume_seconds
+        self.resume_unverified_seconds = resume_unverified_seconds
         self.resume_cooldown_seconds = resume_cooldown_seconds
         self.resume_max_attempts = resume_max_attempts
         self.ledger = WatchdogLedger()
@@ -456,7 +470,8 @@ class IdleWatchdog:
     def resume_round(self, facts: WatchdogFacts, now: float) -> dict[str, Any] | None:
         """P3：把"有任务、但那条尝试还没提交"的 Agent 叫回来。每跳最多叫一条，防一口气刷屏。"""
 
-        for entry in resume_targets(facts, resume_seconds=self.resume_seconds):
+        for entry in resume_targets(facts, resume_seconds=self.resume_seconds,
+                                   unverified_seconds=self.resume_unverified_seconds):
             attempt_id = str(entry.get("attempt_id") or "")
             if not attempt_id:
                 continue
@@ -472,7 +487,7 @@ class IdleWatchdog:
             return self.act_resume(entry, facts, now)
         # 没人该被叫回来，但有人的候选被"它在等一个答复"护住了、而整个项目也停了：那件
         # 没结清的答复得让 main 知道（否则这条协作就静在那里，谁都收不到消息）。
-        for entry in stalled_waiters(facts, resume_seconds=self.resume_seconds):
+        for entry in stalled_waiters(facts, quiet_seconds=self.resume_unverified_seconds):
             attempt_id = str(entry.get("attempt_id") or "")
             if not attempt_id or self.handed_off.get(attempt_id):
                 continue

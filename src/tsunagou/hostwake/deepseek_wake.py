@@ -362,6 +362,10 @@ class DeepSeekWakeProvider:
         delivery = dict(result.get("delivery") or {})
         if not delivery:
             delivery = {"declared": declared, "used": "unknown", "source": source}
+        # 这条通道只报"受理"：宿主不会回来说"回合开始了"。把这件事写进投递报告，读者才知道
+        # 为什么一次成功的投递永远不会变成 ``completed``（2026-10-10：这种"等不到终态"原来
+        # 被记成 ``failed / host_wake_unknown_expired``，看着像唤醒失败）。
+        delivery.setdefault("confirmation", "admission_only")
         evidence = self._evidence(request, result)
         if result.get("result") == "queued":
             return self._attempt(request, "queued", None, declared=declared, source=source,

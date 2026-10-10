@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -6,6 +7,8 @@ import pytest
 
 from tsunagou.modules.workspaces import GitReadOnlyPort, WorkspaceService, _normalise_validation_metadata
 from tsunagou.shared_kernel.digests import canonical_digest
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def worktree_decision(service: WorkspaceService):
@@ -484,3 +487,50 @@ def test_self_reported_receipts_remain_weak_and_include_tool_version_digest(repo
     assert observed["reported_evidence_level"] == reported
     assert observed["started_at"] == "2026-09-27T17:00:00.000Z"
     assert observed["tool_version_digest"] == canonical_digest({"tool": "pytest", "version": "8"})
+
+
+def test_the_schema_minimum_is_exactly_what_the_validator_accepts() -> None:
+    """给模型看的必填 = 校验器真正要的（2026-10-10：这两个曾经不一致）。
+
+    那次不一致的代价是实测里同一个项目上 12 次 ``validation_metadata_fields_required``：
+    模型照 schema 写（只有 ``command`` + ``exit_code``），校验器要七个 ⇒ 工人干完活交不上，
+    回合就此结束。这条测试就是那类"半截改动"的哨兵：**用 schema 允许的最小记录去跑真校验**。
+    """
+
+    schema = json.loads((ROOT / "protocol/schemas/commands/task/submit.schema.json").read_text(encoding="utf-8"))
+    items = schema["properties"]["validation_metadata"]["items"]
+    declared = set(items["required"])
+    minimal = {field: items["properties"][field].get("examples", ["pytest -q"])[0]
+               if field == "command" else 0 for field in declared}
+    observed = _normalise_validation_metadata([minimal])[0]
+    assert observed["command"] and observed["exit_code"] == 0
+    # 只有那两样：其余字段照 schema 是可选的，就不该凭空出现在记录里。
+    assert set(observed) == declared | {"evidence_level"}
+
+
+def test_a_receipt_missing_a_required_field_says_which_one() -> None:
+    """缺字段时要**点名**，不能让工人试三次才知道该加什么。"""
+
+    from tsunagou.shared_kernel.errors import CommandRefused
+
+    with pytest.raises(CommandRefused) as caught:
+        _normalise_validation_metadata([{"exit_code": 0}])
+    assert caught.value.code == "validation_metadata_fields_required"
+    assert caught.value.detail["missing"] == ["command"]
+    assert "command" in caught.value.detail["required"]
+    assert "workspace_digest" in caught.value.detail["optional"]
+
+
+def test_optional_receipt_fields_are_still_validated_when_given() -> None:
+    """降的是必填门槛，不是删能力：给了就必须合法。"""
+
+    with pytest.raises(ValueError, match="validation_timestamp_required"):
+        _normalise_validation_metadata([{"command": "pytest -q", "exit_code": 0,
+                                         "started_at": "2026-09-27T17:00:00Z"}])
+    with pytest.raises(ValueError, match="invalid_validation_tool"):
+        _normalise_validation_metadata([{"command": "pytest -q", "exit_code": 0, "tool": "pytest"}])
+    with pytest.raises(ValueError, match="validation_workspace_digest_required"):
+        _normalise_validation_metadata([{"command": "pytest -q", "exit_code": 0,
+                                         "workspace_digest": "not-a-hash"}])
+    with pytest.raises(ValueError, match="validation_metadata_time_order"):
+        _normalise_validation_metadata([{**receipt(), "finished_at": "2026-09-27T16:00:00Z"}])
