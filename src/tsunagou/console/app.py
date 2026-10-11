@@ -733,8 +733,18 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
             # 读得通就记一份（这一屏下次 daemon 不在了也能看）。
             history.record(project_id, name, payload, captured_at=format_timestamp(now_ms()))
         if unreachable is not None and not from_history:
-            # Nothing was ever recorded either: this is the plain "daemon 未启动" case.
-            raise unreachable
+            # 连一条记录都没有：这不是"取数失败"，是"这个协作没在跑"。以前这里抛错，页面就把它
+            # 渲染成"10 项数据拉取失败"的红条（2026-10-11 用户实测），而被拒绝的其实只是"没启动"
+            # 这一件事。现在如实回答 **200 + stopped**：每个出口的缺失原因照旧放在 ``missing``
+            # （页面本来就会逐块写"读取不到（原因）"），整页不再被一条红字盖住。
+            return {
+                "project_id": project_id, "view": view, "sources": {},
+                "missing": missing or {name: {"status": 503, "code": "daemon_not_running"}
+                                       for name in sources},
+                "gathered_at": format_timestamp(now_ms()),
+                "stopped": True,
+                "stopped_reason": str(getattr(unreachable, "code", "") or "daemon_not_running"),
+            }
         return {
             "project_id": project_id, "view": view, "sources": gathered, "missing": missing,
             "gathered_at": format_timestamp(now_ms()),
