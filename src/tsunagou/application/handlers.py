@@ -300,6 +300,24 @@ TOOL_NAME_OVERRIDES: dict[str, str] = {
 #: attempt- and review-scoped grants) is not a tool this read is about.
 AGENT_PRINCIPAL_KINDS = frozenset({"M", "B"})
 
+#: ``context.project_read`` 里"已结束的 assignment"最多带几条（只为了 id 仍然可查）。
+#: 还活着的那些永远逐条给出 —— main 拿 assignment_id 去 takeover / wake 的就是它们。
+CLOSED_ASSIGNMENT_TAIL = 5
+
+
+def _bounded_id_list(values: Any, limit: int = CONTEXT_BLOCK_LIMIT) -> str:
+    """把一串 id 压成一行：最多 ``limit`` 个，其余用"还有 N 个"交代。
+
+    2026-10-10 审计：拒绝/提示里曾经把"本项目现有的契约 id"整串倒出来，条数随项目增长 ——
+    而拒绝是**每一轮**都要读的东西。清单的意义是"能挑一个填回去"，不是"列全部"。
+    """
+
+    items = [str(item) for item in values or ()]
+    if not items:
+        return ""
+    head = "、".join(items[:limit])
+    return head + (f"（另有 {len(items) - limit} 个）" if len(items) > limit else "")
+
 
 def _bounded_row(value: Any, limit: int = CONTEXT_LABEL_LIMIT) -> str:
     """One label's worth of a value: printable, single-line, trimmed.
@@ -620,18 +638,31 @@ def build_handlers(
 
         事件库不在（只挂了部分处理器的宿主）或是读失败时，上下文照常返回 —— 这条清单是**帮助**，
         不是不变量；让它把每回合都要成功的读取搞成 5xx，代价比没有它还大。
-        ``list_events`` 是升序；多读几条再取尾部，拿到的是**最新**的那些。
+
+        2026-10-10 审计修正：这里以前写"``list_events`` 是升序；多读几条再取尾部就是最新的"，
+        但那条查询是 ``ORDER BY event_seq ASC LIMIT n`` —— 拒绝超过 n 条之后，返回的是**最旧**的
+        那批，``[-54:]`` 取到的还是最旧的 ⇒ main 每回合读到的是**冻结的旧证据**，而它下面那句
+        "重试只会再被拒一次"恰恰指向它现在看不见的那个阻塞（实测：70 条拒绝里第 69 条永不出现）。
+        改成按 ``descending=True`` 取最新，再正序返回给人读。
         """
 
         if database is None:
             return []
         try:
             events = database.list_events(
-                limit=DENIAL_EVENT_WINDOW + 4, event_type_like="%.denied",
+                limit=DENIAL_EVENT_WINDOW, event_type_like="%.denied", descending=True,
             )
+        except TypeError:
+            # 老签名不认识 descending：退回旧行为，至少不比以前差。
+            try:
+                events = database.list_events(
+                    limit=DENIAL_EVENT_WINDOW + 4, event_type_like="%.denied",
+                )[-DENIAL_EVENT_WINDOW:]
+            except Exception:
+                return []
         except Exception:
             return []
-        return events[-DENIAL_EVENT_WINDOW:]
+        return list(reversed(events))
 
     def enroll(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         installation_id = payload.get("installation_id")
@@ -1065,6 +1096,7 @@ def build_handlers(
             },
             "latest_result": None if latest is None else {
                 "result_id": latest.result_id, "digest": latest.digest,
+                "result_digest": latest.digest,
                 "submitted_by": latest.submitted_by,
                 "workspace_result_ref": (latest.payload or {}).get("workspace_result_ref"),
             },
@@ -1922,8 +1954,8 @@ def build_handlers(
                 pending_contract_notes.append(
                     f"任务「{row.get('title') or ''}」要求的契约还没结清（{ '、'.join(unresolved) }）："
                     "它现在还领不了活（task.begin 会报 required_contract_not_accepted）。"
-                    "本项目现有的契约 id："
-                    + ("、".join(known) if known else "（一个都没有，先 contract.propose 建一份）")
+                    + _bounded_id_list(known, CONTEXT_BLOCK_LIMIT)
+                    + ("（一个都没有，先 contract.propose 建一份）" if not known else "")
                     + ("。槽位归属：" + "；".join(ownership) if ownership else "")
                 )
             task = tasks.create_task(_required_str(row, "title"), _required_str(row, "task_objective"),
@@ -1966,7 +1998,11 @@ def build_handlers(
                 item.message_id = message.message_id
             result.append({"assignment_id": item.assignment_id, "task_id": item.task_id,
                            "assigned_worker_id": item.assigned_worker_id, "status": tasks.tasks[item.task_id].status,
-                           "message_id": item.message_id, "acceptance": tasks.tasks[item.task_id].acceptance,
+                           "message_id": item.message_id,
+                           # 验收标准截断后再回显：以前把调用方刚写的那段整段抄回来，
+                           # 实测 20 行 × 1,000 字符 = 27 KB，等于替它复读一遍自己的话。
+                           "acceptance": _bounded_row(tasks.tasks[item.task_id].acceptance,
+                                                      CONTEXT_OBJECTIVE_LIMIT),
                            "cross_module": tasks.tasks[item.task_id].cross_module,
                            # 还领不了活的原因（机器可读的那一份）：这些契约要先结清。
                            "contracts_pending": pending_by_task.get(item.task_id, []),
@@ -2073,14 +2109,33 @@ def build_handlers(
             if grant.principal_id == agent_id and grant.status == "active"
             for cap in grant.capabilities
         })
+        def _bounded_task_view(task: dict[str, Any]) -> dict[str, Any]:
+            """快照里的任务行：标题/目标/验收都截断，并给出去哪读全文。
+
+            2026-10-10 审计实测：这一段把 ``objective``/``acceptance`` 原文整段带上，于是**每个
+            回合**都要付一遍 —— 20 个未领取任务（objective 2,000 字符）就是 51 KB；某个 worker 的
+            ``open_tasks`` 单项 30 KB。``stable`` 那一块早就有这个纪律（``_bounded_row`` +
+            ``CONTEXT_*_LIMIT``），这里跟上；要全文用单条读取 ``task.get``。
+            """
+
+            view = dict(task)
+            for field, limit in (("title", CONTEXT_LABEL_LIMIT), ("objective", CONTEXT_OBJECTIVE_LIMIT),
+                                 ("acceptance", CONTEXT_OBJECTIVE_LIMIT)):
+                if isinstance(view.get(field), str):
+                    original = view[field]
+                    view[field] = _bounded_row(original, limit)
+                    if len(view[field]) < len(original):
+                        view[f"{field}_truncated"] = True
+            return view
+
         owned_tasks = [
-            tasks.describe_task(task.task_id)
+            _bounded_task_view(tasks.describe_task(task.task_id))
             for task in tasks.tasks.values()
             if (attempt := tasks.attempts.get(task.current_attempt_id or "")) is not None
             and attempt.owner_agent_id == agent_id
         ]
         open_tasks = [
-            tasks.describe_task(task.task_id)
+            _bounded_task_view(tasks.describe_task(task.task_id))
             for task in tasks.tasks.values()
             if task.status in {"open", "blocked"}
             and (
@@ -2248,6 +2303,19 @@ def build_handlers(
                 return None
             return {"attempt_id": attempt.attempt_id, "status": attempt.status}
 
+        # 主 Agent 以前拿到**历史上每一条** assignment（含已经完成的），实测 560 字符/行、
+        # 50 条 = 24 KB，占整个快照的 86%。这里只把"还活着的"逐条给出（main 要拿 assignment_id
+        # 去 takeover / wake 的就是这些），已结束的只给**最近的几条**（id 仍可查）加两个计数，
+        # 想知道某条历史 assignment 的细节仍然可以用 coordination.* 的单条读取。
+        all_assignments = [
+            assignment for assignment in coordination.assignments.values()
+            if agent_id == authority.main_agent_id or assignment.assigned_worker_id == agent_id
+        ]
+        live_statuses = {"open", "blocked", "claimed", "running", "submitted", "changes_requested"}
+        closed_tail_ids = {
+            assignment.assignment_id
+            for assignment in sorted(all_assignments, key=lambda item: item.assignment_id)[-CLOSED_ASSIGNMENT_TAIL:]
+        }
         visible_assignments = [
             {
                 "assignment_id": assignment.assignment_id,
@@ -2266,8 +2334,9 @@ def build_handlers(
                              if wake_assistance is not None and assignment.message_id else None),
                 "attempt": _attempt_view(assignment.task_id),
             }
-            for assignment in coordination.assignments.values()
-            if agent_id == authority.main_agent_id or assignment.assigned_worker_id == agent_id
+            for assignment in all_assignments
+            if tasks.tasks[assignment.task_id].status in live_statuses
+            or assignment.assignment_id in closed_tail_ids
         ]
         visible_assignment_ids = {item["assignment_id"] for item in visible_assignments}
         visible_events = [
@@ -2357,6 +2426,10 @@ def build_handlers(
             "coordination": {
                 "coverage": coordination.coverage({key: item.status for key, item in tasks.tasks.items()}),
                 "assignments": visible_assignments,
+            "assignments_total": len(all_assignments),
+            "assignments_closed": sum(
+                1 for item in all_assignments
+                if tasks.tasks[item.task_id].status not in live_statuses),
                 "events": visible_events,
                 "auto_wake_multi_agent": bool(
                     project_registry is not None and project_registry.project is not None

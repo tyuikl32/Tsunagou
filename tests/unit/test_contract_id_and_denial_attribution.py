@@ -285,7 +285,10 @@ def test_a_worker_never_sees_the_denial_ledger(ledger_runtime: _ContextRuntime) 
     # 而 main 的那一次是定长查询（一次、有上限），不会把每回合的读取拖长。
     ledger_runtime.call("context.project_read", {}, ledger_runtime.main)
     assert len(ledger_runtime.store.calls) == 1
-    assert ledger_runtime.store.calls[0]["limit"] == DENIAL_EVENT_WINDOW + 4
+    # 2026-10-10 审计修正：必须**按倒序**取，否则读到的是最旧的那批（旧代码正是这样，
+    # 于是 main 每回合看到的是冻结的旧证据，第 69 条拒绝永远不出现）。
+    assert ledger_runtime.store.calls[0]["limit"] == DENIAL_EVENT_WINDOW
+    assert ledger_runtime.store.calls[0]["descending"] is True
     assert ledger_runtime.store.calls[0]["event_type_like"] == "%.denied"
 
 

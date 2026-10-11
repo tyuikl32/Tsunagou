@@ -439,7 +439,11 @@ class ExecutionCommands:
                                payload={"task_id": task_id, "result_id": result.result_id,
                                         "result_digest": result.digest,
                                         **_evidence_summary(manifest)})
-        return {"task_id": task_id, "attempt_id": attempt_id, "result_id": result.result_id, "digest": result.digest,
+        # ``result_digest`` 与 ``digest`` 是同一个值的两个名字：验收命令要的是
+        # ``result_digest``，而这里以前只给 ``digest`` ⇒ 验收方为了对齐字段名要多读一次
+        # （2026-10-10 审计）。两个都给，旧的留着不破坏既有调用方。
+        return {"task_id": task_id, "attempt_id": attempt_id, "result_id": result.result_id,
+                "digest": result.digest, "result_digest": result.digest,
                 "workspace_result_ref": result_ref, "status": "submitted"}
 
     def release(self, attempt_id: str, reason: str) -> None:
