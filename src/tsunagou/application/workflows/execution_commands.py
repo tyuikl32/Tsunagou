@@ -16,6 +16,7 @@ from tsunagou.modules.resources import ResourceKey, ResourceRequest, ResourceSer
 from tsunagou.modules.tasks import Task, TaskService
 from tsunagou.modules.workspaces import Workspace, WorkspaceService, _path_in_scope
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import PermissionRefused
 from tsunagou.shared_kernel.ids import new_id
 
 
@@ -115,7 +116,16 @@ class ExecutionCommands:
         grant = self.authority.find_grant(agent_id=context["principal_id"], session_id=context["session_id"],
                                           capability=capability, **scope)
         if grant is None:
-            raise PermissionError("capability_denied")
+            # 结构化（2026-10-10 审计：这条路径原先只有一句 ``capability_denied``，既没说缺什么、
+            # 也没说手上有什么，桥只能补一句"交给 main 或用户"）。
+            held = sorted({cap for item in self.authority.grants.values()
+                           if item.principal_id == context["principal_id"] and item.status == "active"
+                           for cap in item.capabilities})
+            raise PermissionRefused("capability_denied", {
+                "capability": capability, "held": held,
+                "next": ("这条命令要的能力不在你手上：把这件事交给 main，"
+                         "或请它把能力交接给你（你现有的能力见 held）。"),
+            })
         self.authority.authorize(agent_id=context["principal_id"], session_id=context["session_id"],
                                  grant_id=grant.grant_id, capability=capability, **scope)
 

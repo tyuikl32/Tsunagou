@@ -12,6 +12,7 @@ from typing import Any
 
 from tsunagou.platform.telemetry import active_telemetry
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import CommandRefused
 
 Handler = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
@@ -251,9 +252,14 @@ class CommandDispatcher:
             raise ValueError("payload_object_required")
         allowed_fields = PAYLOAD_FIELDS.get(command_kind)
         if allowed_fields is not None:
-            unknown = set(envelope["payload"]) - allowed_fields
+            unknown = sorted(set(envelope["payload"]) - allowed_fields)
             if unknown:
-                raise ValueError("unknown_payload_field")
+                # 手上有名字就报出来：以前只回一个 code，调用方得拿工具 schema 自己比对
+                # （2026-10-10 审计）。接受集也一起给，省掉它再猜一轮。
+                raise CommandRefused("unknown_payload_field", {
+                    "unknown": unknown, "accepted": sorted(allowed_fields),
+                    "next": "只发 accepted 里的字段；多余的键一律拒，且不改任何状态。",
+                })
         durable_principal_id = (
             "ticket-sha256:" + hashlib.sha256(principal.principal_id.encode("utf-8")).hexdigest()
             if principal.kind == "T" else principal.principal_id

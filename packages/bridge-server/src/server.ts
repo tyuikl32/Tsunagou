@@ -292,11 +292,14 @@ function rememberContracts(result: unknown): void {
 
 function buildToolError(message: string, detail?: unknown): Record<string, unknown> {
   const code = message.replace(/^tsunagou_[a-z_]*error:/, "");
+  // 2026-10-10：错误文本常常带一段"下一步"后缀（``not_enrolled:run_agent_connect``），
+  // 而 ERROR_GUIDANCE 的键是 ``not_enrolled`` ⇒ 精确匹配落空，最该被看见的入席指引反而
+  // 被丢掉（子代理会话实测：只看到一句 error，没有 next_steps）。先取冒号前那一段再查。
   const payload: Record<string, unknown> = { error: message, code };
   if (detail !== undefined && typeof detail === "object" && detail !== null) {
     Object.assign(payload, detail as Record<string, unknown>);
   }
-  const guidance = ERROR_GUIDANCE[code];
+  const guidance = ERROR_GUIDANCE[code] ?? ERROR_GUIDANCE[code.split(":")[0]];
   // The daemon's own next_steps are more specific than anything kept here.
   if (guidance !== undefined && payload.next_steps === undefined) payload.next_steps = guidance;
   return payload;

@@ -252,6 +252,12 @@ def resume_targets(
     for entry in facts.unsubmitted:
         if str(entry.get("agent_id") or "") in facts.owed_replies:
             continue
+        # 退回（``task.review.request_changes``）会把尝试标成 ``orphaned`` 并清掉
+        # ``current_attempt_id`` —— 那种"停在中途"**不是它的问题**：它现在做不了任何事
+        # （begin / submit / block 全被拒），球在 main 手上（退回时已经给它留过言）。以前这里会
+        # 叫它三次，每条都建议 task.submit，而那条必然被拒（2026-10-10 审计，实测 2/9 条尝试如此）。
+        if str(entry.get("task_status") or "") == "changes_requested":
+            continue
         state = str(entry.get("session_state") or "").strip()
         if state == "running":
             continue
@@ -400,12 +406,16 @@ class WatchdogFactsReader:
             if attempt.status not in {"claimed", "running", "orphaned"}:
                 continue
             quiet = self._quiet_seconds(getattr(attempt, "owner_agent_id", ""), attempt)
+            task = self.tasks.tasks.get(str(getattr(attempt, "task_id", "")))
             entry: dict[str, Any] = {
                 "agent_id": str(getattr(attempt, "owner_agent_id", "")),
                 "task_id": str(getattr(attempt, "task_id", "")),
                 "attempt_id": str(getattr(attempt, "attempt_id", "")),
                 "quiet_seconds": quiet,
                 "session_state": None,
+                # 任务状态也要带上：``changes_requested`` 的尝试是"被退回"留下的，
+                # 那种停在中途不该由看门狗来催（球在 main 手上，退回时已经给它留过言）。
+                "task_status": str(getattr(task, "status", "")),
             }
             if self.session_state is not None and quiet is not None and quiet >= self.resume_seconds:
                 entry["session_state"] = self._session_state(entry["agent_id"])

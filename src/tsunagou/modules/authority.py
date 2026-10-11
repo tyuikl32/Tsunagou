@@ -15,6 +15,7 @@ from typing import Any
 
 from tsunagou.shared_kernel.baseline import BASELINE_CAPABILITIES, missing_admission_capabilities
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import PermissionRefused
 from tsunagou.shared_kernel.ids import new_id
 
 GRANT_KINDS = {"agent_base", "main_authority", "task_attempt", "task_review", "handoff_transition"}
@@ -548,7 +549,11 @@ class AuthorityService:
         if session.agent_id != agent_id or grant.principal_id != agent_id:
             raise PermissionError("principal_mismatch")
         if capability not in grant.capabilities:
-            raise PermissionError("capability_denied")
+            # 与执行路径同一个形状（2026-10-10 审计）：谁被拒、缺什么、手上有什么。
+            raise PermissionRefused("capability_denied", {
+                "capability": capability, "held": sorted(grant.capabilities),
+                "next": "这条命令要的能力不在你手上：把这件事交给 main，或请它把能力交接给你（你现有的能力见 held）。",
+            })
         if runtime_epoch is not None and grant.runtime_epoch != runtime_epoch:
             raise PermissionError("stale_runtime_epoch")
         if authority_epoch is not None and grant.authority_epoch != authority_epoch:

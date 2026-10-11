@@ -382,16 +382,24 @@ def create_app(
         except IdempotencyConflict as exc:
             raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
         except RevisionConflict as exc:
+            # ``**_task_reference`` 这一格是关键：账本按 ``payload.task_id`` 聚合，只落
+            # ``code`` 的话事件在库里、却永远进不了 main 每回合读的那份清单。
+            # 和别的拒绝一样记账（2026-10-10 审计）：以前这条只回 409，不落
+            # ``command.<kind>.denied``，于是 main 的拒绝账本里永远看不到"有人在 begin 撞版本"
+            # —— 而那正是最该被看见的一类：调用方以为自己能开工，其实读到的是旧版本。
+            _record_denial(command_kind, {"code": str(exc), **_task_reference(request.payload)})
             raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
         except ResourceConflict as exc:
             # A refused reservation is a refusal, not an outage: record it the same way
             # any other structured rejection is, so the conflict ledger the console
             # reads (``command.<kind>.denied``) sees it too.
-            _record_denial(command_kind, {"code": exc.code, **exc.detail})
+            _record_denial(command_kind, {"code": exc.code, **exc.detail,
+                                          **_task_reference(request.payload)})
             raise HTTPException(status_code=409, detail={"code": exc.code, "blockers": exc.blockers}) from exc
         except CommandRefused as exc:
             # 拒绝，但把事实一起给出（例如"他手上还有这些任务"）：页面照着列，不用自己编话。
-            _record_denial(command_kind, {"code": exc.code, **exc.detail})
+            _record_denial(command_kind, {"code": exc.code, **exc.detail,
+                                          **_task_reference(request.payload)})
             raise HTTPException(status_code=409, detail={"code": exc.code, **exc.detail}) from exc
         except LockUnavailable as exc:
             raise HTTPException(status_code=503, detail={"code": exc.code}) from exc

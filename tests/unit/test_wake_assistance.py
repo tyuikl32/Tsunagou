@@ -19,6 +19,7 @@ from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.messaging import MessageStore
 from tsunagou.platform.db.sqlite import ProjectDatabase
 from tsunagou.shared_kernel.baseline import BASELINE_CAPABILITIES
+from tsunagou.shared_kernel.errors import PermissionRefused
 
 
 class Fixture:
@@ -494,7 +495,10 @@ def test_external_dispatch_rechecks_ready_grant_and_disallows_replay_only(tmp_pa
                 f.authority.grants[grant_id] = replace(grant, status="revoked")
     principal = PrincipalContext("B", receipt.agent_id, receipt.session_id, receipt.connection_epoch,
                                  replay_only=invalid == "replay_only")
-    with pytest.raises(PermissionError):
+    # 2026-10-10 起，能力不足是**结构化拒绝**（`PermissionRefused`，仍走 403 分支，但带
+    # capability/held/next）。它继承 `CommandRefused`（因而也是 ValueError），不再是
+    # `PermissionError` 的子类，所以这里两种都接受：这条用例要证的是"被拒且没有调用宿主"。
+    with pytest.raises((PermissionError, PermissionRefused)):
         dispatcher.dispatch("coordination.wake", {
             "command_id": "wake-1", "protocol_version": "1", "schema_bundle_digest": "sha256:x",
             "payload": {"message_id": message},

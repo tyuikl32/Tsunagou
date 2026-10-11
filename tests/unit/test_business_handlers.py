@@ -622,7 +622,10 @@ def test_retired_message_arguments_are_rejected_by_real_dispatch(tmp_path: Path,
     receipt = _enroll_ready(authority, installation="worker", conversation="worker-conversation")
     with pytest.raises(HTTPException) as rejected:
         _call(endpoint, name, payload, receipt)
-    assert rejected.value.status_code == 400 and rejected.value.detail["code"] == "unknown_payload_field"
+    # 2026-10-10 起：字段错误是**结构化拒绝**（409，落命令拒绝账，并且点名多余的键与
+    # 接受集）。改成 409 是为了让它进得了 main 的拒绝账本 —— 400 那条路不记账。
+    assert rejected.value.status_code == 409 and rejected.value.detail["code"] == "unknown_payload_field"
+    assert rejected.value.detail["unknown"] and "accepted" in rejected.value.detail
 
 
 def test_message_respond_closes_obligation(tmp_path: Path) -> None:
@@ -837,8 +840,9 @@ def test_unknown_payload_field_rejected(tmp_path: Path) -> None:
             "recipient_agent_id": "other-agent", "kind": "message",
             "subject_ref": "s", "summary": "hello", "actor_id": "forged-agent",
         }, receipt)
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 409
     assert exc.value.detail["code"] == "unknown_payload_field"
+    assert "actor_id" in exc.value.detail["unknown"], "要说出到底哪个键不对"
 
 def test_message_send_says_whether_it_wakes_the_recipient(tmp_path):
     """发送者必须知道这条消息会不会打断对方 —— 唤醒的代价是对方一整个宿主回合。

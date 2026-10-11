@@ -17,6 +17,7 @@ from tsunagou.modules.authority import AuthorityService
 from tsunagou.modules.messaging import MessageStore
 from tsunagou.platform.private_files import write_private_bytes
 from tsunagou.shared_kernel.digests import canonical_digest
+from tsunagou.shared_kernel.errors import PermissionRefused
 from tsunagou.shared_kernel.time import format_timestamp, now_ms
 
 
@@ -35,7 +36,6 @@ _PROVIDER_DELIVERY_TIMING: dict[str, str] = {
     "managed_app_server": "unknown",
     "desktop_attach": "unknown",
 }
-
 
 class WakeAssistance:
     def __init__(
@@ -87,7 +87,14 @@ class WakeAssistance:
             agent_id=session.agent_id, session_id=session.session_id, capability=capability,
         )
         if grant is None:
-            raise PermissionError("capability_denied")
+            held = sorted({cap for item in self.authority.grants.values()
+                           if item.principal_id == session.agent_id and item.status == "active"
+                           for cap in item.capabilities})
+            raise PermissionRefused("capability_denied", {
+                "capability": capability, "held": held,
+                "next": ("这条命令要的能力不在你手上：把这件事交给 main，"
+                         "或请它把能力交接给你（你现有的能力见 held）。"),
+            })
         self.authority.authorize(agent_id=session.agent_id, session_id=session.session_id,
                                  grant_id=grant.grant_id, capability=capability)
 
@@ -211,6 +218,13 @@ class WakeAssistance:
         if message is None:
             raise PermissionError("wake_message_access_denied")
         allowed = message.sender_agent_id == context["principal_id"]
+        # 看门狗与拒绝回响是以 ``runtime`` 的名义发的（``task.resume`` / ``coordination.stalled``
+        # / ``task.refused``）⇒ 发件人不是任何 Agent，"寄件人才能查"这条把它们全挡在门外，
+        # 于是**没有人**能问"那条唤醒到底送没送到"（2026-10-10 审计）。这两个角色的消息
+        # 对 main 和收件人开放：它本来就该看得见自己的球。
+        if not allowed and message.sender_agent_id == "runtime":
+            allowed = context["principal_id"] in {message.recipient_agent_id,
+                                                 getattr(self.authority, "main_agent_id", None)}
         if not allowed and message.sender_agent_id == "system" and self.database is not None:
             with self.database.lock, contextlib.closing(self.database._connect()) as conn:
                 row = conn.execute(

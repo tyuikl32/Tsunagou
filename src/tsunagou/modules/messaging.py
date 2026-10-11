@@ -29,6 +29,7 @@ WAKE_WORTHY_KINDS = frozenset({
     # every attempt somebody makes is a wasted turn. Sent once per (task, code) by
     # ``application/refusal_escalation.py`` -- 待改 18.
     "task.refused",
+    "task.blocked",
     "contract.proposed",       # the recipient's answer is required for a contract to exist
     "contract.revised",        # a version is in force that the executor has to catch up with
     "user_decision.resolved",  # the answer unblocks work that was paused for it

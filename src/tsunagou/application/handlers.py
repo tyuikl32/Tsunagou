@@ -1180,7 +1180,23 @@ def build_handlers(
         else:
             raise ValueError("attempt_not_running")
         execution.release(attempt_id, "task_blocked")
-        return {"task_id": task_id, "attempt_id": attempt_id, "status": task.status, "revision": task.revision}
+        # **告诉 main**（2026-10-10 审计）：挂起以前只改状态、谁也不通知，而 ``blocked`` 又不在
+        # 看门狗候选里（那是"它主动停下来"的诚实表达，不该被当成"停在中途"催）⇒ 一个 Agent 明确
+        # 说了"我卡住了"却没有任何人接手。实测那轮结束时 main 手上还留着 6 条未读（含一条
+        # blocker 报告，从未被 fetch）。这条消息进唤醒白名单，所以它会真的把 main 叫起来。
+        reasons = [str(item) for item in ([payload.get("reason_code"), payload.get("reason")]
+                                          + list(payload.get("dependency_refs") or ())) if item]
+        messages.send(
+            command_id=context["command_id"] + ":blocked", sender_agent_id=context["principal_id"],
+            recipient_agent_id=authority.main_agent_id or context["principal_id"],
+            kind="task.blocked", subject_ref="task/" + task_id,
+            summary=("有任务挂起，等你去解：" + (", ".join(reasons)[:CONTEXT_OBJECTIVE_LIMIT] if reasons else "未写原因")
+                     + "。它已经释放占用；要它接着干用 task.recover，换人用 coordination.plan（supersedes_task_id）"),
+            payload={"task_id": task_id, "attempt_id": attempt_id, "status": task.status,
+                     "reason_code": payload.get("reason_code"), "dependency_refs": list(payload.get("dependency_refs") or ())},
+        )
+        return {"task_id": task_id, "attempt_id": attempt_id, "status": task.status, "revision": task.revision,
+                "next": "已通知 main（它会被这条消息唤醒）。球在它那边：task.recover 让你接着干，或换人。"}
 
     def task_cancel_request(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "task.manage")
@@ -1314,10 +1330,26 @@ def build_handlers(
         outcome = {"task_id": task_id, "result_id": result_id, "decision": review.decision,
                    "status": tasks.tasks[task_id].status}
         if decision == "changes_requested":
-            # 退回不会把任务送回可领取状态。不说清这一点，调用者会以为"等 Worker 返工就行"，
-            # 而 Worker 其实建不了新 Attempt —— 2026-10-05 实测就这样空等了约 6 分钟。
-            outcome["next"] = ("任务已退回。下一步：先 task.ready、再 task.publish，Worker 才能建立新 Attempt"
-                               "（退回不会自动回到可领取状态）；这条 task.reviewed 通知本身会唤醒对方。")
+            # **退回之后球在 main 手上**（2026-10-10 审计）：任务离开领取队列，而唯一能把它送回
+            # 去的人是 main。原来只通知提交者（worker），main 既没被叫醒也没被留言，而 worker
+            # 醒来后能做的一切（begin / submit / block）都会被拒 ⇒ 谁都不动。所以这里同时给 main
+            # 留一条会唤醒它的消息，并把 next 里那句过时的话改对（一次 publish 就够，而且它静默）。
+            # 只在**别人**退回时给 main 留言：main 自己就是评审时它刚刚做过这件事，
+            # 再发一条只是噪音（它需要的是上面那句 next）。
+            if authority.main_agent_id and authority.main_agent_id != context["principal_id"]:
+                messages.send(
+                    command_id=context["command_id"] + ":rework", sender_agent_id=context["principal_id"],
+                    recipient_agent_id=authority.main_agent_id, kind="task.reviewed",
+                    subject_ref="task/" + task_id,
+                    summary=("有任务被退回，要你重新发布：task.publish 一次即可（它已隐含 ready），"
+                             "然后这条任务才回到领取队列 —— 发布本身不通知任何人，"
+                             "要指名叫谁返工就再 message.send(wake=true) 或 coordination.plan"),
+                    payload={"task_id": task_id, "result_id": result_id, "decision": decision,
+                             "previous_worker": result.submitted_by},
+                )
+            outcome["next"] = ("任务已退回。下一步：**一次** task.publish 即可重新可领（它已隐含 ready，"
+                               "不必再 task.ready）；发布是静默的 —— 要指名让谁返工，用 coordination.plan "
+                               "或 message.send(wake=true)。倒退不会自动回到可领取状态这一点没变。")
         return outcome
 
     def user_decision_propose(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:

@@ -258,7 +258,7 @@
 | `message__send` | `recipient_agent_id`、`summary` | `kind`（默认 `message`）、`subject_ref`、`payload`、`priority`、`in_reply_to`、`response_contract`、**`wake`**。回复时把收到的 `message_id` 填进 `in_reply_to`。**要它立刻动就带 `wake: true`**（普通消息默认不唤醒；见下）。返回的 `next` 会直说这条会不会唤醒对方 |
 | `message__respond` | `obligation_id`、`response_message_id` | 用**已经发出去的那条回复**的 `message_id` 来履行义务 |
 
-**哪些消息会唤醒对方**（决定"我发了它会不会动"）：唤醒白名单是 `task.assigned`、`task.submitted`、`task.reviewed`、`task.taken_over`、`task.refused`、`contract.proposed`、`contract.revised`、`user_decision.resolved`、`discrepancy.arbitration_requested`、`coordination.stalled`、`coordination.waiting`、`task.resume`（`modules/messaging.py` 的 `WAKE_WORTHY_KINDS`）；**其他 kind 默认不唤醒**。但你有两条路让它立刻动：**①发送时带 `wake: true`**（2026-10-10 起，任何 kind 都可以）②带 `response_contract.required=true`，它会出现在 `coordination__wake_candidates` 里，可以对它显式 `coordination__wake`。`message__send` 的返回 `next` 会直说这条属于哪一种，并且**在你还没发的时候就告诉你下次该怎么发**。细节见[唤醒指南](agent-wake-guide.md)。
+**哪些消息会唤醒对方**（决定"我发了它会不会动"）：唤醒白名单是 `task.assigned`、`task.submitted`、`task.reviewed`、`task.taken_over`、`task.refused`、`task.blocked`、`contract.proposed`、`contract.revised`、`user_decision.resolved`、`discrepancy.arbitration_requested`、`coordination.stalled`、`coordination.waiting`、`task.resume`（`modules/messaging.py` 的 `WAKE_WORTHY_KINDS`）；**其他 kind 默认不唤醒**。但你有两条路让它立刻动：**①发送时带 `wake: true`**（2026-10-10 起，任何 kind 都可以）②带 `response_contract.required=true`，它会出现在 `coordination__wake_candidates` 里，可以对它显式 `coordination__wake`。`message__send` 的返回 `next` 会直说这条属于哪一种，并且**在你还没发的时候就告诉你下次该怎么发**。细节见[唤醒指南](agent-wake-guide.md)。
 
 ### 2.8 其余零星工具（都在桥的工具面上，别靠猜）
 
