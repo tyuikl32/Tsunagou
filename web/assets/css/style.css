@@ -2390,14 +2390,14 @@ body {
         min-width: fit-content;
         width: 100%;
         user-select: none;
-        transition: background-color 0.15s;
+        transition: border-color 0.15s;
         background: var(--col-2);
         border-radius: 10px;
         border: 1px solid var(--col-4);
     }
 
     .tr:hover {
-        background-color: var(--col-4);
+        border-color: var(--brand-col);
     }
 
     .citem1 {
