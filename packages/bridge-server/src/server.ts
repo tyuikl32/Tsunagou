@@ -578,9 +578,7 @@ class HttpTransport {
       schema_bundle_digest: SCHEMA_BUNDLE_DIGEST,
       payload,
     };
-    let response: Response;
-    try {
-      response = await fetch(`${this.baseUrl}/api/v1/commands/${kind}`, {
+    const send = async (): Promise<Response> => fetch(`${this.baseUrl}/api/v1/commands/${kind}`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -591,12 +589,21 @@ class HttpTransport {
         },
         body: JSON.stringify(envelope),
       });
+    let response: Response;
+    try {
+      response = await send();
     } catch {
-      // A network-level failure (a remote bridge reaches the host through a tunnel) is its
-      // own answer: the request never arrived, so nothing changed and retrying is the whole
-      // repair. Left as a raw fetch error it would be flattened into "bridge_request_failed",
-      // which tells the agent nothing about what to do.
-      throw new Error("daemon_unreachable");
+      // 一次网络级失败**不代表命令没执行**：请求可能已经到了、只是答复没回来。用**同一个
+      // command_id** 再试一次是安全的 —— daemon 的幂等机制会把已存的结果原样回放（这正是上面
+      // command_id 注释说的那条路），而不是把同一条命令执行两遍。2026-10-11 实测：给 Main 带
+      // wake 的投递被判成失败，而服务端其实处理成功了（58 次处理、0 次拒绝）—— 那一类误报就从
+      // 这里消掉。两次都失败才算真的到不了。
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      try {
+        response = await send();
+      } catch {
+        throw new Error("daemon_unreachable");
+      }
     }
     const body = (await response.json().catch(() => ({}))) as {
       command_hash?: string;

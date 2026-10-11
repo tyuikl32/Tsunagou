@@ -196,6 +196,23 @@ class ProjectRegistry:
         if self.project is None:
             raise RuntimeError("project_not_initialized")
         raw = self.shared_export()
+        # **磁盘上的显示名优先**（2026-10-11 用户实测）：控制台/CLI 改了名字之后，daemon 下一次
+        # 整份写回又把它改回启动时读到的旧名字 —— 用户看到"改了有反应、刷新就没了"。
+        # 名字只是给人看的标签，改它的人不是 daemon：写之前重读磁盘，磁盘上那个非空且不同的名字
+        # 就是权威。读不回来/没有名字时按内存里的写（不猜）。内存也同步过来，之后几次写就一致了。
+        disk_name = ""
+        try:
+            on_disk = json.loads(self.shared_path.read_text(encoding="utf-8"))
+            if isinstance(on_disk, dict):
+                disk_name = str(on_disk.get("name") or "").strip()
+        except (OSError, ValueError):
+            disk_name = ""
+        if disk_name and disk_name != str(raw.get("name") or "").strip():
+            raw["name"] = disk_name
+            try:
+                self.project.name = disk_name
+            except AttributeError:
+                pass
         _atomic_json(self.shared_path, raw)
         _atomic_json(self.local_path, self.local_bindings)
 
