@@ -1335,6 +1335,27 @@ def build_handlers(
                           summary=decision, payload={"task_id": task_id, "result_id": result_id, "decision": decision})
         outcome = {"task_id": task_id, "result_id": result_id, "decision": review.decision,
                    "status": tasks.tasks[task_id].status}
+        if decision == "accepted":
+            # 依赖完成 ⇒ 后继任务可能刚变成可领，而**平台不会因此叫任何人**（2026-10-11 实测：
+            # 一个空闲 agent 就这样空等）。这里只通知 main：派给谁由它决定（coordination.plan
+            # 指名派活会唤醒对方）。
+            unblocked = [
+                task.task_id for task in tasks.tasks.values()
+                if task.status in {"open", "ready"}
+                and task_id in (task.blocks or set())
+                and all((tasks.tasks.get(prerequisite) is not None
+                         and tasks.tasks[prerequisite].status == "completed")
+                        for prerequisite in (task.blocks or set()))
+            ]
+            if unblocked and authority.main_agent_id and authority.main_agent_id != context["principal_id"]:
+                messages.send(
+                    command_id=context["command_id"] + ":claimable", sender_agent_id=context["principal_id"],
+                    recipient_agent_id=authority.main_agent_id, kind="coordination.waiting",
+                    subject_ref="project", summary=(
+                        f"刚有 {len(unblocked)} 条任务变为可领（前置已完成），而平台不会自动叫空闲的人："
+                        "用 coordination.plan 指名派给手上没活的 Agent（会唤醒它），或自己接手。"),
+                    payload={"claimable_task_ids": unblocked, "cause": "dependency_completed"},
+                )
         if decision == "changes_requested":
             # **退回之后球在 main 手上**（2026-10-10 审计）：任务离开领取队列，而唯一能把它送回
             # 去的人是 main。原来只通知提交者（worker），main 既没被叫醒也没被留言，而 worker

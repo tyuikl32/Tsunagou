@@ -52,7 +52,8 @@ def test_a_project_nobody_can_move_is_recognised_as_a_deadlock() -> None:
     {"pending_user_decision": True},  # 球在用户手上：静默是正确的
     {"pending_completion": True},     # 已经有一条待确认的完工提案：等用户
     {"running_attempts": 1},          # 有人在跑
-    {"claimable_tasks": 2},           # 还有活可领：等 worker 来领
+    # 「还有活可领」以前是"不叫"的理由（等 worker 自己来领）⇒ 2026-10-11 改成一条独立判定：
+    # 有活可领 + 没人在跑 + 安静够久 ⇒ claimable_unclaimed（叫 main 去派活）。见下面那条用例。
     {"lifecycle": "completed"},
     {"automatic_wake": False},
     {"main_agent_id": None},
@@ -61,6 +62,23 @@ def test_a_project_nobody_can_move_is_recognised_as_a_deadlock() -> None:
 ])
 def test_every_guard_holds_on_its_own(override: dict[str, Any]) -> None:
     assert idle_verdict(_facts(**override)) is None
+
+
+def test_claimable_work_nobody_is_doing_is_its_own_verdict() -> None:
+    """有活可领 + 没人在跑 + 安静够久 ⇒ 叫 main 去派活（2026-10-11 用户实测的空转）。
+
+    以前这里直接 ``return None``（代码注释写着"空闲 worker 也叫一下是后续的事"）⇒ 三个 agent、
+    两个在跑、一个空着的情况下，那 5 条可领的任务**没有任何消息会被发出去**。现在它是一条独立
+    判定：只通知 main（平台分不出"空闲"和"在本地写代码没发命令"），由它用 coordination.plan 指名派活。
+    """
+
+    assert idle_verdict(_facts(claimable_tasks=3, seconds_since_event=300.0)) == "claimable_unclaimed"
+    # 安静得还不够：先等（默认 2 分钟；short 档 1 分钟）。
+    assert idle_verdict(_facts(claimable_tasks=3, seconds_since_event=5.0)) is None
+    # 还有人在跑：那不是"没人领"，是"有人正在动"。
+    assert idle_verdict(_facts(claimable_tasks=3, running_attempts=1, seconds_since_event=300.0)) is None
+    # main 自己有活时走 auto_continue（更强的那一档），不必再来一条"有活没人领"。
+    assert idle_verdict(_facts(claimable_tasks=3, submitted_tasks=1, seconds_since_event=300.0)) == "auto_continue"
 
 
 def test_heartbeat_online_sessions_no_longer_block_the_deadlock_verdict() -> None:

@@ -145,7 +145,10 @@
 
 `task__update_plan`：`task_id` 必填，其余（`title`、`objective`、`required_contract_ids`、`acceptance`）给了才改。这是**唯一**改已有任务契约依赖的入口（改范围另走 `task.scope.request`）。任务已经有人领活时改不动（`task_plan_not_editable`）。
 
-### 2.3 `coordination__plan`（main 专属，最常用的派活路径）
+### 2.3 `coordination__plan`
+
+**有子 Agent 就派给它。** 能拆的任务不要自己包揽；某个子 Agent 手上没活时，用这一条指名派活（每行都会发一条 `task.assigned` 并**唤醒**它 ✓）。反过来也要记住：**平台不会自动叫醒空闲的人** —— 一个任务变为可领（前置完成）时，只有 main 会收到一条提醒（`coordination.waiting` 的"有活没人领"那一种），派给谁完全由 main 决定。
+（main 专属，最常用的派活路径）
 
 顶层必填：`objective`（非空字符串）、`assignments`（非空数组）。可选 `auto_wake`（默认 `true`，非布尔报 `auto_wake_boolean_required`）。
 
@@ -389,7 +392,8 @@ DSH 上的唤醒**永远由某个 Agent 显式调用**才会发生（`coordinati
 | 消息 `kind` | 收件人 | 什么时候 | 它会说什么 |
 |---|---|---|---|
 | `coordination.stalled` | main | **最近 N 分钟内没有任何 Agent 真的做事**、没有在跑的 Attempt、没有可领的任务、没有已交付待验收的结果、没有待确认的完工提案、**没有未决的用户决定**，且全局安静够久（默认 10 分钟；`short` 档 5 分钟） | "协作停住了：N 分钟没有任何事件……检查一下是不是都停了，然后接手、让 worker 继续，或者提请完工" |
-| `coordination.waiting` | main | main 手上有活（有待验收的结果或未读消息），而最近没人真的做事（默认 2 分钟；`short` 档 1 分钟） | "有活等你处理……验收、发布或回复之后这条协作才会继续动" |
+| `coordination.waiting` | main | main 手上有活（有待验收的结果或未读消息），而最近没人真的做事（默认 2 分钟；`short` 档 1 分钟） |
+| `coordination.waiting`（**有活没人领**那一种） | main | **有任务可领、却没有任何人在跑**，且安静够久（默认 2 分钟；`short` 档 1 分钟）。平台不会自动叫醒空闲的人 ⇒ 这条提醒就是让你用 `coordination__plan` 指名派活（每行发 `task.assigned`，会唤醒对方）| "有活等你处理……验收、发布或回复之后这条协作才会继续动" |
 | `task.resume` | **那个 worker 自己** | 它有**没提交、也没结束**的尝试，而**它自己**安静够久。窗口分两档：宿主明确说这条会话没在跑（`idle`/`unloaded`）⇒ 默认 90 秒（`short` 档 45 秒）；宿主不说话或答 `unknown` ⇒ 默认 10 分钟（`short` 档 4 分钟）。**不再要求整个项目安静**，别人在忙不遮挡你 | "你的任务 X 还没提交，而这条会话已经安静了 N 分钟……继续做完，或者明确 `task.submit` / `task.block`" |
 
 **它不会在你正干活的时候打扰你**，判据是**「最近有没有人真的做事」**：最近 2 分钟内有事件（`short` 档 1 分钟）就不叫。

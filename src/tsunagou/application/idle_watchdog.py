@@ -213,8 +213,12 @@ def idle_verdict(
         # main 有活干，而别人都停了 —— 交活→验收这一跳不该吃一个人的回合。
         return "auto_continue" if quiet is not None and quiet >= continue_seconds else None
     if facts.claimable_tasks > 0:
-        # 还有可领的活：等 worker 来领（空闲 worker 也叫一下是后续的事，见 待改 23 的范围）。
-        return None
+        # 「有活可领、却没有人在跑」也是一种停：没人被叫，活就一直躺着。
+        # 2026-10-11 用户实测：3 个 agent、2 个在跑、1 个空着，5 个任务可领，而**没有任何消息
+        # 会因此发出**（依赖完成时只通知提交者；空闲 agent 不在 resume 候选里）。以前这里直接
+        # ``return None`` ⇒ 静默空转。只通知 main：我们分不出"空闲"与"在本地写代码没发命令"，
+        # 派给谁由协调者决定（它可以用 coordination.plan 指名派活，那条会唤醒对方）。
+        return "claimable_unclaimed" if quiet is not None and quiet >= continue_seconds else None
     # 一条事件都没有（新项目）：没有证据就不叫 —— 宁可漏一次，也不凭空断言"都停了"。
     if quiet is None:
         return None
@@ -709,6 +713,15 @@ class IdleWatchdog:
                 f"协作停住了：{int((facts.seconds_since_event or 0) // 60)} 分钟没有任何事件，"
                 "没有在跑的尝试、没有可领的任务、也没有待确认的完工提案 —— 检查一下是不是都停了，"
                 "然后接手、让 worker 继续，或者提请完工。"
+            )
+        elif verdict == "claimable_unclaimed":
+            kind = WAITING_MESSAGE_KIND
+            summary = (
+                f"有活没人领：{facts.claimable_tasks} 条任务可领，而**没有任何人在跑**"
+                f"（已经安静 {int((facts.seconds_since_event or 0) // 60)} 分钟）。"
+                "那几条任务的依赖已经满足，但平台不会自动叫醒空闲的人 —— 用 coordination.plan "
+                "把其中几条指名叫给手上没活的 Agent（每行都会发一条 task.assigned，会唤醒它），"
+                "或者自己接手。"
             )
         else:
             kind = WAITING_MESSAGE_KIND
