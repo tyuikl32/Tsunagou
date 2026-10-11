@@ -63,6 +63,18 @@ _OBSERVABLE_PROVIDERS = frozenset({"codex_desktop_app", "deepseek_wake"})
 # （``record_presented`` / ``deliveries_acked`` 那两条路照旧把它收尾）。
 _ADMISSION_ONLY_PROVIDERS = frozenset({"deepseek_wake"})
 
+#: 受理通道的**合并窗口**：同一个收件人在这个窗口内已有一次"已受理"的投递时，新消息并进那一次
+#: （记成 alias，不再投）。这条通道问不出"对方是不是已经开始跑了"，所以窗口是唯一的刹车：
+#:
+#: * **没有窗口**（旧行为）⇒ 那条 ``queued`` 记录永远不会结束 ⇒ 第二条之后的唤醒被**静默吞掉**
+#:   （2026-10-10 实测：每 agent 唤醒数 17/8/6/4，35 次里 34 次会被吞）。
+#: * **完全不合并**（我第一版的修法）⇒ 同一收件人短时间收到 N 条就投 N 次，在这条通道上可能变成
+#:   N 个宿主回合 —— 那会把实验的时间数据搅乱，正是要避免的事。
+#:
+#: 窗口内合并不丢内容：消息本身还在收件箱里，那一次唤醒的回合会读到它。所以窗口只需要覆盖
+#: "一次叫醒从投递到对方开始读"的那点时间（实测投递 → 收件方首个事件通常 1–2 秒）。
+ADMISSION_COALESCE_SECONDS = 60.0
+
 
 def _binding_provider(binding_item: Any | None) -> str | None:
     """The provider name behind one stored binding, or ``None`` when unreadable."""
@@ -219,10 +231,13 @@ class WakeDispatcher:
                 # （2026-10-10 回归：实测每 agent 唤醒数 17/8/6/4，35 次里 34 次会被吞）。
                 # 所以这条通道不合并：每条消息各自投一次，要不要并成一次唤醒由宿主决定。
                 admission_only = _binding_provider(binding_item) in _ADMISSION_ONLY_PROVIDERS
-                queued = None if admission_only else next(
+                queued = next(
                     ((k, v) for k, v in self.attempts.items()
                      if native and v.get("agent_id") == recipient_agent_id
                      and v.get("state") == "queued" and not v.get("coalesced_into")), None)
+                if queued is not None and admission_only and not self._admission_window_open(queued[1]):
+                    # 窗口之外的旧受理不再拦这一次：它是"上一次叫醒"，和现在这条无关。
+                    queued = None
                 if queued is not None:
                     batch_key, batch = queued
                     base.update(state="queued", wake_attempt_id=batch["wake_attempt_id"], coalesced_into=batch_key)
@@ -296,6 +311,18 @@ class WakeDispatcher:
                 })
         if result != previous:
             self._save()
+
+    def _admission_window_open(self, item: dict[str, Any]) -> bool:
+        """这条受理还在合并窗口内吗（见 ``ADMISSION_COALESCE_SECONDS``）。
+
+        读不到时间就当**不在**窗口内：宁可为一条旧记录多投一次，也不要再犯"因为一条永远不过期的
+        记录而再也叫不醒人"的错误。
+        """
+
+        moment = parse_timestamp(str(item.get("updated_at") or "")) or 0
+        if not moment:
+            return False
+        return moment > now_ms() - int(ADMISSION_COALESCE_SECONDS * 1000)
 
     def _close_acked_attempts(self, agent_id: str, *, keep_key: str) -> None:
         """结清"已经被收件方 ACK 过"的旧记录（只用于受理通道）。

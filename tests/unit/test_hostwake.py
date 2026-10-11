@@ -972,18 +972,18 @@ def test_a_degraded_dsh_binding_is_remembered_and_can_recover(
     assert "degraded" not in (tmp_path / "host-bindings-deepseek.json").read_text(encoding="utf-8")
 
 
-def test_a_second_message_on_an_admission_only_lane_is_still_announced(
+def test_an_admission_only_lane_coalesces_inside_a_window_and_dispatches_outside_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """受理通道上的第二条消息必须照样投出去（2026-10-10 回归）。
+    """受理通道的合并必须**有时限**（2026-10-10 回归 + 它的正确形状）。
 
-    这条 lane 只报"受理"，没有看护线程（``_ADMISSION_ONLY_PROVIDERS``），所以一次投递之后
-    ``queued`` 就是它的**终态**。而派发器把"收件人已经有一个 queued 尝试"当成"合并进同一批"：
-    第二条消息于是只被记成 alias 并**直接返回、不投递** —— 那个 agent 从此再也叫不醒，而且是
-    静默的（实测里每个 agent 的唤醒数是 17/8/6/4，也就是 35 次里 34 次会被吞掉）。
+    这条 lane 只报"受理"、没有看护线程，所以一次投递之后 ``queued`` 就是它的**终态**。以前派发器
+    把它当成"并进同一批"的凭据且**永不过期** ⇒ 第二条之后的唤醒被静默吞掉（实测每 agent 唤醒数
+    17/8/6/4，也就是 35 次里 34 次会消失）。但把合并整个去掉也不对：同一收件人短时间收到 N 条就
+    投 N 次，可能变成 N 个宿主回合。所以真正的性质是两条：
 
-    合并本身没错，错在它的前提：只有在"这个 queued 终将往前走"的通道上才成立（Codex 那条有
-    watcher）。这里钉住受理通道的相反事实。
+    * **窗口内**（默认 60 秒）并进那一次 —— 内容不会丢，消息本身还在收件箱里；
+    * **窗口外**必须自己投一次 —— 那是"上一次叫醒"，不该拦住这一次。
     """
 
     store, _routes, _credential = _dsh_fixture(tmp_path, monkeypatch)
@@ -992,13 +992,18 @@ def test_a_second_message_on_an_admission_only_lane_is_still_announced(
     try:
         first = dispatcher.on_delivery(message_id="message-1", recipient_agent_id="agent-dsh",
                                        project_id="project-1")
-        second = dispatcher.on_delivery(message_id="message-2", recipient_agent_id="agent-dsh",
-                                        project_id="project-1")
-        assert first["state"] == "queued" and second["state"] == "queued"
-        assert second.get("coalesced_into") is None, "受理通道没有 watcher，合并等于静默丢失"
-        assert second["wake_attempt_id"] != first["wake_attempt_id"], "第二条消息必须自己投一次"
-        # 第一条仍留在台账里（它确实被宣告过），不是 alias。
-        assert dispatcher.attempts[dispatcher._key("agent-dsh", "message-1")].get("coalesced_into") is None
+        soon = dispatcher.on_delivery(message_id="message-2", recipient_agent_id="agent-dsh",
+                                      project_id="project-1")
+        assert first["state"] == "queued"
+        assert soon["coalesced_into"] == "agent-dsh:message-1", "窗口内并进同一次叫醒"
+
+        # 把第一条的时间推回窗口之外：下一次投递必须自己出去。
+        key = dispatcher._key("agent-dsh", "message-1")
+        dispatcher.attempts[key]["updated_at"] = format_timestamp(now_ms() - 6 * 60 * 1000)
+        later = dispatcher.on_delivery(message_id="message-3", recipient_agent_id="agent-dsh",
+                                       project_id="project-1")
+        assert later.get("coalesced_into") is None, "窗口外的旧受理不该再拦住新的唤醒"
+        assert later["wake_attempt_id"] != first["wake_attempt_id"]
     finally:
         dispatcher.stop()
 
