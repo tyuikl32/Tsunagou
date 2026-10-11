@@ -6075,6 +6075,9 @@
         openProject: function (id) {
             const projectId = toText(id);
             if (projectId) {
+                /* 先清掉上一个协作的项目级数据（见 resetProjectScoped 的注释）：不清就会把
+                   上一个协作的画面留在屏幕上，而新协作没有数据可覆盖它。*/
+                resetProjectScoped();
                 state.set('currentProjectId', projectId);
                 rememberProjectId(projectId);
                 /* 列表数据本来就在手上，直接重绘一次就能把选中态换过去，不用再请求 */
@@ -6801,6 +6804,15 @@
         'project', 'agents', 'tasks', 'audits', 'workspaces',
         'conflicts', 'acceptance', 'checkpoints', 'checkpointFailures', 'timeline'
     ];
+
+    /* 切协作时把上一个协作的项目级数据清空（2026-10-11 用户实测）。
+       症状：点另一张卡片，右侧还显示上一个协作的内容 —— 因为那些 key 没被清掉，而未启动的
+       协作一个出口都取不到数据、无从覆盖，于是看着像"两个项目的数据重合"，分不清在看哪个。
+       宁可先空着：空屏是诚实的（页面另有"未启动 / 上次记录"的说明），旧内容冒充新项目不是。*/
+    function resetProjectScoped() {
+        PROJECT_SCOPED_KEYS.forEach(function (key) { state.set(key, null); });
+        return true;
+    }
 
     /* 前端主动拉取的唯一入口：一次 GET 配一个 dispatch 处理器（见下表）。*/
     const REFRESH_ROUTES = [
