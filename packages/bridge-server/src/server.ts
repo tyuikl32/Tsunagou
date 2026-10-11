@@ -169,7 +169,8 @@ const ERROR_GUIDANCE: Readonly<Record<string, readonly string[]>> = {
   conversation_already_attached: ENROLLMENT_GUIDANCE,
   host_conversation_identity_mismatch: ENROLLMENT_GUIDANCE,
   conversation_identity_required_for_session_file: ENROLLMENT_GUIDANCE,
-  stale_connection_epoch: ENROLLMENT_GUIDANCE,
+  // 2026-10-11：这条以前指向"重新入席"（ENROLLMENT_GUIDANCE）—— 那需要用户签发新票 ✗，正是"必须用户介入"的那条路。现在如实说清：这条会话到项目的链路过期了，先**不要**杀进程、也不要重试，把"需要重启一次这个会话"讲给用户。daemon/桥侧的自动重连是下一件（见待改）。
+  stale_connection_epoch: ["这条会话到项目的链路已经过期（daemon 可能重启过）。不要杀 Tsunagou 进程、不要重试同一个调用：把「这个会话需要重启一次」直接告诉用户，由它重启宿主（DSH）后你再继续。项目里的数据没有丢。"],
   session_not_found: ENROLLMENT_GUIDANCE,
   // 跨机器：这台机器到主机的通道不通（远端最常见的一种失败）。消息与任务都还在主机上，
   // 所以"这次调用没发生"就是真话 —— 别让它变成一句没用的"请求失败"。

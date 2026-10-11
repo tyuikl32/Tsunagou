@@ -319,6 +319,25 @@
 
 ## 4. 边界：不要绕开桥
 
+### 4.0 绝不要停/杀 Tsunagou 进程（2026-10-11 起）
+
+`tsunagou` 的 **daemon**、**桥**（`bridge-server`）和**控制台**（`web start`）就是这场协作本身：
+杀掉它们不会"清理掉一个卡住的东西"，而是**把协作连同每个 Agent 的身份一起断掉** ✗ —— 实测里
+主 Agent 误杀之后，daemon 虽然重启了，但各会话的身份接不回来，**只能由用户重启宿主（DSH）**
+才继续得下去，于是那一轮实验因为"用户介入"失去了参考性 ✗。
+
+要看状态、要重启，都有正规入口（**都不需要杀进程**）：
+
+| 想做什么 | 怎么做 |
+|---|---|
+| 看项目/daemon 状态 | `tsunagou status`（CLI）；控制台的卡片上也有"进行中/未启动" |
+| 重启某个项目的 daemon | 控制台的**停止 / 启动**按钮，或 `tsunagou daemon stop\|start --coordination-root <项目目录>` |
+| 判断"是不是卡住了" | 读 `context__project_read` 的 `coordination` 一块，或看控制台时间线；**不要**用任务管理器/`Stop-Process` 猜 |
+
+**按项目根指路，不要手动指端口**：`endpoint.json` 是按项目记地址的，端口被顶替就会出现"连到别的项目"的假象 ✗。
+
+
+
 **不要**手写 HTTP 直接打 daemon，**不要**去找或使用 control token、ticket、会话 bearer。具体地说，以下都不属于 Agent 的工作面：
 
 - 对 `/api/v1/commands/**` 手搓请求（含"因为工具 schema 看起来不对，所以自己拼一个"这条理由）；
