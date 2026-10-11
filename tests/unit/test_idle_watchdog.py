@@ -17,14 +17,18 @@ from tests.integration.test_state_integrity import runtime as _runtime_fixture
 from tsunagou.api.liveness import SessionLiveness
 from tsunagou.application.idle_watchdog import (
     DEADLOCK_MESSAGE_KIND,
+    RESUME_SECONDS,
+    RESUME_UNVERIFIED_SECONDS,
     WAITING_MESSAGE_KIND,
     WATCHDOG_EVENT_KIND,
+    WATCHDOG_INTERVAL_SECONDS,
     IdleWatchdog,
     WatchdogFacts,
     WatchdogFactsReader,
     idle_verdict,
     resume_targets,
     stalled_waiters,
+    watchdog_settings,
 )
 
 
@@ -43,7 +47,7 @@ def test_a_project_nobody_can_move_is_recognised_as_a_deadlock() -> None:
 
 
 @pytest.mark.parametrize("override", [
-    {"online_sessions": 1},          # 硬约束：任何会话还在活动就不叫（2026-10-10：worker 正在干活）
+    {"acting_agents": 1},            # 硬约束：刚才还有人真的做事就不叫（判据是"行动"，不是"可达"）
     {"pending_user_decision": True},  # 球在用户手上：静默是正确的
     {"pending_completion": True},     # 已经有一条待确认的完工提案：等用户
     {"running_attempts": 1},          # 有人在跑
@@ -56,6 +60,17 @@ def test_a_project_nobody_can_move_is_recognised_as_a_deadlock() -> None:
 ])
 def test_every_guard_holds_on_its_own(override: dict[str, Any]) -> None:
     assert idle_verdict(_facts(**override)) is None
+
+
+def test_heartbeat_online_sessions_no_longer_block_the_deadlock_verdict() -> None:
+    """2026-10-10 修正：桥的心跳让会话永远"在线"，拿它当硬约束等于把 P1/P2 **永久关掉**。
+
+    实测：4 个会话两小时 557 次已认证的心跳读（liveness 永远新鲜），而全局静默 69 分钟 ——
+    旧判据下一次都不会叫。现在的判据是"最近有没有人**真的做事**"，心跳不写事件，所以干净。
+    """
+
+    assert idle_verdict(_facts(online_sessions=4, acting_agents=0)) == "deadlock"
+    assert idle_verdict(_facts(online_sessions=4, acting_agents=1)) is None, "有人真的在做事就不叫"
 
 
 def test_main_having_work_is_what_auto_continuation_is_for() -> None:
@@ -80,6 +95,7 @@ def _watchdog(app: Any, **kwargs: Any) -> IdleWatchdog:
         database=app.state.project_database, tasks=state.tasks, messages=state.messages,
         authority=state.authority, lifecycle=state.lifecycle,
         liveness=SessionLiveness(), project_registry=app.state.project_registry,
+        acting_seconds=0.0,
     )
     # 阈值归零：这几条用例要验的是动作与冷却，不是"等够 10 分钟"。
     return IdleWatchdog(
@@ -135,6 +151,36 @@ def _resume_facts(**overrides: Any) -> WatchdogFacts:
     return _facts(**{**base, **overrides})
 
 
+def test_the_short_preset_tightens_the_windows_a_short_experiment_needs() -> None:
+    """几十分钟的实验要的是"尽快把它拉回来"，不是"少叫一次"（2026-10-10 用户的判据）。"""
+
+    values = watchdog_settings({"TSUNAGOU_WATCHDOG_PRESET": "short"})
+    assert values["RESUME_SECONDS"] == 45.0
+    assert values["RESUME_UNVERIFIED_SECONDS"] == 240.0
+    assert values["RESUME_COOLDOWN_SECONDS"] == 90.0
+    assert values["RESUME_MAX_ATTEMPTS"] == 4.0
+    assert values["WATCHDOG_INTERVAL_SECONDS"] == 15.0
+    # 单项覆盖优先于预设："这次实验只要 30 秒窗口"。
+    overridden = watchdog_settings({"TSUNAGOU_WATCHDOG_PRESET": "short", "TSUNAGOU_RESUME_SECONDS": "30"})
+    assert overridden["RESUME_SECONDS"] == 30.0
+    assert overridden["RESUME_UNVERIFIED_SECONDS"] == 240.0, "没被点名的项照旧取预设"
+    # 不带预设 = 默认档：与常量一致，不能因为有了预设就偷改默认值。
+    default = watchdog_settings({})
+    assert default["RESUME_SECONDS"] == RESUME_SECONDS
+    assert default["RESUME_UNVERIFIED_SECONDS"] == RESUME_UNVERIFIED_SECONDS
+    assert default["WATCHDOG_INTERVAL_SECONDS"] == WATCHDOG_INTERVAL_SECONDS
+
+
+def test_a_wrong_preset_or_value_is_reported_and_never_guessed(capsys: pytest.CaptureFixture[str]) -> None:
+    """写错就按默认跑并印一行：静默地"看起来调过了"比不生效更糟。"""
+
+    values = watchdog_settings({"TSUNAGOU_WATCHDOG_PRESET": "fast", "TSUNAGOU_RESUME_SECONDS": "abc"})
+    assert values["RESUME_SECONDS"] == RESUME_SECONDS, "非数字不能被猜成一个值"
+    assert values["WATCHDOG_INTERVAL_SECONDS"] == WATCHDOG_INTERVAL_SECONDS
+    printed = capsys.readouterr().err
+    assert "fast" in printed and "RESUME_SECONDS" in printed
+
+
 def test_a_task_that_was_never_submitted_is_what_resume_is_for() -> None:
     """判据就一条：有尝试、没提交、而它自己安静够久。别人的忙碌不遮挡它。"""
 
@@ -157,6 +203,10 @@ def test_a_task_that_was_never_submitted_is_what_resume_is_for() -> None:
     # 宿主不说话时只有 600 秒的保守窗口：安静 120 秒还不够（2026-10-10：分档的依据）。
     {"unsubmitted": ({"agent_id": "worker", "task_id": "t", "attempt_id": "a",
                       "quiet_seconds": 120.0, "session_state": None},)},
+    # ``unknown`` 是"宿主答不上来"，不是"宿主说它没在跑" ⇒ 走长窗口（2026-10-10 审计修正：
+    # 它以前因为非空被当成已证实的否定，于是恰恰在最叫不醒的时候多发三次唤醒）。
+    {"unsubmitted": ({"agent_id": "worker", "task_id": "t", "attempt_id": "a",
+                      "quiet_seconds": 120.0, "session_state": "unknown"},)},
     # 球在用户手上：谁都不该被催。
     {"pending_user_decision": True},
     # 它问出去的话还没人答：这种安静是**故意的**。

@@ -972,6 +972,37 @@ def test_a_degraded_dsh_binding_is_remembered_and_can_recover(
     assert "degraded" not in (tmp_path / "host-bindings-deepseek.json").read_text(encoding="utf-8")
 
 
+def test_a_second_message_on_an_admission_only_lane_is_still_announced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """受理通道上的第二条消息必须照样投出去（2026-10-10 回归）。
+
+    这条 lane 只报"受理"，没有看护线程（``_ADMISSION_ONLY_PROVIDERS``），所以一次投递之后
+    ``queued`` 就是它的**终态**。而派发器把"收件人已经有一个 queued 尝试"当成"合并进同一批"：
+    第二条消息于是只被记成 alias 并**直接返回、不投递** —— 那个 agent 从此再也叫不醒，而且是
+    静默的（实测里每个 agent 的唤醒数是 17/8/6/4，也就是 35 次里 34 次会被吞掉）。
+
+    合并本身没错，错在它的前提：只有在"这个 queued 终将往前走"的通道上才成立（Codex 那条有
+    watcher）。这里钉住受理通道的相反事实。
+    """
+
+    store, _routes, _credential = _dsh_fixture(tmp_path, monkeypatch)
+    provider = DeepSeekWakeProvider(store, runner=_dsh_runner())
+    dispatcher = WakeDispatcher(provider, attempts_path=tmp_path / "attempts.json")
+    try:
+        first = dispatcher.on_delivery(message_id="message-1", recipient_agent_id="agent-dsh",
+                                       project_id="project-1")
+        second = dispatcher.on_delivery(message_id="message-2", recipient_agent_id="agent-dsh",
+                                        project_id="project-1")
+        assert first["state"] == "queued" and second["state"] == "queued"
+        assert second.get("coalesced_into") is None, "受理通道没有 watcher，合并等于静默丢失"
+        assert second["wake_attempt_id"] != first["wake_attempt_id"], "第二条消息必须自己投一次"
+        # 第一条仍留在台账里（它确实被宣告过），不是 alias。
+        assert dispatcher.attempts[dispatcher._key("agent-dsh", "message-1")].get("coalesced_into") is None
+    finally:
+        dispatcher.stop()
+
+
 def test_the_provider_class_timing_table_matches_the_declaration_table() -> None:
     """``wake_assistance`` reads a literal table; it must not drift from the classes."""
     from tsunagou.application.wake_assistance import _PROVIDER_DELIVERY_TIMING

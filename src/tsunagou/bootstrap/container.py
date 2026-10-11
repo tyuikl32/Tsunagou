@@ -20,10 +20,10 @@ from tsunagou.api.auth import LocalCommandAuthenticator
 from tsunagou.api.liveness import SessionLiveness
 from tsunagou.application.handlers import Handler, build_handlers
 from tsunagou.application.idle_watchdog import (
-    WATCHDOG_INTERVAL_SECONDS,
     IdleWatchdog,
     WatchdogFactsReader,
     run_idle_watchdog,
+    watchdog_settings,
 )
 from tsunagou.application.onboarding import deepseek_routing_directory
 from tsunagou.application.refusal_escalation import RefusalEscalation
@@ -314,14 +314,27 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         # 只有 DSH 插件能回答；别的宿主返回 None，看门狗就退回自己的活动证据（见
         # ``application/idle_watchdog.py`` 的 resume 那一段）。没有唤醒通道时整个观察是空。
         observe_session = getattr(hostwake_provider, "session_state", None)
+        # 时间参数从环境变量合成一次（项目级：这个 daemon 就是为这一个项目起的进程）。
+        # 短实验档见 ``idle_watchdog.WATCHDOG_PRESETS``；写错的值只印警告、按默认跑。
+        watchdog_values = watchdog_settings()
         idle_watchdog = IdleWatchdog(
             reader=WatchdogFactsReader(
                 database=database, tasks=tasks, messages=messages, authority=authority,
                 lifecycle=lifecycle, liveness=session_liveness, project_registry=project_registry,
                 session_state=observe_session,
+                resume_seconds=watchdog_values["RESUME_SECONDS"],
+                acting_seconds=watchdog_values["ACTING_SECONDS"],
             ),
             database=database, messages=messages, authority=authority, lifecycle=lifecycle,
             state_runtime=state_runtime,
+            idle_seconds=watchdog_values["IDLE_SECONDS"],
+            continue_seconds=watchdog_values["CONTINUE_SECONDS"],
+            cooldown_seconds=watchdog_values["COOLDOWN_SECONDS"],
+            max_attempts=int(watchdog_values["MAX_ATTEMPTS"]),
+            resume_seconds=watchdog_values["RESUME_SECONDS"],
+            resume_unverified_seconds=watchdog_values["RESUME_UNVERIFIED_SECONDS"],
+            resume_cooldown_seconds=watchdog_values["RESUME_COOLDOWN_SECONDS"],
+            resume_max_attempts=int(watchdog_values["RESUME_MAX_ATTEMPTS"]),
         )
         # 与其它运行时对象一样暴露出来：测试要能证明"宿主观察真的接上了"，
         # 运维也才有地方看这个判定器现在长什么样。
@@ -331,7 +344,8 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         async def start_idle_watchdog() -> None:
             nonlocal watchdog_task
             watchdog_task = asyncio.create_task(
-                run_idle_watchdog(idle_watchdog, interval_seconds=WATCHDOG_INTERVAL_SECONDS)
+                run_idle_watchdog(idle_watchdog,
+                                  interval_seconds=watchdog_values["WATCHDOG_INTERVAL_SECONDS"])
             )
 
         @application.on_event("shutdown")

@@ -37,7 +37,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,6 +48,9 @@ from typing import Any
 #: 只有"连事件都没有"才叫，宁可少叫一次，也不往正在干活的项目里塞噪音。
 IDLE_SECONDS = 600.0
 CONTINUE_SECONDS = 120.0
+#: "刚才还有人做事"的窗口：P1/P2 的硬约束按它判（见 ``WatchdogFacts.acting_agents``）。
+#: 它必须比心跳间隔大、比 ``CONTINUE_SECONDS`` 相当或更小 —— 心跳不写事件，所以两者不会互相干扰。
+ACTING_SECONDS = 120.0
 #: daemon 里那个周期任务多久跳一次。判定本身很便宜（几次数值读 + 一次定长事件查询）。
 WATCHDOG_INTERVAL_SECONDS = 30.0
 #: 叫过之后至少等这么久再叫第二次（防循环）。
@@ -78,6 +84,62 @@ STALLED_DECISION_KIND = "coordination.stalled"
 #: 运行层写的事件名（没有对应的命令）：控制台的命令名表里有一条中文。
 WATCHDOG_EVENT_KIND = "coordination.idle_watchdog"
 
+#: **项目级**可调：daemon 本来就是"一个项目一个进程"，所以启动那个 daemon 时带的这几个环境变量
+#: 天然只影响这个项目 —— 几十分钟规模的小实验启动时加 ``TSUNAGOU_WATCHDOG_PRESET=short`` 即可，
+#: 不必改代码，也不会波及别的项目。单项覆盖用 ``TSUNAGOU_<参数名>``（例如
+#: ``TSUNAGOU_RESUME_SECONDS=45``），逐个优先于预设。
+WATCHDOG_ENV_PREFIX = "TSUNAGOU_"
+WATCHDOG_PRESET_ENV = "TSUNAGOU_WATCHDOG_PRESET"
+#: 预设。``default`` 就是下面的常量；``short`` 面向几十分钟的实验：那种规模里"等 10 分钟"等于
+#: 整轮作废，而一次多余的唤醒只花一个宿主回合，所以窗口、冷却、节拍一起收紧。
+WATCHDOG_PRESETS: dict[str, dict[str, float]] = {
+    "default": {},
+    "short": {
+        "RESUME_SECONDS": 45.0,
+        "RESUME_UNVERIFIED_SECONDS": 240.0,
+        "RESUME_COOLDOWN_SECONDS": 90.0,
+        "RESUME_MAX_ATTEMPTS": 4.0,
+        "WATCHDOG_INTERVAL_SECONDS": 15.0,
+        "ACTING_SECONDS": 60.0,
+        "CONTINUE_SECONDS": 60.0,
+        "IDLE_SECONDS": 300.0,
+        "COOLDOWN_SECONDS": 600.0,
+    },
+}
+
+
+def watchdog_settings(environ: Mapping[str, str] | None = None) -> dict[str, float]:
+    """把常量、预设与环境变量合成这一次运行实际使用的参数（daemon 启动时读一次）。
+
+    读不到、写错的值一律**保持默认**并印一行到 stderr（daemon.log 里看得见）—— 猜一个值比不生效
+    更糟，静默地按默认跑则会让人以为已经调过了。
+    """
+
+    env = os.environ if environ is None else environ
+    values: dict[str, float] = {
+        "IDLE_SECONDS": IDLE_SECONDS, "CONTINUE_SECONDS": CONTINUE_SECONDS,
+        "ACTING_SECONDS": ACTING_SECONDS, "COOLDOWN_SECONDS": COOLDOWN_SECONDS,
+        "MAX_ATTEMPTS": float(MAX_ATTEMPTS),
+        "RESUME_SECONDS": RESUME_SECONDS, "RESUME_UNVERIFIED_SECONDS": RESUME_UNVERIFIED_SECONDS,
+        "RESUME_COOLDOWN_SECONDS": RESUME_COOLDOWN_SECONDS,
+        "RESUME_MAX_ATTEMPTS": float(RESUME_MAX_ATTEMPTS),
+        "WATCHDOG_INTERVAL_SECONDS": WATCHDOG_INTERVAL_SECONDS,
+    }
+    preset = str(env.get(WATCHDOG_PRESET_ENV, "")).strip().casefold()
+    if preset and preset not in WATCHDOG_PRESETS:
+        print(f"[watchdog] 未知的 {WATCHDOG_PRESET_ENV}={preset!r}，"
+              f"按 default 跑（可用：{', '.join(sorted(WATCHDOG_PRESETS))}）", file=sys.stderr)
+    values.update(WATCHDOG_PRESETS.get(preset, {}))
+    for name in list(values):
+        raw = str(env.get(WATCHDOG_ENV_PREFIX + name, "")).strip()
+        if not raw:
+            continue
+        try:
+            values[name] = float(raw)
+        except ValueError:
+            print(f"[watchdog] {WATCHDOG_ENV_PREFIX + name}={raw!r} 不是数字，忽略该项", file=sys.stderr)
+    return values
+
 
 @dataclass(frozen=True)
 class WatchdogFacts:
@@ -85,6 +147,7 @@ class WatchdogFacts:
 
     lifecycle: str
     automatic_wake: bool
+    #: 可达的会话数（心跳还热着）。**只用于诊断**：它是"机器还在"，不是"有人在干活"。
     online_sessions: int
     running_attempts: int
     claimable_tasks: int          # open / ready：还有活可领
@@ -94,6 +157,12 @@ class WatchdogFacts:
     main_agent_id: str | None
     main_waiting_messages: int
     seconds_since_event: float | None
+    #: 硬约束用的判据：刚才有多少个 Agent **真的做了事**（最近 ``ACTING_SECONDS`` 内有事件）。
+    #: 2026-10-10 修正：以前这条闸读的是 ``online_sessions``（会话**可达**），而桥每 30 秒对每个
+    #: 它见过的会话做一次已认证的便宜读取 ⇒ 会话永远在线 ⇒ P1/P2 被**永久关掉**（实测：4 个
+    #: 会话两小时 557 次心跳读、全局静默 69 分钟，一次都没能成立）。心跳不写事件，所以
+    #: "最近有事件"才是"有人在干活"的干净判据。
+    acting_agents: int = 0
     #: 每条**没提交、也没结束**的尝试：``{agent_id, task_id, attempt_id, quiet_seconds,
     #: session_state}``。``session_state`` 是宿主的说法（``running`` / ``idle`` /
     #: ``unloaded``），拿不到就是 ``None`` —— 那时不假装知道，交给 ``quiet_seconds`` 判。
@@ -106,7 +175,7 @@ class WatchdogFacts:
     def as_event_payload(self) -> dict[str, Any]:
         return {
             "lifecycle": self.lifecycle, "automatic_wake": self.automatic_wake,
-            "online_sessions": self.online_sessions, "running_attempts": self.running_attempts,
+            "acting_agents": self.acting_agents, "online_sessions": self.online_sessions, "running_attempts": self.running_attempts,
             "claimable_tasks": self.claimable_tasks, "submitted_tasks": self.submitted_tasks,
             "pending_completion": self.pending_completion, "pending_user_decision": self.pending_user_decision,
             "main_waiting_messages": self.main_waiting_messages,
@@ -128,8 +197,10 @@ def idle_verdict(
 
     if not facts.automatic_wake or facts.lifecycle != "active" or facts.main_agent_id is None:
         return None
-    # 硬约束：任何会话还在活动就不叫。宁可漏一次，也不往正在干活的项目里喊人。
-    if facts.online_sessions > 0:
+    # 硬约束：刚才还有人**真的做事**就不叫。宁可漏一次，也不往正在干活的项目里喊人。
+    # 判据是"行动"而不是"可达"（见 ``acting_agents`` 的注释）：桥的心跳读会让每个会话永远
+    # ``online``，拿它当判据等于把这条规则永久关掉。
+    if facts.acting_agents > 0:
         return None
     # 球在用户手上（未决决定 / 待确认完工）：静默是正确的，叫 main 也没用。
     if facts.pending_user_decision or facts.pending_completion:
@@ -184,7 +255,10 @@ def resume_targets(
         state = str(entry.get("session_state") or "").strip()
         if state == "running":
             continue
-        window = resume_seconds if state else unverified_seconds
+        # ``unknown`` 不是"宿主说它没在跑"，是"宿主答不上来" ⇒ 归到长窗口那一档。以前它因为
+        # 非空被当成已证实的否定 ⇒ 在最叫不醒的时候多发三次唤醒（2026-10-10 审计）。
+        verified_idle = bool(state) and state != "unknown"
+        window = resume_seconds if verified_idle else unverified_seconds
         quiet = entry.get("quiet_seconds")
         if quiet is None or float(quiet) < window:
             continue
@@ -250,6 +324,7 @@ class WatchdogFactsReader:
         self, *, database: Any, tasks: Any, messages: Any, authority: Any,
         lifecycle: Any, liveness: Any, project_registry: Any, clock: Any = time.time,
         session_state: Any = None, resume_seconds: float = RESUME_SECONDS,
+        acting_seconds: float = ACTING_SECONDS,
     ) -> None:
         self.database = database
         self.tasks = tasks
@@ -264,6 +339,8 @@ class WatchdogFactsReader:
         self.session_state = session_state
         #: 到了这个窗口才值得为一条尝试付一次宿主调用（用网络换"它是不是正在跑"）。
         self.resume_seconds = resume_seconds
+        #: "刚才还有人做事"的窗口（P1/P2 的硬约束）。测试里归零 = 当作项目已经全静。
+        self.acting_seconds = acting_seconds
 
     def read(self) -> WatchdogFacts:
         project = self.project_registry.project if self.project_registry is not None else None
@@ -275,6 +352,7 @@ class WatchdogFactsReader:
             lifecycle=str(getattr(project, "lifecycle", "unknown")),
             automatic_wake=_projects_want_automatic_wake(project),
             online_sessions=self._online_sessions(),
+            acting_agents=self._acting_agents(),
             running_attempts=len([item for item in self.tasks.attempts.values()
                                   if item.status in {"claimed", "running"}]),
             claimable_tasks=len([status for status in statuses if status in {"open", "ready"}]),
@@ -373,7 +451,11 @@ class WatchdogFactsReader:
         return max(0.0, self.clock() - last)
 
     def _online_sessions(self) -> int:
-        """心跳还热着的会话数。桥每 30 秒做一次便宜读取，那些调用就是"我还在"。"""
+        """心跳还热着的会话数（**诊断用**）。桥每 30 秒做一次便宜读取，那些调用就是"机器还在"。
+
+        它不是"有人在干活"：心跳是已认证调用，会让会话一直热着（实测两小时不间断），
+        而它**不写事件**。P1/P2 的硬约束因此读 ``acting_agents``，不读这个数。
+        """
 
         if self.authority is None or self.liveness is None:
             return 0
@@ -384,6 +466,28 @@ class WatchdogFactsReader:
             if self.liveness.online(session.session_id, session.status):
                 count += 1
         return count
+
+    def _acting_agents(self) -> int:
+        """最近 ``ACTING_SECONDS`` 内真的有事件的 Agent 数（"有人在干活"的干净判据）。
+
+        只数 Agent 自己的事件：``runtime`` / ``user_control`` 写的运行层事件（拒绝回响、
+        看门狗自己的 event）不代表有人在推进工作。
+        """
+
+        if self.database is None:
+            return 0
+        cutoff = int((self.clock() - self.acting_seconds) * 1000)
+        try:
+            with self.database._connect() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(DISTINCT actor_ref) FROM events WHERE project_id=? AND occurred_at>=? "
+                    "AND actor_ref NOT IN ('runtime','user_control','system')",
+                    (self.database.project_id, cutoff),
+                ).fetchone()
+        except Exception:
+            # 读不到就当"有人在动"（保守）：漏叫一次比往正在干活的项目里喊人好。
+            return 1
+        return int(row[0]) if row is not None else 0
 
     def _seconds_since_event(self) -> float | None:
         """最后一条事件到现在多久。没有事件（新项目）时给 ``None``：那种情况不叫。"""
@@ -691,10 +795,16 @@ class IdleWatchdog:
         })
 
 
-async def run_idle_watchdog(watchdog: IdleWatchdog, *, interval_seconds: float = 30.0) -> None:
-    """daemon lifespan 里的周期任务。一跳一次，异常不外抛（周期任务不该带着整个 daemon 死）。"""
+async def run_idle_watchdog(watchdog: IdleWatchdog, *, interval_seconds: float = WATCHDOG_INTERVAL_SECONDS) -> None:
+    """daemon lifespan 里的周期任务。一跳一次，异常不外抛（周期任务不该带着整个 daemon 死）。
+
+    **一跳放在工作线程里跑**：判定本身只是读几次数值，但 ``resume`` 那一档要问宿主"这条会话现在
+    在干什么"，那条路是 ``urllib`` 且有 35 秒超时（``deepseek_wake_runner``）。在事件循环里同步
+    调用它，插件端口开着却不响应时整个 daemon 会僵住 —— 所有 Agent 的调用一起排队。判定是只读的，
+    动作各自走自己的事务，所以放到线程里是安全的。
+    """
 
     while True:
         await asyncio.sleep(interval_seconds)
-        watchdog.tick()
+        await asyncio.to_thread(watchdog.tick)
 

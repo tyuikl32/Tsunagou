@@ -212,14 +212,28 @@ class WakeDispatcher:
                 # Messages already waiting for the same idle opportunity share
                 # one pull notification. New messages during a running turn
                 # wait for its end, as that turn may already have read its inbox.
-                queued = next(((k, v) for k, v in self.attempts.items()
-                               if native and v.get("agent_id") == recipient_agent_id
-                               and v.get("state") == "queued" and not v.get("coalesced_into")), None)
+                #
+                # **合并的前提是"这个 queued 终究会往前走"**，只有带看护线程的通道才成立。
+                # 受理通道（``_ADMISSION_ONLY_PROVIDERS``）没有看护线程 ⇒ ``queued`` 是它的
+                # 终态 ⇒ 合并进去的第二条消息不会被投递、也不会报错，是**静默丢失**
+                # （2026-10-10 回归：实测每 agent 唤醒数 17/8/6/4，35 次里 34 次会被吞）。
+                # 所以这条通道不合并：每条消息各自投一次，要不要并成一次唤醒由宿主决定。
+                admission_only = _binding_provider(binding_item) in _ADMISSION_ONLY_PROVIDERS
+                queued = None if admission_only else next(
+                    ((k, v) for k, v in self.attempts.items()
+                     if native and v.get("agent_id") == recipient_agent_id
+                     and v.get("state") == "queued" and not v.get("coalesced_into")), None)
                 if queued is not None:
                     batch_key, batch = queued
                     base.update(state="queued", wake_attempt_id=batch["wake_attempt_id"], coalesced_into=batch_key)
                     self._update(key, base)
                     return dict(base)
+                if admission_only:
+                    # 这条通道的收尾只可能来自收件方自己（presented / ACK）：看护线程问不出结果，
+                    # 而 ``record_presented`` 只追证据、``_skip_consumed_batch`` 只在看护线程里跑
+                    # ⇒ 对这条通道，上面那句老注释说的两条路都不成立。这里把**已经被 ACK 的**旧
+                    # 记录结清：台账因此有界，也不会留下"看起来还在等"的假象。
+                    self._close_acked_attempts(recipient_agent_id, keep_key=key)
                 base["binding_revision"] = binding.binding_revision
                 self._update(key, base)
                 request = self._request(base, binding)
@@ -282,6 +296,33 @@ class WakeDispatcher:
                 })
         if result != previous:
             self._save()
+
+    def _close_acked_attempts(self, agent_id: str, *, keep_key: str) -> None:
+        """结清"已经被收件方 ACK 过"的旧记录（只用于受理通道）。
+
+        受理通道没有看护线程，所以这些 ``queued`` 记录本来永远不会有终态：``queued`` 又在
+        ``_LIVE_STATES`` 里 ⇒ 驱逐策略永远不碰它们，台账只增不减（实测 52 分钟 35 次尝试
+        ≈65 KB）。ACK 是唯一可得的收尾证据，所以这里用它：一次查询问完全部候选。
+        """
+
+        if self.deliveries_acked is None:
+            return
+        stale = [(stale_key, str(item.get("message_id") or ""))
+                 for stale_key, item in self.attempts.items()
+                 if stale_key != keep_key and item.get("agent_id") == agent_id
+                 and item.get("state") == "queued" and not item.get("coalesced_into")]
+        # 一次消息通常只有一两条待收尾；上限只是别让一次派发变成一串数据库读。
+        for stale_key, message_id in [(key, mid) for key, mid in stale if mid][:8]:
+            try:
+                consumed = self.deliveries_acked(agent_id, (message_id,))
+            except Exception:
+                # 读不到 ACK 就不是证据：留着记录，下一次再说。
+                continue
+            if not consumed:
+                continue
+            item = self.attempts.get(stale_key)
+            if item is not None:
+                self._complete_consumed(stale_key, item)
 
     def _complete_consumed(self, key: str, item: dict[str, Any]) -> dict[str, Any]:
         """Complete only the notification lifecycle, not an invented host turn."""
