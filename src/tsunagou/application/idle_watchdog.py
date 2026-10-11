@@ -779,8 +779,27 @@ class IdleWatchdog:
             event_type=WATCHDOG_EVENT_KIND, aggregate_ref="project/" + project_id,
             subject_ref="project/" + project_id, actor_ref="runtime",
             payload={"verdict": verdict, "attempt": self.ledger.attempts + 1,
+                     "settings": self.settings(),
                      **facts.as_event_payload(), **result},
         )
+
+    def settings(self) -> dict[str, Any]:
+        """这次判定**实际用的**窗口/冷却/次数上限。
+
+        2026-10-11：这些值现在是项目级可配的（``TSUNAGOU_WATCHDOG_PRESET=short`` 等），于是"当时
+        用的是哪一档"成了实验结果的一部分 —— 事后看这条事件就能回答，不必再去猜当时的环境变量。
+        """
+
+        return {
+            "resume_seconds": self.resume_seconds,
+            "resume_unverified_seconds": self.resume_unverified_seconds,
+            "resume_cooldown_seconds": self.resume_cooldown_seconds,
+            "resume_max_attempts": self.resume_max_attempts,
+            "idle_seconds": self.idle_seconds,
+            "continue_seconds": self.continue_seconds,
+            "cooldown_seconds": self.cooldown_seconds,
+            "max_attempts": self.max_attempts,
+        }
 
     def _stage_wake(self, uow: Any, message: Any) -> None:
         """唤醒的排程与其它消息走**同一条**路（``host_wake`` outbox）。

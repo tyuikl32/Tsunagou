@@ -317,6 +317,17 @@ def _build_application(config: Mapping[str, str]) -> FastAPI:
         # 时间参数从环境变量合成一次（项目级：这个 daemon 就是为这一个项目起的进程）。
         # 短实验档见 ``idle_watchdog.WATCHDOG_PRESETS``；写错的值只印警告、按默认跑。
         watchdog_values = watchdog_settings()
+        # 生效的参数要能一眼查到：前端建项目时 daemon 是**控制台**起的（console/projects.py
+        # 的 Popen 不传 env ⇒ 继承控制台进程），所以"我设了 short 到底生效没有"必须能从日志
+        # 回答。这一行进 daemon 日志（控制台起的那份是 .tsunagou/local/daemon-console-start.log）。
+        print("[watchdog] preset={} resume={:g}s/{:g}s cooldown={:g}s attempts={} interval={:g}s "
+              "acting={:g}s idle={:g}s continue={:g}s".format(
+                  os.environ.get("TSUNAGOU_WATCHDOG_PRESET") or "default",
+                  watchdog_values["RESUME_SECONDS"], watchdog_values["RESUME_UNVERIFIED_SECONDS"],
+                  watchdog_values["RESUME_COOLDOWN_SECONDS"],
+                  int(watchdog_values["RESUME_MAX_ATTEMPTS"]),
+                  watchdog_values["WATCHDOG_INTERVAL_SECONDS"], watchdog_values["ACTING_SECONDS"],
+                  watchdog_values["IDLE_SECONDS"], watchdog_values["CONTINUE_SECONDS"]), flush=True)
         idle_watchdog = IdleWatchdog(
             reader=WatchdogFactsReader(
                 database=database, tasks=tasks, messages=messages, authority=authority,

@@ -17,6 +17,7 @@ from tests.integration.test_state_integrity import runtime as _runtime_fixture
 from tsunagou.api.liveness import SessionLiveness
 from tsunagou.application.idle_watchdog import (
     DEADLOCK_MESSAGE_KIND,
+    RESUME_COOLDOWN_SECONDS,
     RESUME_SECONDS,
     RESUME_UNVERIFIED_SECONDS,
     WAITING_MESSAGE_KIND,
@@ -103,6 +104,33 @@ def _watchdog(app: Any, **kwargs: Any) -> IdleWatchdog:
         authority=state.authority, lifecycle=state.lifecycle, state_runtime=state,
         idle_seconds=0.0, continue_seconds=0.0, **kwargs,
     )
+
+
+def test_the_judgement_event_records_the_settings_it_used(runtime) -> None:
+    """参数现在按项目可配，所以"当时用的是哪一档"是实验数据的一部分。
+
+    2026-10-11：用户在前端建项目、daemon 由控制台起（继承控制台环境），于是"我设的 short 到底生效
+    没有"必须能从判定事件里读回来 —— 不然只能靠猜环境变量。
+    """
+
+    app, call, main, worker = runtime
+    watchdog = _watchdog(app)
+    assert watchdog.tick() is not None
+
+    (recorded,) = [event for event in events(app) if event["event_type"] == WATCHDOG_EVENT_KIND]
+    settings = json.loads(recorded["payload_json"])["settings"]
+    assert settings["resume_seconds"] == watchdog.resume_seconds
+    assert settings["resume_unverified_seconds"] == watchdog.resume_unverified_seconds
+    assert settings["resume_cooldown_seconds"] == watchdog.resume_cooldown_seconds
+    assert settings["resume_max_attempts"] == watchdog.resume_max_attempts
+    assert settings["idle_seconds"] == watchdog.idle_seconds
+
+    # short 档确实会把这些值改小（这就是"生效"的样子）。
+    short = watchdog_settings({"TSUNAGOU_WATCHDOG_PRESET": "short"})
+    assert short["RESUME_SECONDS"] < RESUME_SECONDS
+    assert short["RESUME_UNVERIFIED_SECONDS"] < RESUME_UNVERIFIED_SECONDS
+    assert short["RESUME_COOLDOWN_SECONDS"] < RESUME_COOLDOWN_SECONDS
+    assert short["WATCHDOG_INTERVAL_SECONDS"] < WATCHDOG_INTERVAL_SECONDS
 
 
 def test_the_watchdog_wakes_main_and_leaves_the_evidence(runtime) -> None:
