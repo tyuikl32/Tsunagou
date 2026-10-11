@@ -176,6 +176,22 @@ def test_inbox_claim_can_skip_what_was_already_read_and_ack_is_forgiving(runtime
     again = call("inbox.ack", {"message_id": sent["message_id"]}, worker)
     assert again["acked"] is True, "重复 ACK 是幂等的，不该要求重新 claim"
 
+    # 一批可以一次确认（实测一批消息原来是 claim→fetch→presented→ack 四次往返）。
+    second = call("message.send", {"recipient_agent_id": worker["agent_id"], "summary": "第二件"}, main)
+    third = call("message.send", {"recipient_agent_id": worker["agent_id"], "summary": "第三件"}, main)
+    batch = call("inbox.ack", {"message_ids": [second["message_id"], third["message_id"]]}, worker)
+    assert batch["acked"] is True and batch["count"] == 2
+    assert call("inbox.claim", {"limit": 20, "unread": True}, worker)["messages"] == [], "两条都确认掉了"
+
+    # 摘要里也能直接拿到 payload（省掉"先 claim 再逐条 fetch"）：task.submitted 的 result_digest
+    # 就在 payload 里，而验收要的正是它。
+    call("message.send", {"recipient_agent_id": worker["agent_id"], "summary": "带 payload",
+                          "payload": {"result_digest": "sha256:" + "c" * 64}}, main)
+    with_payload = call("inbox.claim", {"limit": 5, "with_payload": True}, worker)
+    assert with_payload["with_payload"] is True
+    assert any((item.get("payload") or {}).get("result_digest") for item in with_payload["messages"]), \
+        "with_payload 必须真的把 payload 带上来"
+
     # 副本漂移（投递行带着旧 agent_id）时以**消息**为准：属于你的消息仍能确认。
     state = app.state.state_runtime
     state.messages.deliveries[sent["message_id"]].recipient_agent_id = "someone-else"

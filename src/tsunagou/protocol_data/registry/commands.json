@@ -542,6 +542,7 @@
     "inbox.ack": {
       "payload_fields": [
         "message_id",
+        "message_ids",
         "reason"
       ],
       "principal": "B",
@@ -554,7 +555,8 @@
     "inbox.claim": {
       "payload_fields": [
         "limit",
-        "unread"
+        "unread",
+        "with_payload"
       ],
       "principal": "B",
       "required_fields": [],
@@ -1674,6 +1676,6 @@
     "config.validate",
     "doctor"
   ],
-  "schema_bundle_digest": "sha256:25235b3fd3f51491e2625f7fc23dd3628c9d6772390dc7bddbfd6a9f041b79ff",
+  "schema_bundle_digest": "sha256:ebb7a62eabc6cfd31a43dc52b97d0e23f05119d70100b7f018d71acbf93c4fc8",
   "supported_previous_version": "0.9"
 }

@@ -11,7 +11,8 @@
     },
     "reason": {
       "type": "string"
-    }
+    },
+    "message_ids": {}
   },
   "required": [
     "message_id"

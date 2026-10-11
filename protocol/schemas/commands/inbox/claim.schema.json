@@ -11,7 +11,8 @@
       "maximum": 200,
       "default": 50
     },
-    "unread": {}
+    "unread": {},
+    "with_payload": {}
   },
   "required": []
 }

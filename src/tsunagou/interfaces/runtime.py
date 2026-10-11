@@ -113,10 +113,10 @@ PAYLOAD_FIELDS: dict[str, frozenset[str]] = {
     "durability.reconcile": frozenset({"scope_refs", "reason"}),
     "checkpoint.create.user": frozenset({"reason", "retry_operation_id", "minimum_event_seq"}),
     "checkpoint.create": frozenset({"reason", "minimum_event_seq"}),
-    "inbox.claim": frozenset({"limit", "unread"}),
+    "inbox.claim": frozenset({"limit", "unread", "with_payload"}),
     "inbox.fetch": frozenset({"message_id"}),
     "inbox.presented": frozenset({"message_id", "evidence_digest", "evidence_kind"}),
-    "inbox.ack": frozenset({"message_id", "reason"}),
+    "inbox.ack": frozenset({"message_id", "message_ids", "reason"}),
     "message.send": frozenset({
         "recipient_agent_id", "kind", "subject_ref", "summary", "payload", "priority",
         "response_contract", "in_reply_to", "wake",

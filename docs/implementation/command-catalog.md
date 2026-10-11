@@ -144,11 +144,11 @@ U 命令 capability 为 `—`。D/T 属认证bootstrap端点，不通过一般�
 | message.send | `/api/v1/commands/message.send` | B / message.send | in_reply_to?,kind?,payload?,priority?,recipient_agent_id,response_contract?,subject_ref?,summary,wake? | message_id+recipient_agent_id；发送者取认证身份；summary 非空且最多4096字符，payload最多256KiB |
 | message.respond | `/api/v1/commands/message.respond` | B / message.respond | obligation_id,response_message_id | 已存在的关联回复满足 Obligation；仅原recipient |
 | message.waive_response | `/response-obligations/{id}:waive` | B / message.send | reason | Obligation；原sender；main只能以原sender身份 |
-| inbox.claim | `/api/v1/commands/inbox.claim` | B / inbox.consume | limit?,unread? | messages 摘要列表+count；authenticated self；limit为1–200，默认50；不返回payload正文 |
+| inbox.claim | `/api/v1/commands/inbox.claim` | B / inbox.consume | limit?,unread?,with_payload? | messages 摘要列表+count；authenticated self；limit为1–200，默认50；不返回payload正文 |
 | inbox.fetch | `/api/v1/commands/inbox.fetch` | B / inbox.consume | message_id | 完整Message视图含payload/in_reply_to/响应义务；仅原recipient |
 | inbox.renew | `/deliveries/{id}:renew` | B / inbox.consume | delivery_lease_id | DeliveryLease；不超过2分钟 |
 | inbox.presented | `/api/v1/commands/inbox.presented` | B / inbox.consume | evidence_digest?,evidence_kind?,message_id | message_id+presented；仅记录展示声明，当前不验证摘要格式或证据强度 |
-| inbox.ack | `/api/v1/commands/inbox.ack` | B / inbox.consume | message_id,reason? | message_id+acked；仅原recipient；不自动响应 |
+| inbox.ack | `/api/v1/commands/inbox.ack` | B / inbox.consume | message_id,message_ids?,reason? | message_id+acked；仅原recipient；不自动响应 |
 | inbox.defer | `/deliveries/{id}:defer` | B / inbox.consume | defer_until,reason | Delivery；只改投递调度 |
 | artifact.upload.create | `/artifact-uploads` | B / artifact.attach | domain_ref,visibility:project_shared\|recipient_only,size_bytes,media_type,expected_digest | UploadIntent；领域允许该actor附加 |
 | artifact.upload.finalize | `/artifact-uploads/{id}:finalize` | B / artifact.attach | digest,size_bytes | ArtifactRef；相同领域授权重验 |

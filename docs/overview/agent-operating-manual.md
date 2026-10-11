@@ -251,10 +251,10 @@
 
 | 工具 | 必填 | 可选 / 语义 |
 |---|---|---|
-| `inbox__claim` | 无（`limit` 可选，默认 50） | 领取自己收件箱的**摘要**；正文要 `inbox__fetch`。`unread: true` 只给**没展示过**的那些（已经 `inbox__presented` 过的不会再吐回来；不传就是老的默认行为） |
+| `inbox__claim` | 无（`limit` 可选，默认 50） | 领取自己收件箱的**摘要**；正文要 `inbox__fetch`。`unread: true` 只给**没展示过**的那些（已经 `inbox__presented` 过的不会再吐回来；不传就是老的默认行为）。**`with_payload: true`** 让摘要里直接带上 payload —— 需要 `result_digest` 这类字段时用它，省掉「先 claim 再逐条 fetch」那一趟 |
 | `inbox__fetch` | `message_id` | 只有收件人是自己才行（否则 `inbox_access_denied`）；返回全文、`in_reply_to` 和 `response_obligations[]` |
 | `inbox__presented` | `message_id` | `evidence_kind`、`evidence_digest` 可选。只记"我呈现过"，**不核证据强度** |
-| `inbox__ack` | `message_id` | `reason` 可选。**幂等**：重复 ACK 成功（不必重新 claim）；**ACK 不履行回应义务** —— 有 `response_obligations` 时要另发一条回复并 `message__respond` |
+| `inbox__ack` | `message_id`（或 **`message_ids`** 一次一批） | `reason` 可选。一批读完就一次 ACK（实测一批消息原来要 claim→fetch→presented→ack 四次往返）；**幂等**：重复 ACK 成功（不必重新 claim）；**ACK 不履行回应义务** —— 有 `response_obligations` 时要另发一条回复并 `message__respond` |
 | `message__send` | `recipient_agent_id`、`summary` | `kind`（默认 `message`）、`subject_ref`、`payload`、`priority`、`in_reply_to`、`response_contract`、**`wake`**。回复时把收到的 `message_id` 填进 `in_reply_to`。**要它立刻动就带 `wake: true`**（普通消息默认不唤醒；见下）。返回的 `next` 会直说这条会不会唤醒对方 |
 | `message__respond` | `obligation_id`、`response_message_id` | 用**已经发出去的那条回复**的 `message_id` 来履行义务 |
 

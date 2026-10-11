@@ -1796,9 +1796,14 @@ def build_handlers(
         limit = int(payload.get("limit", 50))
         # ``unread``：已经展示过的消息不再吐回来（2026-10-10：调用方反复看到同一批处理过的消息）。
         unread = bool(payload.get("unread", False))
+        # ``with_payload``：摘要里带上 payload。原来摘要**只给 payload_digest**，而验收要的
+        # ``result_digest`` 就在 payload 里 ⇒ main 得先 claim、再为每条 fetch（实测一条 8 KB）。
+        # 想一次读完就带上它；默认仍然是摘要（省 token 的那个默认不变）。
+        with_payload = bool(payload.get("with_payload", False))
         claimed = messages.fetch(context["principal_id"], limit=limit, unread=unread)
-        return {"messages": [_message_view(message, messages) for message in claimed],
-                "count": len(claimed), "unread_only": unread}
+        return {"messages": [_message_view(message, messages, include_payload=with_payload)
+                             for message in claimed],
+                "count": len(claimed), "unread_only": unread, "with_payload": with_payload}
 
     def inbox_fetch(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
@@ -1818,9 +1823,18 @@ def build_handlers(
 
     def inbox_ack(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "inbox.consume")
-        message_id = _required_str(payload, "message_id")
-        messages.ack(context["principal_id"], message_id)
-        return {"message_id": message_id, "acked": True}
+        # 一条或**一批**：实测一条消息要 claim→fetch→presented→ack 四次往返，而 ack 占了整轮
+        # 调用量的近三分之一（38 次 / 7 个任务）。收件人一次读完一批时，确认也该是一次。
+        raw = payload.get("message_ids")
+        if raw is not None:
+            if not isinstance(raw, (list, tuple)) or not raw:
+                raise ValueError("message_ids_required")
+            ids = [_required_str({"message_id": item}, "message_id") for item in raw]
+        else:
+            ids = [_required_str(payload, "message_id")]
+        for message_id in ids:
+            messages.ack(context["principal_id"], message_id)
+        return {"message_id": ids[0], "message_ids": ids, "acked": True, "count": len(ids)}
 
     def message_send(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         _authorize(context, "message.send")
