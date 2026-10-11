@@ -13,6 +13,7 @@ hold whatever else changes:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +59,7 @@ def _discoverable(tmp_path: Path) -> Path:
         json.dumps({"project_id": PROJECT_ID, "name": "probe"}), encoding="utf-8",
     )
     (root / ".tsunagou" / "local" / "endpoint.json").write_text(
-        json.dumps({"url": "http://127.0.0.1:59999", "pid": 1, "project_id": PROJECT_ID}),
+        json.dumps({"url": "http://127.0.0.1:59999", "pid": os.getpid(), "project_id": PROJECT_ID}),
         encoding="utf-8",
     )
     return root
@@ -69,7 +70,7 @@ def _entry(tmp_path: Path) -> ProjectEntry:
     return ProjectEntry(
         project_id=PROJECT_ID, path=root, name="probe",
         daemon={
-            "url": "http://127.0.0.1:59999", "pid": 1, "project_id": PROJECT_ID,
+            "url": "http://127.0.0.1:59999", "pid": os.getpid(), "project_id": PROJECT_ID,
             "state_dir": str(root / ".tsunagou" / "local"), "running": True,
         },
     )

@@ -132,6 +132,43 @@ def read_endpoint(root: Path) -> dict[str, Any] | None:
     return raw
 
 
+def _pid_alive(pid: Any) -> bool:
+    """这个 pid 现在还活着吗 —— **不打网络**的廉价判定。
+
+    2026-10-11 用户实测：控制台列项目时逐个探测 daemon，10 个已停的项目 ×
+    ``HEALTH_TIMEOUT``（0.5 秒）⇒ ``GET /api/v1/projects`` 4.7 秒，前端每次操作都卡 1–2 秒。
+    而 ``endpoint.json`` 本来就记着那个 daemon 的 pid：先问"这个进程还在吗"就能整轮免掉网络。
+    pid 会被复用，所以**活着的时候仍然照旧探测**（那时的答案才是准的）。
+    """
+
+    try:
+        number = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if number <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(number, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    # Windows 上**绝不能**用 os.kill(pid, 0)：那是 TerminateProcess。
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel.OpenProcess(0x00100000, False, number)  # SYNCHRONIZE
+    if not handle:
+        return False
+    kernel.CloseHandle(handle)
+    return True
+
+
 def daemon_alive(url: str) -> bool:
     """Ask the daemon itself. A leftover endpoint file is not evidence of life."""
 
@@ -156,7 +193,10 @@ def daemon_state(root: Path, *, probe: bool = True) -> dict[str, Any] | None:
         "advertised_url": endpoint.get("advertised_url") or "",
     }
     if probe:
-        state["running"] = daemon_alive(str(endpoint["url"]))
+        # pid 不明（更老的清单文件）时照旧探测；pid 明明白白已经死了就不要再打网络了。
+        recorded_pid = state.get("pid")
+        state["running"] = (daemon_alive(str(endpoint["url"]))
+                            if recorded_pid is None or _pid_alive(recorded_pid) else False)
     return state
 
 

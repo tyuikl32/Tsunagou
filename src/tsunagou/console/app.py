@@ -707,6 +707,12 @@ def create_console_app(config: ConsoleConfig | None = None) -> FastAPI:
                 # *no* source had a record).
                 kept = history.payload(project_id, name)
                 if kept is None:
+                    # 同一个出口有**两种历史键名**：面板这条路按来源名记（``agents``），
+                    # 代理那条路按路径记（``relay:/api/v1/projects/<id>/agents``）。
+                    # 只认一种就会出现"历史文件里明明有数据、面板却报取不到"（2026-10-11 实测：
+                    # 197 事件那个项目的 21 条记录里两种键名并存，5 个面板因此假报失败）。
+                    kept = history.payload(project_id, _relay_source(exit_path(project_id, source)))
+                if kept is None:
                     missing[name] = {"status": 503, "code": "daemon_not_running"}
                     continue
                 payload, captured_at = kept
