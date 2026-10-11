@@ -131,6 +131,54 @@ def test_the_manual_states_the_validation_receipt_minimum_the_validator_enforces
         "手册里那句必填说明要与校验器一致"
 
 
+def test_every_tool_the_bridge_offers_is_in_the_first_read_index() -> None:
+    """桥能调到的每条命令，都必须在 `context.project_read` 首读那张能力索引里。
+
+    索引是 Agent **第一次读取**就拿到的"要做什么 → 用哪个工具"表（`CAPABILITY_INDEX`）。一个命令
+    在工具面上存在、却不在这张表里，等于只有在它自己想到要翻完整工具表时才可能被发现 ——
+    2026-10-11 就是这样漏掉 `task.get` / `task.result.get`（以及更早的 `project.configure` /
+    `durability.reconcile`）的。
+    """
+
+    from tsunagou.application.handlers import CAPABILITY_INDEX
+
+    indexed = {kind for _area, _description, kinds in CAPABILITY_INDEX for kind in kinds}
+    exposed = set(re.findall(r'command_kind: "([a-z_.]+)"',
+                             BRIDGE_SOURCE.read_text(encoding="utf-8")))
+    missing = sorted(exposed - indexed)
+    assert not missing, f"这些命令 Agent 能调，却不在首读索引里：{missing}"
+
+
+def test_the_manual_carries_the_fields_this_round_added() -> None:
+    """新字段必须写进手册 —— 否则 Agent 只能靠"发一次看看返回值"才发现它们。"""
+
+    manual = _manual()
+    documented = (
+        ("with_payload", "inbox.claim 的摘要带 payload 选项"),
+        ("message_ids", "inbox.ack 的批量确认"),
+        ("`wake: true`", "message.send 的显式唤醒"),
+        ("task.blocked", "task.block 会通知 main 的那条消息"),
+        ("capability_denied", "capability_denied 的结构化拒绝"),
+        ("held", "结构化拒绝里“你手上有什么”"),
+    )
+    missing = [f"{needle}（{why}）" for needle, why in documented if needle not in manual]
+    assert not missing, f"手册没写这些：{missing}"
+
+
+def test_the_manual_no_longer_describes_the_heartbeat_as_activity() -> None:
+    """手册里那句"只要还有会话在活动就不叫"是**旧判据的说明书**，必须消失。
+
+    过时的说明书比没有更糟：它让人相信一个不工作的机制在工作。这条判据让看门狗的前两档
+    永不触发（实测 1122 次心跳读、全局静默 69 分钟、一次都没成立），而心跳**不写事件**正是
+    它不能当活动证据的原因 —— 所以手册现在必须写明这一点。
+    """
+
+    manual = _manual()
+    assert "只要还有**任何一个会话在活动**" not in manual, "这句是旧判据的说明书"
+    assert "心跳" in manual and "不写事件" in manual, "要写明心跳为什么不能当活动证据"
+
+
+
 def test_the_manual_lists_exactly_the_wake_worthy_kinds() -> None:
     """手册里的唤醒白名单 == ``WAKE_WORTHY_KINDS``（Agent 据此判断"我发了它会不会动"）。"""
 

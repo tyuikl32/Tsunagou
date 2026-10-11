@@ -239,7 +239,7 @@
 | `task__submit` | `task_id`、`attempt_id`、`summary` | 可选 `evidence_refs`、`artifact_refs`、`validation_metadata`（其中只有 `command` 与 `exit_code` 必填；时间戳、`tool`、`tool_version`、`workspace_digest`、输出 digest **给了就校验**，缺字段的拒绝会点名 `missing`）。Attempt 不是自己的/不是 running 报 `attempt_owner_required`、`attempt_not_running`。交活会自动收工作区结果、释放占用、给 main 发 `task.submitted`（带 `result_id` + `result_digest` + 一份**证据摘要**） |
 | `task__get` | `task_id` | 读**一条**任务的现状：`status`/`revision`/`acceptance`/`execution_scope`/`required_contract_ids`（以及还没被接受的 `contracts_pending`）/当前 `attempt`/最近一次 `latest_result`，还有 `next`（现在最该做的一件事）。只想知道一条任务时用它，别用 `context__project_read`（那条会返回全部 assignment，随任务数增长） |
 | `task__result_get` | `task_id`（`result_id` 可选，缺省取最近一次） | 读一次交付的**可重放证据**：`validation_metadata`（每条 `command`+`exit_code`…）、`changed_paths`/`untracked_summary`、`scope_paths` 与 **`scope_violations`**（声明范围之外的改动）、`environment_digest`/`environment_files`（依赖清单指纹，用来回答"环境被动过没有"）、`patch_artifact_ref`、`evidence_level`。验收前读它，不要自己重跑一遍 |
-| `task__block` | `task_id`、`attempt_id`（工具面必填）；`reason_code` 或 `reason` 至少一个 | 先验证 Attempt 归自己（`attempt_owner_required`）；状态不是 `claimed`/`running`/`cancel_requested` 报 `attempt_not_running`。挂起会释放占用 |
+| `task__block` | `task_id`、`attempt_id`（工具面必填）；`reason_code` 或 `reason` 至少一个 | 先验证 Attempt 归自己（`attempt_owner_required`）；状态不是 `claimed`/`running`/`cancel_requested` 报 `attempt_not_running`。挂起会释放占用，并且**会给 main 发一条 `task.blocked`**（在唤醒白名单里 ⇒ 会真的把它叫起来）：原因会写进摘要，`next` 里会告诉你球现在在 main 那边 —— 你不需要自己再去 `message__send` 一遍 |
 | `task__progress` | `task_id`、`attempt_id` | `summary`、`evidence_refs` 可选。是执行命令，需要 `task.execute` 权限 |
 | `task__fail` | `task_id`、`attempt_id`、`reason` | Attempt 归自己；终态 Attempt 报 `attempt_not_failible` |
 | `task__recover`（main） | `task_id`、`expected_attempt_id`、`disposition` | `disposition` 不合法报 `invalid_recovery_disposition`；Attempt 对不上报 `attempt_id_mismatch` |
@@ -296,7 +296,7 @@
 | `worker_not_member` | `coordination.plan` 行的 `assigned_worker_id` 不存在、不是 active，或者是 main 自己（`handlers.py:1377`） | 用 `context__project_read` 的 `members[]` 取一个真实 `agent_id`。新 worker 入席是**用户**的决定 |
 | `task_not_beginable` | 任务状态不是 `open`/`blocked`，且当前 Attempt 不是自己 running 的（`task_execution.py:98`） | 看任务状态：`draft` 或 `changes_requested` → **一次** `task.publish` 就够（它已隐含 ready，2026-10-10 起）；`submitted` → 等验收；`completed`/`cancelled` → 换一条 |
 | `attempt_owner_required` | 用别人的 / 已结束的 Attempt 发进度、挂起、交活、失败（`handlers.py:713,778`；`task_execution.py:96,135`；`tasks.py` 多处） | 只在自己的 Attempt 上操作；要接着干就重新 `task.begin` 拿新 Attempt |
-| `task_revision_conflict` | `task.begin` 的 `expected_task_revision` 不是当前 revision（`task_execution.py:92`） | 重读任务当前 revision（`context__project_read`）再 begin。别猜 |
+| `task_revision_conflict` | `task.begin` 的 `expected_task_revision` 不是当前 revision（`task_execution.py:92`） | 重读任务当前 revision（`task__get` 最省：它只回答一条任务）再 begin。别猜。这条**会进 main 的拒绝账**（2026-10-11 起）：同一条任务反复撞版本，main 看得见 |
 | `main_workspace_selection_required` | 文件任务 begin 时没有该任务的策略决定，或决定的 `scope_revision` 落后（`execution_commands.py:216`） | `workspace.select` 一次（`shared` 最省事）；scope 改了要重选 |
 | `workspace_policy_roots_mismatch` | 策略的 `root_binding_refs` 与任务 scope 解析出的根不一致（`execution_commands.py:219`） | 重选一次，`root_binding_refs` 照任务 scope 里的 root_id 填 |
 | `workspace_selection_requires_stopped_task` | 任务已在 `claimed`/`running`/`submitted` 等状态时选工作区（`execution_commands.py:378`） | 先 `task.block` 让占用手停手，或等它结束；再选 |
@@ -306,8 +306,8 @@
 | `driver_does_not_meet_hard_constraints` | `driver_kind` 不满足 `hard_constraints`（`workspaces.py:365`） | 放宽硬约束或换 driver；`worktree` 只满足 `single_repository`+`clean_baseline` |
 | `task_plan_not_editable` | 对已被人领活/非可编辑状态的任务 `task.update_plan`（`tasks.py:193`） | 等它停下，或另建任务并在 `coordination.plan` 里用 `supersedes_task_id` |
 | `invalid_transition:<现在>-><目标>` | `task.ready`/`task.publish` 顺序不对（`tasks.py:700`） | `draft` → ready → `open`。`changes_requested` 也走 ready |
-| `capability_denied` | 当前角色/会话没有这个能力（`handlers.py:298`） | 交给 main 或用户；worker 看不到 main 专属工具是**故意**的（注册表 principal=M），不是缺功能 |
-| `unknown_payload_field` | payload 顶层带了该命令不接受的键（`runtime.py:244`，按 `PAYLOAD_FIELDS` 判） | 按工具 schema 重发。工具 schema、命令目录与 `PAYLOAD_FIELDS` 现在是**同一个字段集**（2026-10-10 起有契约测试钉住）—— 若三者仍不一致，那是缺陷，按 §4 上报，不要绕 |
+| `capability_denied` | 当前角色/会话没有这个能力（`handlers.py:298`；`task.begin`/`task.submit`/`task.progress` 走 `ExecutionCommands.authorize`，`coordination.wake*` 走 `wake_assistance`） | **403 + 结构化 detail**：`capability`（你要的那个）、`held`（你手上现有的）、`next`。先看 `held` 再决定是交给 main 还是换个入口；worker 看不到 main 专属工具是**故意**的（注册表 principal=M），不是缺功能。这条拒绝只要带得回 `task_id` 就会进 main 的拒绝账 |
+| `unknown_payload_field` | payload 顶层带了该命令不接受的键（`runtime.py:244`，按 `PAYLOAD_FIELDS` 判） | **409 + `unknown`（到底是哪些键）+ `accepted`（这条命令收哪些）**：照 `accepted` 重发即可，不必去比对工具 schema。工具 schema、命令目录与 `PAYLOAD_FIELDS` 现在是**同一个字段集**（2026-10-10 起有契约测试钉住）—— 若三者仍不一致，那是缺陷，按 §4 上报，不要绕 |
 | `project_objective_not_confirmed` | `project.completion.propose.main` / `project.completion.confirm` 时项目**没有**一条已 resolved 的 `kind=project.objective` 用户决定（详情含 `objective_ref`、`next`） | 先与用户把目标谈清楚，用 `user_decision.propose`（`kind=project.objective`、`proposal_ref=<你会复用的引用>`）提出来，等用户确认，再用**同一个引用**提完工。记录里那句 `objective` 在确认前只是占位符，不是目标 |
 | `project_objective_ref_mismatch` | 完工提案引用的 `objective_ref` 与已确认目标的 `subject_ref` 不一致（详情含 `confirmed_objective_ref`） | 把 `objective_ref` 改成 `confirmed_objective_ref` —— 它同时就是 `context__project_read` 的 `stable.goal.objective_ref`；或者先与用户谈一个新的目标 |
 | `daemon_unreachable` | 桥连不上主机（远端最常见） | 这次调用**没发生**，什么都没变：通道恢复后重试一次。别改走别的路 |
@@ -388,15 +388,13 @@ DSH 上的唤醒**永远由某个 Agent 显式调用**才会发生（`coordinati
 
 | 消息 `kind` | 收件人 | 什么时候 | 它会说什么 |
 |---|---|---|---|
-| `coordination.stalled` | main | 没有任何会话在活动、没有在跑的 Attempt、没有可领的任务、没有已交付待验收的结果、没有待确认的完工提案、**没有未决的用户决定**，且安静够久 | "协作停住了：N 分钟没有任何事件……检查一下是不是都停了，然后接手、让 worker 继续，或者提请完工" |
-| `coordination.waiting` | main | main 手上有活（有待验收的结果或未读消息），而其他人都停了 | "有活等你处理……验收、发布或回复之后这条协作才会继续动" |
-| `task.resume` | **那个 worker 自己** | 它有**没提交、也没结束**的尝试，而它自己（以及整个项目）都安静够久 | "你的任务 X 还没提交，而这条会话已经安静了 N 分钟……继续做完，或者明确 `task.submit` / `task.block`" |
+| `coordination.stalled` | main | **最近 N 分钟内没有任何 Agent 真的做事**、没有在跑的 Attempt、没有可领的任务、没有已交付待验收的结果、没有待确认的完工提案、**没有未决的用户决定**，且全局安静够久（默认 10 分钟；`short` 档 5 分钟） | "协作停住了：N 分钟没有任何事件……检查一下是不是都停了，然后接手、让 worker 继续，或者提请完工" |
+| `coordination.waiting` | main | main 手上有活（有待验收的结果或未读消息），而最近没人真的做事（默认 2 分钟；`short` 档 1 分钟） | "有活等你处理……验收、发布或回复之后这条协作才会继续动" |
+| `task.resume` | **那个 worker 自己** | 它有**没提交、也没结束**的尝试，而**它自己**安静够久。窗口分两档：宿主明确说这条会话没在跑（`idle`/`unloaded`）⇒ 默认 90 秒（`short` 档 45 秒）；宿主不说话或答 `unknown` ⇒ 默认 10 分钟（`short` 档 4 分钟）。**不再要求整个项目安静**，别人在忙不遮挡你 | "你的任务 X 还没提交，而这条会话已经安静了 N 分钟……继续做完，或者明确 `task.submit` / `task.block`" |
 
-**它不会在你正干活的时候打扰你**：只要还有**任何一个会话在活动**（判据是已认证会话调用 ——
-桥每 30 秒一次便宜读取），前两种就完全不叫。这比"看事件间隔"更准：agent 在本地写代码、跑构建时
-本来就不发 Tsunagou 命令。它也**不会**在球在用户手上时叫（未决决定、待确认完工）。
-同一个判定在冷却期内只叫一次；叫够 3 次还没人动，它会停下来并**提一条 `coordination.stalled`
-的用户决定**（控制台"待用户决定"那一节），交给用户。
+**它不会在你正干活的时候打扰你**，判据是**「最近有没有人真的做事」**：最近 2 分钟内有事件（`short` 档 1 分钟）就不叫。
+2026-10-11 修正：这条判据以前读的是"有没有会话**可达**"（桥每 30 秒一次已认证的心跳读），而心跳**不写事件** ⇒ 会话永远"在线" ⇒ 前两种情形**在真实运行里一次都不会触发**（实测：4 个会话两小时 1122 次心跳读、全局静默 69 分钟，一次都没成立）。现在按事件判，而那正是 agent 干活留下的痕迹。
+它也**不会**在球在用户手上时叫（未决决定、待确认完工）。同一个判定在冷却期内只叫一次（默认 30 分钟；`short` 档 10 分钟）；叫够 3 次还没人动，它会停下来并**提一条 `coordination.stalled` 的用户决定**（控制台"待用户决定"那一节），交给用户。
 
 ### 6.1.1 「我任务没提交，但我在等别人」——这不是停在中途
 
@@ -412,15 +410,17 @@ DSH 上的唤醒**永远由某个 Agent 显式调用**才会发生（`coordinati
 | 做不下去了（缺前置、缺决定、缺权限） | `task.block`（这条尝试就此结束，看门狗不会再管它），把 `reason` 写清 |
 | 等一个你**问出去**的答复 | 什么都不用做 —— 消息还挂着未结清的回应义务时，看门狗把你判为"在等"，不催你；但整条协作也跟着停住的话，它会把这件事交给 main |
 | 等 main 或别的 Agent 先做完 | 一样：回一条消息把球踢出去（`message__send`），或者直接 `task.block`。**别人正在推进时它也不会叫你** |
-| 只是本地在写代码/跑构建 | 什么都不用做 —— 你自己和整个项目都没事件时它才叫，且叫完有 30 分钟冷却 |
+| 只是本地在写代码/跑构建 | 什么都不用做 —— 它判的是**你自己**安静了多久（宿主说你在跑就完全不看窗口），而且同一条尝试两次叫它之间至少隔 3 分钟（默认；`short` 档 90 秒） |
 
-**你要知道的两条**：①看门狗叫 worker 的那一条**只针对"有任务且没提交"**；一条已经 `task.submit`
-的尝试它永远不管（交活之后等你验收是 main 的事）；②**它叫了你，你就得动**：
+**你要知道的三条**：①看门狗叫 worker 的那一条**只针对"有任务且没提交"**；一条已经 `task.submit`
+的尝试它永远不管（交活之后等你验收是 main 的事）；②**被 review 退回的尝试不算**（`changes_requested` 时球在 main：你自己做不了任何事，它不会来催你，也不会向你建议 `task.submit`）；③**它叫了你，你就得动**（同一条尝试最多叫 3 次，之后交给 main）：
 `context__project_read` 的 `coordination` 那一块与收件箱都会显示它。
 每次判定都会落一条 `coordination.idle_watchdog` 事件，里面写着当时的各项判据值 ——
 "为什么叫"事后可查。
 
 ### 6.2 唤醒的投递时机是宿主的属性，不是你的选择
+
+**谁能查一条唤醒**：消息的发送者本人，或者看门狗/拒绝回响以 `runtime` 名义发出的那些（`task.resume` / `coordination.stalled` / `task.refused`）—— 后者的收件人和 main 都能查，所以"它到底被叫到了没有"不再只有发件人知道（2026-10-11 起）。
 
 `coordination__wake_status` 与 `coordination__wake` 的返回都带 `delivery`：`requested`（今天恒为
 `null` —— 命令只收 `message_id`）、`declared`（宿主声明的能力）、`used`（**这次实际用的**时机）、

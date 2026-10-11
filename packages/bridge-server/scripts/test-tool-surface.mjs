@@ -149,6 +149,17 @@ test("coordination__plan 的描述列出每一行的必填字段与一次做了�
 
 // 2026-10-08 实测：`expected_physical_identity` 在文档里查不到，主 Agent 只好去读 handlers 源码
 // 才明白它是个 inode 串、而且"不传就不校验"。字段级事实要写在描述里，连同"怎么取到它"。
+test("普通消息的唤醒选项与 task.block 的通知都写在描述里", async (t) => {
+  const { tools } = await listTools(t, "main");
+  const send = String(tools.find((tool) => tool.name === "message__send")?.description ?? "");
+  // 2026-10-11 审计：`wake` 以前只出现在"发完之后"的返回值里 ⇒ 调用方要看两次才知道下次怎么发。
+  assert.match(send, /wake: true/, "要说出这个字段名与取值");
+  assert.match(send, /does NOT wake/, "要说清普通消息默认不唤醒");
+  const block = String(tools.find((tool) => tool.name === "task__block")?.description ?? "");
+  assert.match(block, /task\.blocked/, "要说清挂起会发这条消息");
+  assert.match(block, /main/, "要说清收件人是 main，球在它那边");
+});
+
 test("root__register / root__bind 的描述说清 expected_physical_identity 与 repository_id", async (t) => {
   const { tools } = await listTools(t, "main");
   const register = String(tools.find((tool) => tool.name === "root__register")?.description ?? "");

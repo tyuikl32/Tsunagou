@@ -226,7 +226,10 @@ CONTEXT_OBJECTIVE_LIMIT = 512
 #: and the daemon refuses them per principal. When ``command_registry`` is available the
 #: index is filtered by the *current* role so it lists what this session can actually call.
 CAPABILITY_INDEX: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("reads", "read identity, members, tasks, contracts, revisions", ("context.project_read",)),
+    # 2026-10-11：两条单条读取也在这里 —— 索引是**第一次读取**就交给 Agent 的那张表，
+    # "想知道一条任务/一次交付"必须能在这张表里找到出口，否则它只会去读整个项目。
+    ("reads", "read identity, members, tasks, contracts, revisions; read one task or one result in full",
+     ("context.project_read", "task.get", "task.result.get")),
     ("tasks", "create, ready, publish, edit, dependencies, review",
      ("task.create", "task.ready", "task.publish", "task.update_plan",
       "task.edge.add", "task.edge.remove", "task.cancel_request", "task.cancel_ack",
@@ -253,6 +256,9 @@ CAPABILITY_INDEX: tuple[tuple[str, str, tuple[str, ...]], ...] = (
      ("coordination.takeover", "task.recover")),
     ("completion and user decisions", "ask the user; only the user answers or confirms",
      ("user_decision.propose", "project.completion.propose.main")),
+    # 2026-10-11：这两条在桥的工具面上、却从来没进过这张表（审计里"辅助工具没人告诉过 Agent"的同一类）。
+    ("project administration", "switch automatic wake on or off, and retry failed checkpoints after completion",
+     ("project.configure", "durability.reconcile")),
 )
 
 
