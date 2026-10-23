@@ -672,3 +672,25 @@ Ship DSH npm plugin through Desktop prepare and authenticated binding; add priva
 ### Status
 
 [OK] **Completed**
+
+
+## Session 28: 重写项目 README
+<!-- trellis-session: v=2 fp=2c52849cc9ce09cf -->
+
+**Date**: 2026-10-23
+**Task**: 重写项目 README
+**Branch**: `main`
+
+### Summary
+
+重写根 README，说明产品问题、安装接入、首次协作、恢复和跨机器使用。文档校验、任务上下文校验和本地链接检查通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `58a7af7` | Rewrite README for Tsunagou users |
+
+### Status
+
+[OK] **Completed**

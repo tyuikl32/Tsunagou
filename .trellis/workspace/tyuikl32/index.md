@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
-- **Last Active**: 2026-10-05
+- **Total Sessions**: 28
+- **Last Active**: 2026-10-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~674 | Active |
+| `journal-1.md` | ~696 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-10-23 | 重写项目 README | `58a7af7` | `main` |
 | 27 | 2026-10-05 | Integrate DSH background wake plugin | `80ce3c8` | `elysia` |
 | 26 | 2026-10-04 | Simplify host wake guidance from user evidence | `ea3dbf1` | `elysia` |
 | 25 | 2026-10-04 | Windows wake runner compatibility and preflight diagnostics | `f39d820` | `elysia` |
